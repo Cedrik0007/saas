@@ -2,44 +2,25 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
-import { loginPresets } from "../data";
 
 export function LoginPage() {
   const [authMessage, setAuthMessage] = useState(null);
-  const [loadingRole, setLoadingRole] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
   const navigate = useNavigate();
 
-  // ✅ Correct API base
-  const API_BASE = "https://sm-bk.onrender.com";
-  
+  // ✅ Backend API URL via Vercel env variable
+  const API_BASE = import.meta.env.VITE_API_URL; // e.g., https://subscription-backend.onrender.com/api
 
-  const handleLogin = async (role) => {
-    const preset = loginPresets[role];
-
-    // Validate using preset
-    const emailMatch = form.email.trim().toLowerCase() === preset.email.toLowerCase();
-    const passwordMatch = form.password === preset.password;
-
-    if (!emailMatch || !passwordMatch) {
-      setAuthMessage({
-        type: "error",
-        text: `Use the ${role} demo credentials shown below.`,
-      });
-      return;
-    }
-
-    setLoadingRole(role);
+  const handleLogin = async () => {
     setAuthMessage(null);
+    setLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}`, {
+      const response = await fetch(`${API_BASE}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: form.email,
-          password: form.password,
-        }),
+        body: JSON.stringify({ email: form.email, password: form.password }),
       });
 
       if (!response.ok) throw new Error("Login failed");
@@ -51,18 +32,13 @@ export function LoginPage() {
         text: `${payload.role} login accepted · token ${payload.token.slice(0, 6)}***`,
       });
 
-      navigate(payload.role === "Admin" ? "/admin" : "/member", {
-        replace: true,
-        state: payload,
-      });
-      
+      // Redirect based on backend role
+      navigate(payload.role === "Admin" ? "/admin" : "/member", { replace: true, state: payload });
+
     } catch (err) {
-      setAuthMessage({
-        type: "error",
-        text: "Demo API is offline. Please try again later.",
-      });
+      setAuthMessage({ type: "error", text: "Login failed. Ensure backend is live." });
     } finally {
-      setLoadingRole(null);
+      setLoading(false);
     }
   };
 
@@ -74,15 +50,7 @@ export function LoginPage() {
           <aside className="login-menu">
             <p className="eyebrow light">Welcome</p>
             <h2>Subscription Manager HK</h2>
-            <p>
-              Streamlined portal for Hong Kong membership dues. Track monthly
-              payments and automations from one place.
-            </p>
-            <ul>
-              <li>✓ Supports FPS, PayMe, bank transfers, cards</li>
-              <li>✓ Automated reminders via email + WhatsApp</li>
-              <li>✓ Clear dashboards for admins and members</li>
-            </ul>
+            <p>Streamlined portal for Hong Kong membership dues. Track payments and automations from one place.</p>
           </aside>
 
           <div className="login-form-card">
@@ -110,41 +78,16 @@ export function LoginPage() {
               />
             </label>
 
-            <div className="login-hints">
-              <p>
-                <strong>Admin:</strong> {loginPresets.admin.email} / {loginPresets.admin.password}
-              </p>
-              <p>
-                <strong>Member:</strong> {loginPresets.member.email} / {loginPresets.member.password}
-              </p>
-            </div>
-
             <div className="login-buttons">
-              <button
-                type="button"
-                className="btn-admin"
-                onClick={() => handleLogin("admin")}
-                disabled={loadingRole === "member"}
-              >
-                {loadingRole === "admin" ? "Authorising…" : "Login as Admin"}
-              </button>
-
-              <button
-                type="button"
-                className="btn-member"
-                onClick={() => handleLogin("member")}
-                disabled={loadingRole === "admin"}
-              >
-                {loadingRole === "member" ? "Authorising…" : "Login as Member"}
+              <button type="button" className="btn-login" onClick={handleLogin} disabled={loading}>
+                {loading ? "Authorising…" : "Login"}
               </button>
             </div>
 
             {authMessage && (
               <div className={`alert ${authMessage.type === "success" ? "alert-success" : "alert-error"}`}>
                 {authMessage.text}
-                
               </div>
-              
             )}
           </div>
         </div>
