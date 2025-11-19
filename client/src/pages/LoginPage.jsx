@@ -9,6 +9,8 @@ export function LoginPage() {
   const [loadingRole, setLoadingRole] = useState(null);
   const [form, setForm] = useState({ email: "", password: "" });
   const navigate = useNavigate();
+  const API_BASE = "https://sm-bk.onrender.com";
+
 
   const handleLogin = async (role) => {
     const preset = loginPresets[role];
@@ -26,7 +28,7 @@ export function LoginPage() {
     setLoadingRole(role);
     setAuthMessage(null);
     try {
-      const response = await fetch("/api/login", {
+      const response = await fetch(`${API_BASE}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(preset),
