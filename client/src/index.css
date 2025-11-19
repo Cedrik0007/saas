@@ -1222,6 +1222,7 @@ tbody tr:nth-child(even) {
   background: var(--surface);
 }
 
+/* Tablet and below - 960px */
 @media (max-width: 960px) {
   .site-header {
     flex-direction: column;
@@ -1236,10 +1237,17 @@ tbody tr:nth-child(even) {
 
   .login-shell {
     grid-template-columns: 1fr;
+    max-width: 600px;
   }
 
   .login-menu {
     border-bottom: 1px solid #1f2933;
+    border-right: none;
+  }
+  
+  .login-form-card {
+    border-left: none;
+    border-top: 1px solid #000;
   }
 
   .admin-layout,
@@ -1255,8 +1263,87 @@ tbody tr:nth-child(even) {
   .card {
     padding: 16px;
   }
+  
+  .kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  
+  .form-grid .notes,
+  .form-actions {
+    grid-column: 1 / -1;
+  }
+  
+  .member-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+  
+  .header-actions {
+    width: 100%;
+    display: flex;
+    gap: 10px;
+  }
+  
+  .header-actions button {
+    flex: 1;
+  }
 }
 
+/* Mobile landscape and below - 768px */
+@media (max-width: 768px) {
+  .filters {
+    grid-template-columns: 1fr;
+  }
+  
+  .bulk-actions {
+    width: 100%;
+  }
+  
+  .bulk-actions button {
+    flex: 1;
+  }
+  
+  .reports-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .chip-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .exports {
+    width: 100%;
+    display: flex;
+    gap: 10px;
+  }
+  
+  .exports button {
+    flex: 1;
+  }
+  
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  table {
+    min-width: 600px;
+  }
+  
+  .member-nav {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .member-nav nav {
+    width: 100%;
+    justify-content: space-around;
+  }
+}
+
+/* Mobile - 640px */
 @media (max-width: 640px) {
   .admin-main,
   .member-main {
@@ -1271,23 +1358,178 @@ tbody tr:nth-child(even) {
   .member-menu {
     padding: 16px;
   }
-}
-
-@media (max-width: 640px) {
+  
   main {
-    padding: 24px 16px 60px;
-  }
-
-  .card {
-    padding: 16px;
+    padding: 24px 12px 60px;
   }
 
   table {
     font-size: 0.85rem;
+    min-width: 500px;
+  }
+  
+  th, td {
+    padding: 8px 6px;
   }
 
+  .status-card {
+    grid-template-columns: 1fr;
+  }
+  
   .status-card button {
     grid-column: 1 / -1;
+    width: 100%;
+  }
+  
+  .login-buttons {
+    flex-direction: column;
+  }
+  
+  .btn-admin,
+  .btn-member {
+    min-width: 100%;
+  }
+  
+  .login-form-card {
+    padding: 32px 24px;
+  }
+  
+  .login-menu {
+    padding: 32px 24px;
+  }
+  
+  .chart {
+    gap: 6px;
+    height: 180px;
+  }
+  
+  .kpi h4 {
+    font-size: 1.5rem;
+  }
+  
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .double-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .pay-now {
+    grid-template-columns: 1fr;
+  }
+  
+  .payment-methods .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .tab {
+    white-space: nowrap;
+  }
+  
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+  }
+  
+  .invoice-detail {
+    padding: 16px;
+  }
+}
+
+/* Small mobile - 480px */
+@media (max-width: 480px) {
+  .site-header {
+    padding: 16px;
+  }
+  
+  .logo-mark {
+    width: 36px;
+    height: 36px;
+  }
+  
+  .logo-title {
+    font-size: 0.95rem;
+  }
+  
+  .logo-subtitle {
+    font-size: 0.8rem;
+  }
+  
+  .primary-btn,
+  .secondary-btn,
+  .ghost-btn {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+  }
+  
+  .login-main {
+    padding: 40px 12px;
+  }
+  
+  .login-shell {
+    border-radius: 16px;
+  }
+  
+  .login-form-card,
+  .login-menu {
+    padding: 24px 16px;
+  }
+  
+  .login-form-card h1 {
+    font-size: 1.5rem;
+  }
+  
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .kpi h4 {
+    font-size: 1.8rem;
+  }
+  
+  table {
+    font-size: 0.8rem;
+  }
+  
+  .badge {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+  }
+  
+  .admin-tab {
+    padding: 10px 14px;
+    font-size: 0.9rem;
+  }
+  
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .card-form .inline {
+    grid-template-columns: 1fr;
+  }
+  
+  .templates {
+    grid-template-columns: 1fr;
+  }
+  
+  .methods-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .chart-stack {
+    grid-template-columns: 1fr;
+  }
+  
+  .flow-grid {
+    grid-template-columns: 1fr;
   }
 }
 
