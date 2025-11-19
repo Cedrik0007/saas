@@ -10,17 +10,17 @@ export function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
   const navigate = useNavigate();
 
-  // Your Render backend URL
+  // ✅ Correct API base
   const API_BASE = "https://sm-bk.onrender.com";
+  
 
   const handleLogin = async (role) => {
     const preset = loginPresets[role];
 
-    const emailMatch =
-      form.email.trim().toLowerCase() === preset.email.toLowerCase();
+    // Validate using preset
+    const emailMatch = form.email.trim().toLowerCase() === preset.email.toLowerCase();
     const passwordMatch = form.password === preset.password;
 
-    // Validate using preset but SEND real form input
     if (!emailMatch || !passwordMatch) {
       setAuthMessage({
         type: "error",
@@ -48,16 +48,14 @@ export function LoginPage() {
 
       setAuthMessage({
         type: "success",
-        text: `${payload.role} login accepted · token ${payload.token.slice(
-          0,
-          6
-        )}***`,
+        text: `${payload.role} login accepted · token ${payload.token.slice(0, 6)}***`,
       });
 
       navigate(payload.role === "Admin" ? "/admin" : "/member", {
         replace: true,
         state: payload,
       });
+      
     } catch (err) {
       setAuthMessage({
         type: "error",
@@ -78,7 +76,7 @@ export function LoginPage() {
             <h2>Subscription Manager HK</h2>
             <p>
               Streamlined portal for Hong Kong membership dues. Track monthly
-              payments and automation from one place.
+              payments and automations from one place.
             </p>
             <ul>
               <li>✓ Supports FPS, PayMe, bank transfers, cards</li>
@@ -95,9 +93,7 @@ export function LoginPage() {
               <input
                 type="email"
                 value={form.email}
-                onChange={(e) =>
-                  setForm({ ...form, email: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
                 placeholder="Enter Your Email"
                 className="mono-input"
               />
@@ -108,9 +104,7 @@ export function LoginPage() {
               <input
                 type="password"
                 value={form.password}
-                onChange={(e) =>
-                  setForm({ ...form, password: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
                 placeholder="Enter Your Password"
                 className="mono-input"
               />
@@ -118,12 +112,10 @@ export function LoginPage() {
 
             <div className="login-hints">
               <p>
-                <strong>Admin:</strong> {loginPresets.admin.email} /{" "}
-                {loginPresets.admin.password}
+                <strong>Admin:</strong> {loginPresets.admin.email} / {loginPresets.admin.password}
               </p>
               <p>
-                <strong>Member:</strong> {loginPresets.member.email} /{" "}
-                {loginPresets.member.password}
+                <strong>Member:</strong> {loginPresets.member.email} / {loginPresets.member.password}
               </p>
             </div>
 
@@ -148,15 +140,11 @@ export function LoginPage() {
             </div>
 
             {authMessage && (
-              <div
-                className={`alert ${
-                  authMessage.type === "success"
-                    ? "alert-success"
-                    : "alert-error"
-                }`}
-              >
+              <div className={`alert ${authMessage.type === "success" ? "alert-success" : "alert-error"}`}>
                 {authMessage.text}
+                
               </div>
+              
             )}
           </div>
         </div>
