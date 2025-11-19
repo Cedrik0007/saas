@@ -9,14 +9,18 @@ export function LoginPage() {
   const [loadingRole, setLoadingRole] = useState(null);
   const [form, setForm] = useState({ email: "", password: "" });
   const navigate = useNavigate();
-  const API_BASE = "https://sm-bk.onrender.com";
 
+  // Your Render backend URL
+  const API_BASE = "https://sm-bk.onrender.com";
 
   const handleLogin = async (role) => {
     const preset = loginPresets[role];
-    const emailMatch = form.email.trim().toLowerCase() === preset.email.toLowerCase();
+
+    const emailMatch =
+      form.email.trim().toLowerCase() === preset.email.toLowerCase();
     const passwordMatch = form.password === preset.password;
 
+    // Validate using preset but SEND real form input
     if (!emailMatch || !passwordMatch) {
       setAuthMessage({
         type: "error",
@@ -27,30 +31,34 @@ export function LoginPage() {
 
     setLoadingRole(role);
     setAuthMessage(null);
+
     try {
       const response = await fetch(`${API_BASE}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(preset),
+        body: JSON.stringify({
+          email: form.email,
+          password: form.password,
+        }),
       });
 
-      if (!response.ok) {
-        throw new Error("Login failed");
-      }
+      if (!response.ok) throw new Error("Login failed");
 
       const payload = await response.json();
+
       setAuthMessage({
         type: "success",
         text: `${payload.role} login accepted · token ${payload.token.slice(
           0,
-          6,
+          6
         )}***`,
       });
+
       navigate(payload.role === "Admin" ? "/admin" : "/member", {
         replace: true,
         state: payload,
       });
-    } catch (error) {
+    } catch (err) {
       setAuthMessage({
         type: "error",
         text: "Demo API is offline. Please try again later.",
@@ -66,33 +74,29 @@ export function LoginPage() {
       <main className="login-main">
         <div className="login-shell">
           <aside className="login-menu">
-            <div>
-              <p className="eyebrow light">Welcome</p>
-              <h2>Subscription Manager HK</h2>
-              <p>
-                Streamlined portal for Hong Kong membership dues. Track monthly
-                $50 subscriptions, Eid payments, and automations from one place.
-              </p>
-            </div>
+            <p className="eyebrow light">Welcome</p>
+            <h2>Subscription Manager HK</h2>
+            <p>
+              Streamlined portal for Hong Kong membership dues. Track monthly
+              payments and automation from one place.
+            </p>
             <ul>
               <li>✓ Supports FPS, PayMe, bank transfers, cards</li>
               <li>✓ Automated reminders via email + WhatsApp</li>
               <li>✓ Clear dashboards for admins and members</li>
             </ul>
           </aside>
+
           <div className="login-form-card">
-            <div className="login-form-card__header">
-              <h1>Sign in</h1>
-              <p>Use the demo credentials to explore each experience.</p>
-            </div>
+            <h1>Sign in</h1>
 
             <label className="mono-label">
               Email
               <input
                 type="email"
                 value={form.email}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, email: event.target.value }))
+                onChange={(e) =>
+                  setForm({ ...form, email: e.target.value })
                 }
                 placeholder="Enter Your Email"
                 className="mono-input"
@@ -104,8 +108,8 @@ export function LoginPage() {
               <input
                 type="password"
                 value={form.password}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, password: event.target.value }))
+                onChange={(e) =>
+                  setForm({ ...form, password: e.target.value })
                 }
                 placeholder="Enter Your Password"
                 className="mono-input"
@@ -114,11 +118,11 @@ export function LoginPage() {
 
             <div className="login-hints">
               <p>
-                <strong>Admin</strong> · {loginPresets.admin.email} /{" "}
+                <strong>Admin:</strong> {loginPresets.admin.email} /{" "}
                 {loginPresets.admin.password}
               </p>
               <p>
-                <strong>Member</strong> · {loginPresets.member.email} /{" "}
+                <strong>Member:</strong> {loginPresets.member.email} /{" "}
                 {loginPresets.member.password}
               </p>
             </div>
@@ -132,6 +136,7 @@ export function LoginPage() {
               >
                 {loadingRole === "admin" ? "Authorising…" : "Login as Admin"}
               </button>
+
               <button
                 type="button"
                 className="btn-member"
@@ -160,4 +165,3 @@ export function LoginPage() {
     </>
   );
 }
-

@@ -7,6 +7,12 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
+// Default root route (Fixes Render 404)
+app.get("/", (_req, res) => {
+  res.json({ status: "Subscription Manager API running" });
+});
+
+// Mock data
 const members = [
   { id: "HK1021", name: "Samuel Chan", status: "Active", outstanding: 150 },
   { id: "HK1088", name: "Janice Leung", status: "Active", outstanding: 0 },
@@ -47,6 +53,7 @@ app.get("/api/health", (_req, res) => {
 
 app.post("/api/login", (req, res) => {
   const { email, password } = req.body ?? {};
+
   if (!email || !password) {
     return res.status(400).json({ message: "Email and password required" });
   }
@@ -59,17 +66,9 @@ app.post("/api/login", (req, res) => {
   });
 });
 
-app.get("/api/metrics", (_req, res) => {
-  res.json(metrics);
-});
-
-app.get("/api/members", (_req, res) => {
-  res.json(members);
-});
-
-app.get("/api/invoices", (_req, res) => {
-  res.json(invoices);
-});
+app.get("/api/metrics", (_req, res) => res.json(metrics));
+app.get("/api/members", (_req, res) => res.json(members));
+app.get("/api/invoices", (_req, res) => res.json(invoices));
 
 app.post("/api/invoices", (req, res) => {
   const invoice = {
@@ -82,10 +81,5 @@ app.post("/api/invoices", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Subscription Manager HK API running on port ${PORT}`);
+  console.log(`Subscription Manager API running on port ${PORT}`);
 });
-
-
-
-
-
