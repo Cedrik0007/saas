@@ -34,7 +34,21 @@ export function MemberPage() {
     <>
       <SiteHeader showCTA={false} showLogout={true} onLogout={handleLogout} />
       <main className="member-main">
+        {/* Mobile Horizontal Navigation */}
+        <div className="mobile-nav-tabs">
+          {sections.map((section) => (
+            <button
+              key={section.id}
+              className={`mobile-nav-tab ${activeSection === section.id ? "active" : ""}`}
+              onClick={() => handleNavClick(section.id)}
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
+
         <div className="member-layout">
+          {/* Desktop Sidebar */}
           <aside className="member-menu">
             <p className="eyebrow light">Member Portal</p>
             <h3>Aisha Malik</h3>
@@ -55,76 +69,133 @@ export function MemberPage() {
           <div className="member-body">
             {activeSection === "dashboard" && (
               <article className="screen-card" id="dashboard">
-          <header className="screen-card__header">
-            <h3>Member Dashboard</h3>
-            <p>Greeting, current status, upcoming payments, quick links.</p>
-          </header>
-          <div className="card member-dashboard">
-            <div className="member-nav">
-              <div className="brand-mini">Subscription Manager HK</div>
-              <nav>
-                <a className="active" href="#dashboard">
-                  Dashboard
-                </a>
-                <a href="#invoices">Invoices</a>
-                <a href="#payments">Payments</a>
-              </nav>
-              <div className="avatar">AM</div>
+          <header className="member-dashboard-header">
+            <div>
+              <h2>Welcome back, Aisha</h2>
+              <p className="dashboard-subtitle">Here's an overview of your membership account</p>
             </div>
-            <div className="member-content">
-              <header>
-                <h4>Hi Aisha 👋</h4>
-                <p>Here’s a snapshot of your membership contributions.</p>
-              </header>
-              <div className="status-card">
-                <div>
-                  <p>Next Due Amount</p>
-                  <h4>$50</h4>
-                </div>
-                <div>
-                  <p>Next Due Date</p>
-                  <h4>05 Nov 2025</h4>
-                </div>
-                <div>
-                  <p>Outstanding Balance</p>
-                  <h4>$150</h4>
-                </div>
-                <div>
-                  <p>Status</p>
-                  <span className="badge badge-unpaid">Unpaid</span>
-                </div>
-                <button className="primary-btn">Pay Now</button>
+            <button className="primary-btn" onClick={() => handleNavClick("pay")}>Pay Now</button>
+          </header>
+
+          {/* Alert Banner */}
+          <div className="alert-banner alert-warning">
+            <div className="alert-content">
+              <strong>Payment Due Soon</strong>
+              <p>You have an outstanding balance of $150. Pay by Nov 5 to avoid late fees.</p>
+            </div>
+            <button className="alert-dismiss">×</button>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="member-stats-grid">
+            <div className="stat-card stat-primary">
+              <div className="stat-details">
+                <span className="stat-label">Outstanding Balance</span>
+                <h3 className="stat-value">$150</h3>
+                <span className="stat-change negative">2 invoices pending</span>
               </div>
-              <div className="double-grid">
-                <div>
-                  <h4>Upcoming Payments</h4>
-                  <ul className="list">
-                    {memberUpcomingPayments.map((item) => (
-                      <li key={item.label}>
-                        <div>
-                          <strong>{item.label}</strong>
-                          <span>Due {item.due}</span>
-                        </div>
-                        <div>
-                          <p>{item.amount}</p>
-                          <span className={statusClass[item.status]}>
-                            {item.status}
-                          </span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <h4>Shortcuts</h4>
-                  <div className="shortcuts">
-                    <button className="secondary-btn">View Invoices</button>
-                    <button className="secondary-btn">Payment History</button>
-                    <button className="secondary-btn">
-                      Update Contact Details
-                    </button>
+            </div>
+            
+            <div className="stat-card stat-success">
+              <div className="stat-details">
+                <span className="stat-label">Next Due Date</span>
+                <h3 className="stat-value">Nov 5</h3>
+                <span className="stat-change">Monthly $50</span>
+              </div>
+            </div>
+            
+            <div className="stat-card stat-info">
+              <div className="stat-details">
+                <span className="stat-label">Paid This Year</span>
+                <h3 className="stat-value">$650</h3>
+                <span className="stat-change positive">On track</span>
+              </div>
+            </div>
+            
+            <div className="stat-card stat-neutral">
+              <div className="stat-details">
+                <span className="stat-label">Membership Plan</span>
+                <h3 className="stat-value">Active</h3>
+                <span className="stat-change">$50/mo + 2×$100 Eid</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Content Grid */}
+          <div className="member-dashboard-grid">
+            {/* Upcoming Payments */}
+            <div className="dashboard-card">
+              <div className="card-header-flex">
+                <h4>Upcoming Payments</h4>
+                <span className="badge-count">3</span>
+              </div>
+              <div className="payment-list">
+                {memberUpcomingPayments.map((item) => (
+                  <div key={item.label} className="payment-item">
+                    <div className="payment-info">
+                      <strong className="payment-title">{item.label}</strong>
+                      <span className="payment-date">Due {item.due}</span>
+                    </div>
+                    <div className="payment-right">
+                      <span className="payment-amount">{item.amount}</span>
+                      <span className={statusClass[item.status]}>
+                        {item.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button className="btn-link" onClick={() => handleNavClick("invoices")}>
+                View All Invoices →
+              </button>
+            </div>
+
+            {/* Recent Activity */}
+            <div className="dashboard-card">
+              <div className="card-header-flex">
+                <h4>Recent Activity</h4>
+              </div>
+              <div className="activity-list">
+                <div className="activity-item">
+                  <div className="activity-details">
+                    <strong>Payment Received</strong>
+                    <span>Oct 5, 2025 • $50 via FPS</span>
                   </div>
                 </div>
+                <div className="activity-item">
+                  <div className="activity-details">
+                    <strong>Payment Received</strong>
+                    <span>Sep 2, 2025 • $50 via PayMe</span>
+                  </div>
+                </div>
+                <div className="activity-item">
+                  <div className="activity-details">
+                    <strong>Reminder Sent</strong>
+                    <span>Oct 2, 2025 • Next payment due</span>
+                  </div>
+                </div>
+              </div>
+              <button className="btn-link" onClick={() => handleNavClick("history")}>
+                View Payment History →
+              </button>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="dashboard-card quick-actions-card">
+              <h4>Quick Actions</h4>
+              <div className="quick-actions-grid">
+                <button className="quick-action-btn" onClick={() => handleNavClick("pay")}>
+                  <span className="action-label">Pay Now</span>
+                </button>
+                <button className="quick-action-btn" onClick={() => handleNavClick("invoices")}>
+                  <span className="action-label">View Invoices</span>
+                </button>
+                <button className="quick-action-btn" onClick={() => handleNavClick("history")}>
+                  <span className="action-label">Payment History</span>
+                </button>
+                <button className="quick-action-btn" onClick={() => handleNavClick("profile")}>
+                  <span className="action-label">Settings</span>
+                </button>
               </div>
             </div>
           </div>

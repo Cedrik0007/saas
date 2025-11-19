@@ -45,7 +45,21 @@ export function AdminPage() {
     <>
       <SiteHeader showCTA={false} showLogout={true} onLogout={handleLogout} />
       <main className="admin-main">
+        {/* Mobile Horizontal Navigation */}
+        <div className="mobile-nav-tabs">
+          {sections.map((section) => (
+            <button
+              key={section.id}
+              className={`mobile-nav-tab ${activeSection === section.id ? "active" : ""}`}
+              onClick={() => handleNavClick(section.id)}
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
+
         <div className="admin-layout">
+          {/* Desktop Sidebar */}
           <aside className="admin-menu">
             <p className="eyebrow light">Admin Portal</p>
             <h3>Finance Operations</h3>

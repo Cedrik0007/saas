@@ -68,9 +68,9 @@ export function LoginPage() {
               payments and automations from one place.
             </p>
             <ul>
-              <li>✓ Supports FPS, PayMe, bank transfers, cards</li>
-              <li>✓ Automated reminders via email + WhatsApp</li>
-              <li>✓ Clear dashboards for admins and members</li>
+              <li>Supports FPS, PayMe, bank transfers, cards</li>
+              <li>Automated reminders via email and WhatsApp</li>
+              <li>Clear dashboards for admins and members</li>
             </ul>
           </aside>
 
