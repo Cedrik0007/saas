@@ -29,7 +29,7 @@ export const monthlyCollections = [
 
 export const recentPayments = [
   {
-    member: "Janice Leung",
+    member: "Fatima Hussain",
     period: "Oct 2025",
     amount: "$50",
     method: "PayMe",
@@ -37,7 +37,7 @@ export const recentPayments = [
     date: "02 Oct · 09:11",
   },
   {
-    member: "Samuel Chan",
+    member: "Ahmed Al-Rashid",
     period: "Oct 2025",
     amount: "$50",
     method: "FPS",
@@ -65,8 +65,8 @@ export const recentPayments = [
 export const members = [
   {
     id: "HK1021",
-    name: "Samuel Chan",
-    email: "samuel.chan@hk.org",
+    name: "Ahmed Al-Rashid",
+    email: "ahmed.rashid@hk.org",
     phone: "+852 9123 4567",
     status: "Active",
     balance: "$150 Outstanding",
@@ -75,8 +75,8 @@ export const members = [
   },
   {
     id: "HK1088",
-    name: "Janice Leung",
-    email: "janice.leung@hk.org",
+    name: "Fatima Hussain",
+    email: "fatima.hussain@hk.org",
     phone: "+852 6789 1234",
     status: "Active",
     balance: "$0",
@@ -102,6 +102,46 @@ export const members = [
     balance: "$100 Unpaid",
     nextDue: "30 Sep 2025",
     lastPayment: "05 Aug 2025",
+  },
+  {
+    id: "HK1125",
+    name: "Yusuf Ibrahim",
+    email: "yusuf.ibrahim@hk.org",
+    phone: "+852 9234 5678",
+    status: "Active",
+    balance: "$50 Outstanding",
+    nextDue: "10 Nov 2025",
+    lastPayment: "10 Oct 2025",
+  },
+  {
+    id: "HK1136",
+    name: "Mariam Abdullah",
+    email: "mariam.abdullah@hk.org",
+    phone: "+852 9345 6789",
+    status: "Active",
+    balance: "$0",
+    nextDue: "15 Nov 2025",
+    lastPayment: "15 Oct 2025",
+  },
+  {
+    id: "HK1147",
+    name: "Hassan Al-Farsi",
+    email: "hassan.farsi@hk.org",
+    phone: "+852 9456 7890",
+    status: "Active",
+    balance: "$0",
+    nextDue: "20 Nov 2025",
+    lastPayment: "20 Oct 2025",
+  },
+  {
+    id: "HK1158",
+    name: "Zainab Mustafa",
+    email: "zainab.mustafa@hk.org",
+    phone: "+852 9567 8901",
+    status: "Inactive",
+    balance: "$200 Overdue",
+    nextDue: "01 Oct 2025",
+    lastPayment: "01 Aug 2025",
   },
 ];
 
@@ -197,7 +237,7 @@ export const userFlows = [
     steps: [
       "Login as Admin",
       "Dashboard → Members",
-      "Open Samuel Chan",
+      "Open Ahmed Al-Rashid",
       "Create manual invoice",
       "Save & send reminder",
     ],
