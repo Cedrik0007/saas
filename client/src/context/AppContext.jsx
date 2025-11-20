@@ -16,27 +16,9 @@ import {
 const AppContext = createContext();
 
 export function AppProvider({ children }) {
-  // Check if we need to reset data (version check)
-  const DATA_VERSION = "v3.0"; // Increment this to force reload from data.js
-  const currentVersion = localStorage.getItem("dataVersion");
-  
-  if (currentVersion !== DATA_VERSION) {
-    // Clear all old data and reload from data.js
-    console.log("🔄 Data version mismatch. Resetting to fresh data from data.js...");
-    localStorage.clear();
-    localStorage.setItem("dataVersion", DATA_VERSION);
-    console.log("✓ Data reset complete. Loading fresh members list.");
-  }
-
-  const [members, setMembers] = useState(() => {
-    const saved = localStorage.getItem("members");
-    return saved ? JSON.parse(saved) : initialMembers;
-  });
-
-  const [invoices, setInvoices] = useState(() => {
-    const saved = localStorage.getItem("invoices");
-    return saved ? JSON.parse(saved) : initialInvoices;
-  });
+  const [members, setMembers] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   const [recentPayments, setRecentPayments] = useState(() => {
     const saved = localStorage.getItem("recentPayments");
@@ -102,14 +84,49 @@ export function AppProvider({ children }) {
 
   const [selectedMember, setSelectedMember] = useState(null);
 
-  // Persist to localStorage whenever data changes
+  // Fetch data from server on mount
   useEffect(() => {
-    localStorage.setItem("members", JSON.stringify(members));
-  }, [members]);
+    fetchMembers();
+    fetchInvoices();
+  }, []);
 
+  // Fetch members from server
+  const fetchMembers = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/members');
+      if (!response.ok) throw new Error('Failed to fetch members');
+      const data = await response.json();
+      setMembers(data);
+      console.log('✓ Loaded', data.length, 'members from server');
+    } catch (error) {
+      console.error('Error fetching members:', error);
+      console.warn('⚠️ Using fallback data from data.js');
+      setMembers(initialMembers);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch invoices from server
+  const fetchInvoices = async () => {
+    try {
+      const response = await fetch('/api/invoices');
+      if (!response.ok) throw new Error('Failed to fetch invoices');
+      const data = await response.json();
+      setInvoices(data);
+      console.log('✓ Loaded', data.length, 'invoices from server');
+    } catch (error) {
+      console.error('Error fetching invoices:', error);
+      console.warn('⚠️ Using fallback data from data.js');
+      setInvoices(initialInvoices);
+    }
+  };
+
+  // Persist other data to localStorage
   useEffect(() => {
-    localStorage.setItem("invoices", JSON.stringify(invoices));
-  }, [invoices]);
+    localStorage.setItem("recentPayments", JSON.stringify(recentPayments));
+  }, [recentPayments]);
 
   useEffect(() => {
     localStorage.setItem("recentPayments", JSON.stringify(recentPayments));
@@ -151,56 +168,116 @@ export function AppProvider({ children }) {
     localStorage.setItem("adminUsers", JSON.stringify(adminUsers));
   }, [adminUsers]);
 
-  // CRUD Operations for Members
-  const addMember = (member) => {
-    const newMember = {
-      ...member,
-      id: `HK${Math.floor(1000 + Math.random() * 9000)}`,
-    };
-    setMembers([...members, newMember]);
-    updateMetrics({ totalMembers: metrics.totalMembers + 1 });
-    return newMember;
-  };
-
-  const updateMember = (id, updatedData) => {
-    setMembers(members.map((m) => (m.id === id ? { ...m, ...updatedData } : m)));
-  };
-
-  const deleteMember = (id) => {
-    setMembers(members.filter((m) => m.id !== id));
-    setInvoices(invoices.filter((inv) => inv.memberId !== id));
-    updateMetrics({ totalMembers: metrics.totalMembers - 1 });
-  };
-
-  // CRUD Operations for Invoices
-  const addInvoice = (invoice) => {
-    const newInvoice = {
-      ...invoice,
-      id: `INV-2025-${Math.floor(100 + Math.random() * 900)}`,
-    };
-    setInvoices([newInvoice, ...invoices]);
-    return newInvoice;
-  };
-
-  const updateInvoice = (id, updatedData) => {
-    setInvoices(invoices.map((inv) => (inv.id === id ? { ...inv, ...updatedData } : inv)));
-    
-    // If status changed to Paid, update metrics
-    if (updatedData.status === "Paid") {
-      const invoice = invoices.find((inv) => inv.id === id);
-      if (invoice && invoice.status !== "Paid") {
-        const amount = parseFloat(invoice.amount.replace("$", ""));
-        updateMetrics({
-          collectedMonth: metrics.collectedMonth + amount,
-          collectedYear: metrics.collectedYear + amount,
-          outstanding: metrics.outstanding - amount,
-        });
-      }
+  // CRUD Operations for Members (Server-based)
+  const addMember = async (member) => {
+    try {
+      const response = await fetch('/api/members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(member),
+      });
+      if (!response.ok) throw new Error('Failed to add member');
+      const newMember = await response.json();
+      setMembers([...members, newMember]);
+      updateMetrics({ totalMembers: metrics.totalMembers + 1 });
+      console.log('✓ Member added to server:', newMember);
+      return newMember;
+    } catch (error) {
+      console.error('Error adding member:', error);
+      throw error;
     }
   };
 
-  const deleteInvoice = (id) => {
-    setInvoices(invoices.filter((inv) => inv.id !== id));
+  const updateMember = async (id, updatedData) => {
+    try {
+      const response = await fetch(`/api/members/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData),
+      });
+      if (!response.ok) throw new Error('Failed to update member');
+      const updated = await response.json();
+      setMembers(members.map((m) => (m.id === id ? updated : m)));
+      console.log('✓ Member updated on server:', updated);
+    } catch (error) {
+      console.error('Error updating member:', error);
+      throw error;
+    }
+  };
+
+  const deleteMember = async (id) => {
+    try {
+      const response = await fetch(`/api/members/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete member');
+      setMembers(members.filter((m) => m.id !== id));
+      setInvoices(invoices.filter((inv) => inv.memberId !== id));
+      updateMetrics({ totalMembers: metrics.totalMembers - 1 });
+      console.log('✓ Member deleted from server:', id);
+    } catch (error) {
+      console.error('Error deleting member:', error);
+      throw error;
+    }
+  };
+
+  // CRUD Operations for Invoices (Server-based)
+  const addInvoice = async (invoice) => {
+    try {
+      const response = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(invoice),
+      });
+      if (!response.ok) throw new Error('Failed to add invoice');
+      const newInvoice = await response.json();
+      setInvoices([newInvoice, ...invoices]);
+      console.log('✓ Invoice added to server:', newInvoice);
+      return newInvoice;
+    } catch (error) {
+      console.error('Error adding invoice:', error);
+      throw error;
+    }
+  };
+
+  const updateInvoice = async (id, updatedData) => {
+    try {
+      const response = await fetch(`/api/invoices/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData),
+      });
+      if (!response.ok) throw new Error('Failed to update invoice');
+      const updated = await response.json();
+      setInvoices(invoices.map((inv) => (inv.id === id ? updated : inv)));
+      
+      // If status changed to Paid, update metrics
+      if (updatedData.status === "Paid") {
+        const invoice = invoices.find((inv) => inv.id === id);
+        if (invoice && invoice.status !== "Paid") {
+          const amount = parseFloat(invoice.amount.replace("$", ""));
+          updateMetrics({
+            collectedMonth: metrics.collectedMonth + amount,
+            collectedYear: metrics.collectedYear + amount,
+            outstanding: metrics.outstanding - amount,
+          });
+        }
+      }
+      console.log('✓ Invoice updated on server:', updated);
+    } catch (error) {
+      console.error('Error updating invoice:', error);
+      throw error;
+    }
+  };
+
+  const deleteInvoice = async (id) => {
+    try {
+      const response = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete invoice');
+      setInvoices(invoices.filter((inv) => inv.id !== id));
+      console.log('✓ Invoice deleted from server:', id);
+    } catch (error) {
+      console.error('Error deleting invoice:', error);
+      throw error;
+    }
   };
 
   // Payment Operations
@@ -312,6 +389,9 @@ export function AppProvider({ children }) {
   const value = {
     members,
     invoices,
+    loading,
+    fetchMembers,
+    fetchInvoices,
     recentPayments,
     paymentHistory,
     communicationLog,

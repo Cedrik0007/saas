@@ -230,7 +230,90 @@ export function AdminPage() {
     }
   };
 
-  // Communication Operations
+  // WhatsApp Reminder (Click-to-Chat)
+  const handleSendWhatsAppReminder = (memberData) => {
+    if (!memberData) {
+      showToast("No member selected", "error");
+      return;
+    }
+
+    // Get member's unpaid/overdue invoices
+    const memberUnpaidInvoices = invoices.filter(
+      (inv) =>
+        inv.memberId === memberData.id &&
+        (inv.status === "Unpaid" || inv.status === "Overdue")
+    );
+
+    if (memberUnpaidInvoices.length === 0) {
+      showToast("This member has no outstanding payments", "error");
+      return;
+    }
+
+    // Calculate total due
+    const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
+      return sum + parseFloat(inv.amount.replace("$", ""));
+    }, 0);
+
+    // Create invoice list for WhatsApp
+    const invoiceList = memberUnpaidInvoices
+      .map(
+        (inv, index) =>
+          `${index + 1}. *${inv.period}*: ${inv.amount} (Due: ${inv.due}) - _${inv.status}_`
+      )
+      .join("\n");
+
+    // Create WhatsApp message with proper formatting
+    const message = `السلام عليكم ورحمة الله وبركاته
+
+Dear *${memberData.name}*,
+
+This is a friendly reminder about your outstanding subscription payments.
+
+*Member ID:* ${memberData.id}
+*Email:* ${memberData.email}
+*Total Outstanding:* $${totalDue}
+
+*📋 Outstanding Invoices (${memberUnpaidInvoices.length}):*
+${invoiceList}
+
+*💳 Payment Methods Available:*
+• FPS: ID 1234567
+• PayMe: Scan QR code in portal
+• Bank Transfer: HSBC 123-456789-001
+• Credit Card: Pay instantly online
+
+*🔗 Member Portal:*
+${window.location.origin}/member
+
+Please settle your outstanding balance at your earliest convenience.
+
+جزاك الله خيرا
+
+_Best regards,_
+*Finance Team*
+Subscription Manager HK`;
+
+    // Clean phone number (remove all non-numeric except +)
+    const cleanPhone = memberData.phone.replace(/[^0-9+]/g, "");
+    
+    // WhatsApp Click-to-Chat URL
+    const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+
+    // Open WhatsApp
+    window.open(whatsappUrl, '_blank');
+
+    // Log to communication
+    const comm = {
+      channel: "WhatsApp",
+      message: `WhatsApp reminder sent to ${memberData.name} (${memberData.phone}) - $${totalDue} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
+      status: "Delivered",
+    };
+    addCommunication(comm);
+
+    showToast(`✓ WhatsApp opened for ${memberData.name}! Review and send the message.`);
+  };
+
+  // Email Reminder (EmailJS)
   const handleSendReminder = async (memberData) => {
     if (!memberData) {
       showToast("No member selected", "error");
@@ -513,7 +596,7 @@ export function AdminPage() {
                       <p>Manage all members and their subscriptions.</p>
                     </div>
                     <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                      <button
+                      {/* <button
                         className="ghost-btn"
                         onClick={() => {
                           if (window.confirm("This will reset all data to initial values from data.js. Continue?")) {
@@ -525,7 +608,7 @@ export function AdminPage() {
                         style={{ fontSize: "0.85rem", padding: "8px 16px" }}
                       >
                         🔄 Reset Data
-                      </button>
+                      </button> */}
                       <button
                         className="primary-btn"
                         onClick={() => {
@@ -695,10 +778,18 @@ export function AdminPage() {
                         Create Invoice
                       </button>
                       <button
+                        className="secondary-btn"
+                        onClick={() => handleSendWhatsAppReminder(selectedMember)}
+                        title="Send reminder via WhatsApp"
+                      >
+                        📱 WhatsApp
+                      </button>
+                      <button
                         className="primary-btn"
                         onClick={() => handleSendReminder(selectedMember)}
+                        title="Send reminder via Email"
                       >
-                        Send Reminder
+                        📧 Email
                       </button>
                     </div>
                   </div>
