@@ -6,7 +6,6 @@ import { Table } from "../components/Table.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import {
   monthlyCollections,
-  reminderRules,
   reportStats,
 } from "../data";
 import { statusClass } from "../statusClasses";
@@ -20,6 +19,12 @@ export function AdminPage() {
     communicationLog,
     paymentMethods,
     metrics,
+    reminderRules,
+    automationEnabled,
+    setAutomationEnabled,
+    reminderTemplates,
+    organizationInfo,
+    adminUsers,
     selectedMember,
     setSelectedMember,
     addMember,
@@ -30,6 +35,12 @@ export function AdminPage() {
     deleteInvoice,
     addCommunication,
     updatePaymentMethod,
+    updateReminderRule,
+    updateReminderTemplate,
+    updateOrganizationInfo,
+    addAdminUser,
+    updateAdminUser,
+    deleteAdminUser,
   } = useApp();
 
   const sections = [
@@ -69,6 +80,16 @@ export function AdminPage() {
     due: "",
     notes: "",
   });
+
+  const [orgForm, setOrgForm] = useState(organizationInfo);
+  const [showAdminForm, setShowAdminForm] = useState(false);
+  const [adminForm, setAdminForm] = useState({ name: "", role: "Viewer", status: "Active" });
+  const [templateForm, setTemplateForm] = useState(reminderTemplates);
+  const [dateRange, setDateRange] = useState({
+    from: "2025-01-01",
+    to: "2025-12-31",
+  });
+  const [selectedPeriod, setSelectedPeriod] = useState("This Year");
 
   const navigate = useNavigate();
 
@@ -223,11 +244,12 @@ export function AdminPage() {
             top: "20px",
             right: "20px",
             zIndex: 1000,
-            background: toast.type === "success" ? "#10b981" : "#ef4444",
+            background: toast.type === "success" ? "#000000" : "#666666",
             color: "white",
             padding: "16px 24px",
             borderRadius: "8px",
-            boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+            boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+            border: "1px solid " + (toast.type === "success" ? "#000000" : "#999999"),
             animation: "slideIn 0.3s ease",
           }}
         >
@@ -788,7 +810,18 @@ export function AdminPage() {
                       <span>Send smart nudges around each due date.</span>
                     </div>
                     <label className="switch">
-                      <input type="checkbox" defaultChecked />
+                      <input
+                        type="checkbox"
+                        checked={automationEnabled}
+                        onChange={(e) => {
+                          setAutomationEnabled(e.target.checked);
+                          showToast(
+                            e.target.checked
+                              ? "Automation enabled!"
+                              : "Automation disabled!"
+                          );
+                        }}
+                      />
                       <span></span>
                     </label>
                   </div>
@@ -802,7 +835,14 @@ export function AdminPage() {
                             <label key={channel}>
                               <input
                                 type="checkbox"
-                                defaultChecked={rule.channels.includes(channel)}
+                                checked={rule.channels.includes(channel)}
+                                onChange={(e) => {
+                                  const newChannels = e.target.checked
+                                    ? [...rule.channels, channel]
+                                    : rule.channels.filter((c) => c !== channel);
+                                  updateReminderRule(rule.label, newChannels);
+                                  showToast(`${channel} ${e.target.checked ? "enabled" : "disabled"} for ${rule.label}`);
+                                }}
                               />
                               {channel}
                             </label>
@@ -812,11 +852,78 @@ export function AdminPage() {
                     ))}
                   </div>
 
+                  <div className="templates" style={{ marginTop: "24px" }}>
+                    <div>
+                      <h4>Upcoming Due Template</h4>
+                      <textarea
+                        value={templateForm.upcomingDue}
+                        onChange={(e) =>
+                          setTemplateForm({ ...templateForm, upcomingDue: e.target.value })
+                        }
+                        rows={4}
+                      ></textarea>
+                    </div>
+                    <div>
+                      <h4>Overdue Template</h4>
+                      <textarea
+                        value={templateForm.overdue}
+                        onChange={(e) =>
+                          setTemplateForm({ ...templateForm, overdue: e.target.value })
+                        }
+                        rows={4}
+                      ></textarea>
+                    </div>
+                  </div>
+
+                  <div className="preview" style={{ marginTop: "20px" }}>
+                    <h4>Preview</h4>
+                    <div className="preview-tabs">
+                      <button className="chip active">Email</button>
+                      <button className="chip">WhatsApp</button>
+                    </div>
+                    <div className="preview-body">
+                      <p><strong>From:</strong> finance@subscriptionhk.org</p>
+                      <p><strong>Subject:</strong> Upcoming contribution due 05 Nov</p>
+                      <p style={{ marginTop: "12px" }}>
+                        {templateForm.upcomingDue.replace("{{member_name}}", "Ahmed")
+                          .replace("{{period}}", "Nov 2025")
+                          .replace("{{amount}}", "50")
+                          .replace("{{due_date}}", "05 Nov 2025")}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="integration-grid" style={{ marginTop: "24px" }}>
+                    <div className="integration-card">
+                      <div>
+                        <p><strong>WhatsApp API</strong></p>
+                        <span className="badge badge-paid" style={{ marginTop: "8px" }}>Connected</span>
+                      </div>
+                      <button className="ghost-btn" onClick={() => showToast("WhatsApp settings opened")}>
+                        Manage
+                      </button>
+                    </div>
+                    <div className="integration-card">
+                      <div>
+                        <p><strong>Email SMTP</strong></p>
+                        <span className="badge badge-unpaid" style={{ marginTop: "8px" }}>Not Connected</span>
+                      </div>
+                      <button className="secondary-btn" onClick={() => showToast("Email setup initiated")}>
+                        Connect
+                      </button>
+                    </div>
+                  </div>
+
                   <button
                     className="primary-btn"
-                    onClick={() => showToast("Reminder settings saved!")}
+                    style={{ marginTop: "24px" }}
+                    onClick={() => {
+                      updateReminderTemplate("upcomingDue", templateForm.upcomingDue);
+                      updateReminderTemplate("overdue", templateForm.overdue);
+                      showToast("All automation settings saved!");
+                    }}
                   >
-                    Save Settings
+                    Save All Settings
                   </button>
                 </div>
               </article>
@@ -866,7 +973,59 @@ export function AdminPage() {
                   <p>Financial overview and payment analytics.</p>
                 </header>
                 <div className="card reports">
-                  <div className="kpi-grid">
+                  <div className="reports-header">
+                    <label>
+                      Date From
+                      <input
+                        type="date"
+                        value={dateRange.from}
+                        onChange={(e) => setDateRange({ ...dateRange, from: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Date To
+                      <input
+                        type="date"
+                        value={dateRange.to}
+                        onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
+                      />
+                    </label>
+                    <div className="chip-group">
+                      {["This Year", "This Quarter", "This Month"].map((period) => (
+                        <button
+                          key={period}
+                          className={`chip ${selectedPeriod === period ? "active" : ""}`}
+                          onClick={() => {
+                            setSelectedPeriod(period);
+                            const today = new Date();
+                            if (period === "This Year") {
+                              setDateRange({
+                                from: `${today.getFullYear()}-01-01`,
+                                to: `${today.getFullYear()}-12-31`,
+                              });
+                            } else if (period === "This Quarter") {
+                              const quarter = Math.floor(today.getMonth() / 3);
+                              const startMonth = quarter * 3;
+                              setDateRange({
+                                from: `${today.getFullYear()}-${String(startMonth + 1).padStart(2, "0")}-01`,
+                                to: `${today.getFullYear()}-${String(startMonth + 3).padStart(2, "0")}-31`,
+                              });
+                            } else {
+                              setDateRange({
+                                from: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`,
+                                to: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-31`,
+                              });
+                            }
+                            showToast(`Period set to ${period}`);
+                          }}
+                        >
+                          {period}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="kpi-grid" style={{ marginTop: "20px" }}>
                     <div className="card kpi">
                       <p>Collected vs Expected</p>
                       <h4>
@@ -882,9 +1041,41 @@ export function AdminPage() {
                       <h4>${reportStats.averagePerMember}</h4>
                       <small>Goal $800</small>
                     </div>
+                    <div className="card kpi">
+                      <p>Total Transactions</p>
+                      <h4>{recentPayments.length}</h4>
+                      <small>In selected period</small>
+                    </div>
+                    <div className="card kpi">
+                      <p>Outstanding</p>
+                      <h4>${metrics.outstanding.toLocaleString()}</h4>
+                      <small>Pending collection</small>
+                    </div>
                   </div>
 
-                  <div className="chart-stack">
+                  <div className="chart-stack" style={{ marginTop: "24px" }}>
+                    <div>
+                      <h4>Collected vs Outstanding</h4>
+                      <div className="stacked-bar">
+                        <div
+                          className="collected"
+                          style={{
+                            width: `${Math.round((reportStats.collected / reportStats.expected) * 100)}%`,
+                          }}
+                        >
+                          Collected
+                        </div>
+                        <div
+                          className="outstanding"
+                          style={{
+                            width: `${100 - Math.round((reportStats.collected / reportStats.expected) * 100)}%`,
+                          }}
+                        >
+                          Outstanding
+                        </div>
+                      </div>
+                    </div>
+
                     <div>
                       <h4>Payment Method Breakdown</h4>
                       <ul className="donut-legend">
@@ -902,18 +1093,38 @@ export function AdminPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
+                  <div style={{ display: "flex", gap: "12px", marginTop: "24px", flexWrap: "wrap" }}>
                     <button
                       className="secondary-btn"
-                      onClick={() => showToast("Report exported to CSV")}
+                      onClick={() => {
+                        const csvData = `Period,${dateRange.from} to ${dateRange.to}\nCollected,$${reportStats.collected}\nExpected,$${reportStats.expected}\nOutstanding,$${metrics.outstanding}\nAverage per Member,$${reportStats.averagePerMember}`;
+                        showToast("Report generated! Check console for CSV data");
+                        console.log("CSV Export:", csvData);
+                      }}
                     >
                       Export CSV
                     </button>
                     <button
                       className="ghost-btn"
-                      onClick={() => showToast("Report exported to PDF")}
+                      onClick={() => {
+                        showToast("PDF report generation initiated");
+                        console.log("PDF Export: Financial Report", {
+                          period: `${dateRange.from} to ${dateRange.to}`,
+                          collected: reportStats.collected,
+                          expected: reportStats.expected,
+                          methodMix: reportStats.methodMix,
+                        });
+                      }}
                     >
                       Export PDF
+                    </button>
+                    <button
+                      className="ghost-btn"
+                      onClick={() => {
+                        showToast("Report refreshed with latest data");
+                      }}
+                    >
+                      Refresh Data
                     </button>
                   </div>
                 </div>
@@ -930,24 +1141,190 @@ export function AdminPage() {
                 <div className="card settings-grid">
                   <div>
                     <h4>Organization Info</h4>
-                    <label>
-                      Name
-                      <input defaultValue="Subscription Manager HK" />
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        updateOrganizationInfo(orgForm);
+                        showToast("Organization info updated!");
+                      }}
+                    >
+                      <label>
+                        Name
+                        <input
+                          value={orgForm.name}
+                          onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Contact Email
+                        <input
+                          type="email"
+                          value={orgForm.email}
+                          onChange={(e) => setOrgForm({ ...orgForm, email: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Contact Number
+                        <input
+                          value={orgForm.phone}
+                          onChange={(e) => setOrgForm({ ...orgForm, phone: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        Address
+                        <input
+                          value={orgForm.address}
+                          onChange={(e) => setOrgForm({ ...orgForm, address: e.target.value })}
+                        />
+                      </label>
+                      <button className="primary-btn" type="submit" style={{ marginTop: "12px" }}>
+                        Save Changes
+                      </button>
+                    </form>
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                      <h4>User Management</h4>
+                      <button
+                        className="secondary-btn"
+                        onClick={() => {
+                          setShowAdminForm(true);
+                          setAdminForm({ name: "", role: "Viewer", status: "Active" });
+                        }}
+                      >
+                        + Add Admin
+                      </button>
+                    </div>
+
+                    {showAdminForm && (
+                      <div className="card" style={{ marginBottom: "16px", background: "var(--gray-50)", padding: "16px" }}>
+                        <h4 style={{ fontSize: "1rem", marginBottom: "12px" }}>Add New Admin</h4>
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (!adminForm.name) {
+                              showToast("Please enter admin name", "error");
+                              return;
+                            }
+                            addAdminUser(adminForm);
+                            setShowAdminForm(false);
+                            setAdminForm({ name: "", role: "Viewer", status: "Active" });
+                            showToast("Admin user added!");
+                          }}
+                          style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+                        >
+                          <label>
+                            Name
+                            <input
+                              required
+                              value={adminForm.name}
+                              onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
+                              placeholder="Enter admin name"
+                            />
+                          </label>
+                          <label>
+                            Role
+                            <select
+                              value={adminForm.role}
+                              onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
+                            >
+                              <option>Owner</option>
+                              <option>Finance Admin</option>
+                              <option>Viewer</option>
+                            </select>
+                          </label>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button type="button" className="ghost-btn" onClick={() => setShowAdminForm(false)}>
+                              Cancel
+                            </button>
+                            <button type="submit" className="primary-btn">
+                              Add Admin
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+
+                    <Table
+                      columns={["User", "Role", "Status", "Actions"]}
+                      rows={adminUsers.map((user) => ({
+                        User: user.name,
+                        Role: user.role,
+                        Status: {
+                          render: () => (
+                            <span className={user.status === "Active" ? "badge badge-active" : "badge badge-inactive"}>
+                              {user.status}
+                            </span>
+                          ),
+                        },
+                        Actions: {
+                          render: () => (
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              {user.status === "Active" ? (
+                                <button
+                                  className="ghost-btn"
+                                  style={{ padding: "4px 10px", fontSize: "0.85rem" }}
+                                  onClick={() => {
+                                    updateAdminUser(user.id, { status: "Inactive" });
+                                    showToast(`${user.name} deactivated`);
+                                  }}
+                                >
+                                  Deactivate
+                                </button>
+                              ) : (
+                                <button
+                                  className="secondary-btn"
+                                  style={{ padding: "4px 10px", fontSize: "0.85rem" }}
+                                  onClick={() => {
+                                    updateAdminUser(user.id, { status: "Active" });
+                                    showToast(`${user.name} activated`);
+                                  }}
+                                >
+                                  Activate
+                                </button>
+                              )}
+                              {user.role !== "Owner" && (
+                                <button
+                                  className="ghost-btn"
+                                  style={{ padding: "4px 10px", fontSize: "0.85rem", color: "#000" }}
+                                  onClick={() => {
+                                    if (window.confirm(`Remove ${user.name} from admin users?`)) {
+                                      deleteAdminUser(user.id);
+                                      showToast(`${user.name} removed`);
+                                    }
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          ),
+                        },
+                      }))}
+                    />
+                  </div>
+
+                  <div>
+                    <h4>Notification Preferences</h4>
+                    <label className="checkbox">
+                      <input type="checkbox" defaultChecked />
+                      Weekly finance summary
                     </label>
-                    <label>
-                      Contact Email
-                      <input defaultValue="support@subscriptionhk.org" />
+                    <label className="checkbox">
+                      <input type="checkbox" defaultChecked />
+                      Payment failure alerts
                     </label>
-                    <label>
-                      Contact Number
-                      <input defaultValue="+852 2800 1122" />
+                    <label className="checkbox">
+                      <input type="checkbox" />
+                      Reminder escalation emails
                     </label>
                     <button
                       className="primary-btn"
-                      onClick={() => showToast("Settings saved!")}
+                      onClick={() => showToast("Notification preferences saved!")}
                       style={{ marginTop: "12px" }}
                     >
-                      Save Changes
+                      Save Preferences
                     </button>
                   </div>
                 </div>

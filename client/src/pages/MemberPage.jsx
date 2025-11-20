@@ -242,11 +242,12 @@ export function MemberPage() {
             top: "20px",
             right: "20px",
             zIndex: 1000,
-            background: toast.type === "success" ? "#10b981" : "#ef4444",
+            background: toast.type === "success" ? "#000000" : "#666666",
             color: "white",
             padding: "16px 24px",
             borderRadius: "8px",
-            boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+            boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
+            border: "1px solid " + (toast.type === "success" ? "#000000" : "#999999"),
             animation: "slideIn 0.3s ease",
           }}
         >

@@ -10,6 +10,7 @@ import {
   memberPaymentHistory as initialMemberPaymentHistory,
   paymentMethods as initialPaymentMethods,
   metrics as initialMetrics,
+  reminderRules as initialReminderRules,
 } from "../data";
 
 const AppContext = createContext();
@@ -50,6 +51,43 @@ export function AppProvider({ children }) {
     return saved ? JSON.parse(saved) : initialMetrics;
   });
 
+  const [reminderRules, setReminderRules] = useState(() => {
+    const saved = localStorage.getItem("reminderRules");
+    return saved ? JSON.parse(saved) : initialReminderRules;
+  });
+
+  const [automationEnabled, setAutomationEnabled] = useState(() => {
+    const saved = localStorage.getItem("automationEnabled");
+    return saved ? JSON.parse(saved) : true;
+  });
+
+  const [reminderTemplates, setReminderTemplates] = useState(() => {
+    const saved = localStorage.getItem("reminderTemplates");
+    return saved ? JSON.parse(saved) : {
+      upcomingDue: "Hi {{member_name}}, friendly reminder your {{period}} subscription of ${{amount}} is due on {{due_date}}. You can pay via FPS, PayMe, or card. Thank you!",
+      overdue: "Hi {{member_name}}, your {{period}} contribution of ${{amount}} is now overdue. Please settle via the member portal or reply once paid.",
+    };
+  });
+
+  const [organizationInfo, setOrganizationInfo] = useState(() => {
+    const saved = localStorage.getItem("organizationInfo");
+    return saved ? JSON.parse(saved) : {
+      name: "Subscription Manager HK",
+      email: "support@subscriptionhk.org",
+      phone: "+852 2800 1122",
+      address: "123 Central Street, Hong Kong",
+    };
+  });
+
+  const [adminUsers, setAdminUsers] = useState(() => {
+    const saved = localStorage.getItem("adminUsers");
+    return saved ? JSON.parse(saved) : [
+      { id: 1, name: "Ibrahim Khan", role: "Owner", status: "Active" },
+      { id: 2, name: "Yasmin Ahmed", role: "Finance Admin", status: "Active" },
+      { id: 3, name: "Khalid Hassan", role: "Viewer", status: "Pending" },
+    ];
+  });
+
   const [selectedMember, setSelectedMember] = useState(null);
 
   // Persist to localStorage whenever data changes
@@ -80,6 +118,26 @@ export function AppProvider({ children }) {
   useEffect(() => {
     localStorage.setItem("metrics", JSON.stringify(metrics));
   }, [metrics]);
+
+  useEffect(() => {
+    localStorage.setItem("reminderRules", JSON.stringify(reminderRules));
+  }, [reminderRules]);
+
+  useEffect(() => {
+    localStorage.setItem("automationEnabled", JSON.stringify(automationEnabled));
+  }, [automationEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("reminderTemplates", JSON.stringify(reminderTemplates));
+  }, [reminderTemplates]);
+
+  useEffect(() => {
+    localStorage.setItem("organizationInfo", JSON.stringify(organizationInfo));
+  }, [organizationInfo]);
+
+  useEffect(() => {
+    localStorage.setItem("adminUsers", JSON.stringify(adminUsers));
+  }, [adminUsers]);
 
   // CRUD Operations for Members
   const addMember = (member) => {
@@ -189,6 +247,41 @@ export function AppProvider({ children }) {
     setMetrics({ ...metrics, ...updates });
   };
 
+  // Automation Operations
+  const updateReminderRule = (label, channels) => {
+    setReminderRules(
+      reminderRules.map((rule) =>
+        rule.label === label ? { ...rule, channels } : rule
+      )
+    );
+  };
+
+  const updateReminderTemplate = (type, content) => {
+    setReminderTemplates({ ...reminderTemplates, [type]: content });
+  };
+
+  // Organization & Admin Operations
+  const updateOrganizationInfo = (updates) => {
+    setOrganizationInfo({ ...organizationInfo, ...updates });
+  };
+
+  const addAdminUser = (user) => {
+    const newUser = {
+      ...user,
+      id: adminUsers.length + 1,
+    };
+    setAdminUsers([...adminUsers, newUser]);
+    return newUser;
+  };
+
+  const updateAdminUser = (id, updates) => {
+    setAdminUsers(adminUsers.map((user) => (user.id === id ? { ...user, ...updates } : user)));
+  };
+
+  const deleteAdminUser = (id) => {
+    setAdminUsers(adminUsers.filter((user) => user.id !== id));
+  };
+
   const value = {
     members,
     invoices,
@@ -197,6 +290,12 @@ export function AppProvider({ children }) {
     communicationLog,
     paymentMethods,
     metrics,
+    reminderRules,
+    automationEnabled,
+    setAutomationEnabled,
+    reminderTemplates,
+    organizationInfo,
+    adminUsers,
     selectedMember,
     setSelectedMember,
     addMember,
@@ -209,6 +308,12 @@ export function AppProvider({ children }) {
     addCommunication,
     updatePaymentMethod,
     updateMetrics,
+    updateReminderRule,
+    updateReminderTemplate,
+    updateOrganizationInfo,
+    addAdminUser,
+    updateAdminUser,
+    deleteAdminUser,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
