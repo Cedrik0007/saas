@@ -64,6 +64,16 @@ export const recentPayments = [
 
 export const members = [
   {
+    id: "HK1001",
+    name: "Shan Yeager",
+    email: "0741sanjai@gmail.com",
+    phone: "+852 9000 1234",
+    status: "Active",
+    balance: "$250 Outstanding",
+    nextDue: "20 Nov 2025",
+    lastPayment: "15 Oct 2025",
+  },
+  {
     id: "HK1021",
     name: "Ahmed Al-Rashid",
     email: "ahmed.rashid@hk.org",
@@ -147,7 +157,53 @@ export const members = [
 
 export const invoices = [
   {
+    id: "INV-2025-095",
+    memberId: "HK1001",
+    memberName: "Shan Yeager",
+    period: "Nov 2025 Monthly",
+    amount: "$50",
+    status: "Unpaid",
+    due: "20 Nov 2025",
+    method: "-",
+    reference: "-",
+  },
+  {
+    id: "INV-2025-094",
+    memberId: "HK1001",
+    memberName: "Shan Yeager",
+    period: "Oct 2025 Monthly",
+    amount: "$50",
+    status: "Overdue",
+    due: "20 Oct 2025",
+    method: "-",
+    reference: "-",
+  },
+  {
+    id: "INV-2025-093",
+    memberId: "HK1001",
+    memberName: "Shan Yeager",
+    period: "Sep 2025 Eid 2",
+    amount: "$100",
+    status: "Overdue",
+    due: "30 Sep 2025",
+    method: "-",
+    reference: "-",
+  },
+  {
+    id: "INV-2025-092",
+    memberId: "HK1001",
+    memberName: "Shan Yeager",
+    period: "Sep 2025 Monthly",
+    amount: "$50",
+    status: "Overdue",
+    due: "20 Sep 2025",
+    method: "-",
+    reference: "-",
+  },
+  {
     id: "INV-2025-091",
+    memberId: "HK1021",
+    memberName: "Ahmed Al-Rashid",
     period: "Oct 2025",
     amount: "$50",
     status: "Paid",
@@ -157,6 +213,8 @@ export const invoices = [
   },
   {
     id: "INV-2025-072",
+    memberId: "HK1112",
+    memberName: "Aisha Malik",
     period: "Sep 2025 (Eid)",
     amount: "$100",
     status: "Unpaid",
@@ -166,6 +224,8 @@ export const invoices = [
   },
   {
     id: "INV-2025-051",
+    memberId: "HK1021",
+    memberName: "Ahmed Al-Rashid",
     period: "Aug 2025",
     amount: "$50",
     status: "Paid",

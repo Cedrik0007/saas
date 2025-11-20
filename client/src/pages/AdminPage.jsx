@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
 import { useApp } from "../context/AppContext.jsx";
+import emailjs from "@emailjs/browser";
 import {
   monthlyCollections,
   reportStats,
@@ -41,6 +42,7 @@ export function AdminPage() {
     addAdminUser,
     updateAdminUser,
     deleteAdminUser,
+    resetAllData,
   } = useApp();
 
   const sections = [
@@ -92,6 +94,23 @@ export function AdminPage() {
   const [selectedPeriod, setSelectedPeriod] = useState("This Year");
 
   const navigate = useNavigate();
+
+  // Initialize EmailJS
+  useEffect(() => {
+    const publicKey = "G8OQbtdWodMBUv53Y";
+    
+    // Only initialize if key is configured
+    if (publicKey && publicKey !== "YOUR_PUBLIC_KEY") {
+      try {
+        emailjs.init(publicKey);
+        console.log("✓ EmailJS initialized successfully");
+      } catch (error) {
+        console.error("EmailJS initialization error:", error);
+      }
+    } else {
+      console.warn("⚠️ EmailJS not configured. Add your public key in AdminPage.jsx line ~35");
+    }
+  }, []);
 
   const handleNavClick = (id) => {
     setActiveSection(id);
@@ -212,14 +231,136 @@ export function AdminPage() {
   };
 
   // Communication Operations
-  const handleSendReminder = (memberData) => {
-    const comm = {
-      channel: "Email",
-      message: `Payment reminder sent to ${memberData?.name || "member"}`,
-      status: "Delivered",
+  const handleSendReminder = async (memberData) => {
+    if (!memberData) {
+      showToast("No member selected", "error");
+      return;
+    }
+
+    // Get member's unpaid/overdue invoices
+    const memberUnpaidInvoices = invoices.filter(
+      (inv) =>
+        inv.memberId === memberData.id &&
+        (inv.status === "Unpaid" || inv.status === "Overdue")
+    );
+
+    if (memberUnpaidInvoices.length === 0) {
+      showToast("This member has no outstanding payments", "error");
+      return;
+    }
+
+    // Calculate total due
+    const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
+      return sum + parseFloat(inv.amount.replace("$", ""));
+    }, 0);
+
+    // Create invoice list for email
+    const invoiceListText = memberUnpaidInvoices
+      .map(
+        (inv) =>
+          `• ${inv.period}: ${inv.amount} (Due: ${inv.due}) - ${inv.status}`
+      )
+      .join("\n");
+
+    const invoiceListHTML = memberUnpaidInvoices
+      .map(
+        (inv) =>
+          `<li style="margin-bottom: 10px;">
+            <strong>${inv.period}</strong>: ${inv.amount} 
+            <span style="color: #666;">(Due: ${inv.due})</span> - 
+            <strong>${inv.status}</strong>
+          </li>`
+      )
+      .join("");
+
+    // Prepare email parameters
+    const emailParams = {
+      to_email: memberData.email,
+      to_name: memberData.name,
+      member_id: memberData.id,
+      member_phone: memberData.phone,
+      total_due: totalDue,
+      invoice_count: memberUnpaidInvoices.length,
+      invoice_list_text: invoiceListText,
+      invoice_list_html: invoiceListHTML,
+      payment_methods:
+        "FPS (ID: 1234567), PayMe, Bank Transfer (HSBC 123-456789-001), or Credit Card",
+      portal_link: `${window.location.origin}/member`,
+      current_date: new Date().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      }),
     };
-    addCommunication(comm);
-    showToast(`Reminder sent to ${memberData?.name || "member"}!`);
+
+    // EmailJS configuration
+    const serviceId = "service_yb0uo4k";
+    const templateId = "template_5uhd93r";
+    
+    if (serviceId === "YOUR_SERVICE_ID" || templateId === "YOUR_TEMPLATE_ID") {
+      // EmailJS not configured yet - simulate email for now
+      console.log("📧 Email Preview (EmailJS not configured yet):");
+      console.log("To:", memberData.email);
+      console.log("Subject: Payment Reminder - Outstanding Balance $" + totalDue);
+      console.log("Invoices:", memberUnpaidInvoices);
+      console.log("\n⚠️ To send real emails, configure EmailJS:");
+      console.log("1. Sign up at https://www.emailjs.com");
+      console.log("2. Get Service ID, Template ID, and Public Key");
+      console.log("3. Update AdminPage.jsx lines ~35 and ~271");
+      
+      // Log to communication (simulated)
+      const comm = {
+        channel: "Email",
+        message: `Payment reminder: ${memberData.name} (${memberData.email}) - $${totalDue} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""}) [SIMULATED]`,
+        status: "Delivered",
+      };
+      addCommunication(comm);
+
+      showToast(
+        `📧 Reminder logged (Configure EmailJS to send real emails). Check console for details.`
+      );
+      return;
+    }
+
+    try {
+      showToast("Sending reminder email...");
+
+      // Send email using EmailJS
+      const result = await emailjs.send(
+        serviceId,
+        templateId,
+        emailParams
+      );
+
+      console.log("✓ Email sent successfully:", result);
+
+      // Log to communication with details
+      const comm = {
+        channel: "Email",
+        message: `Payment reminder: ${memberData.name} (${memberData.email}) - $${totalDue} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
+        status: "Delivered",
+      };
+      addCommunication(comm);
+
+      showToast(
+        `✓ Reminder email sent to ${memberData.name} for $${totalDue} outstanding!`
+      );
+    } catch (error) {
+      console.error("✗ Email send error:", error);
+
+      // Log failed attempt
+      const comm = {
+        channel: "Email",
+        message: `Reminder attempt to ${memberData.name} - $${totalDue} due`,
+        status: "Failed",
+      };
+      addCommunication(comm);
+
+      showToast(
+        "Failed to send email. Please check EmailJS configuration.",
+        "error"
+      );
+    }
   };
 
   const handleViewMemberDetail = (member) => {
@@ -366,29 +507,44 @@ export function AdminPage() {
             {activeSection === "members" && (
               <article className="screen-card" id="members">
                 <header className="screen-card__header">
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
                     <div>
                       <h3>Members List</h3>
                       <p>Manage all members and their subscriptions.</p>
                     </div>
-                    <button
-                      className="primary-btn"
-                      onClick={() => {
-                        setShowMemberForm(true);
-                        setEditingMember(null);
-                        setMemberForm({
-                          name: "",
-                          email: "",
-                          phone: "",
-                          status: "Active",
-                          balance: "$0",
-                          nextDue: "",
-                          lastPayment: "",
-                        });
-                      }}
-                    >
-                      + Add Member
-                    </button>
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => {
+                          if (window.confirm("This will reset all data to initial values from data.js. Continue?")) {
+                            resetAllData();
+                            showToast("Data reset! Showing fresh data from data.js");
+                            window.location.reload();
+                          }
+                        }}
+                        style={{ fontSize: "0.85rem", padding: "8px 16px" }}
+                      >
+                        🔄 Reset Data
+                      </button>
+                      <button
+                        className="primary-btn"
+                        onClick={() => {
+                          setShowMemberForm(true);
+                          setEditingMember(null);
+                          setMemberForm({
+                            name: "",
+                            email: "",
+                            phone: "",
+                            status: "Active",
+                            balance: "$0",
+                            nextDue: "",
+                            lastPayment: "",
+                          });
+                        }}
+                      >
+                        + Add Member
+                      </button>
+                    </div>
                   </div>
                 </header>
 

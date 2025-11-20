@@ -16,6 +16,18 @@ import {
 const AppContext = createContext();
 
 export function AppProvider({ children }) {
+  // Check if we need to reset data (version check)
+  const DATA_VERSION = "v3.0"; // Increment this to force reload from data.js
+  const currentVersion = localStorage.getItem("dataVersion");
+  
+  if (currentVersion !== DATA_VERSION) {
+    // Clear all old data and reload from data.js
+    console.log("🔄 Data version mismatch. Resetting to fresh data from data.js...");
+    localStorage.clear();
+    localStorage.setItem("dataVersion", DATA_VERSION);
+    console.log("✓ Data reset complete. Loading fresh members list.");
+  }
+
   const [members, setMembers] = useState(() => {
     const saved = localStorage.getItem("members");
     return saved ? JSON.parse(saved) : initialMembers;
@@ -247,6 +259,21 @@ export function AppProvider({ children }) {
     setMetrics({ ...metrics, ...updates });
   };
 
+  // Reset all data to initial values from data.js
+  const resetAllData = () => {
+    localStorage.clear();
+    setMembers(initialMembers);
+    setInvoices(initialInvoices);
+    setRecentPayments(initialRecentPayments);
+    setPaymentHistory(initialPaymentHistory);
+    setCommunicationLog(initialCommunicationLog);
+    setPaymentMethods(initialPaymentMethods);
+    setMetrics(initialMetrics);
+    setReminderRules(initialReminderRules);
+    setAutomationEnabled(true);
+    localStorage.setItem("dataVersion", "v2.0");
+  };
+
   // Automation Operations
   const updateReminderRule = (label, channels) => {
     setReminderRules(
@@ -314,6 +341,7 @@ export function AppProvider({ children }) {
     addAdminUser,
     updateAdminUser,
     deleteAdminUser,
+    resetAllData,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
