@@ -1,11 +1,7 @@
 {
   "name": "subscription-manager-hk",
   "version": "1.0.0",
-  "description": "Subscription Manager HK - Fully Functional CRUD Application",
-  "scripts": {
-    "install-client": "cd client && npm install",
-    "build": "cd client && npm run build",
-    "start": "cd client && npm run dev"
-  }
+  "description": "Subscription Manager HK - Fully Functional CRUD Application"
+  
 }
 
