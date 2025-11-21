@@ -367,7 +367,7 @@ Subscription Manager HK`;
       to_name: memberData.name,
       member_id: memberData.id,
       member_phone: memberData.phone,
-      total_due: totalDue,
+      total_due: memberData.balance,
       invoice_count: memberUnpaidInvoices.length,
       invoice_list_text: invoiceListText,
       invoice_list_html: invoiceListHTML,
