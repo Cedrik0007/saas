@@ -33,7 +33,7 @@ const members = [
   {
     id: "HK1021",
     name: "Ahmed Al-Rashid",
-    email: "ahmed.rashid@hk.org",
+    email: "sanjay1255.cbcs@gmail.com",
     phone: "+852 9123 4567",
     status: "Active",
     balance: "$150 Outstanding",
@@ -60,7 +60,6 @@ const members = [
     nextDue: "05 Nov 2025",
     lastPayment: "02 Oct 2025",
   },
- 
 ];
 
 const metrics = {

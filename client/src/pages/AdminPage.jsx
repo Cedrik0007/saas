@@ -673,6 +673,14 @@ Subscription Manager HK`;
                           <option>Inactive</option>
                         </select>
                       </label>
+                      <label>
+                        balance
+                        <input
+                          type="text"
+                          value={memberForm.balance}
+                          onChange={(e) => setMemberForm({ ...memberForm, balance: e.target.value })}
+                        />
+                      </label>
                       <div className="form-actions">
                         <button type="button" className="ghost-btn" onClick={() => setShowMemberForm(false)}>
                           Cancel
