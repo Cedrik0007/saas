@@ -54,7 +54,7 @@ const members = [
     id: "HK1022",
     name: "Sandz shan",
     email: "princperisia@gmail.com",
-    phone: "+91 9384682946",
+    phone: "+91 93846 34324",
     status: "Active",
     balance: "$0",
     nextDue: "05 Nov 2025",
