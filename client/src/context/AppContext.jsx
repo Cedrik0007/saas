@@ -98,7 +98,9 @@ export function AppProvider({ children }) {
       setLoading(true);
       // const response = await fetch('/api/members');
       // const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members`);
-      const response = await fetch(`/api/members`);
+      // const response = await fetch(`/api/members`);
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+    const response = await fetch(`${apiUrl}/api/members`);
 
       if (!response.ok) throw new Error('Failed to fetch members');
       const data = await response.json();
