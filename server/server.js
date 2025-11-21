@@ -50,6 +50,16 @@ const members = [
     nextDue: "05 Nov 2025",
     lastPayment: "02 Oct 2025",
   },
+   {
+    id: "HK1022",
+    name: "Sandz shan",
+    email: "princperisia@gmail.com",
+    phone: "+91 9384682946",
+    status: "Active",
+    balance: "$0",
+    nextDue: "05 Nov 2025",
+    lastPayment: "02 Oct 2025",
+  },
  
 ];
 
