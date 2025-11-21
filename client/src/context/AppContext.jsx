@@ -94,7 +94,9 @@ export function AppProvider({ children }) {
   const fetchMembers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/members');
+      // const response = await fetch('/api/members');
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members`);
+
       if (!response.ok) throw new Error('Failed to fetch members');
       const data = await response.json();
       setMembers(data);
@@ -111,7 +113,8 @@ export function AppProvider({ children }) {
   // Fetch invoices from server
   const fetchInvoices = async () => {
     try {
-      const response = await fetch('/api/invoices');
+      // const response = await fetch('/api/invoices');
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/invoices`);
       if (!response.ok) throw new Error('Failed to fetch invoices');
       const data = await response.json();
       setInvoices(data);
@@ -171,7 +174,8 @@ export function AppProvider({ children }) {
   // CRUD Operations for Members (Server-based)
   const addMember = async (member) => {
     try {
-      const response = await fetch('/api/members', {
+      // const response = await fetch('/api/members', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(member),
@@ -190,7 +194,8 @@ export function AppProvider({ children }) {
 
   const updateMember = async (id, updatedData) => {
     try {
-      const response = await fetch(`/api/members/${id}`, {
+      // const response = await fetch(`/api/members/${id}`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedData),
@@ -207,7 +212,9 @@ export function AppProvider({ children }) {
 
   const deleteMember = async (id) => {
     try {
-      const response = await fetch(`/api/members/${id}`, { method: 'DELETE' });
+      // const response = await fetch(`/api/members/${id}`, { method: 'DELETE' });
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members/${id}`, { method: 'DELETE' });
+
       if (!response.ok) throw new Error('Failed to delete member');
       setMembers(members.filter((m) => m.id !== id));
       setInvoices(invoices.filter((inv) => inv.memberId !== id));
@@ -222,7 +229,8 @@ export function AppProvider({ children }) {
   // CRUD Operations for Invoices (Server-based)
   const addInvoice = async (invoice) => {
     try {
-      const response = await fetch('/api/invoices', {
+      // const response = await fetch('/api/invoices', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/invoices`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(invoice),
@@ -240,7 +248,8 @@ export function AppProvider({ children }) {
 
   const updateInvoice = async (id, updatedData) => {
     try {
-      const response = await fetch(`/api/invoices/${id}`, {
+      // const response = await fetch(`/api/invoices/${id}`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/invoices/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedData),
@@ -270,7 +279,8 @@ export function AppProvider({ children }) {
 
   const deleteInvoice = async (id) => {
     try {
-      const response = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+      // const response = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/invoices/${id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete invoice');
       setInvoices(invoices.filter((inv) => inv.id !== id));
       console.log('✓ Invoice deleted from server:', id);
