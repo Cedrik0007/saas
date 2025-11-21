@@ -26,7 +26,7 @@ const members = [
     email: "0741sanjai@gmail.com",
     phone: "+91 7806830491",
     status: "Active",
-    balance: "$250 Outstanding",
+    balance: "$0",
     nextDue: "20 Nov 2025",
     lastPayment: "15 Oct 2025",
   },
