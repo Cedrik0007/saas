@@ -245,10 +245,14 @@ export function AdminPage() {
         (inv.status === "Unpaid" || inv.status === "Overdue")
     );
 
-    if (memberUnpaidInvoices.length === 0) {
+    if (memberUnpaidInvoices.length == 0) {
       showToast("This member has no outstanding payments", "error");
       return;
     }
+    // if (memberData.balance.length === 0) {
+    //     showToast("This member has no outstanding payments", "error");
+    //     return;
+    //   }
 
     // Calculate total due
     const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
@@ -328,7 +332,7 @@ Subscription Manager HK`;
         (inv.status === "Unpaid" || inv.status === "Overdue")
     );
 
-    if (memberUnpaidInvoices.length === 0) {
+    if (memberUnpaidInvoices.length == 0) {
       showToast("This member has no outstanding payments", "error");
       return;
     }
