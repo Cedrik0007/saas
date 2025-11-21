@@ -245,7 +245,7 @@ export function AdminPage() {
         (inv.status === "Unpaid" || inv.status === "Overdue")
     );
 
-    if (memberUnpaidInvoices.length === 0) {
+    if (memberData.balance === "$0") {
       showToast("This member has no outstanding payments", "error");
       return;
     }
@@ -332,7 +332,7 @@ Subscription Manager HK`;
         (inv.status === "Unpaid" || inv.status === "Overdue")
     );
 
-    if (memberUnpaidInvoices.length === 0) {
+    if (memberData.balance === "$0") {
       showToast("This member has no outstanding payments", "error");
       return;
     }
