@@ -13,6 +13,8 @@ import {
   reminderRules as initialReminderRules,
 } from "../data";
 
+
+
 const AppContext = createContext();
 
 export function AppProvider({ children }) {
@@ -95,7 +97,8 @@ export function AppProvider({ children }) {
     try {
       setLoading(true);
       // const response = await fetch('/api/members');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members`);
+      // const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members`);
+      const response = await fetch(`${process.env.MONGODB_URI}/api/members`);
 
       if (!response.ok) throw new Error('Failed to fetch members');
       const data = await response.json();

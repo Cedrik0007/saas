@@ -1,66 +1,64 @@
 import express from "express";
+import mongoose from "mongoose";
 import cors from "cors";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// app.use(cors());
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://0741sanjai_db_user:L11x9pdm3tHuOJE9@members.mmnf0pe.mongodb.net/subscriptionmanager";
+
+mongoose.connect(MONGODB_URI)
+.then(()=> {console.log("MongoDB connected")})
+.catch((err)=> {console.log(err)});
+
+const UserSchema = new mongoose.Schema({
+    id: String,
+    name: String,
+    email: String,
+    phone: String,
+    status: String,
+    balance: String,
+    nextDue: String,
+    lastPayment: String,
+}, {
+    timestamps: true  // Automatically adds createdAt and updatedAt fields
+})
+
+const UserModel = mongoose.model("members", UserSchema);
+
+// Middleware - must be before routes
+// CORS configuration: Allow localhost for development, production origin for production
 app.use(cors({
-  origin: "https://subs-manager.vercel.app",
+  origin: process.env.NODE_ENV === 'production' 
+    ? "https://subs-manager.vercel.app"
+    : ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
 app.use(express.json());
 
-// const members = [
-//   { id: "HK1021", name: "Samuel Chan", status: "Active", outstanding: 150 },
-//   { id: "HK1088", name: "Janice Leung", status: "Active", outstanding: 0 },
-//   { id: "HK1104", name: "Omar Rahman", status: "Inactive", outstanding: 250 },
-//   { id: "HK1112", name: "Aisha Malik", status: "Active", outstanding: 100 },
-// ];
+// GET all members (from MongoDB)
+app.get("/api/members", async (req, res) => {
+  try {
+    const members = await UserModel.find({}).sort({ createdAt: -1 });
+    res.json(members);
+  } catch (error) {
+    console.error("Error fetching members:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
-const members = [
-  {
-    id: "HK1001",
-    name: "Shan Yeager",
-    email: "0741sanjai@gmail.com",
-    phone: "+91 7806830491",
-    status: "Active",
-    balance: "$0",
-    nextDue: "20 Nov 2025",
-    lastPayment: "15 Oct 2025",
-  },
-  {
-    id: "HK1021",
-    name: "Ahmed Al-Rashid",
-    email: "sanjay1255.cbcs@gmail.com",
-    phone: "+852 9123 4567",
-    status: "Active",
-    balance: "$150 Outstanding",
-    nextDue: "05 Nov 2025",
-    lastPayment: "05 Oct 2025",
-  },
-  {
-    id: "HK1088",
-    name: "Fatima Hussain",
-    email: "fatima.hussain@hk.org",
-    phone: "+852 6789 1234",
-    status: "Active",
-    balance: "$0",
-    nextDue: "05 Nov 2025",
-    lastPayment: "02 Oct 2025",
-  },
-   {
-    id: "HK1022",
-    name: "Sandz shan",
-    email: "princperisia@gmail.com",
-    phone: "+91 93846 34324",
-    status: "Active",
-    balance: "$0",
-    nextDue: "05 Nov 2025",
-    lastPayment: "02 Oct 2025",
-  },
-];
+
+
+app.get("/", (req, res) => {
+  res.send("server & db running");
+});
+
+// Members are now stored in MongoDB - no need for in-memory array
+// All member data is fetched from MongoDB database 'subscriptionmanager' collection 'members'
 
 const metrics = {
   totalMembers: 312,
@@ -161,50 +159,94 @@ app.get("/api/metrics", (_req, res) => {
   res.json(metrics);
 });
 
-// ========== MEMBERS CRUD ENDPOINTS ==========
-
-// GET all members
-app.get("/api/members", (_req, res) => {
-  res.json(members);
-});
-
 // GET single member
-app.get("/api/members/:id", (req, res) => {
-  const member = members.find(m => m.id === req.params.id);
-  if (!member) {
-    return res.status(404).json({ message: "Member not found" });
+app.get("/api/members/:id", async (req, res) => {
+  try {
+    const member = await UserModel.findOne({ id: req.params.id });
+    if (!member) {
+      return res.status(404).json({ message: "Member not found" });
+    }
+    res.json(member);
+  } catch (error) {
+    console.error("Error fetching member:", error);
+    res.status(500).json({ error: error.message });
   }
-  res.json(member);
 });
 
 // POST create new member
-app.post("/api/members", (req, res) => {
-  const newMember = {
-    id: `HK${Math.floor(1000 + Math.random() * 9000)}`,
-    ...req.body,
-  };
-  members.push(newMember);
-  res.status(201).json(newMember);
+app.post("/api/members", async (req, res) => {
+  try {
+    // Generate ID if not provided
+    let memberId = req.body.id;
+    if (!memberId) {
+      memberId = `HK${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+    
+    // Check if ID already exists
+    const existing = await UserModel.findOne({ id: memberId });
+    if (existing) {
+      return res.status(400).json({ message: "Member ID already exists" });
+    }
+    
+    const newMember = new UserModel({
+      id: memberId,
+      name: req.body.name || '',
+      email: req.body.email || '',
+      phone: req.body.phone || '',
+      status: req.body.status || 'Active',
+      balance: req.body.balance || '$0',
+      nextDue: req.body.nextDue || '',
+      lastPayment: req.body.lastPayment || '',
+    });
+    
+    const savedMember = await newMember.save();
+    res.status(201).json(savedMember);
+  } catch (error) {
+    console.error("Error creating member:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Email or ID already exists" });
+    }
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // PUT update member
-app.put("/api/members/:id", (req, res) => {
-  const index = members.findIndex(m => m.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Member not found" });
+app.put("/api/members/:id", async (req, res) => {
+  try {
+    const member = await UserModel.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: req.body },
+      { new: true, runValidators: true }
+    );
+    
+    if (!member) {
+      return res.status(404).json({ message: "Member not found" });
+    }
+    
+    res.json(member);
+  } catch (error) {
+    console.error("Error updating member:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Email already exists" });
+    }
+    res.status(500).json({ error: error.message });
   }
-  members[index] = { ...members[index], ...req.body };
-  res.json(members[index]);
 });
 
 // DELETE member
-app.delete("/api/members/:id", (req, res) => {
-  const index = members.findIndex(m => m.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Member not found" });
+app.delete("/api/members/:id", async (req, res) => {
+  try {
+    const member = await UserModel.findOneAndDelete({ id: req.params.id });
+    
+    if (!member) {
+      return res.status(404).json({ message: "Member not found" });
+    }
+    
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting member:", error);
+    res.status(500).json({ error: error.message });
   }
-  members.splice(index, 1);
-  res.status(204).send();
 });
 
 // ========== INVOICES CRUD ENDPOINTS ==========
