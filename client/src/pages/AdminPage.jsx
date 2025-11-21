@@ -1034,11 +1034,177 @@ Subscription Manager HK`;
                     <button
                       type="button"
                       className="secondary-btn"
-                      onClick={() => {
+                      onClick={async () => {
                         const member = members.find((m) => m.id === invoiceForm.memberId);
-                        if (member) {
-                          handleAddInvoice({ preventDefault: () => {} });
-                          handleSendReminder(member);
+                        if (!member) {
+                          showToast("Please select a member", "error");
+                          return;
+                        }
+                        
+                        // Validate form first
+                        if (!invoiceForm.memberId || !invoiceForm.period || !invoiceForm.due) {
+                          showToast("Please fill all required fields", "error");
+                          return;
+                        }
+
+                        // Create the invoice object from form data
+                        const newInvoice = {
+                          memberId: invoiceForm.memberId,
+                          memberName: member?.name || "",
+                          period: invoiceForm.period,
+                          amount: `$${invoiceForm.amount}`,
+                          status: "Unpaid",
+                          due: invoiceForm.due,
+                          method: "-",
+                          reference: "-",
+                        };
+
+                        // Add invoice to state
+                        addInvoice(newInvoice);
+                        
+                        // Get existing unpaid invoices for this member
+                        const existingUnpaidInvoices = invoices.filter(
+                          (inv) =>
+                            inv.memberId === member.id &&
+                            (inv.status === "Unpaid" || inv.status === "Overdue")
+                        );
+
+                        // Combine existing unpaid invoices with the newly created one
+                        const allUnpaidInvoices = [...existingUnpaidInvoices, newInvoice];
+
+                        // Calculate total due including the new invoice
+                        const totalDue = allUnpaidInvoices.reduce((sum, inv) => {
+                          return sum + parseFloat(inv.amount.replace("$", ""));
+                        }, 0);
+
+                        // Create invoice list for email
+                        const invoiceListText = allUnpaidInvoices
+                          .map(
+                            (inv) =>
+                              `• ${inv.period}: ${inv.amount} (Due: ${inv.due}) - ${inv.status}`
+                          )
+                          .join("\n");
+
+                        const invoiceListHTML = allUnpaidInvoices
+                          .map(
+                            (inv) =>
+                              `<li style="margin-bottom: 10px;">
+                                <strong>${inv.period}</strong>: ${inv.amount} 
+                                <span style="color: #666;">(Due: ${inv.due})</span> - 
+                                <strong>${inv.status}</strong>
+                              </li>`
+                          )
+                          .join("");
+
+                        // Prepare email parameters with the newly created invoice
+                        const emailParams = {
+                          to_email: member.email,
+                          to_name: member.name,
+                          member_id: member.id,
+                          member_phone: member.phone,
+                          total_due: `$${totalDue.toFixed(2)}`,
+                          invoice_count: allUnpaidInvoices.length,
+                          invoice_list_text: invoiceListText,
+                          invoice_list_html: invoiceListHTML,
+                          payment_methods:
+                            "FPS (ID: 1234567), PayMe, Bank Transfer (HSBC 123-456789-001), or Credit Card",
+                          portal_link: `${window.location.origin}/member`,
+                          current_date: new Date().toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "long",
+                            year: "numeric",
+                          }),
+                        };
+
+                        // EmailJS configuration
+                        const serviceId = "service_yb0uo4k";
+                        const templateId = "template_5uhd93r";
+
+                        if (serviceId === "YOUR_SERVICE_ID" || templateId === "YOUR_TEMPLATE_ID") {
+                          // EmailJS not configured yet - simulate email for now
+                          console.log("📧 Email Preview (EmailJS not configured yet):");
+                          console.log("To:", member.email);
+                          console.log("Subject: Payment Reminder - Outstanding Balance $" + totalDue.toFixed(2));
+                          console.log("Invoices:", allUnpaidInvoices);
+                          console.log("\n⚠️ To send real emails, configure EmailJS:");
+                          console.log("1. Sign up at https://www.emailjs.com");
+                          console.log("2. Get Service ID, Template ID, and Public Key");
+                          console.log("3. Update AdminPage.jsx lines ~35 and ~271");
+                          
+                          // Log to communication (simulated)
+                          const comm = {
+                            channel: "Email",
+                            message: `Payment reminder: ${member.name} (${member.email}) - $${totalDue.toFixed(2)} due (${allUnpaidInvoices.length} invoice${allUnpaidInvoices.length > 1 ? "s" : ""}) [SIMULATED]`,
+                            status: "Delivered",
+                          };
+                          addCommunication(comm);
+
+                          // Reset form
+                          setInvoiceForm({
+                            memberId: "",
+                            period: "",
+                            amount: "50",
+                            invoiceType: "Monthly",
+                            due: "",
+                            notes: "",
+                          });
+                          setShowInvoiceForm(false);
+
+                          showToast(
+                            `📧 Invoice created! Reminder logged (Configure EmailJS to send real emails). Check console for details.`
+                          );
+                          return;
+                        }
+
+                        try {
+                          showToast("Sending reminder email...");
+
+                          // Send email using EmailJS
+                          const result = await emailjs.send(
+                            serviceId,
+                            templateId,
+                            emailParams
+                          );
+
+                          console.log("✓ Email sent successfully:", result);
+
+                          // Log to communication
+                          const comm = {
+                            channel: "Email",
+                            message: `Payment reminder: ${member.name} (${member.email}) - $${totalDue.toFixed(2)} due (${allUnpaidInvoices.length} invoice${allUnpaidInvoices.length > 1 ? "s" : ""})`,
+                            status: "Delivered",
+                          };
+                          addCommunication(comm);
+
+                          // Reset form
+                          setInvoiceForm({
+                            memberId: "",
+                            period: "",
+                            amount: "50",
+                            invoiceType: "Monthly",
+                            due: "",
+                            notes: "",
+                          });
+                          setShowInvoiceForm(false);
+
+                          showToast(
+                            `✓ Invoice created and reminder sent to ${member.name} for $${totalDue.toFixed(2)}!`
+                          );
+                        } catch (error) {
+                          console.error("✗ Email send error:", error);
+
+                          // Log failed attempt
+                          const comm = {
+                            channel: "Email",
+                            message: `Reminder attempt to ${member.name} - $${totalDue.toFixed(2)} due`,
+                            status: "Failed",
+                          };
+                          addCommunication(comm);
+
+                          showToast(
+                            "Invoice created but failed to send email. Please check EmailJS configuration.",
+                            "error"
+                          );
                         }
                       }}
                     >
