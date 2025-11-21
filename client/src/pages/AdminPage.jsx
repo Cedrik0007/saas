@@ -431,7 +431,7 @@ Subscription Manager HK`;
       addCommunication(comm);
 
       showToast(
-        `✓ Reminder email sent to ${memberData.name} for $${totalDue} outstanding!`
+        `✓ Reminder email sent to ${memberData.name} for $${memberData.balance} outstanding!`
       );
     } catch (error) {
       console.error("✗ Email send error:", error);
