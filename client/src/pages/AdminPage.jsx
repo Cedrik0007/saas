@@ -1670,6 +1670,7 @@ Subscription Manager HK`;
                           }}
                           style={{ display: "flex", flexDirection: "column", gap: "12px" }}
                         >
+                          
                           <label>
                             Name
                             <input
@@ -1711,6 +1712,7 @@ Subscription Manager HK`;
                               <option>Viewer</option>
                             </select>
                           </label>
+
                           <div style={{ display: "flex", gap: "8px" }}>
                             <button type="button" className="ghost-btn" onClick={() => setShowAdminForm(false)}>
                               Cancel

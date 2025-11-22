@@ -10,9 +10,61 @@ const PORT = process.env.PORT || 4000;
 
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://0741sanjai_db_user:L11x9pdm3tHuOJE9@members.mmnf0pe.mongodb.net/subscriptionmanager";
 
-mongoose.connect(MONGODB_URI)
-.then(()=> {console.log("MongoDB connected")})
-.catch((err)=> {console.log(err)});
+// Connection options for serverless environments (Vercel)
+const mongooseOptions = {
+  serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+  socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+  bufferCommands: false, // Disable mongoose buffering
+  bufferMaxEntries: 0, // Disable mongoose buffering
+};
+
+// Cache the connection to avoid multiple connections in serverless
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
+async function connectDB() {
+  if (cached.conn) {
+    return cached.conn;
+  }
+
+  if (!cached.promise) {
+    const opts = {
+      ...mongooseOptions,
+    };
+
+    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
+      console.log("MongoDB connected");
+      return mongoose;
+    }).catch((err) => {
+      console.error("MongoDB connection error:", err);
+      cached.promise = null;
+      throw err;
+    });
+  }
+
+  try {
+    cached.conn = await cached.promise;
+  } catch (e) {
+    cached.promise = null;
+    throw e;
+  }
+
+  return cached.conn;
+}
+
+// Connect to MongoDB
+connectDB().catch((err) => console.log("MongoDB connection error:", err));
+
+// Helper function to ensure DB connection before operations
+const ensureConnection = async () => {
+  await connectDB();
+  if (mongoose.connection.readyState !== 1) {
+    throw new Error("Database not connected");
+  }
+};
 
 const UserSchema = new mongoose.Schema({
     id: String,
@@ -54,6 +106,14 @@ app.use(express.json());
 // GET all members (from MongoDB)
 app.get("/api/members", async (req, res) => {
   try {
+    // Ensure connection is ready
+    await connectDB();
+    
+    // Check if mongoose is connected
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ error: "Database not connected" });
+    }
+    
     const members = await UserModel.find({}).sort({ createdAt: -1 });
     res.json(members);
   } catch (error) {
@@ -65,6 +125,7 @@ app.get("/api/members", async (req, res) => {
 //get total members
 app.get("/api/members/count", async (req, res) => {
   try {
+    await ensureConnection();
     const count = await UserModel.countDocuments();
     res.json({ total : count})
   } catch (error) {
@@ -76,9 +137,11 @@ app.get("/api/members/count", async (req, res) => {
 
 app.get("/api/admins", async (req, res) => {
   try {
+    await ensureConnection();
     const admins = await AdminModel.find();
     res.json(admins);
   } catch (error) {
+    console.error("Error fetching admins:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -86,6 +149,7 @@ app.get("/api/admins", async (req, res) => {
 // POST create new admin
 app.post("/api/admins", async (req, res) => {
   try {
+    await ensureConnection();
     // Generate ID if not provided
     let adminId = req.body.id;
     if (!adminId) {
@@ -121,6 +185,7 @@ app.post("/api/admins", async (req, res) => {
 // PUT update admin
 app.put("/api/admins/:id", async (req, res) => {
   try {
+    await ensureConnection();
     const admin = await AdminModel.findOneAndUpdate(
       { id: req.params.id },
       { $set: req.body },
@@ -144,6 +209,7 @@ app.put("/api/admins/:id", async (req, res) => {
 // DELETE admin
 app.delete("/api/admins/:id", async (req, res) => {
   try {
+    await ensureConnection();
     const admin = await AdminModel.findOneAndDelete({ id: req.params.id });
     
     if (!admin) {
@@ -253,6 +319,7 @@ app.post("/api/login", async (req, res) => {
   }
 
   try {
+    await ensureConnection();
     // Check if admin exists in MongoDB (same collection as /api/admins uses)
     const admin = await AdminModel.findOne({ 
       email: email.trim().toLowerCase() 
@@ -307,6 +374,7 @@ app.get("/api/metrics", (_req, res) => {
 // GET single member
 app.get("/api/members/:id", async (req, res) => {
   try {
+    await ensureConnection();
     const member = await UserModel.findOne({ id: req.params.id });
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
@@ -321,6 +389,7 @@ app.get("/api/members/:id", async (req, res) => {
 // POST create new member
 app.post("/api/members", async (req, res) => {
   try {
+    await ensureConnection();
     // Generate ID if not provided
     let memberId = req.body.id;
     if (!memberId) {
@@ -358,6 +427,7 @@ app.post("/api/members", async (req, res) => {
 // PUT update member
 app.put("/api/members/:id", async (req, res) => {
   try {
+    await ensureConnection();
     const member = await UserModel.findOneAndUpdate(
       { id: req.params.id },
       { $set: req.body },
@@ -381,6 +451,7 @@ app.put("/api/members/:id", async (req, res) => {
 // DELETE member
 app.delete("/api/members/:id", async (req, res) => {
   try {
+    await ensureConnection();
     const member = await UserModel.findOneAndDelete({ id: req.params.id });
     
     if (!member) {
