@@ -11,48 +11,115 @@ export function LoginPage() {
   const navigate = useNavigate();
 
   const handleLogin = async (role) => {
-    const preset = loginPresets[role];
+    // Handle admin login via MongoDB API
+    if (role === "admin") {
+      if (!form.email || !form.password) {
+        setAuthMessage({
+          type: "error",
+          text: "Please enter both email and password",
+        });
+        return;
+      }
 
-    // Validate using preset
-    const emailMatch = form.email.trim().toLowerCase() === preset.email.toLowerCase();
-    const passwordMatch = form.password === preset.password;
+      setLoadingRole("admin");
+      setAuthMessage(null);
 
-    if (!emailMatch || !passwordMatch) {
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+        const response = await fetch(`${apiUrl}/api/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: form.email.trim(),
+            password: form.password,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          setAuthMessage({
+            type: "error",
+            text: data.message || "Invalid email or password",
+          });
+          setLoadingRole(null);
+          return;
+        }
+
+        // Store auth token
+        sessionStorage.setItem('authToken', data.token);
+        sessionStorage.setItem('adminEmail', data.email);
+        sessionStorage.setItem('adminName', data.name);
+
+        setAuthMessage({
+          type: "success",
+          text: `Welcome ${data.name}! Redirecting to admin panel...`,
+        });
+
+        setTimeout(() => {
+          navigate("/admin", {
+            replace: true,
+            state: {
+              role: "Admin",
+              token: data.token,
+              email: data.email,
+              name: data.name,
+              adminId: data.adminId,
+              adminRole: data.adminRole
+            },
+          });
+        }, 500);
+      } catch (error) {
+        console.error("Login error:", error);
+        setAuthMessage({
+          type: "error",
+          text: "Network error. Please check your connection and try again.",
+        });
+        setLoadingRole(null);
+      }
+    } else {
+      // Keep member login as is (using presets)
+      const preset = loginPresets[role];
+      const emailMatch = form.email.trim().toLowerCase() === preset.email.toLowerCase();
+      const passwordMatch = form.password === preset.password;
+
+      if (!emailMatch || !passwordMatch) {
+        setAuthMessage({
+          type: "error",
+          text: `Use the ${role} demo credentials shown below.`,
+        });
+        return;
+      }
+
+      setLoadingRole(role);
+      setAuthMessage(null);
+
+      const token = `${role.toLowerCase()}_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
+      
+      const payload = {
+        role: role.charAt(0).toUpperCase() + role.slice(1),
+        token: token,
+        email: form.email
+      };
+
+      sessionStorage.setItem('authToken', payload.token);
+
       setAuthMessage({
-        type: "error",
-        text: `Use the ${role} demo credentials shown below.`,
+        type: "success",
+        text: `${payload.role} login accepted · token ${payload.token.slice(0, 6)}***`,
       });
-      return;
+
+      setTimeout(() => {
+        navigate(payload.role === "Admin" ? "/admin" : "/member", {
+          replace: true,
+          state: payload,
+        });
+      }, 500);
+
+      setLoadingRole(null);
     }
-
-    setLoadingRole(role);
-    setAuthMessage(null);
-
-    // Generate token locally (no server call needed)
-    const token = `${role.toLowerCase()}_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
-    
-    const payload = {
-      role: role.charAt(0).toUpperCase() + role.slice(1),
-      token: token,
-      email: form.email
-    };
-
-    // Store in sessionStorage for ProtectedRoute
-    sessionStorage.setItem('authToken', payload.token);
-
-    setAuthMessage({
-      type: "success",
-      text: `${payload.role} login accepted · token ${payload.token.slice(0, 6)}***`,
-    });
-
-    setTimeout(() => {
-      navigate(payload.role === "Admin" ? "/admin" : "/member", {
-        replace: true,
-        state: payload,
-      });
-    }, 500);
-
-    setLoadingRole(null);
   };
 
   return (
@@ -104,7 +171,7 @@ export function LoginPage() {
 
             <div className="login-hints">
               <p>
-                <strong>Admin:</strong> {loginPresets.admin.email} / {loginPresets.admin.password}
+                <strong>Admin:</strong> Use your registered email and password from MongoDB
               </p>
               <p>
                 <strong>Member:</strong> {loginPresets.member.email} / {loginPresets.member.password}

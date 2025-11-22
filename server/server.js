@@ -246,18 +246,58 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
 });
 
-app.post("/api/login", (req, res) => {
+app.post("/api/login", async (req, res) => {
   const { email, password } = req.body ?? {};
   if (!email || !password) {
     return res.status(400).json({ message: "Email and password required" });
   }
 
-  const role = email.includes("admin") ? "Admin" : "Member";
-  res.json({
-    role,
-    token: `demo-token-${Math.random().toString(36).slice(2, 10)}`,
-    email,
-  });
+  try {
+    // Check if admin exists in MongoDB (same collection as /api/admins uses)
+    const admin = await AdminModel.findOne({ 
+      email: email.trim().toLowerCase() 
+    });
+
+    if (!admin) {
+      return res.status(401).json({ 
+        message: "Invalid email or password",
+        success: false 
+      });
+    }
+
+    // Check password (plain text comparison)
+    if (admin.password !== password) {
+      return res.status(401).json({ 
+        message: "Invalid email or password",
+        success: false 
+      });
+    }
+
+    // Check if admin is active
+    if (admin.status && admin.status !== 'Active') {
+      return res.status(403).json({ 
+        message: "Your account is not active. Please contact administrator.",
+        success: false 
+      });
+    }
+
+    // Successful login
+    res.json({
+      success: true,
+      role: "Admin",
+      token: `admin_${admin.id}_${Date.now()}`,
+      email: admin.email,
+      name: admin.name,
+      adminId: admin.id,
+      adminRole: admin.role || 'Viewer'
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ 
+      message: "Server error during login",
+      success: false 
+    });
+  }
 });
 
 app.get("/api/metrics", (_req, res) => {
