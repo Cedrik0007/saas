@@ -689,16 +689,16 @@ Subscription Manager HK`;
                         createdAt
                         <input
                           type="text"
-                          value={memberForm.createdAt}
-                          onChange={(e) => setMemberForm({ ...memberForm, createdAt: e.target.value })}
+                          value={memberForm.nextDue}
+                          onChange={(e) => setMemberForm({ ...memberForm, nextDue: e.target.value })}
                         />
                       </label>
                       <label>
                         updatedAt
                         <input
                           type="text"
-                          value={memberForm.updatedAt}
-                          onChange={(e) => setMemberForm({ ...memberForm, updatedAt: e.target.value })}
+                          value={memberForm.lastPayment}
+                          onChange={(e) => setMemberForm({ ...memberForm, lastPayment: e.target.value })}
                         />
                       </label>
                       <div className="form-actions">
