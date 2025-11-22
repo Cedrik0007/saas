@@ -6,7 +6,6 @@ import { Table } from "../components/Table.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import emailjs from "@emailjs/browser";
 import {
-  monthlyCollections,
   reportStats,
 } from "../data";
 import { statusClass } from "../statusClasses";
@@ -100,8 +99,77 @@ export function AdminPage() {
     to: "2025-12-31",
   });
   const [selectedPeriod, setSelectedPeriod] = useState("This Year");
+  const [hoveredMonth, setHoveredMonth] = useState(null);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   const navigate = useNavigate();
+
+  // Calculate monthly collections from paymentHistory
+  const calculateMonthlyCollections = () => {
+    const now = new Date();
+    const months = [];
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    
+    // Get last 12 months
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+      const monthLabel = monthNames[date.getMonth()];
+      
+      // Filter payments for this month
+      const monthPayments = paymentHistory.filter((payment) => {
+        if (!payment.date) return false;
+        const paymentDate = new Date(payment.date);
+        return paymentDate.getMonth() === date.getMonth() && 
+               paymentDate.getFullYear() === date.getFullYear();
+      });
+      
+      // Calculate total for this month
+      const total = monthPayments.reduce((sum, payment) => {
+        const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+        return sum + amount;
+      }, 0);
+      
+      months.push({
+        month: monthLabel,
+        monthKey: monthKey,
+        value: total,
+        count: monthPayments.length
+      });
+    }
+    
+    // Calculate max value for percentage calculation
+    const maxValue = Math.max(...months.map(m => m.value), 1);
+    
+    // Convert to percentage for chart display
+    return months.map(m => ({
+      ...m,
+      percentage: maxValue > 0 ? (m.value / maxValue) * 100 : 0
+    }));
+  };
+
+  // Get recent payments from paymentHistory
+  const getRecentPayments = () => {
+    return paymentHistory
+      .filter(payment => payment.status === "Paid" || payment.status === "Pending Verification")
+      .sort((a, b) => {
+        const dateA = new Date(a.date || 0);
+        const dateB = new Date(b.date || 0);
+        return dateB - dateA;
+      })
+      .slice(0, 5)
+      .map(payment => ({
+        Member: payment.member || "Unknown",
+        Period: payment.period || "N/A",
+        Amount: payment.amount || "$0",
+        Method: payment.method || "N/A",
+        Status: payment.status || "Paid",
+        Date: payment.date || "N/A",
+      }));
+  };
+
+  const monthlyCollectionsData = calculateMonthlyCollections();
+  const recentPaymentsData = getRecentPayments();
 
   // Initialize EmailJS
   useEffect(() => {
@@ -136,24 +204,28 @@ export function AdminPage() {
   };
 
   // Member CRUD Operations
-  const handleAddMember = (e) => {
+  const handleAddMember = async (e) => {
     e.preventDefault();
     if (!memberForm.name || !memberForm.email) {
       showToast("Please fill all required fields", "error");
       return;
     }
-    addMember(memberForm);
-    setMemberForm({
-      name: "",
-      email: "",
-      phone: "",
-      status: "Active",
-      balance: "$0",
-      nextDue: "",
-      lastPayment: "",
-    });
-    setShowMemberForm(false);
-    showToast("Member added successfully!");
+    try {
+      await addMember(memberForm);
+      setMemberForm({
+        name: "",
+        email: "",
+        phone: "",
+        status: "Active",
+        balance: "$0",
+        nextDue: "",
+        lastPayment: "",
+      });
+      setShowMemberForm(false);
+      showToast("Member added successfully!");
+    } catch (error) {
+      showToast("Failed to add member. Please try again.", "error");
+    }
   };
 
   const handleEditMember = (member) => {
@@ -162,27 +234,35 @@ export function AdminPage() {
     setShowMemberForm(true);
   };
 
-  const handleUpdateMember = (e) => {
+  const handleUpdateMember = async (e) => {
     e.preventDefault();
-    updateMember(editingMember.id, memberForm);
-    setEditingMember(null);
-    setMemberForm({
-      name: "",
-      email: "",
-      phone: "",
-      status: "Active",
-      balance: "$0",
-      nextDue: "",
-      lastPayment: "",
-    });
-    setShowMemberForm(false);
-    showToast("Member updated successfully!");
+    try {
+      await updateMember(editingMember.id, memberForm);
+      setEditingMember(null);
+      setMemberForm({
+        name: "",
+        email: "",
+        phone: "",
+        status: "Active",
+        balance: "$0",
+        nextDue: "",
+        lastPayment: "",
+      });
+      setShowMemberForm(false);
+      showToast("Member updated successfully!");
+    } catch (error) {
+      showToast("Failed to update member. Please try again.", "error");
+    }
   };
 
-  const handleDeleteMember = (id) => {
+  const handleDeleteMember = async (id) => {
     if (window.confirm("Are you sure you want to delete this member?")) {
-      deleteMember(id);
-      showToast("Member deleted successfully!");
+      try {
+        await deleteMember(id);
+        showToast("Member deleted successfully!");
+      } catch (error) {
+        showToast("Failed to delete member. Please try again.", "error");
+      }
     }
   };
 
@@ -537,7 +617,7 @@ Subscription Manager HK`;
                   <div className="kpi-grid">
                     <div className="card kpi">
                       <p>Total Members</p>
-                      <h4>2</h4>
+                      <h4>{members.length}</h4>
                       <small>Active members</small>
                     </div>
                     <div className="card kpi">
@@ -564,14 +644,56 @@ Subscription Manager HK`;
                         <p>Expected contribution is $800 per member per year</p>
                       </div>
                     </div>
-                    <div className="chart">
-                      {monthlyCollections.map((item) => (
+                    <div 
+                      className="chart" 
+                      style={{ position: "relative" }}
+                      onMouseMove={(e) => {
+                        if (hoveredMonth) {
+                          setMousePosition({ x: e.clientX, y: e.clientY });
+                        }
+                      }}
+                    >
+                      {monthlyCollectionsData.map((item) => (
                         <div
-                          key={item.month}
-                          style={{ height: `${item.value}%` }}
+                          key={item.monthKey}
+                          style={{ 
+                            height: `${item.percentage}%`,
+                            position: "relative",
+                            cursor: "pointer"
+                          }}
                           data-month={item.month}
-                        ></div>
+                          onMouseEnter={(e) => {
+                            setHoveredMonth(item);
+                            setMousePosition({ x: e.clientX, y: e.clientY });
+                          }}
+                          onMouseMove={(e) => {
+                            if (hoveredMonth?.monthKey === item.monthKey) {
+                              setMousePosition({ x: e.clientX, y: e.clientY });
+                            }
+                          }}
+                          onMouseLeave={() => setHoveredMonth(null)}
+                        >
+                        </div>
                       ))}
+                      {hoveredMonth && (
+                        <div style={{
+                          position: "fixed",
+                          left: `${mousePosition.x + 10}px`,
+                          top: `${mousePosition.y - 40}px`,
+                          padding: "8px 12px",
+                          background: "#000",
+                          color: "#fff",
+                          borderRadius: "6px",
+                          fontSize: "0.875rem",
+                          whiteSpace: "nowrap",
+                          zIndex: 1000,
+                          pointerEvents: "none",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
+                        }}>
+                          {hoveredMonth.month} {new Date().getFullYear()}: ${hoveredMonth.value.toFixed(2)}
+                          {hoveredMonth.count > 0 && ` (${hoveredMonth.count} payment${hoveredMonth.count > 1 ? 's' : ''})`}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -584,14 +706,16 @@ Subscription Manager HK`;
                     </div>
                     <Table
                       columns={["Member", "Period", "Amount", "Method", "Status", "Date"]}
-                      rows={recentPayments.slice(0, 5).map((payment) => ({
-                        Member: payment.member,
-                        Period: payment.period,
-                        Amount: payment.amount,
-                        Method: payment.method,
-                        Status: payment.status,
-                        Date: payment.date,
-                      }))}
+                      rows={recentPaymentsData.length > 0 ? recentPaymentsData : [
+                        {
+                          Member: "No payments yet",
+                          Period: "-",
+                          Amount: "-",
+                          Method: "-",
+                          Status: "-",
+                          Date: "-",
+                        }
+                      ]}
                     />
                   </div>
                 </div>
@@ -833,7 +957,19 @@ Subscription Manager HK`;
                   <div className="summary-grid">
                     <div className="summary-card">
                       <p>Outstanding Balance</p>
-                      <h4>{selectedMember.balance}</h4>
+                      <h4>
+                        {(() => {
+                          const memberInvoices = getMemberInvoices(selectedMember.id);
+                          const unpaidInvoices = memberInvoices.filter(inv => 
+                            inv.status === "Unpaid" || inv.status === "Overdue"
+                          );
+                          const outstandingTotal = unpaidInvoices.reduce((sum, inv) => {
+                            const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
+                            return sum + amount;
+                          }, 0);
+                          return `$${outstandingTotal.toFixed(2)}`;
+                        })()}
+                      </h4>
                     </div>
                     <div className="summary-card">
                       <p>Next Due Date</p>
@@ -873,7 +1009,35 @@ Subscription Manager HK`;
                   {activeTab === "Invoices" && (
                     <div className="tab-panel">
                       <div className="table-header">
-                        <h4>Invoices</h4>
+                        <div>
+                          <h4>Invoices</h4>
+                          {(() => {
+                            const memberInvoices = getMemberInvoices(selectedMember.id);
+                            const unpaidInvoices = memberInvoices.filter(inv => 
+                              inv.status === "Unpaid" || inv.status === "Overdue"
+                            );
+                            const outstandingTotal = unpaidInvoices.reduce((sum, inv) => {
+                              const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
+                              return sum + amount;
+                            }, 0);
+                            
+                            return (
+                              <p style={{ 
+                                margin: "4px 0 0 0", 
+                                fontSize: "0.875rem", 
+                                color: "#666",
+                                fontWeight: "500"
+                              }}>
+                                Total Outstanding: <strong style={{ color: "#000" }}>${outstandingTotal.toFixed(2)}</strong>
+                                {unpaidInvoices.length > 0 && (
+                                  <span style={{ marginLeft: "8px", color: "#666" }}>
+                                    ({unpaidInvoices.length} unpaid invoice{unpaidInvoices.length > 1 ? 's' : ''})
+                                  </span>
+                                )}
+                              </p>
+                            );
+                          })()}
+                        </div>
                         <div>
                           <button
                             className="secondary-btn"
@@ -936,31 +1100,90 @@ Subscription Manager HK`;
 
                   {activeTab === "Payment History" && (
                     <div className="tab-panel">
-                      <ul className="timeline">
-                        {paymentHistory.slice(0, 5).map((item, idx) => (
-                          <li key={idx}>
-                            <p>
-                              {item.date} · {item.amount} · {item.method} · Ref {item.reference}
-                            </p>
-                            <span className="badge badge-paid">Paid</span>
-                          </li>
-                        ))}
-                      </ul>
+                      {(() => {
+                        // Filter payment history for selected member
+                        const memberPayments = paymentHistory.filter((payment) => 
+                          payment.memberId === selectedMember.id || 
+                          payment.memberEmail === selectedMember.email || 
+                          payment.member === selectedMember.name
+                        ).sort((a, b) => {
+                          // Sort by date, newest first
+                          const dateA = new Date(a.date || 0);
+                          const dateB = new Date(b.date || 0);
+                          return dateB - dateA;
+                        });
+
+                        if (memberPayments.length === 0) {
+                          return (
+                            <div style={{ 
+                              textAlign: "center", 
+                              padding: "40px 20px",
+                              color: "#666"
+                            }}>
+                              <p style={{ margin: 0, fontSize: "1rem" }}>No payment history available for this member.</p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <ul className="timeline">
+                            {memberPayments.map((item, idx) => (
+                              <li key={idx}>
+                                <p>
+                                  {item.date || "N/A"} · {item.amount || "$0"} · {item.method || "N/A"} · Ref {item.reference || "N/A"}
+                                </p>
+                                <span className={`badge ${item.status === "Paid" ? "badge-paid" : item.status === "Pending Verification" ? "badge-pending" : "badge-unpaid"}`}>
+                                  {item.status || "Paid"}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        );
+                      })()}
                     </div>
                   )}
 
                   {activeTab === "Communication" && (
                     <div className="tab-panel">
-                      <ul className="timeline">
-                        {communicationLog.slice(0, 5).map((item, idx) => (
-                          <li key={idx}>
-                            <p>
-                              {item.channel} · {item.message} · {item.date}
-                            </p>
-                            <span className={statusClass[item.status]}>{item.status}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      {(() => {
+                        // Filter communication log for selected member
+                        const memberCommunications = communicationLog.filter((comm) => 
+                          comm.memberId === selectedMember.id || 
+                          comm.memberEmail === selectedMember.email || 
+                          comm.memberName === selectedMember.name ||
+                          comm.member === selectedMember.name
+                        ).sort((a, b) => {
+                          // Sort by date, newest first
+                          const dateA = new Date(a.date || 0);
+                          const dateB = new Date(b.date || 0);
+                          return dateB - dateA;
+                        });
+
+                        if (memberCommunications.length === 0) {
+                          return (
+                            <div style={{ 
+                              textAlign: "center", 
+                              padding: "40px 20px",
+                              color: "#666"
+                            }}>
+                              <p style={{ margin: 0, fontSize: "1rem" }}>No communication history available for this member.</p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <ul className="timeline">
+                            {memberCommunications.map((item, idx) => (
+                              <li key={idx}>
+                                <p>
+                                  {item.channel || "N/A"} · {item.message || "N/A"} · {item.date || "N/A"}
+                                </p>
+                                <span className={statusClass[item.status] || "badge"}>{item.status || "N/A"}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -983,6 +1206,7 @@ Subscription Manager HK`;
                       onChange={(e) =>
                         setInvoiceForm({ ...invoiceForm, memberId: e.target.value })
                       }
+                      style={{ color: "#000" }}
                     >
                       <option value="">Select Member</option>
                       {members.map((member) => (
@@ -1003,6 +1227,7 @@ Subscription Manager HK`;
                         const amount = type === "Monthly" ? "50" : "100";
                         setInvoiceForm({ ...invoiceForm, invoiceType: type, amount: amount });
                       }}
+                      style={{ color: "#000" }}
                     >
                       <option value="">Select Invoice Type</option>
                       <option value="Monthly">Monthly - $50</option>
@@ -1018,6 +1243,7 @@ Subscription Manager HK`;
                       placeholder="e.g. Nov 2025"
                       value={invoiceForm.period}
                       onChange={(e) => setInvoiceForm({ ...invoiceForm, period: e.target.value })}
+                      style={{ color: "#000" }}
                     />
                   </label>
 
@@ -1028,6 +1254,7 @@ Subscription Manager HK`;
                       required
                       value={invoiceForm.amount}
                       onChange={(e) => setInvoiceForm({ ...invoiceForm, amount: e.target.value })}
+                      style={{ color: "#000" }}
                     />
                   </label>
 
@@ -1038,6 +1265,7 @@ Subscription Manager HK`;
                       required
                       value={invoiceForm.due}
                       onChange={(e) => setInvoiceForm({ ...invoiceForm, due: e.target.value })}
+                      style={{ color: "#000" }}
                     />
                   </label>
 
@@ -1047,6 +1275,7 @@ Subscription Manager HK`;
                       placeholder="Add context for this invoice"
                       value={invoiceForm.notes}
                       onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
+                      style={{ color: "#000" }}
                     ></textarea>
                   </label>
 
@@ -1388,12 +1617,87 @@ Subscription Manager HK`;
                   <h3>Payments &amp; Methods</h3>
                   <p>Configure payment channels visible to members.</p>
                 </header>
-                <div className="card methods-grid">
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+                  gap: "20px"
+                }}>
                   {paymentMethods.map((method) => (
-                    <div className="method-card" key={method.name}>
-                      <div className="method-header">
-                        <h4>{method.name}</h4>
-                        <label className="switch">
+                    <div 
+                      key={method.name}
+                      style={{
+                        background: "#fff",
+                        border: `2px solid ${method.visible ? "#000" : "#e0e0e0"}`,
+                        borderRadius: "12px",
+                        padding: "24px",
+                        transition: "all 0.3s ease",
+                        position: "relative",
+                        boxShadow: method.visible ? "0 4px 12px rgba(0,0,0,0.1)" : "0 2px 4px rgba(0,0,0,0.05)"
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!method.visible) {
+                          e.currentTarget.style.borderColor = "#ccc";
+                          e.currentTarget.style.boxShadow = "0 4px 8px rgba(0,0,0,0.08)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!method.visible) {
+                          e.currentTarget.style.borderColor = "#e0e0e0";
+                          e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.05)";
+                        }
+                      }}
+                    >
+                      {/* Status Badge */}
+                      <div style={{
+                        position: "absolute",
+                        top: "16px",
+                        right: "16px",
+                        padding: "4px 12px",
+                        borderRadius: "12px",
+                        fontSize: "0.75rem",
+                        fontWeight: "600",
+                        background: method.visible ? "#e8f5e9" : "#f5f5f5",
+                        color: method.visible ? "#2e7d32" : "#666"
+                      }}>
+                        {method.visible ? "Active" : "Inactive"}
+                      </div>
+
+                      {/* Method Header */}
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: "20px",
+                        paddingRight: "80px"
+                      }}>
+                        <h4 style={{
+                          margin: 0,
+                          fontSize: "1.25rem",
+                          fontWeight: "600",
+                          color: "#000"
+                        }}>
+                          {method.name}
+                        </h4>
+                      </div>
+
+                      {/* Toggle Switch */}
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: "20px",
+                        padding: "12px",
+                        background: method.visible ? "#f8f8f8" : "#fafafa",
+                        borderRadius: "8px"
+                      }}>
+                        <span style={{
+                          fontSize: "0.875rem",
+                          fontWeight: "500",
+                          color: "#666"
+                        }}>
+                          {method.visible ? "Enabled for members" : "Disabled for members"}
+                        </span>
+                        <label className="switch" style={{ margin: 0 }}>
                           <input
                             type="checkbox"
                             checked={method.visible}
@@ -1406,11 +1710,42 @@ Subscription Manager HK`;
                           <span></span>
                         </label>
                       </div>
-                      {method.details.map((detail, index) => (
-                        <p key={`${method.name}-detail-${index}`} className="method-detail">
-                          {detail}
-                        </p>
-                      ))}
+
+                      {/* Method Details */}
+                      <div style={{
+                        borderTop: "1px solid #f0f0f0",
+                        paddingTop: "16px"
+                      }}>
+                        <div style={{
+                          fontSize: "0.875rem",
+                          fontWeight: "500",
+                          color: "#666",
+                          marginBottom: "12px"
+                        }}>
+                          Payment Details:
+                        </div>
+                        <div style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px"
+                        }}>
+                          {method.details.map((detail, index) => (
+                            <div 
+                              key={`${method.name}-detail-${index}`}
+                              style={{
+                                padding: "10px 12px",
+                                background: "#f8f8f8",
+                                borderRadius: "6px",
+                                fontSize: "0.875rem",
+                                color: "#333",
+                                borderLeft: "3px solid #000"
+                              }}
+                            >
+                              {detail}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1605,6 +1940,7 @@ Subscription Manager HK`;
                         <input
                           value={orgForm.name}
                           onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+                          style={{ color: "#000" }}
                         />
                       </label>
                       <label>
@@ -1613,6 +1949,7 @@ Subscription Manager HK`;
                           type="email"
                           value={orgForm.email}
                           onChange={(e) => setOrgForm({ ...orgForm, email: e.target.value })}
+                          style={{ color: "#000" }}
                         />
                       </label>
                       <label>
@@ -1620,6 +1957,7 @@ Subscription Manager HK`;
                         <input
                           value={orgForm.phone}
                           onChange={(e) => setOrgForm({ ...orgForm, phone: e.target.value })}
+                          style={{ color: "#000" }}
                         />
                       </label>
                       <label>
@@ -1627,6 +1965,7 @@ Subscription Manager HK`;
                         <input
                           value={orgForm.address}
                           onChange={(e) => setOrgForm({ ...orgForm, address: e.target.value })}
+                          style={{ color: "#000" }}
                         />
                       </label>
                       <button className="primary-btn" type="submit" style={{ marginTop: "12px" }}>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { loginPresets } from "../data";
@@ -11,8 +11,8 @@ export function LoginPage() {
   const navigate = useNavigate();
 
   const handleLogin = async (role) => {
-    // Handle admin login via MongoDB API
-    if (role === "admin") {
+    // Handle both admin and member login via MongoDB API
+    if (role === "admin" || role === "member") {
       if (!form.email || !form.password) {
         setAuthMessage({
           type: "error",
@@ -21,7 +21,7 @@ export function LoginPage() {
         return;
       }
 
-      setLoadingRole("admin");
+      setLoadingRole(role);
       setAuthMessage(null);
 
       try {
@@ -34,6 +34,7 @@ export function LoginPage() {
           body: JSON.stringify({
             email: form.email.trim(),
             password: form.password,
+            role: role,  // Send role to check specific database
           }),
         });
 
@@ -48,29 +49,56 @@ export function LoginPage() {
           return;
         }
 
-        // Store auth token
+        // Store auth token and user info
         sessionStorage.setItem('authToken', data.token);
-        sessionStorage.setItem('adminEmail', data.email);
-        sessionStorage.setItem('adminName', data.name);
-
-        setAuthMessage({
-          type: "success",
-          text: `Welcome ${data.name}! Redirecting to admin panel...`,
-        });
-
-        setTimeout(() => {
-          navigate("/admin", {
-            replace: true,
-            state: {
-              role: "Admin",
-              token: data.token,
-              email: data.email,
-              name: data.name,
-              adminId: data.adminId,
-              adminRole: data.adminRole
-            },
+        
+        if (data.role === "Admin") {
+          sessionStorage.setItem('adminEmail', data.email);
+          sessionStorage.setItem('adminName', data.name);
+          
+          setAuthMessage({
+            type: "success",
+            text: `Welcome ${data.name}! Redirecting to admin panel...`,
           });
-        }, 500);
+
+          setTimeout(() => {
+            navigate("/admin", {
+              replace: true,
+              state: {
+                role: "Admin",
+                token: data.token,
+                email: data.email,
+                name: data.name,
+                adminId: data.adminId,
+                adminRole: data.adminRole
+              },
+            });
+          }, 500);
+        } else {
+          // Member login
+          sessionStorage.setItem('memberEmail', data.email);
+          sessionStorage.setItem('memberName', data.name);
+          sessionStorage.setItem('memberId', data.memberId);
+          
+          setAuthMessage({
+            type: "success",
+            text: `Welcome ${data.name}! Redirecting to member portal...`,
+          });
+
+          setTimeout(() => {
+            navigate("/member", {
+              replace: true,
+              state: {
+                role: "Member",
+                token: data.token,
+                email: data.email,
+                name: data.name,
+                memberId: data.memberId,
+                phone: data.phone
+              },
+            });
+          }, 500);
+        }
       } catch (error) {
         console.error("Login error:", error);
         setAuthMessage({
@@ -79,46 +107,6 @@ export function LoginPage() {
         });
         setLoadingRole(null);
       }
-    } else {
-      // Keep member login as is (using presets)
-      const preset = loginPresets[role];
-      const emailMatch = form.email.trim().toLowerCase() === preset.email.toLowerCase();
-      const passwordMatch = form.password === preset.password;
-
-      if (!emailMatch || !passwordMatch) {
-        setAuthMessage({
-          type: "error",
-          text: `Use the ${role} demo credentials shown below.`,
-        });
-        return;
-      }
-
-      setLoadingRole(role);
-      setAuthMessage(null);
-
-      const token = `${role.toLowerCase()}_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
-      
-      const payload = {
-        role: role.charAt(0).toUpperCase() + role.slice(1),
-        token: token,
-        email: form.email
-      };
-
-      sessionStorage.setItem('authToken', payload.token);
-
-      setAuthMessage({
-        type: "success",
-        text: `${payload.role} login accepted · token ${payload.token.slice(0, 6)}***`,
-      });
-
-      setTimeout(() => {
-        navigate(payload.role === "Admin" ? "/admin" : "/member", {
-          replace: true,
-          state: payload,
-        });
-      }, 500);
-
-      setLoadingRole(null);
     }
   };
 
@@ -143,6 +131,9 @@ export function LoginPage() {
 
           <div className="login-form-card">
             <h1>Sign in</h1>
+            <p style={{ marginBottom: "24px", color: "var(--gray-600)" }}>
+              New user? <Link to="/signup" style={{ color: "var(--primary)", textDecoration: "underline" }}>Sign up here</Link>
+            </p>
 
             <label className="mono-label">
               Email
@@ -174,7 +165,7 @@ export function LoginPage() {
                 <strong>Admin:</strong> Use your registered email and password from MongoDB
               </p>
               <p>
-                <strong>Member:</strong> {loginPresets.member.email} / {loginPresets.member.password}
+                <strong>Member:</strong> Use your registered email and password from MongoDB
               </p>
             </div>
 
@@ -199,6 +190,12 @@ export function LoginPage() {
               >
                 {loadingRole === "member" ? "Authorising…" : "Login as Member"}
               </button>
+            </div>
+
+            <div style={{ textAlign: "center", marginTop: "20px" }}>
+              <p style={{ color: "var(--gray-600)", fontSize: "0.9rem" }}>
+                New user? <Link to="/signup" style={{ color: "var(--primary)", textDecoration: "underline", fontWeight: "500" }}>Create an account</Link>
+              </p>
             </div>
 
             {authMessage && (

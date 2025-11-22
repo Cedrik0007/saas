@@ -75,6 +75,7 @@ const UserSchema = new mongoose.Schema({
     name: String,
     email: String,
     phone: String,
+    password: String,  // Add password field for member login
     status: String,
     balance: String,
     nextDue: String,
@@ -317,51 +318,114 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.post("/api/login", async (req, res) => {
-  const { email, password } = req.body ?? {};
+  const { email, password, role } = req.body ?? {};
   if (!email || !password) {
     return res.status(400).json({ message: "Email and password required" });
   }
 
   try {
     await ensureConnection();
-    // Check if admin exists in MongoDB (same collection as /api/admins uses)
-    const admin = await AdminModel.findOne({ 
-      email: email.trim().toLowerCase() 
-    });
+    const emailLower = email.trim().toLowerCase();
+    
+    // Check based on the role specified
+    if (role === "admin" || role === "Admin") {
+      // Check admin database only
+      const admin = await AdminModel.findOne({ 
+        email: emailLower 
+      });
 
-    if (!admin) {
-      return res.status(401).json({ 
-        message: "Invalid email or password",
+      if (!admin) {
+        return res.status(401).json({ 
+          message: "Invalid email or password",
+          success: false 
+        });
+      }
+
+      // Check password
+      if (admin.password !== password) {
+        return res.status(401).json({ 
+          message: "Invalid email or password",
+          success: false 
+        });
+      }
+
+      // Check if admin is active
+      if (admin.status && admin.status !== 'Active') {
+        return res.status(403).json({ 
+          message: "Your account is not active. Please contact administrator.",
+          success: false 
+        });
+      }
+
+      // Successful admin login
+      return res.json({
+        success: true,
+        role: "Admin",
+        token: `admin_${admin.id}_${Date.now()}`,
+        email: admin.email,
+        name: admin.name,
+        adminId: admin.id,
+        adminRole: admin.role || 'Viewer'
+      });
+    } else if (role === "member" || role === "Member") {
+      // Check member database only
+      const escapedEmail = emailLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const member = await UserModel.findOne({ 
+        email: { $regex: `^${escapedEmail}$`, $options: 'i' }
+      });
+
+      if (!member) {
+        return res.status(401).json({ 
+          message: "Invalid email or password",
+          success: false 
+        });
+      }
+
+      // Check password - require password for member login
+      if (!member.password || member.password.trim() === '') {
+        return res.status(401).json({ 
+          message: "Password not set for this account. Please contact administrator or sign up.",
+          success: false 
+        });
+      }
+
+      // Check password (trim both for comparison)
+      const memberPassword = member.password.trim();
+      const inputPassword = password.trim();
+      
+      if (memberPassword !== inputPassword) {
+        return res.status(401).json({ 
+          message: "Invalid email or password",
+          success: false 
+        });
+      }
+
+      // Check if member is active
+      if (member.status && member.status !== 'Active') {
+        return res.status(403).json({ 
+          message: "Your account is not active. Please contact administrator.",
+          success: false 
+        });
+      }
+
+      // Successful member login
+      return res.json({
+        success: true,
+        role: "Member",
+        token: `member_${member.id}_${Date.now()}`,
+        email: member.email,
+        name: member.name,
+        memberId: member.id,
+        phone: member.phone,
+        status: member.status
+      });
+    } else {
+      // No role specified or invalid role
+      return res.status(400).json({ 
+        message: "Invalid role specified. Please select Admin or Member.",
         success: false 
       });
     }
-
-    // Check password (plain text comparison)
-    if (admin.password !== password) {
-      return res.status(401).json({ 
-        message: "Invalid email or password",
-        success: false 
-      });
-    }
-
-    // Check if admin is active
-    if (admin.status && admin.status !== 'Active') {
-      return res.status(403).json({ 
-        message: "Your account is not active. Please contact administrator.",
-        success: false 
-      });
-    }
-
-    // Successful login
-    res.json({
-      success: true,
-      role: "Admin",
-      token: `admin_${admin.id}_${Date.now()}`,
-      email: admin.email,
-      name: admin.name,
-      adminId: admin.id,
-      adminRole: admin.role || 'Viewer'
-    });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ 
@@ -409,8 +473,9 @@ app.post("/api/members", async (req, res) => {
     const newMember = new UserModel({
       id: memberId,
       name: req.body.name || '',
-      email: req.body.email || '',
+      email: (req.body.email || '').trim().toLowerCase(),  // Ensure lowercase storage
       phone: req.body.phone || '',
+      password: req.body.password || '',
       status: req.body.status || 'Active',
       balance: req.body.balance || '$0',
       nextDue: req.body.nextDue || '',
@@ -432,9 +497,14 @@ app.post("/api/members", async (req, res) => {
 app.put("/api/members/:id", async (req, res) => {
   try {
     await ensureConnection();
+    // Ensure email is lowercase if being updated
+    const updateData = { ...req.body };
+    if (updateData.email) {
+      updateData.email = updateData.email.trim().toLowerCase();
+    }
     const member = await UserModel.findOneAndUpdate(
       { id: req.params.id },
-      { $set: req.body },
+      { $set: updateData },
       { new: true, runValidators: true }
     );
     

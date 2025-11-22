@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
@@ -8,10 +8,12 @@ import { statusClass } from "../statusClasses";
 
 export function MemberPage() {
   const {
+    members,  // Get members from MongoDB
     invoices,
     paymentHistory,
     addPayment,
     updateInvoice,
+    updateMember,
   } = useApp();
 
   const sections = [
@@ -29,6 +31,8 @@ export function MemberPage() {
   const [paymentProof, setPaymentProof] = useState(null);
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [toast, setToast] = useState(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isAlertDismissed, setIsAlertDismissed] = useState(false);
   
   // Card payment form
   const [cardForm, setCardForm] = useState({
@@ -38,14 +42,44 @@ export function MemberPage() {
     cvv: "",
   });
 
-  // Profile form
-  const [profileForm, setProfileForm] = useState({
-    name: "Aisha Malik",
-    email: "aisha.malik@hk.org",
-    phone: "+852 9988 7766",
-    emailReminders: true,
-    whatsappReminders: true,
+  // Get current member from MongoDB based on email in sessionStorage (case-insensitive)
+  const memberEmail = sessionStorage.getItem('memberEmail');
+  const currentMember = memberEmail 
+    ? members.find(m => m.email && m.email.toLowerCase() === memberEmail.toLowerCase())
+    : null;
+
+  // Profile form - use MongoDB data
+  const [profileForm, setProfileForm] = useState(() => {
+    if (currentMember) {
+      return {
+        name: currentMember.name || "",
+        email: currentMember.email || "",
+        phone: currentMember.phone || "",
+        emailReminders: true,
+        whatsappReminders: true,
+      };
+    }
+    return {
+      name: "",
+      email: "",
+      phone: "",
+      emailReminders: true,
+      whatsappReminders: true,
+    };
   });
+
+  // Update profile when member data changes
+  useEffect(() => {
+    if (currentMember) {
+      setProfileForm({
+        name: currentMember.name || "",
+        email: currentMember.email || "",
+        phone: currentMember.phone || "",
+        emailReminders: true,
+        whatsappReminders: true,
+      });
+    }
+  }, [currentMember, members]);
 
   const navigate = useNavigate();
 
@@ -63,9 +97,13 @@ export function MemberPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Get unpaid invoices
+  // Get unpaid invoices for current member only
   const getUnpaidInvoices = () => {
-    return invoices.filter((inv) => inv.status === "Unpaid" || inv.status === "Overdue");
+    if (!currentMember) return [];
+    return invoices.filter((inv) => 
+      (inv.status === "Unpaid" || inv.status === "Overdue") &&
+      (inv.memberId === currentMember.id || inv.memberEmail === currentMember.email || inv.memberName === currentMember.name)
+    );
   };
 
   // Get upcoming payments
@@ -131,7 +169,7 @@ export function MemberPage() {
           amount: invoice.amount,
           method: selectedPaymentMethod,
           reference: paymentReference,
-          member: "Aisha Malik",
+          member: currentMember?.name || "Member",
           period: invoice.period,
           status: "Pending Verification",
         });
@@ -179,7 +217,7 @@ export function MemberPage() {
           amount: invoice.amount,
           method: "Credit Card",
           reference: reference,
-          member: "Aisha Malik",
+          member: currentMember?.name || "Member",
           period: invoice.period,
           status: "Paid",
         });
@@ -199,9 +237,31 @@ export function MemberPage() {
   };
 
   // Handle profile update
-  const handleUpdateProfile = (e) => {
+  const handleUpdateProfile = async (e) => {
     e.preventDefault();
-    showToast("Profile updated successfully!");
+    
+    if (!currentMember) {
+      showToast("Member not found", "error");
+      return;
+    }
+
+    try {
+      // Update member in MongoDB
+      await updateMember(currentMember.id, {
+        name: profileForm.name,
+        email: profileForm.email,
+        phone: profileForm.phone,
+      });
+      
+      showToast("Profile updated successfully!");
+      setIsEditingProfile(false);
+      
+      // Refresh members to get updated data
+      // The useEffect will update profileForm when currentMember changes
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      showToast("Failed to update profile. Please try again.", "error");
+    }
   };
 
   // Calculate statistics for dashboard
@@ -211,7 +271,11 @@ export function MemberPage() {
       return total + parseFloat(inv.amount.replace("$", ""));
     }, 0);
 
-    const paidInvoices = invoices.filter((inv) => inv.status === "Paid");
+    // Filter paid invoices for current member only
+    const paidInvoices = invoices.filter((inv) => 
+      inv.status === "Paid" &&
+      (inv.memberId === currentMember?.id || inv.memberEmail === currentMember?.email || inv.memberName === currentMember?.name)
+    );
     const paidThisYear = paidInvoices.reduce((total, inv) => {
       return total + parseFloat(inv.amount.replace("$", ""));
     }, 0);
@@ -273,8 +337,8 @@ export function MemberPage() {
           {/* Desktop Sidebar */}
           <aside className="member-menu">
             <p className="eyebrow light">Member Portal</p>
-            <h3>Aisha Malik</h3>
-            <p>Plan: $50/month + 2× $100 Eid</p>
+            <h3>{currentMember?.name || "Member"}</h3>
+            {/* <p>Balance: {currentMember?.balance || "$0"} | Next Due: {currentMember?.nextDue || "N/A"}</p> */}
             <nav>
               {sections.map((section) => (
                 <button
@@ -294,7 +358,7 @@ export function MemberPage() {
               <article className="screen-card" id="dashboard">
                 <header className="member-dashboard-header">
                   <div>
-                    <h2>Welcome back, Aisha</h2>
+                    <h2>Welcome back, {currentMember?.name?.split(' ')[0] || "Member"}</h2>
                     <p className="dashboard-subtitle">Here's an overview of your membership account</p>
                   </div>
                   <button className="primary-btn" onClick={() => handleNavClick("pay")}>
@@ -303,16 +367,22 @@ export function MemberPage() {
                 </header>
 
                 {/* Alert Banner */}
-                {stats.outstanding > 0 && (
+                {stats.outstanding > 0 && !isAlertDismissed && (
                   <div className="alert-banner alert-warning">
                     <div className="alert-content">
                       <strong>Payment Due Soon</strong>
                       <p>
-                        You have an outstanding balance of ${stats.outstanding}. Please pay to avoid late
+                        You have an outstanding balance of ${stats.outstanding.toFixed(2)}. Please pay to avoid late
                         fees.
                       </p>
                     </div>
-                    <button className="alert-dismiss">×</button>
+                    <button 
+                      className="alert-dismiss" 
+                      onClick={() => setIsAlertDismissed(true)}
+                      style={{ cursor: "pointer" }}
+                    >
+                      ×
+                    </button>
                   </div>
                 )}
 
@@ -354,7 +424,12 @@ export function MemberPage() {
                 </div>
 
                 {/* Main Content Grid */}
-                <div className="member-dashboard-grid">
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                  gap: "20px",
+                  marginTop: "24px"
+                }}>
                   {/* Upcoming Payments */}
                   <div className="dashboard-card">
                     <div className="card-header-flex">
@@ -386,20 +461,58 @@ export function MemberPage() {
                       <h4>Recent Activity</h4>
                     </div>
                     <div className="activity-list">
-                      {paymentHistory.slice(0, 3).map((item, idx) => (
-                        <div key={idx} className="activity-item">
-                          <div className="activity-details">
-                            <strong>Payment Received</strong>
-                            <span>
-                              {item.date} • {item.amount} via {item.method}
-                            </span>
+                      {(() => {
+                        const memberPayments = currentMember 
+                          ? paymentHistory.filter((item) => 
+                              item.memberId === currentMember.id || 
+                              item.memberEmail === currentMember.email || 
+                              item.member === currentMember.name
+                            )
+                          : paymentHistory;
+                        
+                        const recentPayments = memberPayments.slice(0, 3);
+                        
+                        if (recentPayments.length === 0) {
+                          return (
+                            <div style={{ 
+                              textAlign: "center", 
+                              padding: "20px",
+                              color: "#666",
+                              fontSize: "0.9rem"
+                            }}>
+                              No recent payments
+                            </div>
+                          );
+                        }
+                        
+                        return recentPayments.map((item, idx) => (
+                          <div key={idx} className="activity-item">
+                            <div className="activity-details">
+                              <strong>Payment Made</strong>
+                              <span>
+                                {item.date} • {item.amount} via {item.method}
+                                {item.reference && ` • Ref: ${item.reference}`}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ));
+                      })()}
                     </div>
-                    <button className="btn-link" onClick={() => handleNavClick("history")}>
-                      View Payment History →
-                    </button>
+                    {(() => {
+                      const memberPayments = currentMember 
+                        ? paymentHistory.filter((item) => 
+                            item.memberId === currentMember.id || 
+                            item.memberEmail === currentMember.email || 
+                            item.member === currentMember.name
+                          )
+                        : paymentHistory;
+                      
+                      return memberPayments.length > 0 && (
+                        <button className="btn-link" onClick={() => handleNavClick("history")}>
+                          View Payment History →
+                        </button>
+                      );
+                    })()}
                   </div>
 
                   {/* Quick Actions */}
@@ -471,31 +584,175 @@ export function MemberPage() {
                 ) : (
                   <div className="card">
                     {/* Invoice Selection */}
-                    <div className="due-summary">
-                      <h4>Select Invoices to Pay</h4>
-                      <ul style={{ listStyle: "none", padding: 0 }}>
-                        {getUnpaidInvoices().map((invoice) => (
-                          <li key={invoice.id} style={{ marginBottom: "12px" }}>
-                            <label style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                              <input
-                                type="checkbox"
-                                checked={selectedInvoices.includes(invoice.id)}
-                                onChange={() => handleSelectInvoice(invoice.id)}
-                              />
-                              <span>
-                                {invoice.period} · {invoice.amount}
-                                <span className={statusClass[invoice.status]} style={{ marginLeft: "8px" }}>
-                                  {invoice.status}
-                                </span>
-                              </span>
-                            </label>
-                          </li>
-                        ))}
-                      </ul>
+                    <div className="invoice-selection-section" style={{ marginBottom: "32px" }}>
+                      <div style={{ 
+                        display: "flex", 
+                        justifyContent: "space-between", 
+                        alignItems: "center", 
+                        marginBottom: "20px",
+                        flexWrap: "wrap",
+                        gap: "12px"
+                      }}>
+                        <h4 style={{ margin: 0 }}>Select Invoices to Pay</h4>
+                        {getUnpaidInvoices().length > 0 && (
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            style={{ 
+                              fontSize: "0.875rem",
+                              padding: "6px 12px"
+                            }}
+                            onClick={() => {
+                              if (selectedInvoices.length === getUnpaidInvoices().length) {
+                                setSelectedInvoices([]);
+                              } else {
+                                setSelectedInvoices(getUnpaidInvoices().map(inv => inv.id));
+                              }
+                            }}
+                          >
+                            {selectedInvoices.length === getUnpaidInvoices().length ? "Deselect All" : "Select All"}
+                          </button>
+                        )}
+                      </div>
+                      
+                      {getUnpaidInvoices().length === 0 ? (
+                        <div style={{ 
+                          textAlign: "center", 
+                          padding: "40px 20px",
+                          color: "#666"
+                        }}>
+                          <p style={{ margin: 0, fontSize: "1rem" }}>No unpaid invoices available.</p>
+                        </div>
+                      ) : (
+                        <div style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                          gap: "16px",
+                          marginBottom: "24px"
+                        }}>
+                          {getUnpaidInvoices().map((invoice) => {
+                            const isSelected = selectedInvoices.includes(invoice.id);
+                            return (
+                              <label
+                                key={invoice.id}
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  padding: "16px",
+                                  border: `2px solid ${isSelected ? "var(--primary, #000)" : "#e0e0e0"}`,
+                                  borderRadius: "8px",
+                                  cursor: "pointer",
+                                  transition: "all 0.2s ease",
+                                  backgroundColor: isSelected ? "rgba(0, 0, 0, 0.02)" : "#fff",
+                                  position: "relative"
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (!isSelected) {
+                                    e.currentTarget.style.borderColor = "#ccc";
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  if (!isSelected) {
+                                    e.currentTarget.style.borderColor = "#e0e0e0";
+                                  }
+                                }}
+                              >
+                                <div style={{ 
+                                  display: "flex", 
+                                  alignItems: "flex-start", 
+                                  gap: "12px",
+                                  marginBottom: "12px"
+                                }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => handleSelectInvoice(invoice.id)}
+                                    style={{
+                                      marginTop: "2px",
+                                      width: "18px",
+                                      height: "18px",
+                                      cursor: "pointer",
+                                      flexShrink: 0
+                                    }}
+                                  />
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ 
+                                      fontWeight: "600", 
+                                      fontSize: "0.95rem",
+                                      marginBottom: "4px",
+                                      color: "#000"
+                                    }}>
+                                      {invoice.period}
+                                    </div>
+                                    <div style={{ 
+                                      fontSize: "0.875rem", 
+                                      color: "#666",
+                                      marginBottom: "8px"
+                                    }}>
+                                      Due: {invoice.due}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div style={{ 
+                                  display: "flex", 
+                                  justifyContent: "space-between", 
+                                  alignItems: "center",
+                                  marginTop: "auto",
+                                  paddingTop: "12px",
+                                  borderTop: "1px solid #f0f0f0"
+                                }}>
+                                  <span style={{ 
+                                    fontSize: "1.1rem", 
+                                    fontWeight: "600",
+                                    color: "#000"
+                                  }}>
+                                    {invoice.amount}
+                                  </span>
+                                  <span className={statusClass[invoice.status]} style={{ 
+                                    fontSize: "0.75rem",
+                                    padding: "4px 8px"
+                                  }}>
+                                    {invoice.status}
+                                  </span>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                      
                       {selectedInvoices.length > 0 && (
-                        <p className="total" style={{ marginTop: "16px", fontSize: "1.2rem" }}>
-                          Total: ${calculateTotal()}
-                        </p>
+                        <div style={{
+                          padding: "20px",
+                          backgroundColor: "#f8f8f8",
+                          borderRadius: "8px",
+                          border: "1px solid #e0e0e0"
+                        }}>
+                          <div style={{ 
+                            display: "flex", 
+                            justifyContent: "space-between", 
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            gap: "12px"
+                          }}>
+                            <div>
+                              <div style={{ 
+                                fontSize: "0.875rem", 
+                                color: "#666",
+                                marginBottom: "4px"
+                              }}>
+                                {selectedInvoices.length} invoice{selectedInvoices.length > 1 ? 's' : ''} selected
+                              </div>
+                              <div style={{ 
+                                fontSize: "1.5rem", 
+                                fontWeight: "600",
+                                color: "#000"
+                              }}>
+                                Total: ${calculateTotal().toFixed(2)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       )}
                     </div>
 
@@ -593,7 +850,7 @@ export function MemberPage() {
                                 Name on Card *
                                 <input
                                   required
-                                  placeholder="Aisha Malik"
+                                  placeholder={currentMember?.name || "Enter name"}
                                   value={cardForm.nameOnCard}
                                   onChange={(e) =>
                                     setCardForm({ ...cardForm, nameOnCard: e.target.value })
@@ -648,7 +905,11 @@ export function MemberPage() {
                 <div className="card">
                   <Table
                     columns={["Invoice No", "Period", "Amount", "Status", "Due Date", "Action"]}
-                    rows={invoices.map((invoice) => ({
+                    rows={(currentMember ? invoices.filter((inv) => 
+                      inv.memberId === currentMember.id || 
+                      inv.memberEmail === currentMember.email || 
+                      inv.memberName === currentMember.name
+                    ) : invoices).map((invoice) => ({
                       "Invoice No": invoice.id,
                       Period: invoice.period,
                       Amount: invoice.amount,
@@ -691,7 +952,11 @@ export function MemberPage() {
                   <p>Complete record of all your payments.</p>
                 </header>
                 <ul className="timeline card">
-                  {paymentHistory.map((item, idx) => (
+                  {(currentMember ? paymentHistory.filter((item) => 
+                    item.memberId === currentMember.id || 
+                    item.memberEmail === currentMember.email || 
+                    item.member === currentMember.name
+                  ) : paymentHistory).map((item, idx) => (
                     <li key={idx}>
                       <p>
                         {item.date} · {item.amount} · {item.method} · Ref {item.reference}
@@ -706,67 +971,397 @@ export function MemberPage() {
             {/* PROFILE */}
             {activeSection === "profile" && (
               <article className="screen-card" id="profile">
-                <header className="screen-card__header">
-                  <h3>Profile &amp; Notifications</h3>
-                  <p>Update your contact information and preferences.</p>
-                </header>
-                <form className="card form-grid" onSubmit={handleUpdateProfile}>
-                  <label>
-                    Name
-                    <input
-                      value={profileForm.name}
-                      onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-                    />
-                  </label>
-
-                  <label>
-                    Email
-                    <input
-                      type="email"
-                      value={profileForm.email}
-                      onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
-                    />
-                  </label>
-
-                  <label>
-                    Mobile (WhatsApp)
-                    <input
-                      type="tel"
-                      value={profileForm.phone}
-                      onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
-                    />
-                  </label>
-
-                  <label className="checkbox full">
-                    <input
-                      type="checkbox"
-                      checked={profileForm.emailReminders}
-                      onChange={(e) =>
-                        setProfileForm({ ...profileForm, emailReminders: e.target.checked })
-                      }
-                    />
-                    Receive email reminders
-                  </label>
-
-                  <label className="checkbox full">
-                    <input
-                      type="checkbox"
-                      checked={profileForm.whatsappReminders}
-                      onChange={(e) =>
-                        setProfileForm({ ...profileForm, whatsappReminders: e.target.checked })
-                      }
-                    />
-                    Receive WhatsApp reminders
-                  </label>
-
-                  <div className="form-actions">
-                    <button type="button" className="secondary-btn">
-                      Cancel
-                    </button>
-                    <button type="submit" className="primary-btn">
-                      Save Changes
-                    </button>
+                <header className="screen-card__header" style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  flexWrap: "wrap",
+                  gap: "16px"
+                }}>
+                  <div>
+                    <h3>Profile Settings</h3>
+                    <p>Manage your account information and preferences.</p>
                   </div>
+                  {!isEditingProfile && (
+                    <button
+                      type="button"
+                      className="primary-btn"
+                      onClick={() => setIsEditingProfile(true)}
+                      style={{
+                        padding: "10px 20px",
+                        fontSize: "0.9rem"
+                      }}
+                    >
+                      Edit Profile
+                    </button>
+                  )}
+                </header>
+
+                <form onSubmit={handleUpdateProfile}>
+                  {/* Profile Header Card */}
+                  <div className="card" style={{
+                    padding: "24px",
+                    marginBottom: "24px",
+                    background: "linear-gradient(135deg, #f8f8f8 0%, #ffffff 100%)",
+                    border: "1px solid #e0e0e0",
+                    borderRadius: "12px"
+                  }}>
+                    <div style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "20px",
+                      flexWrap: "wrap"
+                    }}>
+                      <div style={{
+                        width: "80px",
+                        height: "80px",
+                        borderRadius: "50%",
+                        background: "linear-gradient(135deg, #000 0%, #333 100%)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#fff",
+                        fontSize: "2rem",
+                        fontWeight: "600",
+                        flexShrink: 0
+                      }}>
+                        {currentMember?.name?.charAt(0)?.toUpperCase() || "M"}
+                      </div>
+                      <div style={{ flex: 1, minWidth: "200px" }}>
+                        <h4 style={{ margin: "0 0 8px 0", fontSize: "1.5rem", fontWeight: "600" }}>
+                          {currentMember?.name || "Member"}
+                        </h4>
+                        <p style={{ margin: "0 0 4px 0", color: "#666", fontSize: "0.9rem" }}>
+                          {currentMember?.email || "No email"}
+                        </p>
+                        <p style={{ margin: 0, color: "#666", fontSize: "0.9rem" }}>
+                          {currentMember?.phone || "No phone"}
+                        </p>
+                      </div>
+                      <div style={{
+                        padding: "8px 16px",
+                        background: currentMember?.status === "Active" ? "#e8f5e9" : "#fff3e0",
+                        color: currentMember?.status === "Active" ? "#2e7d32" : "#e65100",
+                        borderRadius: "20px",
+                        fontSize: "0.875rem",
+                        fontWeight: "500"
+                      }}>
+                        {currentMember?.status || "Active"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Member Details Section */}
+                  <div className="card" style={{
+                    padding: "24px",
+                    marginBottom: "24px",
+                    border: "1px solid #e0e0e0",
+                    borderRadius: "12px"
+                  }}>
+                    <h4 style={{
+                      margin: "0 0 20px 0",
+                      fontSize: "1.1rem",
+                      fontWeight: "600",
+                      paddingBottom: "12px",
+                      borderBottom: "2px solid #f0f0f0"
+                    }}>
+                      Personal Information
+                    </h4>
+                    
+                    {isEditingProfile ? (
+                      <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                        gap: "20px"
+                      }}>
+                        <label style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px"
+                        }}>
+                          <span style={{
+                            fontSize: "0.875rem",
+                            fontWeight: "500",
+                            color: "#333"
+                          }}>
+                            Full Name *
+                          </span>
+                          <input
+                            required
+                            value={profileForm.name}
+                            onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+                            style={{
+                              padding: "12px 16px",
+                              border: "1px solid #ddd",
+                              borderRadius: "8px",
+                              fontSize: "1rem",
+                              transition: "border-color 0.2s",
+                            }}
+                            onFocus={(e) => e.target.style.borderColor = "#000"}
+                            onBlur={(e) => e.target.style.borderColor = "#ddd"}
+                          />
+                        </label>
+
+                        <label style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px"
+                        }}>
+                          <span style={{
+                            fontSize: "0.875rem",
+                            fontWeight: "500",
+                            color: "#333"
+                          }}>
+                            Email Address *
+                          </span>
+                          <input
+                            required
+                            type="email"
+                            value={profileForm.email}
+                            onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                            style={{
+                              padding: "12px 16px",
+                              border: "1px solid #ddd",
+                              borderRadius: "8px",
+                              fontSize: "1rem",
+                              transition: "border-color 0.2s",
+                            }}
+                            onFocus={(e) => e.target.style.borderColor = "#000"}
+                            onBlur={(e) => e.target.style.borderColor = "#ddd"}
+                          />
+                        </label>
+
+                        <label style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px"
+                        }}>
+                          <span style={{
+                            fontSize: "0.875rem",
+                            fontWeight: "500",
+                            color: "#333"
+                          }}>
+                            Phone Number (WhatsApp) *
+                          </span>
+                          <input
+                            required
+                            type="tel"
+                            value={profileForm.phone}
+                            onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                            placeholder="+852 1234 5678"
+                            style={{
+                              padding: "12px 16px",
+                              border: "1px solid #ddd",
+                              borderRadius: "8px",
+                              fontSize: "1rem",
+                              transition: "border-color 0.2s",
+                            }}
+                            onFocus={(e) => e.target.style.borderColor = "#000"}
+                            onBlur={(e) => e.target.style.borderColor = "#ddd"}
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                        gap: "24px"
+                      }}>
+                        <div>
+                          <div style={{
+                            fontSize: "0.875rem",
+                            fontWeight: "500",
+                            color: "#666",
+                            marginBottom: "8px"
+                          }}>
+                            Full Name
+                          </div>
+                          <div style={{
+                            fontSize: "1rem",
+                            fontWeight: "500",
+                            color: "#000"
+                          }}>
+                            {currentMember?.name || "N/A"}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{
+                            fontSize: "0.875rem",
+                            fontWeight: "500",
+                            color: "#666",
+                            marginBottom: "8px"
+                          }}>
+                            Email Address
+                          </div>
+                          <div style={{
+                            fontSize: "1rem",
+                            fontWeight: "500",
+                            color: "#000"
+                          }}>
+                            {currentMember?.email || "N/A"}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{
+                            fontSize: "0.875rem",
+                            fontWeight: "500",
+                            color: "#666",
+                            marginBottom: "8px"
+                          }}>
+                            Phone Number
+                          </div>
+                          <div style={{
+                            fontSize: "1rem",
+                            fontWeight: "500",
+                            color: "#000"
+                          }}>
+                            {currentMember?.phone || "N/A"}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Notification Preferences Section */}
+                  <div className="card" style={{
+                    padding: "24px",
+                    marginBottom: "24px",
+                    border: "1px solid #e0e0e0",
+                    borderRadius: "12px"
+                  }}>
+                    <h4 style={{
+                      margin: "0 0 20px 0",
+                      fontSize: "1.1rem",
+                      fontWeight: "600",
+                      paddingBottom: "12px",
+                      borderBottom: "2px solid #f0f0f0"
+                    }}>
+                      Notification Preferences
+                    </h4>
+                    <div style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "16px"
+                    }}>
+                      <label style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "16px",
+                        border: "1px solid #e0e0e0",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                        background: profileForm.emailReminders ? "#f8f8f8" : "#fff"
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.borderColor = "#ccc"}
+                      onMouseLeave={(e) => e.currentTarget.style.borderColor = "#e0e0e0"}
+                      >
+                        <div>
+                          <div style={{ fontWeight: "500", marginBottom: "4px" }}>
+                            Email Reminders
+                          </div>
+                          <div style={{ fontSize: "0.875rem", color: "#666" }}>
+                            Receive payment reminders and updates via email
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={profileForm.emailReminders}
+                          onChange={(e) =>
+                            setProfileForm({ ...profileForm, emailReminders: e.target.checked })
+                          }
+                          style={{
+                            width: "20px",
+                            height: "20px",
+                            cursor: "pointer"
+                          }}
+                        />
+                      </label>
+
+                      <label style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "16px",
+                        border: "1px solid #e0e0e0",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        transition: "all 0.2s",
+                        background: profileForm.whatsappReminders ? "#f8f8f8" : "#fff"
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.borderColor = "#ccc"}
+                      onMouseLeave={(e) => e.currentTarget.style.borderColor = "#e0e0e0"}
+                      >
+                        <div>
+                          <div style={{ fontWeight: "500", marginBottom: "4px" }}>
+                            WhatsApp Reminders
+                          </div>
+                          <div style={{ fontSize: "0.875rem", color: "#666" }}>
+                            Receive payment reminders via WhatsApp
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={profileForm.whatsappReminders}
+                          onChange={(e) =>
+                            setProfileForm({ ...profileForm, whatsappReminders: e.target.checked })
+                          }
+                          style={{
+                            width: "20px",
+                            height: "20px",
+                            cursor: "pointer"
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Form Actions */}
+                  {isEditingProfile && (
+                    <div style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      gap: "12px",
+                      paddingTop: "24px",
+                      borderTop: "1px solid #f0f0f0"
+                    }}>
+                      <button 
+                        type="button" 
+                        className="secondary-btn"
+                        onClick={() => {
+                          setIsEditingProfile(false);
+                          if (currentMember) {
+                            setProfileForm({
+                              name: currentMember.name || "",
+                              email: currentMember.email || "",
+                              phone: currentMember.phone || "",
+                              emailReminders: true,
+                              whatsappReminders: true,
+                            });
+                          }
+                        }}
+                        style={{
+                          padding: "12px 24px",
+                          minWidth: "120px"
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="submit" 
+                        className="primary-btn"
+                        style={{
+                          padding: "12px 24px",
+                          minWidth: "120px"
+                        }}
+                      >
+                        Save Changes
+                      </button>
+                    </div>
+                  )}
                 </form>
               </article>
             )}
