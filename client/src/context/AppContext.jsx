@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import {
   members as initialMembers,
+  admins as initialAdmins,
   invoices as initialInvoices,
   recentPayments as initialRecentPayments,
   paymentHistory as initialPaymentHistory,
@@ -19,6 +20,7 @@ const AppContext = createContext();
 
 export function AppProvider({ children }) {
   const [members, setMembers] = useState([]);
+  const [admins,setAdmins] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -75,20 +77,14 @@ export function AppProvider({ children }) {
     };
   });
 
-  const [adminUsers, setAdminUsers] = useState(() => {
-    const saved = localStorage.getItem("adminUsers");
-    return saved ? JSON.parse(saved) : [
-      { id: 1, name: "Ibrahim Khan", role: "Owner", status: "Active" },
-      { id: 2, name: "Yasmin Ahmed", role: "Finance Admin", status: "Active" },
-      { id: 3, name: "Khalid Hassan", role: "Viewer", status: "Pending" },
-    ];
-  });
+  // adminUsers removed - now using admins from MongoDB API
 
   const [selectedMember, setSelectedMember] = useState(null);
 
   // Fetch data from server on mount
   useEffect(() => {
     fetchMembers();
+    fetchAdmins();
     fetchInvoices();
   }, []);
 
@@ -110,6 +106,26 @@ export function AppProvider({ children }) {
       console.error('Error fetching members:', error);
       console.warn('⚠️ Using fallback data from data.js');
       setMembers(initialMembers);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+   // Fetch Admins from server
+   const fetchAdmins = async () => {
+    try {
+      setLoading(true);
+      const apiUr = import.meta.env.VITE_API_URL || '';
+    const response = await fetch(`${apiUr}/api/admins`);
+
+      if (!response.ok) throw new Error('Failed to fetch admins');
+      const data = await response.json();
+      setAdmins(data);
+      console.log('✓ Loaded', data.length, 'Admins from server');
+    } catch (error) {
+      console.error('Error fetching Admins:', error);
+      console.warn('⚠️ Using fallback data from data.js');
+      setAdmins(initialAdmins);
     } finally {
       setLoading(false);
     }
@@ -173,8 +189,8 @@ export function AppProvider({ children }) {
   }, [organizationInfo]);
 
   useEffect(() => {
-    localStorage.setItem("adminUsers", JSON.stringify(adminUsers));
-  }, [adminUsers]);
+    // adminUsers localStorage removed - now using MongoDB API
+  }, []);
 
   // CRUD Operations for Members (Server-based)
   const addMember = async (member) => {
@@ -355,6 +371,7 @@ export function AppProvider({ children }) {
   const resetAllData = () => {
     localStorage.clear();
     setMembers(initialMembers);
+    serAdmins(initialAdmins);
     setInvoices(initialInvoices);
     setRecentPayments(initialRecentPayments);
     setPaymentHistory(initialPaymentHistory);
@@ -384,21 +401,76 @@ export function AppProvider({ children }) {
     setOrganizationInfo({ ...organizationInfo, ...updates });
   };
 
-  const addAdminUser = (user) => {
-    const newUser = {
-      ...user,
-      id: adminUsers.length + 1,
-    };
-    setAdminUsers([...adminUsers, newUser]);
-    return newUser;
+  // Admin CRUD Operations - Using MongoDB API
+  const addAdminUser = async (user) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/admins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: user.name,
+          email: user.email || '',
+          role: user.role || 'Viewer',
+          status: user.status || 'Active',
+          password: user.password || ''
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to create admin');
+      }
+      const newAdmin = await response.json();
+      setAdmins([...admins, newAdmin]);
+      await fetchAdmins(); // Refresh to get latest data
+      return newAdmin;
+    } catch (error) {
+      console.error('Error adding admin:', error);
+      throw error;
+    }
   };
 
-  const updateAdminUser = (id, updates) => {
-    setAdminUsers(adminUsers.map((user) => (user.id === id ? { ...user, ...updates } : user)));
+  const updateAdminUser = async (id, updates) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/admins/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to update admin');
+      }
+      const updatedAdmin = await response.json();
+      setAdmins(admins.map((admin) => (admin.id === id ? updatedAdmin : admin)));
+      await fetchAdmins(); // Refresh to get latest data
+      return updatedAdmin;
+    } catch (error) {
+      console.error('Error updating admin:', error);
+      throw error;
+    }
   };
 
-  const deleteAdminUser = (id) => {
-    setAdminUsers(adminUsers.filter((user) => user.id !== id));
+  const deleteAdminUser = async (id) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/admins/${id}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to delete admin');
+      }
+      setAdmins(admins.filter((admin) => admin.id !== id));
+      await fetchAdmins(); // Refresh to get latest data
+    } catch (error) {
+      console.error('Error deleting admin:', error);
+      throw error;
+    }
   };
 
   const value = {
@@ -406,6 +478,7 @@ export function AppProvider({ children }) {
     invoices,
     loading,
     fetchMembers,
+    fetchAdmins,
     fetchInvoices,
     recentPayments,
     paymentHistory,
@@ -417,7 +490,7 @@ export function AppProvider({ children }) {
     setAutomationEnabled,
     reminderTemplates,
     organizationInfo,
-    adminUsers,
+    admins,
     selectedMember,
     setSelectedMember,
     addMember,

@@ -34,6 +34,8 @@ const AdminSchema = new mongoose.Schema({
   name: String,
   email: String,
   password: String,
+  role: { type: String, default: 'Viewer' },
+  status: { type: String, default: 'Active' },
 })
 
 const AdminModel = mongoose.model("admins", AdminSchema);
@@ -60,11 +62,97 @@ app.get("/api/members", async (req, res) => {
   }
 });
 
+//get total members
+app.get("/api/members/count", async (req, res) => {
+  try {
+    const count = await UserModel.countDocuments();
+    res.json({ total : count})
+  } catch (error) {
+    console.error("Error fetching members:", error);
+    res.status(500).json({ error: error.message});
+  }
+});
+
+
 app.get("/api/admins", async (req, res) => {
   try {
     const admins = await AdminModel.find();
     res.json(admins);
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST create new admin
+app.post("/api/admins", async (req, res) => {
+  try {
+    // Generate ID if not provided
+    let adminId = req.body.id;
+    if (!adminId) {
+      adminId = `ADM${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+    
+    // Check if ID already exists
+    const existing = await AdminModel.findOne({ id: adminId });
+    if (existing) {
+      return res.status(400).json({ message: "Admin ID already exists" });
+    }
+    
+    const newAdmin = new AdminModel({
+      id: adminId,
+      name: req.body.name || '',
+      email: req.body.email || '',
+      password: req.body.password || '',
+      role: req.body.role || 'Viewer',
+      status: req.body.status || 'Active',
+    });
+    
+    const savedAdmin = await newAdmin.save();
+    res.status(201).json(savedAdmin);
+  } catch (error) {
+    console.error("Error creating admin:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Email or ID already exists" });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT update admin
+app.put("/api/admins/:id", async (req, res) => {
+  try {
+    const admin = await AdminModel.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: req.body },
+      { new: true, runValidators: true }
+    );
+    
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+    
+    res.json(admin);
+  } catch (error) {
+    console.error("Error updating admin:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Email already exists" });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE admin
+app.delete("/api/admins/:id", async (req, res) => {
+  try {
+    const admin = await AdminModel.findOneAndDelete({ id: req.params.id });
+    
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+    
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting admin:", error);
     res.status(500).json({ error: error.message });
   }
 });

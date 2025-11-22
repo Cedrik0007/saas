@@ -15,6 +15,7 @@ import { statusClass } from "../statusClasses";
 export function AdminPage() {
   const {
     members,
+    admins,
     invoices,
     recentPayments,
     paymentHistory,
@@ -26,7 +27,7 @@ export function AdminPage() {
     setAutomationEnabled,
     reminderTemplates,
     organizationInfo,
-    adminUsers,
+    fetchAdmins,
     selectedMember,
     setSelectedMember,
     addMember,
@@ -73,6 +74,12 @@ export function AdminPage() {
     balance: "$0",
     nextDue: "",
     lastPayment: "",
+  });
+
+  const [adminsForm, setAdminsForm] = useState({
+    name: "",
+    email: "",
+    password: "",
   });
 
   const [invoiceForm, setInvoiceForm] = useState({
@@ -530,7 +537,7 @@ Subscription Manager HK`;
                   <div className="kpi-grid">
                     <div className="card kpi">
                       <p>Total Members</p>
-                      <h4>{metrics.totalMembers}</h4>
+                      <h4>2</h4>
                       <small>Active members</small>
                     </div>
                     <div className="card kpi">
@@ -1646,16 +1653,20 @@ Subscription Manager HK`;
                       <div className="card" style={{ marginBottom: "16px", background: "var(--gray-50)", padding: "16px" }}>
                         <h4 style={{ fontSize: "1rem", marginBottom: "12px" }}>Add New Admin</h4>
                         <form
-                          onSubmit={(e) => {
+                          onSubmit={async (e) => {
                             e.preventDefault();
                             if (!adminForm.name) {
                               showToast("Please enter admin name", "error");
                               return;
                             }
-                            addAdminUser(adminForm);
-                            setShowAdminForm(false);
-                            setAdminForm({ name: "", role: "Viewer", status: "Active" });
-                            showToast("Admin user added!");
+                            try {
+                              await addAdminUser(adminForm);
+                              setShowAdminForm(false);
+                              setAdminForm({ name: "", role: "Viewer", status: "Active" });
+                              showToast("Admin user added!");
+                            } catch (error) {
+                              showToast(error.message || "Failed to add admin user", "error");
+                            }
                           }}
                           style={{ display: "flex", flexDirection: "column", gap: "12px" }}
                         >
@@ -1693,26 +1704,30 @@ Subscription Manager HK`;
 
                     <Table
                       columns={["User", "Role", "Status", "Actions"]}
-                      rows={adminUsers.map((user) => ({
+                      rows={admins.map((user) => ({
                         User: user.name,
-                        Role: user.role,
+                        Role: user.role || 'Viewer',
                         Status: {
                           render: () => (
-                            <span className={user.status === "Active" ? "badge badge-active" : "badge badge-inactive"}>
-                              {user.status}
+                            <span className={(user.status || 'Active') === "Active" ? "badge badge-active" : "badge badge-inactive"}>
+                              {user.status || 'Active'}
                             </span>
                           ),
                         },
                         Actions: {
                           render: () => (
                             <div style={{ display: "flex", gap: "8px" }}>
-                              {user.status === "Active" ? (
+                              {(user.status || 'Active') === "Active" ? (
                                 <button
                                   className="ghost-btn"
                                   style={{ padding: "4px 10px", fontSize: "0.85rem" }}
-                                  onClick={() => {
-                                    updateAdminUser(user.id, { status: "Inactive" });
-                                    showToast(`${user.name} deactivated`);
+                                  onClick={async () => {
+                                    try {
+                                      await updateAdminUser(user.id, { status: "Inactive" });
+                                      showToast(`${user.name} deactivated`);
+                                    } catch (error) {
+                                      showToast(error.message || "Failed to update admin", "error");
+                                    }
                                   }}
                                 >
                                   Deactivate
@@ -1721,22 +1736,30 @@ Subscription Manager HK`;
                                 <button
                                   className="secondary-btn"
                                   style={{ padding: "4px 10px", fontSize: "0.85rem" }}
-                                  onClick={() => {
-                                    updateAdminUser(user.id, { status: "Active" });
-                                    showToast(`${user.name} activated`);
+                                  onClick={async () => {
+                                    try {
+                                      await updateAdminUser(user.id, { status: "Active" });
+                                      showToast(`${user.name} activated`);
+                                    } catch (error) {
+                                      showToast(error.message || "Failed to update admin", "error");
+                                    }
                                   }}
                                 >
                                   Activate
                                 </button>
                               )}
-                              {user.role !== "Owner" && (
+                              {(user.role || 'Viewer') !== "Owner" && (
                                 <button
                                   className="ghost-btn"
                                   style={{ padding: "4px 10px", fontSize: "0.85rem", color: "#000" }}
-                                  onClick={() => {
+                                  onClick={async () => {
                                     if (window.confirm(`Remove ${user.name} from admin users?`)) {
-                                      deleteAdminUser(user.id);
-                                      showToast(`${user.name} removed`);
+                                      try {
+                                        await deleteAdminUser(user.id);
+                                        showToast(`${user.name} removed`);
+                                      } catch (error) {
+                                        showToast(error.message || "Failed to delete admin", "error");
+                                      }
                                     }
                                   }}
                                 >

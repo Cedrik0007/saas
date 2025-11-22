@@ -155,6 +155,12 @@ export const members = [
   },
 ];
 
+export const admins = [
+  { id: 1, name: "Ibrahim Khan", role: "Owner", status: "Active" },
+  { id: 2, name: "Yasmin Ahmed", role: "Finance Admin", status: "Active" },
+  { id: 3, name: "Khalid Hassan", role: "Viewer", status: "Pending" },
+];
+
 export const invoices = [
   {
     id: "INV-2025-095",
