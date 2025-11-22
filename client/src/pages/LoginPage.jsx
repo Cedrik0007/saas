@@ -10,6 +10,42 @@ export function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
   const navigate = useNavigate();
 
+  const handleLoginAdmin = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admins/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: form.email,
+          password: form.password,
+        }),
+      });
+  
+      const data = await response.json();
+  
+      if (!response.ok) {
+        setAuthMessage({ type: "error", text: data.message });
+        
+        return;
+      }
+  
+      // Save token
+      sessionStorage.setItem("authToken", data.token);
+  
+      navigate("/admin", {
+        replace: true,
+        state: data,
+      });
+  
+    } catch (error) {
+      setAuthMessage({ type: "error", text: "Login failed. Try again." });
+    }
+  };
+  
+  
+  
+
+
   const handleLogin = async (role) => {
     const preset = loginPresets[role];
 
@@ -93,10 +129,13 @@ export function LoginPage() {
               <input
                 type="password"
                 value={form.password}
+                // value="fakepsw"
+                // id="myInput"
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 placeholder="Enter Your Password"
                 className="mono-input"
               />
+              {/* <input type="checkbox" onClick="myFunction()" />show pass */}
             </label>
 
             <div className="login-hints">
@@ -117,6 +156,11 @@ export function LoginPage() {
               >
                 {loadingRole === "admin" ? "Authorising…" : "Login as Admin"}
               </button>
+              <button type="button" onClick={handleLoginAdmin}>
+  Login
+</button>
+
+              
 
               <button
                 type="button"

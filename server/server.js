@@ -29,6 +29,15 @@ const UserSchema = new mongoose.Schema({
 
 const UserModel = mongoose.model("members", UserSchema);
 
+const AdminSchema = new mongoose.Schema({
+  id: String,
+  name: String,
+  email: String,
+  password: String,
+})
+
+const AdminModel = mongoose.model("admins", AdminSchema);
+
 // Middleware - must be before routes
 // CORS configuration: Allow localhost for development, production origin for production
 app.use(cors({
@@ -47,9 +56,55 @@ app.get("/api/members", async (req, res) => {
     res.json(members);
   } catch (error) {
     console.error("Error fetching members:", error);
+    res.status(500).json({ error: error.message});
+  }
+});
+
+app.get("/api/admins/login", async (req, res) => {
+  try {
+    const admins = await AdminModel.find();
+    res.json(admins);
+  } catch (error) {
+    console.error("Error fetching admins:", error);
     res.status(500).json({ error: error.message });
   }
 });
+
+// Admin Login Route
+app.post("/api/admins/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ message: "Email & Password required" });
+    }
+
+    const admin = await Admin.findOne({ email });
+
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+
+    if (admin.password !== password) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    res.json({
+      message: "Admin login successful",
+      admin: {
+        id: admin._id,
+        name: admin.name,
+        email: admin.email,
+      },
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
+  }
+});
+
+
+
 
 
 
@@ -292,6 +347,7 @@ app.delete("/api/invoices/:id", (req, res) => {
   invoices.splice(index, 1);
   res.status(204).send();
 });
+
 
 app.listen(PORT, () => {
   console.log(`Subscription Manager HK API running on port ${PORT}`);
