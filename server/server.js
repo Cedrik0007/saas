@@ -20,7 +20,7 @@ const mongooseOptions = {
 
 // Disable mongoose buffering globally (do this before connect)
 mongoose.set('bufferCommands', false);
-mongoose.set('bufferMaxEntries', 0);
+// bufferMaxEntries is not a supported option - removed to prevent crashes
 
 // Cache the connection to avoid multiple connections in serverless
 let cached = global.mongoose;
@@ -514,18 +514,24 @@ app.delete("/api/invoices/:id", (req, res) => {
 });
 
 
-app.listen(PORT, () => {
-  console.log(`Subscription Manager HK API running on port ${PORT}`);
-  console.log(`✓ API endpoints available:`);
-  console.log(`  - GET    /api/members`);
-  console.log(`  - POST   /api/members`);
-  console.log(`  - PUT    /api/members/:id`);
-  console.log(`  - DELETE /api/members/:id`);
-  console.log(`  - GET    /api/invoices`);
-  console.log(`  - POST   /api/invoices`);
-  console.log(`  - PUT    /api/invoices/:id`);
-  console.log(`  - DELETE /api/invoices/:id`);
-});
+// Export for Vercel serverless functions
+export default app;
+
+// Only listen locally (not on Vercel)
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Subscription Manager HK API running on port ${PORT}`);
+    console.log(`✓ API endpoints available:`);
+    console.log(`  - GET    /api/members`);
+    console.log(`  - POST   /api/members`);
+    console.log(`  - PUT    /api/members/:id`);
+    console.log(`  - DELETE /api/members/:id`);
+    console.log(`  - GET    /api/invoices`);
+    console.log(`  - POST   /api/invoices`);
+    console.log(`  - PUT    /api/invoices/:id`);
+    console.log(`  - DELETE /api/invoices/:id`);
+  });
+}
 
 
 
