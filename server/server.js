@@ -50,22 +50,21 @@ app.use(cors({
 app.use(express.json());
 
 // GET all members (from MongoDB)
-// app.get("/api/members", async (req, res) => {
-//   try {
-//     const members = await UserModel.find({}).sort({ createdAt: -1 });
-//     res.json(members);
-//   } catch (error) {
-//     console.error("Error fetching members:", error);
-//     res.status(500).json({ error: error.message});
-//   }
-// });
+app.get("/api/members", async (req, res) => {
+  try {
+    const members = await UserModel.find({}).sort({ createdAt: -1 });
+    res.json(members);
+  } catch (error) {
+    console.error("Error fetching members:", error);
+    res.status(500).json({ error: error.message});
+  }
+});
 
 app.get("/api/admins", async (req, res) => {
   try {
     const admins = await AdminModel.find();
     res.json(admins);
   } catch (error) {
-    console.error("Error fetching admins:", error);
     res.status(500).json({ error: error.message });
   }
 });
