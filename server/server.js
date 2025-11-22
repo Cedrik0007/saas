@@ -14,9 +14,13 @@ const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://0741sanjai_db_user
 const mongooseOptions = {
   serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
   socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
-  bufferCommands: false, // Disable mongoose buffering
-  bufferMaxEntries: 0, // Disable mongoose buffering
+  connectTimeoutMS: 10000, // Connection timeout
+  maxPoolSize: 1, // Limit connection pool for serverless
 };
+
+// Disable mongoose buffering globally (do this before connect)
+mongoose.set('bufferCommands', false);
+mongoose.set('bufferMaxEntries', 0);
 
 // Cache the connection to avoid multiple connections in serverless
 let cached = global.mongoose;
