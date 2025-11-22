@@ -1676,9 +1676,30 @@ Subscription Manager HK`;
                               required
                               value={adminForm.name}
                               onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
-                              placeholder="Enter admin name"
+                              placeholder="Enter Your Name"
                             />
                           </label>
+
+                          <label>
+                            Email
+                            <input
+                              required
+                              value={adminForm.email}
+                              onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+                              placeholder="Enter your Email"
+                            />
+                          </label>
+
+                          <label>
+                            Password
+                            <input
+                              required
+                              value={adminForm.password}
+                              onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
+                              placeholder="Enter Your Password"
+                            />
+                          </label>
+                           
                           <label>
                             Role
                             <select
