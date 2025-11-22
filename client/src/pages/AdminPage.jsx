@@ -685,8 +685,24 @@ Subscription Manager HK`;
                           onChange={(e) => setMemberForm({ ...memberForm, balance: e.target.value })}
                         />
                       </label>
+                      <label>
+                        createdAt
+                        <input
+                          type="text"
+                          value={memberForm.createdAt}
+                          onChange={(e) => setMemberForm({ ...memberForm, createdAt: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        updatedAt
+                        <input
+                          type="text"
+                          value={memberForm.updatedAt}
+                          onChange={(e) => setMemberForm({ ...memberForm, updatedAt: e.target.value })}
+                        />
+                      </label>
                       <div className="form-actions">
-                        <button type="button" className="ghost-btn" onClick={() => setShowMemberForm(false)}>
+                        < button type="button" className="ghost-btn" onClick={() => setShowMemberForm(false)}>
                           Cancel
                         </button>
                         <button type="submit" className="primary-btn">
