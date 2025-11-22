@@ -686,7 +686,7 @@ Subscription Manager HK`;
                         />
                       </label>
                       <label>
-                        createdAt
+                        Next Due Date
                         <input
                           type="text"
                           value={memberForm.nextDue}
@@ -694,7 +694,7 @@ Subscription Manager HK`;
                         />
                       </label>
                       <label>
-                        updatedAt
+                        Last Payment Date
                         <input
                           type="text"
                           value={memberForm.lastPayment}
