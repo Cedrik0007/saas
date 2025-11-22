@@ -13,7 +13,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:4000",
+        target: "https://subs-manager-backend-ag8gejsit-shans-projects-f903a935.vercel.app",
         changeOrigin: true,
       },
     },

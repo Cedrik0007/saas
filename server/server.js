@@ -70,12 +70,6 @@ app.get("/api/admins", async (req, res) => {
   }
 });
 
-
-
-
-
-
-
 app.get("/", (req, res) => {
   res.send("server & db running");
 });
