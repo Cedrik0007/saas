@@ -60,7 +60,7 @@ app.get("/api/members", async (req, res) => {
   }
 });
 
-app.get("/api/admins/login", async (req, res) => {
+app.get("/api/admins", async (req, res) => {
   try {
     const admins = await AdminModel.find();
     res.json(admins);
@@ -70,38 +70,6 @@ app.get("/api/admins/login", async (req, res) => {
   }
 });
 
-// Admin Login Route
-app.post("/api/admins/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email & Password required" });
-    }
-
-    const admin = await Admin.findOne({ email });
-
-    if (!admin) {
-      return res.status(404).json({ message: "Admin not found" });
-    }
-
-    if (admin.password !== password) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    res.json({
-      message: "Admin login successful",
-      admin: {
-        id: admin._id,
-        name: admin.name,
-        email: admin.email,
-      },
-    });
-
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error });
-  }
-});
 
 
 
