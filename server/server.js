@@ -2,8 +2,35 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import multer from "multer";
+import { v2 as cloudinary } from "cloudinary";
+import { Readable } from "stream";
 
 dotenv.config();
+
+// Configure Cloudinary (with error handling for missing credentials)
+let upload;
+try {
+  if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+    });
+
+    // Use memory storage and upload to Cloudinary manually (compatible with Cloudinary v2)
+    upload = multer({ storage: multer.memoryStorage() });
+    console.log("✓ Cloudinary configured successfully");
+  } else {
+    console.warn("⚠️ Cloudinary credentials not found. Image upload will use memory storage.");
+    // Fallback to memory storage if Cloudinary is not configured
+    upload = multer({ storage: multer.memoryStorage() });
+  }
+} catch (error) {
+  console.error("Error configuring Cloudinary:", error.message);
+  console.warn("⚠️ Falling back to memory storage for file uploads.");
+  upload = multer({ storage: multer.memoryStorage() });
+}
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -583,6 +610,60 @@ app.delete("/api/invoices/:id", (req, res) => {
   res.status(204).send();
 });
 
+// ========== CLOUDINARY IMAGE UPLOAD ENDPOINT ==========
+
+// POST upload payment screenshot to Cloudinary
+app.post("/api/upload-screenshot", upload.single("screenshot"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // Check if Cloudinary is configured
+    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+      // Upload to Cloudinary using v2 API
+      const uploadResult = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: "payment-screenshots",
+            allowed_formats: ["jpg", "jpeg", "png", "gif", "webp"],
+            transformation: [{ width: 1000, crop: "limit" }],
+          },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+
+        // Convert buffer to stream
+        const bufferStream = new Readable();
+        bufferStream.push(req.file.buffer);
+        bufferStream.push(null);
+        bufferStream.pipe(uploadStream);
+      });
+
+      res.json({
+        success: true,
+        url: uploadResult.secure_url,
+        publicId: uploadResult.public_id,
+      });
+    } else {
+      // Memory storage fallback - convert to base64
+      const base64 = req.file.buffer.toString('base64');
+      const dataUrl = `data:${req.file.mimetype};base64,${base64}`;
+      
+      res.json({
+        success: true,
+        url: dataUrl,
+        publicId: `temp_${Date.now()}`,
+        warning: "Cloudinary not configured. Using base64 encoding. Please configure Cloudinary for production use."
+      });
+    }
+  } catch (error) {
+    console.error("Error uploading screenshot:", error);
+    res.status(500).json({ error: "Failed to upload screenshot: " + error.message });
+  }
+});
 
 // Export for Vercel serverless functions
 export default app;

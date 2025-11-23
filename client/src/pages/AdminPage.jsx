@@ -44,6 +44,7 @@ export function AdminPage() {
     updateAdminUser,
     deleteAdminUser,
     resetAllData,
+    addPayment,
   } = useApp();
 
   const sections = [
@@ -299,15 +300,38 @@ export function AdminPage() {
     showToast("Invoice created successfully!");
   };
 
-  const handleMarkAsPaid = (invoiceId) => {
+  const handleMarkAsPaid = (invoiceId, method = "Manual") => {
     const invoice = invoices.find((inv) => inv.id === invoiceId);
     if (invoice) {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      const currentAdmin = admins.find(a => a.email === adminEmail);
+      
+      const paymentMethod = method === "Cash" ? "Cash" : "Manual";
+      const reference = method === "Cash" ? `CASH_${Date.now()}` : `MAN${Date.now()}`;
+      
       updateInvoice(invoiceId, {
         status: "Paid",
-        method: "Manual",
-        reference: `MAN${Date.now()}`,
+        method: paymentMethod,
+        reference: reference,
+        paidToAdmin: currentAdmin?.id,
+        paidToAdminName: currentAdmin?.name,
       });
-      showToast("Invoice marked as paid!");
+      
+      // Add payment record
+      addPayment({
+        invoiceId: invoiceId,
+        amount: invoice.amount,
+        method: paymentMethod,
+        reference: reference,
+        member: invoice.memberName || "Member",
+        memberId: invoice.memberId,
+        period: invoice.period,
+        status: "Paid",
+        paidToAdmin: currentAdmin?.id,
+        paidToAdminName: currentAdmin?.name,
+      });
+      
+      showToast(`Invoice marked as paid (${paymentMethod})!`);
     }
   };
 
@@ -1075,13 +1099,26 @@ Subscription Manager HK`;
                             render: () => (
                               <div style={{ display: "flex", gap: "8px" }}>
                                 {invoice.status !== "Paid" && (
-                                  <button
-                                    className="secondary-btn"
-                                    style={{ padding: "4px 10px", fontSize: "0.85rem" }}
-                                    onClick={() => handleMarkAsPaid(invoice.id)}
-                                  >
-                                    Mark Paid
-                                  </button>
+                                  <>
+                                    <button
+                                      className="secondary-btn"
+                                      style={{ padding: "4px 10px", fontSize: "0.85rem" }}
+                                      onClick={() => {
+                                        if (window.confirm(`Mark invoice ${invoice.id} as paid (Cash)?`)) {
+                                          handleMarkAsPaid(invoice.id, "Cash");
+                                        }
+                                      }}
+                                    >
+                                      Mark Paid (Cash)
+                                    </button>
+                                    <button
+                                      className="secondary-btn"
+                                      style={{ padding: "4px 10px", fontSize: "0.85rem" }}
+                                      onClick={() => handleMarkAsPaid(invoice.id)}
+                                    >
+                                      Mark Paid
+                                    </button>
+                                  </>
                                 )}
                                 <button
                                   className="ghost-btn"

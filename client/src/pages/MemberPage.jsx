@@ -9,6 +9,7 @@ import { statusClass } from "../statusClasses";
 export function MemberPage() {
   const {
     members,  // Get members from MongoDB
+    admins,  // Get admins for payment selection
     invoices,
     paymentHistory,
     addPayment,
@@ -25,22 +26,15 @@ export function MemberPage() {
   ];
 
   const [activeSection, setActiveSection] = useState(sections[0].id);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("Bank Transfer");
-  const [selectedInvoices, setSelectedInvoices] = useState([]);
-  const [paymentReference, setPaymentReference] = useState("");
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("Upload Screenshot");
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
+  const [selectedAdminId, setSelectedAdminId] = useState("");
   const [paymentProof, setPaymentProof] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
   const [toast, setToast] = useState(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isAlertDismissed, setIsAlertDismissed] = useState(false);
-  
-  // Card payment form
-  const [cardForm, setCardForm] = useState({
-    cardNumber: "",
-    nameOnCard: "",
-    expiry: "",
-    cvv: "",
-  });
 
   // Get current member from MongoDB based on email in sessionStorage (case-insensitive)
   const memberEmail = sessionStorage.getItem('memberEmail');
@@ -118,122 +112,160 @@ export function MemberPage() {
     }));
   };
 
-  // Calculate total amount to pay
-  const calculateTotal = () => {
-    return selectedInvoices.reduce((total, invId) => {
-      const invoice = invoices.find((inv) => inv.id === invId);
-      if (invoice) {
-        return total + parseFloat(invoice.amount.replace("$", ""));
-      }
-      return total;
-    }, 0);
-  };
 
-  // Handle invoice selection for payment
-  const handleSelectInvoice = (invoiceId) => {
-    if (selectedInvoices.includes(invoiceId)) {
-      setSelectedInvoices(selectedInvoices.filter((id) => id !== invoiceId));
-    } else {
-      setSelectedInvoices([...selectedInvoices, invoiceId]);
-    }
-  };
-
-  // Handle manual payment submission (Bank Transfer, FPS, etc.)
-  const handleManualPayment = (e) => {
+  // Handle screenshot payment submission
+  const handleScreenshotPayment = async (e) => {
     e.preventDefault();
 
-    if (selectedInvoices.length === 0) {
-      showToast("Please select at least one invoice to pay", "error");
+    if (!selectedInvoiceId) {
+      showToast("Please select an invoice", "error");
       return;
     }
 
-    if (!paymentReference) {
-      showToast("Please enter a transaction reference", "error");
+    if (!paymentProof) {
+      showToast("Please upload a payment screenshot", "error");
       return;
     }
 
-    // Process each selected invoice
-    selectedInvoices.forEach((invoiceId) => {
-      const invoice = invoices.find((inv) => inv.id === invoiceId);
+    setUploading(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      
+      // Upload screenshot to Cloudinary
+      const formData = new FormData();
+      formData.append("screenshot", paymentProof);
+
+      const uploadResponse = await fetch(`${apiUrl}/api/upload-screenshot`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to upload screenshot");
+      }
+
+      const uploadData = await uploadResponse.json();
+      const screenshotUrl = uploadData.url;
+
+      const invoice = invoices.find((inv) => inv.id === selectedInvoiceId);
       if (invoice) {
-        // Update invoice status to pending verification
-        updateInvoice(invoiceId, {
-          status: "Pending Verification",
-          method: selectedPaymentMethod,
-          reference: paymentReference,
+        // Update invoice status to Paid with screenshot
+        await updateInvoice(selectedInvoiceId, {
+          status: "Paid",
+          method: "Screenshot",
+          reference: `SCREENSHOT_${Date.now()}`,
+          screenshot: screenshotUrl,
         });
 
         // Add payment record
         addPayment({
-          invoiceId: invoiceId,
+          invoiceId: selectedInvoiceId,
           amount: invoice.amount,
-          method: selectedPaymentMethod,
-          reference: paymentReference,
+          method: "Screenshot",
+          reference: `SCREENSHOT_${Date.now()}`,
           member: currentMember?.name || "Member",
+          memberId: currentMember?.id,
+          memberEmail: currentMember?.email,
           period: invoice.period,
-          status: "Pending Verification",
+          status: "Paid",
+          screenshot: screenshotUrl,
         });
       }
-    });
 
-    // Reset form and show success
-    setPaymentReference("");
-    setPaymentProof(null);
-    setSelectedInvoices([]);
-    setShowPaymentSuccess(true);
-    showToast("Payment submitted successfully! Awaiting verification.");
+      // Reset form and show success
+      setPaymentProof(null);
+      setSelectedInvoiceId("");
+      setShowPaymentSuccess(true);
+      showToast("Payment submitted successfully! Invoice marked as paid.");
+    } catch (error) {
+      console.error("Error submitting payment:", error);
+      showToast("Failed to submit payment. Please try again.", "error");
+    } finally {
+      setUploading(false);
+    }
   };
 
-  // Handle card payment
-  const handleCardPayment = (e) => {
+  // Handle admin payment submission
+  const handleAdminPayment = async (e) => {
     e.preventDefault();
 
-    if (selectedInvoices.length === 0) {
-      showToast("Please select at least one invoice to pay", "error");
+    if (!selectedInvoiceId) {
+      showToast("Please select an invoice", "error");
       return;
     }
 
-    if (!cardForm.cardNumber || !cardForm.nameOnCard || !cardForm.expiry || !cardForm.cvv) {
-      showToast("Please fill in all card details", "error");
+    if (!selectedAdminId) {
+      showToast("Please select the admin you paid to", "error");
       return;
     }
 
-    // Process each selected invoice
-    selectedInvoices.forEach((invoiceId) => {
-      const invoice = invoices.find((inv) => inv.id === invoiceId);
-      if (invoice) {
-        const reference = `CC${Date.now()}`;
+    setUploading(true);
+    try {
+      const invoice = invoices.find((inv) => inv.id === selectedInvoiceId);
+      const admin = admins.find((a) => a.id === selectedAdminId);
+      
+      if (invoice && admin) {
+        let screenshotUrl = null;
         
-        // Update invoice status to Paid
-        updateInvoice(invoiceId, {
+        // Upload screenshot if provided
+        if (paymentProof) {
+          const apiUrl = import.meta.env.VITE_API_URL || '';
+          
+          const formData = new FormData();
+          formData.append("screenshot", paymentProof);
+
+          const uploadResponse = await fetch(`${apiUrl}/api/upload-screenshot`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!uploadResponse.ok) {
+            throw new Error("Failed to upload screenshot");
+          }
+
+          const uploadData = await uploadResponse.json();
+          screenshotUrl = uploadData.url;
+        }
+
+        // Update invoice status to Paid with admin info and optional screenshot
+        await updateInvoice(selectedInvoiceId, {
           status: "Paid",
-          method: "Credit Card",
-          reference: reference,
+          method: "Cash to Admin",
+          reference: `CASH_${Date.now()}`,
+          paidToAdmin: admin.id,
+          paidToAdminName: admin.name,
+          screenshot: screenshotUrl, // Add screenshot URL if uploaded
         });
 
         // Add payment record
         addPayment({
-          invoiceId: invoiceId,
+          invoiceId: selectedInvoiceId,
           amount: invoice.amount,
-          method: "Credit Card",
-          reference: reference,
+          method: "Cash to Admin",
+          reference: `CASH_${Date.now()}`,
           member: currentMember?.name || "Member",
+          memberId: currentMember?.id,
+          memberEmail: currentMember?.email,
           period: invoice.period,
           status: "Paid",
+          paidToAdmin: admin.id,
+          paidToAdminName: admin.name,
+          screenshot: screenshotUrl, // Add screenshot URL if uploaded
         });
       }
-    });
 
-    // Reset form and show success
-    setCardForm({
-      cardNumber: "",
-      nameOnCard: "",
-      expiry: "",
-      cvv: "",
-    });
-    setSelectedInvoices([]);
-    setShowPaymentSuccess(true);
-    showToast("Payment successful!");
+      // Reset form and show success
+      setSelectedInvoiceId("");
+      setSelectedAdminId("");
+      setPaymentProof(null); // Clear screenshot
+      setShowPaymentSuccess(true);
+      showToast("Payment submitted successfully! Invoice marked as paid.");
+    } catch (error) {
+      console.error("Error submitting payment:", error);
+      showToast("Failed to submit payment. Please try again.", "error");
+    } finally {
+      setUploading(false);
+    }
   };
 
   // Handle profile update
@@ -271,14 +303,55 @@ export function MemberPage() {
       return total + parseFloat(inv.amount.replace("$", ""));
     }, 0);
 
-    // Filter paid invoices for current member only
-    const paidInvoices = invoices.filter((inv) => 
-      inv.status === "Paid" &&
-      (inv.memberId === currentMember?.id || inv.memberEmail === currentMember?.email || inv.memberName === currentMember?.name)
-    );
-    const paidThisYear = paidInvoices.reduce((total, inv) => {
-      return total + parseFloat(inv.amount.replace("$", ""));
+    // Get current year
+    const currentYear = new Date().getFullYear();
+    
+    // Calculate paid this year from payment history (more accurate)
+    const memberPayments = currentMember 
+      ? paymentHistory.filter((item) => 
+          (item.memberId === currentMember.id || 
+           item.memberEmail === currentMember.email || 
+           item.member === currentMember.name) &&
+          item.status === "Paid"
+        )
+      : paymentHistory.filter(item => item.status === "Paid");
+    
+    // Filter payments from current year
+    const paymentsThisYear = memberPayments.filter((payment) => {
+      if (!payment.date) return false;
+      // Parse date (format: "DD MMM YYYY" or similar)
+      const paymentDate = new Date(payment.date);
+      return paymentDate.getFullYear() === currentYear;
+    });
+    
+    // Sum all paid amounts from current year
+    let paidThisYear = paymentsThisYear.reduce((total, payment) => {
+      const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+      return total + amount;
     }, 0);
+    
+    // Fallback: if no payment history, use paid invoices from current year
+    if (paidThisYear === 0) {
+      const paidInvoices = invoices.filter((inv) => 
+        inv.status === "Paid" &&
+        (inv.memberId === currentMember?.id || 
+         inv.memberEmail === currentMember?.email || 
+         inv.memberName === currentMember?.name)
+      );
+      
+      // Filter by year based on due date or current year
+      const paidInvoicesThisYear = paidInvoices.filter((inv) => {
+        if (inv.due) {
+          const dueDate = new Date(inv.due);
+          return dueDate.getFullYear() === currentYear;
+        }
+        return true; // Include if no due date
+      });
+      
+      paidThisYear = paidInvoicesThisYear.reduce((total, inv) => {
+        return total + parseFloat(inv.amount.replace("$", ""));
+      }, 0);
+    }
 
     const nextDueInvoice = unpaidInvoices.sort((a, b) => 
       new Date(a.due) - new Date(b.due)
@@ -409,7 +482,7 @@ export function MemberPage() {
                   <div className="stat-card stat-info">
                     <div className="stat-details">
                       <span className="stat-label">Paid This Year</span>
-                      <h3 className="stat-value">${stats.paidThisYear}</h3>
+                      <h3 className="stat-value">${parseFloat(stats.paidThisYear).toFixed(2)}</h3>
                       <span className="stat-change positive">On track</span>
                     </div>
                   </div>
@@ -560,11 +633,9 @@ export function MemberPage() {
                 {showPaymentSuccess ? (
                   <div className="card" style={{ textAlign: "center", padding: "40px" }}>
                     <div style={{ fontSize: "48px", marginBottom: "16px" }}>✓</div>
-                    <h2>Payment {selectedPaymentMethod === "Card" ? "Successful" : "Submitted"}</h2>
+                    <h2>Payment Submitted</h2>
                     <p style={{ color: "#666", marginBottom: "24px" }}>
-                      {selectedPaymentMethod === "Card"
-                        ? "Your payment has been processed successfully."
-                        : "Your payment details have been submitted and are awaiting verification."}
+                      Your payment has been submitted successfully.
                     </p>
                     <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
                       <button className="primary-btn" onClick={() => handleNavClick("dashboard")}>
@@ -583,310 +654,136 @@ export function MemberPage() {
                   </div>
                 ) : (
                   <div className="card">
-                    {/* Invoice Selection */}
-                    <div className="invoice-selection-section" style={{ marginBottom: "32px" }}>
-                      <div style={{ 
-                        display: "flex", 
-                        justifyContent: "space-between", 
-                        alignItems: "center", 
-                        marginBottom: "20px",
-                        flexWrap: "wrap",
-                        gap: "12px"
-                      }}>
-                        <h4 style={{ margin: 0 }}>Select Invoices to Pay</h4>
-                        {getUnpaidInvoices().length > 0 && (
-                          <button
-                            type="button"
-                            className="ghost-btn"
-                            style={{ 
-                              fontSize: "0.875rem",
-                              padding: "6px 12px"
-                            }}
-                            onClick={() => {
-                              if (selectedInvoices.length === getUnpaidInvoices().length) {
-                                setSelectedInvoices([]);
-                              } else {
-                                setSelectedInvoices(getUnpaidInvoices().map(inv => inv.id));
-                              }
-                            }}
-                          >
-                            {selectedInvoices.length === getUnpaidInvoices().length ? "Deselect All" : "Select All"}
-                          </button>
-                        )}
-                      </div>
-                      
-                      {getUnpaidInvoices().length === 0 ? (
-                        <div style={{ 
-                          textAlign: "center", 
-                          padding: "40px 20px",
-                          color: "#666"
-                        }}>
-                          <p style={{ margin: 0, fontSize: "1rem" }}>No unpaid invoices available.</p>
-                        </div>
-                      ) : (
-                        <div style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-                          gap: "16px",
-                          marginBottom: "24px"
-                        }}>
-                          {getUnpaidInvoices().map((invoice) => {
-                            const isSelected = selectedInvoices.includes(invoice.id);
-                            return (
-                              <label
-                                key={invoice.id}
-                                style={{
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  padding: "16px",
-                                  border: `2px solid ${isSelected ? "var(--primary, #000)" : "#e0e0e0"}`,
-                                  borderRadius: "8px",
-                                  cursor: "pointer",
-                                  transition: "all 0.2s ease",
-                                  backgroundColor: isSelected ? "rgba(0, 0, 0, 0.02)" : "#fff",
-                                  position: "relative"
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!isSelected) {
-                                    e.currentTarget.style.borderColor = "#ccc";
-                                  }
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!isSelected) {
-                                    e.currentTarget.style.borderColor = "#e0e0e0";
-                                  }
-                                }}
-                              >
-                                <div style={{ 
-                                  display: "flex", 
-                                  alignItems: "flex-start", 
-                                  gap: "12px",
-                                  marginBottom: "12px"
-                                }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => handleSelectInvoice(invoice.id)}
-                                    style={{
-                                      marginTop: "2px",
-                                      width: "18px",
-                                      height: "18px",
-                                      cursor: "pointer",
-                                      flexShrink: 0
-                                    }}
-                                  />
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ 
-                                      fontWeight: "600", 
-                                      fontSize: "0.95rem",
-                                      marginBottom: "4px",
-                                      color: "#000"
-                                    }}>
-                                      {invoice.period}
-                                    </div>
-                                    <div style={{ 
-                                      fontSize: "0.875rem", 
-                                      color: "#666",
-                                      marginBottom: "8px"
-                                    }}>
-                                      Due: {invoice.due}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div style={{ 
-                                  display: "flex", 
-                                  justifyContent: "space-between", 
-                                  alignItems: "center",
-                                  marginTop: "auto",
-                                  paddingTop: "12px",
-                                  borderTop: "1px solid #f0f0f0"
-                                }}>
-                                  <span style={{ 
-                                    fontSize: "1.1rem", 
-                                    fontWeight: "600",
-                                    color: "#000"
-                                  }}>
-                                    {invoice.amount}
-                                  </span>
-                                  <span className={statusClass[invoice.status]} style={{ 
-                                    fontSize: "0.75rem",
-                                    padding: "4px 8px"
-                                  }}>
-                                    {invoice.status}
-                                  </span>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                      
-                      {selectedInvoices.length > 0 && (
-                        <div style={{
-                          padding: "20px",
-                          backgroundColor: "#f8f8f8",
-                          borderRadius: "8px",
-                          border: "1px solid #e0e0e0"
-                        }}>
-                          <div style={{ 
-                            display: "flex", 
-                            justifyContent: "space-between", 
-                            alignItems: "center",
-                            flexWrap: "wrap",
-                            gap: "12px"
-                          }}>
-                            <div>
-                              <div style={{ 
-                                fontSize: "0.875rem", 
-                                color: "#666",
-                                marginBottom: "4px"
-                              }}>
-                                {selectedInvoices.length} invoice{selectedInvoices.length > 1 ? 's' : ''} selected
-                              </div>
-                              <div style={{ 
-                                fontSize: "1.5rem", 
-                                fontWeight: "600",
-                                color: "#000"
-                              }}>
-                                Total: ${calculateTotal().toFixed(2)}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Payment Methods */}
+                    {/* Payment Methods - Two Options */}
                     <div className="payment-methods">
                       <div className="tabs">
                         <button
-                          className={`tab ${selectedPaymentMethod === "Bank Transfer" ? "active" : ""}`}
-                          onClick={() => setSelectedPaymentMethod("Bank Transfer")}
+                          className={`tab ${selectedPaymentMethod === "Upload Screenshot" ? "active" : ""}`}
+                          onClick={() => setSelectedPaymentMethod("Upload Screenshot")}
                         >
-                          Bank Transfer
+                          Upload Screenshot
                         </button>
                         <button
-                          className={`tab ${selectedPaymentMethod === "FPS" ? "active" : ""}`}
-                          onClick={() => setSelectedPaymentMethod("FPS")}
+                          className={`tab ${selectedPaymentMethod === "Paid to Admin" ? "active" : ""}`}
+                          onClick={() => setSelectedPaymentMethod("Paid to Admin")}
                         >
-                          FPS
-                        </button>
-                        <button
-                          className={`tab ${selectedPaymentMethod === "PayMe" ? "active" : ""}`}
-                          onClick={() => setSelectedPaymentMethod("PayMe")}
-                        >
-                          PayMe
-                        </button>
-                        <button
-                          className={`tab ${selectedPaymentMethod === "Alipay" ? "active" : ""}`}
-                          onClick={() => setSelectedPaymentMethod("Alipay")}
-                        >
-                          Alipay
-                        </button>
-                        <button
-                          className={`tab ${selectedPaymentMethod === "Card" ? "active" : ""}`}
-                          onClick={() => setSelectedPaymentMethod("Card")}
-                        >
-                          Card
+                          Paid to Admin
                         </button>
                       </div>
 
-                      {/* Manual Payment Methods */}
-                      {selectedPaymentMethod !== "Card" && (
-                        <form className="method-panel" onSubmit={handleManualPayment}>
+                      {/* Upload Screenshot Option */}
+                      {selectedPaymentMethod === "Upload Screenshot" && (
+                        <form className="method-panel" onSubmit={handleScreenshotPayment}>
                           <p style={{ marginBottom: "16px", color: "#666" }}>
-                            {selectedPaymentMethod === "Bank Transfer" &&
-                              "Transfer to HSBC Hong Kong · Account 123-456789-001 · Name: Subscription Manager HK"}
-                            {selectedPaymentMethod === "FPS" && "FPS ID: 1234567"}
-                            {selectedPaymentMethod === "PayMe" &&
-                              "Scan the PayMe QR code and complete the payment"}
-                            {selectedPaymentMethod === "Alipay" &&
-                              "Scan the Alipay QR code and complete the payment"}
+                            Select an invoice and upload a screenshot of your payment confirmation. The invoice will be marked as paid once the screenshot is uploaded.
                           </p>
 
                           <label>
-                            Transaction Reference *
-                            <input
+                            Select Invoice *
+                            <select
                               required
-                              placeholder="e.g. FP89231"
-                              value={paymentReference}
-                              onChange={(e) => setPaymentReference(e.target.value)}
-                            />
+                              value={selectedInvoiceId || ""}
+                              onChange={(e) => setSelectedInvoiceId(e.target.value)}
+                              style={{ color: "#000" }}
+                            >
+                              <option value="">Choose an invoice</option>
+                              {getUnpaidInvoices().map((inv) => (
+                                <option key={inv.id} value={inv.id}>
+                                  {inv.period} - {inv.amount} (Due: {inv.due})
+                                </option>
+                              ))}
+                            </select>
                           </label>
 
                           <label>
-                            Upload Payment Proof (Optional)
+                            Upload Payment Screenshot *
+                            <input
+                              type="file"
+                              accept="image/*"
+                              required
+                              onChange={(e) => setPaymentProof(e.target.files[0])}
+                            />
+                            {paymentProof && (
+                              <div style={{ marginTop: "8px", fontSize: "0.875rem", color: "#666" }}>
+                                Selected: {paymentProof.name}
+                              </div>
+                            )}
+                          </label>
+
+                          <button 
+                            type="submit" 
+                            className="primary-btn" 
+                            style={{ marginTop: "16px" }}
+                            disabled={uploading}
+                          >
+                            {uploading ? "Uploading..." : "Submit Payment"}
+                          </button>
+                        </form>
+                      )}
+
+                      {/* Paid to Admin Option */}
+                      {selectedPaymentMethod === "Paid to Admin" && (
+                        <form className="method-panel" onSubmit={handleAdminPayment}>
+                          <p style={{ marginBottom: "16px", color: "#666" }}>
+                            Select an invoice and the admin you paid to. You can optionally upload a payment screenshot as proof.
+                          </p>
+
+                          <label>
+                            Select Invoice *
+                            <select
+                              required
+                              value={selectedInvoiceId || ""}
+                              onChange={(e) => setSelectedInvoiceId(e.target.value)}
+                              style={{ color: "#000" }}
+                            >
+                              <option value="">Choose an invoice</option>
+                              {getUnpaidInvoices().map((inv) => (
+                                <option key={inv.id} value={inv.id}>
+                                  {inv.period} - {inv.amount} (Due: {inv.due})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label>
+                            Select Admin You Paid To *
+                            <select
+                              required
+                              value={selectedAdminId || ""}
+                              onChange={(e) => setSelectedAdminId(e.target.value)}
+                              style={{ color: "#000" }}
+                            >
+                              <option value="">Choose an admin</option>
+                              {admins.filter(admin => admin.status === 'Active').map((admin) => (
+                                <option key={admin.id} value={admin.id}>
+                                  {admin.name} ({admin.email})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label>
+                            Upload Payment Screenshot (Optional)
                             <input
                               type="file"
                               accept="image/*"
                               onChange={(e) => setPaymentProof(e.target.files[0])}
                             />
+                            {paymentProof && (
+                              <div style={{ marginTop: "8px", fontSize: "0.875rem", color: "#666" }}>
+                                Selected: {paymentProof.name}
+                              </div>
+                            )}
                           </label>
 
-                          <button type="submit" className="primary-btn" style={{ marginTop: "16px" }}>
-                            Submit Payment Details
+                          <button 
+                            type="submit" 
+                            className="primary-btn" 
+                            style={{ marginTop: "16px" }}
+                            disabled={uploading}
+                          >
+                            {uploading ? "Uploading..." : "Submit Payment"}
                           </button>
-                        </form>
-                      )}
-
-                      {/* Card Payment */}
-                      {selectedPaymentMethod === "Card" && (
-                        <form className="method-panel" onSubmit={handleCardPayment}>
-                          <div className="card-form">
-                            <label>
-                              Card Number *
-                              <input
-                                required
-                                placeholder="4242 4242 4242 4242"
-                                value={cardForm.cardNumber}
-                                onChange={(e) =>
-                                  setCardForm({ ...cardForm, cardNumber: e.target.value })
-                                }
-                              />
-                            </label>
-
-                            <div className="inline">
-                              <label>
-                                Name on Card *
-                                <input
-                                  required
-                                  placeholder={currentMember?.name || "Enter name"}
-                                  value={cardForm.nameOnCard}
-                                  onChange={(e) =>
-                                    setCardForm({ ...cardForm, nameOnCard: e.target.value })
-                                  }
-                                />
-                              </label>
-
-                              <label>
-                                Expiry *
-                                <input
-                                  required
-                                  placeholder="MM/YY"
-                                  value={cardForm.expiry}
-                                  onChange={(e) =>
-                                    setCardForm({ ...cardForm, expiry: e.target.value })
-                                  }
-                                />
-                              </label>
-
-                              <label>
-                                CVV *
-                                <input
-                                  required
-                                  placeholder="123"
-                                  type="password"
-                                  maxLength="3"
-                                  value={cardForm.cvv}
-                                  onChange={(e) => setCardForm({ ...cardForm, cvv: e.target.value })}
-                                />
-                              </label>
-                            </div>
-
-                            <button type="submit" className="primary-btn" style={{ marginTop: "16px" }}>
-                              Pay ${calculateTotal()}
-                            </button>
-                          </div>
                         </form>
                       )}
                     </div>
@@ -930,7 +827,7 @@ export function MemberPage() {
                               className="primary-btn"
                               style={{ padding: "6px 12px" }}
                               onClick={() => {
-                                setSelectedInvoices([invoice.id]);
+                                setSelectedInvoiceId(invoice.id);
                                 handleNavClick("pay");
                               }}
                             >
