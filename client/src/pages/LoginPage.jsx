@@ -162,10 +162,10 @@ export function LoginPage() {
 
             <div className="login-hints">
               <p>
-                <strong>Admin:</strong> Use your registered email and password from MongoDB
+                <strong>Admin:</strong> admin1234@gmail.com / admin1234
               </p>
               <p>
-                <strong>Member:</strong> Use your registered email and password from MongoDB
+                <strong>Member:</strong> member1234@gmail.com / member1234
               </p>
             </div>
 
