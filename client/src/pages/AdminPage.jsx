@@ -99,6 +99,7 @@ export function AdminPage() {
     from: "2025-01-01",
     to: "2025-12-31",
   });
+  const [uploadingQR, setUploadingQR] = useState({});
   const [selectedPeriod, setSelectedPeriod] = useState("This Year");
   const [hoveredMonth, setHoveredMonth] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
@@ -1095,6 +1096,39 @@ Subscription Manager HK`;
                             ),
                           },
                           "Due Date": invoice.due,
+                          Screenshot: invoice.screenshot ? {
+                            render: () => (
+                              <button
+                                onClick={() => {
+                                  const newWindow = window.open();
+                                  if (newWindow) {
+                                    newWindow.document.write(`
+                                      <html>
+                                        <head><title>Payment Screenshot - ${invoice.id}</title></head>
+                                        <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                          <img src="${invoice.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
+                                        </body>
+                                      </html>
+                                    `);
+                                  }
+                                }}
+                                style={{
+                                  padding: "4px 10px",
+                                  background: "#000",
+                                  color: "#fff",
+                                  border: "none",
+                                  borderRadius: "6px",
+                                  fontSize: "0.85rem",
+                                  cursor: "pointer",
+                                  transition: "all 0.2s ease"
+                                }}
+                                onMouseEnter={(e) => e.target.style.background = "#333"}
+                                onMouseLeave={(e) => e.target.style.background = "#000"}
+                              >
+                                📷 View
+                              </button>
+                            )
+                          } : "-",
                           Actions: {
                             render: () => (
                               <div style={{ display: "flex", gap: "8px" }}>
@@ -1163,18 +1197,136 @@ Subscription Manager HK`;
                         }
 
                         return (
-                          <ul className="timeline">
+                          <div style={{ 
+                            display: "grid", 
+                            gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", 
+                            gap: "20px" 
+                          }}>
                             {memberPayments.map((item, idx) => (
-                              <li key={idx}>
-                                <p>
-                                  {item.date || "N/A"} · {item.amount || "$0"} · {item.method || "N/A"} · Ref {item.reference || "N/A"}
-                                </p>
-                                <span className={`badge ${item.status === "Paid" ? "badge-paid" : item.status === "Pending Verification" ? "badge-pending" : "badge-unpaid"}`}>
-                                  {item.status || "Paid"}
-                                </span>
-                              </li>
+                              <div 
+                                key={idx}
+                                style={{
+                                  background: "#fff",
+                                  border: "1px solid #e0e0e0",
+                                  borderRadius: "12px",
+                                  padding: "20px",
+                                  transition: "all 0.3s ease",
+                                  boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.1)";
+                                  e.currentTarget.style.borderColor = "#000";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.05)";
+                                  e.currentTarget.style.borderColor = "#e0e0e0";
+                                }}
+                              >
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
+                                  <div>
+                                    <div style={{ 
+                                      fontSize: "0.75rem", 
+                                      color: "#666", 
+                                      textTransform: "uppercase", 
+                                      letterSpacing: "0.5px",
+                                      marginBottom: "4px"
+                                    }}>
+                                      {item.date || "N/A"}
+                                    </div>
+                                    <div style={{ 
+                                      fontSize: "1.5rem", 
+                                      fontWeight: "700", 
+                                      color: "#000",
+                                      marginBottom: "4px"
+                                    }}>
+                                      {item.amount || "$0"}
+                                    </div>
+                                  </div>
+                                  <span className={`badge ${item.status === "Paid" ? "badge-paid" : item.status === "Pending Verification" ? "badge-pending" : "badge-unpaid"}`} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
+                                    {item.status || "Paid"}
+                                  </span>
+                                </div>
+                                
+                                <div style={{ 
+                                  display: "flex", 
+                                  flexDirection: "column", 
+                                  gap: "8px",
+                                  paddingTop: "16px",
+                                  borderTop: "1px solid #f0f0f0"
+                                }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <span style={{ fontSize: "0.875rem", color: "#666" }}>Method:</span>
+                                    <strong style={{ fontSize: "0.875rem" }}>{item.method || "N/A"}</strong>
+                                  </div>
+                                  {item.reference && item.reference !== "N/A" && item.reference !== "-" && (
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Reference:</span>
+                                      <strong style={{ fontSize: "0.875rem", fontFamily: "monospace" }}>{item.reference}</strong>
+                                    </div>
+                                  )}
+                                  {item.paidToAdminName && (
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Paid to:</span>
+                                      <strong style={{ fontSize: "0.875rem" }}>{item.paidToAdminName}</strong>
+                                    </div>
+                                  )}
+                                  {item.period && (
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Period:</span>
+                                      <strong style={{ fontSize: "0.875rem" }}>{item.period}</strong>
+                                    </div>
+                                  )}
+                                  {item.member && (
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Member:</span>
+                                      <strong style={{ fontSize: "0.875rem" }}>{item.member}</strong>
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                {item.screenshot && (
+                                  <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #f0f0f0" }}>
+                                    <button
+                                      onClick={() => {
+                                        const newWindow = window.open();
+                                        if (newWindow) {
+                                          newWindow.document.write(`
+                                            <html>
+                                              <head><title>Payment Screenshot</title></head>
+                                              <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                                <img src="${item.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
+                                              </body>
+                                            </html>
+                                          `);
+                                        }
+                                      }}
+                                      style={{
+                                        width: "100%",
+                                        padding: "10px 16px",
+                                        background: "#000",
+                                        color: "#fff",
+                                        border: "none",
+                                        borderRadius: "8px",
+                                        fontSize: "0.875rem",
+                                        fontWeight: "600",
+                                        cursor: "pointer",
+                                        transition: "all 0.2s ease",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        gap: "8px"
+                                      }}
+                                      onMouseEnter={(e) => e.target.style.background = "#333"}
+                                      onMouseLeave={(e) => e.target.style.background = "#000"}
+                                    >
+                                      <span>📷</span>
+                                      <span>View Screenshot</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             ))}
-                          </ul>
+                          </div>
                         );
                       })()}
                     </div>
@@ -1508,16 +1660,65 @@ Subscription Manager HK`;
             {activeSection === "automation" && (
               <article className="screen-card" id="automation">
                 <header className="screen-card__header">
-                  <h3>Reminders &amp; Automation</h3>
-                  <p>Configure automated payment reminders.</p>
+                  <div>
+                    <h3>Reminders &amp; Automation</h3>
+                    <p>Configure automated payment reminders and messaging templates.</p>
+                  </div>
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    padding: "10px 20px",
+                    background: automationEnabled 
+                      ? "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)" 
+                      : "#f5f5f5",
+                    borderRadius: "12px",
+                    border: `2px solid ${automationEnabled ? "#4caf50" : "#e0e0e0"}`
+                  }}>
+                    <span style={{ 
+                      fontSize: "0.875rem", 
+                      fontWeight: "600",
+                      color: automationEnabled ? "#2e7d32" : "#666"
+                    }}>
+                      {automationEnabled ? "✓ Active" : "○ Inactive"}
+                    </span>
+                  </div>
                 </header>
-                <div className="card automation">
-                  <div className="automation-row">
+
+                {/* Automation Toggle Section */}
+                <div style={{
+                  background: "linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)",
+                  borderRadius: "16px",
+                  padding: "28px",
+                  border: "1px solid #e0e0e0",
+                  marginTop: "24px",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
+                }}>
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: "16px"
+                  }}>
                     <div>
-                      <p>Reminder Rules</p>
-                      <span>Send smart nudges around each due date.</span>
+                      <h4 style={{
+                        margin: "0 0 8px 0",
+                        fontSize: "1.25rem",
+                        fontWeight: "700",
+                        color: "#000"
+                      }}>
+                        Automation Control
+                      </h4>
+                      <p style={{
+                        margin: 0,
+                        fontSize: "0.875rem",
+                        color: "#666",
+                        lineHeight: "1.5"
+                      }}>
+                        Enable or disable automated payment reminders system-wide
+                      </p>
                     </div>
-                    <label className="switch">
+                    <label className="switch" style={{ margin: 0 }}>
                       <input
                         type="checkbox"
                         checked={automationEnabled}
@@ -1533,115 +1734,511 @@ Subscription Manager HK`;
                       <span></span>
                     </label>
                   </div>
+                </div>
 
-                  <div className="schedule-grid">
+                {/* Reminder Rules Section */}
+                <div style={{ marginTop: "32px" }}>
+                  <h4 style={{
+                    margin: "0 0 20px 0",
+                    fontSize: "1.125rem",
+                    fontWeight: "700",
+                    color: "#000",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px"
+                  }}>
+                    <span>⏰</span>
+                    <span>Reminder Schedule</span>
+                  </h4>
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                    gap: "20px"
+                  }}>
                     {reminderRules.map((rule) => (
-                      <div className="schedule-card" key={rule.label}>
-                        <p>{rule.label}</p>
-                        <div className="checkbox-row">
-                          {["Email", "WhatsApp"].map((channel) => (
-                            <label key={channel} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-                              <input
-                                type="checkbox"
-                                checked={rule.channels.includes(channel)}
-                                onChange={(e) => {
-                                  const newChannels = e.target.checked
-                                    ? [...rule.channels, channel]
-                                    : rule.channels.filter((c) => c !== channel);
-                                  updateReminderRule(rule.label, newChannels);
-                                  showToast(`${channel} ${e.target.checked ? "enabled" : "disabled"} for ${rule.label}`);
+                      <div 
+                        key={rule.label}
+                        style={{
+                          background: "#fff",
+                          border: "1.5px solid #e0e0e0",
+                          borderRadius: "16px",
+                          padding: "24px",
+                          transition: "all 0.3s ease",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)";
+                          e.currentTarget.style.borderColor = "#000";
+                          e.currentTarget.style.transform = "translateY(-2px)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
+                          e.currentTarget.style.borderColor = "#e0e0e0";
+                          e.currentTarget.style.transform = "translateY(0)";
+                        }}
+                      >
+                        <div style={{
+                          fontSize: "1rem",
+                          fontWeight: "700",
+                          color: "#000",
+                          marginBottom: "16px",
+                          paddingBottom: "12px",
+                          borderBottom: "2px solid #f0f0f0"
+                        }}>
+                          {rule.label}
+                        </div>
+                        <div style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "12px"
+                        }}>
+                          {["Email", "WhatsApp"].map((channel) => {
+                            const isEnabled = rule.channels.includes(channel);
+                            return (
+                              <label 
+                                key={channel} 
+                                style={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: '12px', 
+                                  cursor: 'pointer',
+                                  padding: "12px",
+                                  background: isEnabled ? "#f0f8ff" : "#fafafa",
+                                  borderRadius: "10px",
+                                  border: `2px solid ${isEnabled ? "#2196F3" : "#e0e0e0"}`,
+                                  transition: "all 0.2s ease"
                                 }}
-                              />
-                              {channel === "Email" ? (
-                                <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#000000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                                  <polyline points="22,6 12,13 2,6"></polyline>
-                                </svg>
-                              ) : (
-                                <svg width="38" height="38" viewBox="0 0 24 24" fill="#000000">
-                                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                                </svg>
-                              )}
-                              <span style={{ fontSize: '0.95rem', fontWeight: '500' }}>{channel}</span>
-                            </label>
-                          ))}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = isEnabled ? "#e3f2fd" : "#f5f5f5";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = isEnabled ? "#f0f8ff" : "#fafafa";
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isEnabled}
+                                  onChange={(e) => {
+                                    const newChannels = e.target.checked
+                                      ? [...rule.channels, channel]
+                                      : rule.channels.filter((c) => c !== channel);
+                                    updateReminderRule(rule.label, newChannels);
+                                    showToast(`${channel} ${e.target.checked ? "enabled" : "disabled"} for ${rule.label}`);
+                                  }}
+                                  style={{
+                                    width: "20px",
+                                    height: "20px",
+                                    cursor: "pointer"
+                                  }}
+                                />
+                                <div style={{
+                                  width: "40px",
+                                  height: "40px",
+                                  borderRadius: "10px",
+                                  background: channel === "Email" 
+                                    ? "linear-gradient(135deg, #1976D2 0%, #1565C0 100%)"
+                                    : "linear-gradient(135deg, #25D366 0%, #128C7E 100%)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  boxShadow: "0 2px 8px rgba(0,0,0,0.15)"
+                                }}>
+                                  {channel === "Email" ? (
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                      <polyline points="22,6 12,13 2,6"></polyline>
+                                    </svg>
+                                  ) : (
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#ffffff">
+                                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                                    </svg>
+                                  )}
+                                </div>
+                                <span style={{ 
+                                  fontSize: '0.9375rem', 
+                                  fontWeight: '600',
+                                  color: "#000",
+                                  flex: 1
+                                }}>
+                                  {channel}
+                                </span>
+                                {isEnabled && (
+                                  <span style={{
+                                    fontSize: "0.75rem",
+                                    fontWeight: "700",
+                                    color: "#2196F3",
+                                    background: "#e3f2fd",
+                                    padding: "4px 10px",
+                                    borderRadius: "12px"
+                                  }}>
+                                    Active
+                                  </span>
+                                )}
+                              </label>
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
                   </div>
+                </div>
 
-                  <div className="templates" style={{ marginTop: "24px" }}>
-                    <div>
-                      <h4>Upcoming Due Template</h4>
+                {/* Message Templates Section */}
+                <div style={{ marginTop: "40px" }}>
+                  <h4 style={{
+                    margin: "0 0 24px 0",
+                    fontSize: "1.125rem",
+                    fontWeight: "700",
+                    color: "#000",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px"
+                  }}>
+                    <span>✉️</span>
+                    <span>Message Templates</span>
+                  </h4>
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))",
+                    gap: "24px"
+                  }}>
+                    <div style={{
+                      background: "#fff",
+                      border: "1.5px solid #e0e0e0",
+                      borderRadius: "16px",
+                      padding: "24px",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
+                    }}>
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        marginBottom: "16px",
+                        paddingBottom: "12px",
+                        borderBottom: "2px solid #f0f0f0"
+                      }}>
+                        <span style={{ fontSize: "1.5rem" }}>📅</span>
+                        <h4 style={{
+                          margin: 0,
+                          fontSize: "1.125rem",
+                          fontWeight: "700",
+                          color: "#000"
+                        }}>
+                          Upcoming Due Template
+                        </h4>
+                      </div>
                       <textarea
                         value={templateForm.upcomingDue}
                         onChange={(e) =>
                           setTemplateForm({ ...templateForm, upcomingDue: e.target.value })
                         }
-                        rows={4}
+                        rows={6}
+                        style={{
+                          width: "100%",
+                          padding: "14px",
+                          border: "1.5px solid #e0e0e0",
+                          borderRadius: "10px",
+                          fontSize: "0.9375rem",
+                          fontFamily: "inherit",
+                          resize: "vertical",
+                          transition: "all 0.2s ease"
+                        }}
+                        onFocus={(e) => {
+                          e.target.style.borderColor = "#000";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(0,0,0,0.05)";
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = "#e0e0e0";
+                          e.target.style.boxShadow = "none";
+                        }}
+                        placeholder="Enter your message template here. Use {{member_name}}, {{period}}, {{amount}}, {{due_date}} as placeholders."
                       ></textarea>
                     </div>
-                    <div>
-                      <h4>Overdue Template</h4>
+                    <div style={{
+                      background: "#fff",
+                      border: "1.5px solid #e0e0e0",
+                      borderRadius: "16px",
+                      padding: "24px",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
+                    }}>
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        marginBottom: "16px",
+                        paddingBottom: "12px",
+                        borderBottom: "2px solid #f0f0f0"
+                      }}>
+                        <span style={{ fontSize: "1.5rem" }}>⚠️</span>
+                        <h4 style={{
+                          margin: 0,
+                          fontSize: "1.125rem",
+                          fontWeight: "700",
+                          color: "#000"
+                        }}>
+                          Overdue Template
+                        </h4>
+                      </div>
                       <textarea
                         value={templateForm.overdue}
                         onChange={(e) =>
                           setTemplateForm({ ...templateForm, overdue: e.target.value })
                         }
-                        rows={4}
+                        rows={6}
+                        style={{
+                          width: "100%",
+                          padding: "14px",
+                          border: "1.5px solid #e0e0e0",
+                          borderRadius: "10px",
+                          fontSize: "0.9375rem",
+                          fontFamily: "inherit",
+                          resize: "vertical",
+                          transition: "all 0.2s ease"
+                        }}
+                        onFocus={(e) => {
+                          e.target.style.borderColor = "#000";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(0,0,0,0.05)";
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = "#e0e0e0";
+                          e.target.style.boxShadow = "none";
+                        }}
+                        placeholder="Enter your overdue message template here. Use {{member_name}}, {{period}}, {{amount}}, {{due_date}} as placeholders."
                       ></textarea>
                     </div>
                   </div>
+                </div>
 
-                  <div className="preview" style={{ marginTop: "20px" }}>
-                    <h4>Preview</h4>
-                    <div className="preview-tabs">
-                      <button className="chip active">Email</button>
-                      <button className="chip">WhatsApp</button>
+                {/* Preview Section */}
+                <div style={{ 
+                  marginTop: "40px",
+                  background: "linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)",
+                  borderRadius: "16px",
+                  padding: "28px",
+                  border: "1px solid #e0e0e0",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
+                }}>
+                  <h4 style={{
+                    margin: "0 0 20px 0",
+                    fontSize: "1.125rem",
+                    fontWeight: "700",
+                    color: "#000",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px"
+                  }}>
+                    <span>👁️</span>
+                    <span>Live Preview</span>
+                  </h4>
+                  <div style={{
+                    display: "flex",
+                    gap: "12px",
+                    marginBottom: "20px",
+                    borderBottom: "1px solid #e0e0e0",
+                    paddingBottom: "16px"
+                  }}>
+                    <button 
+                      className="chip active"
+                      style={{
+                        padding: "8px 16px",
+                        borderRadius: "8px",
+                        border: "2px solid #000",
+                        background: "#000",
+                        color: "#fff",
+                        fontWeight: "600",
+                        cursor: "pointer"
+                      }}
+                    >
+                      Email
+                    </button>
+                    <button 
+                      className="chip"
+                      style={{
+                        padding: "8px 16px",
+                        borderRadius: "8px",
+                        border: "2px solid #e0e0e0",
+                        background: "#fff",
+                        color: "#666",
+                        fontWeight: "600",
+                        cursor: "pointer"
+                      }}
+                    >
+                      WhatsApp
+                    </button>
+                  </div>
+                  <div style={{
+                    background: "#fff",
+                    borderRadius: "12px",
+                    padding: "24px",
+                    border: "1px solid #e0e0e0",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.04)"
+                  }}>
+                    <div style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "12px",
+                      marginBottom: "16px",
+                      paddingBottom: "16px",
+                      borderBottom: "1px solid #f0f0f0"
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.875rem", color: "#666", fontWeight: "600" }}>From:</span>
+                        <span style={{ fontSize: "0.875rem", color: "#000", fontWeight: "500" }}>finance@subscriptionhk.org</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.875rem", color: "#666", fontWeight: "600" }}>Subject:</span>
+                        <span style={{ fontSize: "0.875rem", color: "#000", fontWeight: "500" }}>Upcoming contribution due 05 Nov</span>
+                      </div>
                     </div>
-                    <div className="preview-body">
-                      <p><strong>From:</strong> finance@subscriptionhk.org</p>
-                      <p><strong>Subject:</strong> Upcoming contribution due 05 Nov</p>
-                      <p style={{ marginTop: "12px" }}>
-                        {templateForm.upcomingDue.replace("{{member_name}}", "Ahmed")
-                          .replace("{{period}}", "Nov 2025")
-                          .replace("{{amount}}", "50")
-                          .replace("{{due_date}}", "05 Nov 2025")}
-                      </p>
+                    <div style={{
+                      fontSize: "0.9375rem",
+                      color: "#333",
+                      lineHeight: "1.6",
+                      whiteSpace: "pre-wrap"
+                    }}>
+                      {templateForm.upcomingDue.replace("{{member_name}}", "Ahmed")
+                        .replace("{{period}}", "Nov 2025")
+                        .replace("{{amount}}", "50")
+                        .replace("{{due_date}}", "05 Nov 2025")}
                     </div>
                   </div>
+                </div>
 
-                  <div className="integration-grid" style={{ marginTop: "24px" }}>
-                    <div className="integration-card">
+                {/* Integration Status Section */}
+                <div style={{ marginTop: "40px" }}>
+                  <h4 style={{
+                    margin: "0 0 20px 0",
+                    fontSize: "1.125rem",
+                    fontWeight: "700",
+                    color: "#000",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px"
+                  }}>
+                    <span>🔌</span>
+                    <span>Integration Status</span>
+                  </h4>
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                    gap: "20px"
+                  }}>
+                    <div style={{
+                      background: "#fff",
+                      border: "1.5px solid #4caf50",
+                      borderRadius: "16px",
+                      padding: "24px",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
+                    }}>
                       <div>
-                        <p><strong>WhatsApp API</strong></p>
-                        <span className="badge badge-paid" style={{ marginTop: "8px" }}>Connected</span>
+                        <div style={{
+                          fontSize: "1.125rem",
+                          fontWeight: "700",
+                          color: "#000",
+                          marginBottom: "8px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px"
+                        }}>
+                          <span>💬</span>
+                          <span>WhatsApp API</span>
+                        </div>
+                        <span className="badge badge-paid" style={{ 
+                          marginTop: "4px",
+                          fontSize: "0.75rem",
+                          padding: "4px 12px"
+                        }}>
+                          ✓ Connected
+                        </span>
                       </div>
-                      <button className="ghost-btn" onClick={() => showToast("WhatsApp settings opened")}>
+                      <button 
+                        className="ghost-btn" 
+                        onClick={() => showToast("WhatsApp settings opened")}
+                        style={{
+                          padding: "10px 20px",
+                          borderRadius: "8px",
+                          fontWeight: "600"
+                        }}
+                      >
                         Manage
                       </button>
                     </div>
-                    <div className="integration-card">
+                    <div style={{
+                      background: "#fff",
+                      border: "1.5px solid #e0e0e0",
+                      borderRadius: "16px",
+                      padding: "24px",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
+                    }}>
                       <div>
-                        <p><strong>Email SMTP</strong></p>
-                        <span className="badge badge-unpaid" style={{ marginTop: "8px" }}>Not Connected</span>
+                        <div style={{
+                          fontSize: "1.125rem",
+                          fontWeight: "700",
+                          color: "#000",
+                          marginBottom: "8px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px"
+                        }}>
+                          <span>📧</span>
+                          <span>Email SMTP</span>
+                        </div>
+                        <span className="badge badge-unpaid" style={{ 
+                          marginTop: "4px",
+                          fontSize: "0.75rem",
+                          padding: "4px 12px"
+                        }}>
+                          ○ Not Connected
+                        </span>
                       </div>
-                      <button className="secondary-btn" onClick={() => showToast("Email setup initiated")}>
+                      <button 
+                        className="secondary-btn" 
+                        onClick={() => showToast("Email setup initiated")}
+                        style={{
+                          padding: "10px 20px",
+                          borderRadius: "8px",
+                          fontWeight: "600"
+                        }}
+                      >
                         Connect
                       </button>
                     </div>
                   </div>
+                </div>
 
+                {/* Save Button */}
+                <div style={{ marginTop: "32px", display: "flex", justifyContent: "flex-end" }}>
                   <button
                     className="primary-btn"
-                    style={{ marginTop: "24px" }}
+                    style={{ 
+                      padding: "14px 32px",
+                      fontSize: "1rem",
+                      fontWeight: "700",
+                      borderRadius: "10px",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                      transition: "all 0.2s ease"
+                    }}
                     onClick={() => {
                       updateReminderTemplate("upcomingDue", templateForm.upcomingDue);
                       updateReminderTemplate("overdue", templateForm.overdue);
                       showToast("All automation settings saved!");
                     }}
+                    onMouseEnter={(e) => {
+                      e.target.style.transform = "translateY(-2px)";
+                      e.target.style.boxShadow = "0 6px 16px rgba(0,0,0,0.2)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.transform = "translateY(0)";
+                      e.target.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+                    }}
                   >
-                    Save All Settings
+                    💾 Save All Settings
                   </button>
                 </div>
               </article>
@@ -1651,140 +2248,527 @@ Subscription Manager HK`;
             {activeSection === "payment-methods" && (
               <article className="screen-card" id="payment-methods">
                 <header className="screen-card__header">
-                  <h3>Payments &amp; Methods</h3>
-                  <p>Configure payment channels visible to members.</p>
+                  <div>
+                    <h3>Payment Methods</h3>
+                    <p>Configure payment methods and QR codes for member payments.</p>
+                  </div>
+                  <div style={{
+                    display: "flex",
+                    gap: "8px",
+                    alignItems: "center",
+                    padding: "8px 16px",
+                    background: "#f8f9fa",
+                    borderRadius: "8px",
+                    fontSize: "0.875rem"
+                  }}>
+                    <span style={{ color: "#666" }}>Active Methods:</span>
+                    <strong style={{ color: "#000" }}>
+                      {paymentMethods.filter(m => 
+                        (m.name === "Alipay" || m.name === "PayMe" || m.name === "FPS" || m.name === "Direct Bank Transfer") && m.visible
+                      ).length}
+                    </strong>
+                  </div>
                 </header>
                 <div style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-                  gap: "20px"
+                  gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
+                  gap: "24px",
+                  marginTop: "32px"
                 }}>
-                  {paymentMethods.map((method) => (
-                    <div 
-                      key={method.name}
-                      style={{
-                        background: "#fff",
-                        border: `2px solid ${method.visible ? "#000" : "#e0e0e0"}`,
-                        borderRadius: "12px",
-                        padding: "24px",
-                        transition: "all 0.3s ease",
-                        position: "relative",
-                        boxShadow: method.visible ? "0 4px 12px rgba(0,0,0,0.1)" : "0 2px 4px rgba(0,0,0,0.05)"
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!method.visible) {
-                          e.currentTarget.style.borderColor = "#ccc";
-                          e.currentTarget.style.boxShadow = "0 4px 8px rgba(0,0,0,0.08)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!method.visible) {
-                          e.currentTarget.style.borderColor = "#e0e0e0";
-                          e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.05)";
-                        }
-                      }}
-                    >
-                      {/* Status Badge */}
-                      <div style={{
-                        position: "absolute",
-                        top: "16px",
-                        right: "16px",
-                        padding: "4px 12px",
-                        borderRadius: "12px",
-                        fontSize: "0.75rem",
-                        fontWeight: "600",
-                        background: method.visible ? "#e8f5e9" : "#f5f5f5",
-                        color: method.visible ? "#2e7d32" : "#666"
-                      }}>
-                        {method.visible ? "Active" : "Inactive"}
-                      </div>
+                  {paymentMethods
+                    .filter((method) => 
+                      method.name === "Alipay" || 
+                      method.name === "PayMe" || 
+                      method.name === "FPS" || 
+                      method.name === "Direct Bank Transfer"
+                    )
+                    .map((method) => {
+                      const isQRMethod = method.name === "Alipay" || method.name === "PayMe";
+                      const handleQRUpload = async (e, methodName) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
 
-                      {/* Method Header */}
-                      <div style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: "20px",
-                        paddingRight: "80px"
-                      }}>
-                        <h4 style={{
-                          margin: 0,
-                          fontSize: "1.25rem",
-                          fontWeight: "600",
-                          color: "#000"
-                        }}>
-                          {method.name}
-                        </h4>
-                      </div>
+                        if (!file.type.startsWith("image/")) {
+                          showToast("Please upload an image file", "error");
+                          return;
+                        }
 
-                      {/* Toggle Switch */}
-                      <div style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: "20px",
-                        padding: "12px",
-                        background: method.visible ? "#f8f8f8" : "#fafafa",
-                        borderRadius: "8px"
-                      }}>
-                        <span style={{
-                          fontSize: "0.875rem",
-                          fontWeight: "500",
-                          color: "#666"
-                        }}>
-                          {method.visible ? "Enabled for members" : "Disabled for members"}
-                        </span>
-                        <label className="switch" style={{ margin: 0 }}>
-                          <input
-                            type="checkbox"
-                            checked={method.visible}
-                            onChange={(e) =>
-                              updatePaymentMethod(method.name, { visible: e.target.checked })
+                        setUploadingQR((prev) => ({ ...prev, [methodName]: true }));
+                        try {
+                          const apiUrl = import.meta.env.VITE_API_URL || "";
+                          const formData = new FormData();
+                          formData.append("screenshot", file);
+
+                          const uploadResponse = await fetch(`${apiUrl}/api/upload-screenshot`, {
+                            method: "POST",
+                            body: formData,
+                          });
+
+                          if (!uploadResponse.ok) {
+                            // Try to get error message from response
+                            let errorMessage = "Failed to upload QR code";
+                            try {
+                              const errorData = await uploadResponse.json();
+                              errorMessage = errorData.error || errorMessage;
+                              console.error("Upload error response:", errorData);
+                            } catch (parseError) {
+                              console.error("Failed to parse error response:", parseError);
+                              errorMessage = `Upload failed with status ${uploadResponse.status}`;
                             }
-                            tabIndex={-1}
-                            onFocus={(e) => e.target.blur()}
-                          />
-                          <span></span>
-                        </label>
-                      </div>
+                            throw new Error(errorMessage);
+                          }
 
-                      {/* Method Details */}
-                      <div style={{
-                        borderTop: "1px solid #f0f0f0",
-                        paddingTop: "16px"
-                      }}>
-                        <div style={{
-                          fontSize: "0.875rem",
-                          fontWeight: "500",
-                          color: "#666",
-                          marginBottom: "12px"
-                        }}>
-                          Payment Details:
-                        </div>
-                        <div style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "8px"
-                        }}>
-                          {method.details.map((detail, index) => (
-                            <div 
-                              key={`${method.name}-detail-${index}`}
-                              style={{
-                                padding: "10px 12px",
-                                background: "#f8f8f8",
-                                borderRadius: "6px",
-                                fontSize: "0.875rem",
-                                color: "#333",
-                                borderLeft: "3px solid #000"
-                              }}
-                            >
-                              {detail}
+                          const uploadData = await uploadResponse.json();
+                          
+                          // Check if URL exists in response
+                          if (!uploadData.url) {
+                            throw new Error("No URL returned from upload. Please try again.");
+                          }
+                          
+                          const qrUrl = uploadData.url;
+
+                          // Update payment method with QR code URL
+                          updatePaymentMethod(methodName, { qrImageUrl: qrUrl });
+                          showToast(`${methodName} QR code uploaded successfully!`);
+                        } catch (error) {
+                          console.error("Error uploading QR code:", error);
+                          // Show the actual error message
+                          showToast(error.message || "Failed to upload QR code. Please try again.", "error");
+                        } finally {
+                          setUploadingQR((prev) => ({ ...prev, [methodName]: false }));
+                        }
+                      };
+
+                      return (
+                        <div 
+                          key={method.name}
+                          style={{
+                            background: "#fff",
+                            border: `1.5px solid ${method.visible ? "#000" : "#e5e5e5"}`,
+                            borderRadius: "20px",
+                            padding: "28px",
+                            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                            position: "relative",
+                            boxShadow: method.visible 
+                              ? "0 10px 30px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.05)" 
+                              : "0 2px 8px rgba(0,0,0,0.04)",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "20px",
+                            overflow: "hidden"
+                          }}
+                          onMouseEnter={(e) => {
+                            if (method.visible) {
+                              e.currentTarget.style.boxShadow = "0 12px 36px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.08)";
+                              e.currentTarget.style.transform = "translateY(-2px)";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (method.visible) {
+                              e.currentTarget.style.boxShadow = "0 10px 30px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.05)";
+                              e.currentTarget.style.transform = "translateY(0)";
+                            }
+                          }}
+                        >
+                          {/* Status Badge - Clickable */}
+                          <div 
+                            onClick={() => updatePaymentMethod(method.name, { visible: !method.visible })}
+                            style={{
+                              position: "absolute",
+                              top: "20px",
+                              right: "20px",
+                              padding: "6px 14px",
+                              borderRadius: "20px",
+                              fontSize: "0.7rem",
+                              fontWeight: "700",
+                              background: method.visible 
+                                ? "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)" 
+                                : "#f5f5f5",
+                              color: method.visible ? "#1b5e20" : "#757575",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.8px",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              userSelect: "none",
+                              border: method.visible ? "1px solid #a5d6a7" : "1px solid #e0e0e0",
+                              boxShadow: method.visible ? "0 2px 4px rgba(0,0,0,0.1)" : "none"
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.style.transform = "scale(1.08)";
+                              e.target.style.boxShadow = method.visible 
+                                ? "0 4px 8px rgba(0,0,0,0.15)" 
+                                : "0 2px 4px rgba(0,0,0,0.1)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.transform = "scale(1)";
+                              e.target.style.boxShadow = method.visible 
+                                ? "0 2px 4px rgba(0,0,0,0.1)" 
+                                : "none";
+                            }}
+                          >
+                            {method.visible ? "✓ Active" : "○ Inactive"}
+                          </div>
+
+                          {/* Method Header */}
+                          <div style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "18px",
+                            marginBottom: "4px",
+                            paddingBottom: "20px",
+                            borderBottom: "1px solid #f0f0f0"
+                          }}>
+                            <div style={{
+                              width: "64px",
+                              height: "64px",
+                              borderRadius: "16px",
+                              background: method.name === "Alipay" 
+                                ? "linear-gradient(135deg, #1677FF 0%, #0958d9 100%)"
+                                : method.name === "PayMe" 
+                                ? "linear-gradient(135deg, #00C300 0%, #009900 100%)"
+                                : method.name === "FPS" 
+                                ? "linear-gradient(135deg, #0066CC 0%, #004499 100%)"
+                                : "linear-gradient(135deg, #E60012 0%, #CC0011 100%)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "28px",
+                              fontWeight: "700",
+                              color: "#fff",
+                              boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
+                              position: "relative"
+                            }}>
+                              {method.name === "Alipay" ? "支" 
+                                : method.name === "PayMe" ? "P"
+                                : method.name === "FPS" ? "F"
+                                : "B"}
+                              {method.visible && (
+                                <div style={{
+                                  position: "absolute",
+                                  top: "-4px",
+                                  right: "-4px",
+                                  width: "18px",
+                                  height: "18px",
+                                  borderRadius: "50%",
+                                  background: "#4caf50",
+                                  border: "2px solid #fff",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center"
+                                }}>
+                                  <span style={{ fontSize: "10px", color: "#fff" }}>✓</span>
+                                </div>
+                              )}
                             </div>
-                          ))}
+                            <div style={{ flex: 1 }}>
+                              <h4 style={{
+                                margin: 0,
+                                fontSize: "1.625rem",
+                                fontWeight: "700",
+                                color: "#000",
+                                letterSpacing: "-0.5px",
+                                marginBottom: "6px"
+                              }}>
+                                {method.name === "Direct Bank Transfer" ? "Bank Transfer" : method.name}
+                              </h4>
+                              <p style={{
+                                margin: 0,
+                                fontSize: "0.875rem",
+                                color: "#666",
+                                fontWeight: "500"
+                              }}>
+                                {method.name === "Alipay" ? "Alipay HK" 
+                                  : method.name === "PayMe" ? "PayMe by HSBC"
+                                  : method.name === "FPS" ? "Faster Payment System"
+                                  : "Direct Bank Transfer"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* QR Code Display Section for Alipay/PayMe OR Payment Details for FPS/Bank Transfer */}
+                          {isQRMethod ? (
+                            <div style={{
+                              background: "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)",
+                              borderRadius: "16px",
+                              padding: "28px",
+                              border: method.qrImageUrl ? "1px solid #e0e0e0" : "2px dashed #d0d0d0",
+                              minHeight: "300px",
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "20px",
+                              position: "relative",
+                              transition: "all 0.3s ease"
+                            }}>
+                              {method.qrImageUrl ? (
+                                <>
+                                  <div style={{
+                                    padding: "16px",
+                                    background: "#fff",
+                                    borderRadius: "12px",
+                                    boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+                                    border: "1px solid #e0e0e0"
+                                  }}>
+                                    <img 
+                                      src={method.qrImageUrl} 
+                                      alt={`${method.name} QR Code`}
+                                      style={{
+                                        maxWidth: "260px",
+                                        maxHeight: "260px",
+                                        width: "100%",
+                                        height: "auto",
+                                        borderRadius: "8px",
+                                        display: "block",
+                                        objectFit: "contain"
+                                      }}
+                                    />
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      const input = document.createElement("input");
+                                      input.type = "file";
+                                      input.accept = "image/*";
+                                      input.onchange = (e) => handleQRUpload(e, method.name);
+                                      input.click();
+                                    }}
+                                    disabled={uploadingQR[method.name]}
+                                    style={{
+                                      padding: "10px 20px",
+                                      background: "#fff",
+                                      border: "2px solid #000",
+                                      borderRadius: "8px",
+                                      fontSize: "0.875rem",
+                                      fontWeight: "600",
+                                      cursor: uploadingQR[method.name] ? "not-allowed" : "pointer",
+                                      transition: "all 0.2s ease",
+                                      color: "#000",
+                                      opacity: uploadingQR[method.name] ? 0.6 : 1
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (!uploadingQR[method.name]) {
+                                        e.target.style.background = "#000";
+                                        e.target.style.color = "#fff";
+                                        e.target.style.transform = "translateY(-2px)";
+                                        e.target.style.boxShadow = "0 4px 8px rgba(0,0,0,0.2)";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (!uploadingQR[method.name]) {
+                                        e.target.style.background = "#fff";
+                                        e.target.style.color = "#000";
+                                        e.target.style.transform = "translateY(0)";
+                                        e.target.style.boxShadow = "none";
+                                      }
+                                    }}
+                                  >
+                                    {uploadingQR[method.name] ? "⏳ Uploading..." : "🔄 Change QR Code"}
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <div style={{
+                                    width: "100px",
+                                    height: "100px",
+                                    borderRadius: "50%",
+                                    background: "linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%)",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "40px",
+                                    color: "#bbb",
+                                    marginBottom: "12px",
+                                    border: "2px dashed #d0d0d0"
+                                  }}>
+                                    📷
+                                  </div>
+                                  <p style={{
+                                    margin: 0,
+                                    fontSize: "0.9375rem",
+                                    color: "#666",
+                                    textAlign: "center",
+                                    marginBottom: "4px",
+                                    fontWeight: "500"
+                                  }}>
+                                    No QR code uploaded
+                                  </p>
+                                  <p style={{
+                                    margin: 0,
+                                    fontSize: "0.8125rem",
+                                    color: "#999",
+                                    textAlign: "center",
+                                    marginBottom: "16px"
+                                  }}>
+                                    Upload a QR code image to enable this payment method
+                                  </p>
+                                  <label
+                                    style={{
+                                      padding: "12px 24px",
+                                      background: "linear-gradient(135deg, #000 0%, #333 100%)",
+                                      color: "#fff",
+                                      borderRadius: "10px",
+                                      fontSize: "0.875rem",
+                                      fontWeight: "600",
+                                      cursor: uploadingQR[method.name] ? "not-allowed" : "pointer",
+                                      display: "inline-block",
+                                      transition: "all 0.2s ease",
+                                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                                      opacity: uploadingQR[method.name] ? 0.6 : 1
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (!uploadingQR[method.name]) {
+                                        e.target.style.transform = "translateY(-2px)";
+                                        e.target.style.boxShadow = "0 6px 16px rgba(0,0,0,0.2)";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (!uploadingQR[method.name]) {
+                                        e.target.style.transform = "translateY(0)";
+                                        e.target.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+                                      }
+                                    }}
+                                  >
+                                    {uploadingQR[method.name] ? "⏳ Uploading..." : "📤 Upload QR Code"}
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => handleQRUpload(e, method.name)}
+                                      style={{ display: "none" }}
+                                      disabled={uploadingQR[method.name]}
+                                    />
+                                  </label>
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <div style={{
+                              background: "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)",
+                              borderRadius: "16px",
+                              padding: "24px",
+                              border: "1px solid #e0e0e0"
+                            }}>
+                              <div style={{
+                                fontSize: "0.8125rem",
+                                fontWeight: "700",
+                                color: "#666",
+                                marginBottom: "18px",
+                                textTransform: "uppercase",
+                                letterSpacing: "1px",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px"
+                              }}>
+                                <span>💳</span>
+                                <span>Payment Details</span>
+                              </div>
+                              <div style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "10px"
+                              }}>
+                                {method.details && method.details.map((detail, index) => (
+                                  <div 
+                                    key={`${method.name}-detail-${index}`}
+                                    style={{
+                                      padding: "16px 18px",
+                                      background: "#fff",
+                                      borderRadius: "10px",
+                                      fontSize: "0.9375rem",
+                                      color: "#333",
+                                      borderLeft: "4px solid #000",
+                                      fontWeight: "500",
+                                      boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+                                      transition: "all 0.2s ease"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.boxShadow = "0 4px 10px rgba(0,0,0,0.1)";
+                                      e.currentTarget.style.transform = "translateX(4px)";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.06)";
+                                      e.currentTarget.style.transform = "translateX(0)";
+                                    }}
+                                  >
+                                    {detail}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Toggle Switch */}
+                          <div 
+                            onClick={() => updatePaymentMethod(method.name, { visible: !method.visible })}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              padding: "18px 20px",
+                              background: method.visible 
+                                ? "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)" 
+                                : "#fafafa",
+                              borderRadius: "12px",
+                              border: `2px solid ${method.visible ? "#2196F3" : "#e0e0e0"}`,
+                              cursor: "pointer",
+                              transition: "all 0.3s ease",
+                              marginTop: "4px"
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = method.visible 
+                                ? "linear-gradient(135deg, #bbdefb 0%, #90caf9 100%)" 
+                                : "#f0f0f0";
+                              e.currentTarget.style.borderColor = method.visible ? "#1976D2" : "#ccc";
+                              e.currentTarget.style.transform = "scale(1.01)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = method.visible 
+                                ? "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)" 
+                                : "#fafafa";
+                              e.currentTarget.style.borderColor = method.visible ? "#2196F3" : "#e0e0e0";
+                              e.currentTarget.style.transform = "scale(1)";
+                            }}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <span style={{
+                                fontSize: "0.9375rem",
+                                fontWeight: "700",
+                                color: method.visible ? "#1565C0" : "#666",
+                                display: "block",
+                                marginBottom: "6px"
+                              }}>
+                                {method.visible ? "✓ Enabled for members" : "○ Disabled for members"}
+                              </span>
+                              <span style={{
+                                fontSize: "0.8125rem",
+                                color: method.visible ? "#1976D2" : "#999",
+                                lineHeight: "1.4"
+                              }}>
+                                {method.visible 
+                                  ? "This payment method is visible to all members" 
+                                  : "This payment method is hidden from members"}
+                              </span>
+                            </div>
+                            <label 
+                              className="switch" 
+                              style={{ margin: 0, marginLeft: "16px" }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={method.visible}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  updatePaymentMethod(method.name, { visible: e.target.checked });
+                                }}
+                                tabIndex={-1}
+                                onFocus={(e) => e.target.blur()}
+                              />
+                              <span></span>
+                            </label>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
                 </div>
               </article>
             )}

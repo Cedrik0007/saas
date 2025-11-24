@@ -568,6 +568,48 @@ app.delete("/api/members/:id", async (req, res) => {
 
 // ========== INVOICES CRUD ENDPOINTS ==========
 
+// Helper function to calculate and update member balance from unpaid invoices
+async function calculateAndUpdateMemberBalance(memberId) {
+  try {
+    await ensureConnection();
+    
+    // Get all unpaid invoices for this member
+    const unpaidInvoices = invoices.filter(
+      inv => inv.memberId === memberId && 
+      (inv.status === "Unpaid" || inv.status === "Overdue")
+    );
+    
+    // Calculate total outstanding
+    const outstandingTotal = unpaidInvoices.reduce((sum, inv) => {
+      const amount = parseFloat(inv.amount.replace("$", "").replace(",", "")) || 0;
+      return sum + amount;
+    }, 0);
+    
+    // Format balance string
+    let balanceString = `$${outstandingTotal.toFixed(2)}`;
+    if (outstandingTotal === 0) {
+      balanceString = "$0";
+    } else {
+      // Check if any are overdue
+      const hasOverdue = unpaidInvoices.some(inv => inv.status === "Overdue");
+      balanceString += hasOverdue ? " Overdue" : " Outstanding";
+    }
+    
+    // Update member balance in MongoDB
+    await UserModel.findOneAndUpdate(
+      { id: memberId },
+      { $set: { balance: balanceString } },
+      { new: true }
+    );
+    
+    console.log(`✓ Updated balance for member ${memberId}: ${balanceString}`);
+    return balanceString;
+  } catch (error) {
+    console.error(`Error updating balance for member ${memberId}:`, error);
+    throw error;
+  }
+}
+
 // GET all invoices
 app.get("/api/invoices", (_req, res) => {
   res.json(invoices);
@@ -580,34 +622,89 @@ app.get("/api/invoices/member/:memberId", (req, res) => {
 });
 
 // POST create new invoice
-app.post("/api/invoices", (req, res) => {
-  const invoice = {
-    id: `INV-2025-${Math.floor(100 + Math.random() * 900)}`,
-    ...req.body,
-    status: req.body.status || "Unpaid",
-  };
-  invoices.push(invoice);
-  res.status(201).json(invoice);
+app.post("/api/invoices", async (req, res) => {
+  try {
+    const invoice = {
+      id: `INV-2025-${Math.floor(100 + Math.random() * 900)}`,
+      ...req.body,
+      status: req.body.status || "Unpaid",
+    };
+    invoices.push(invoice);
+    
+    // Update member balance if invoice is unpaid
+    if (invoice.memberId && (invoice.status === "Unpaid" || invoice.status === "Overdue")) {
+      await calculateAndUpdateMemberBalance(invoice.memberId);
+    }
+    
+    res.status(201).json(invoice);
+  } catch (error) {
+    console.error("Error creating invoice:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // PUT update invoice
-app.put("/api/invoices/:id", (req, res) => {
-  const index = invoices.findIndex(inv => inv.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Invoice not found" });
+app.put("/api/invoices/:id", async (req, res) => {
+  try {
+    const index = invoices.findIndex(inv => inv.id === req.params.id);
+    if (index === -1) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+    
+    const oldInvoice = invoices[index];
+    invoices[index] = { ...invoices[index], ...req.body };
+    const updatedInvoice = invoices[index];
+    
+    // Update member balance if status, amount, or memberId changed
+    const statusChanged = oldInvoice.status !== updatedInvoice.status;
+    const amountChanged = oldInvoice.amount !== updatedInvoice.amount;
+    const memberChanged = oldInvoice.memberId !== updatedInvoice.memberId;
+    
+    if (statusChanged || amountChanged || memberChanged) {
+      // Update balance for old member (if member changed or invoice was unpaid)
+      if (oldInvoice.memberId) {
+        if (memberChanged || oldInvoice.status === "Unpaid" || oldInvoice.status === "Overdue") {
+          await calculateAndUpdateMemberBalance(oldInvoice.memberId);
+        }
+      }
+      
+      // Update balance for new member (if member changed or invoice is unpaid)
+      if (updatedInvoice.memberId) {
+        if (memberChanged || updatedInvoice.status === "Unpaid" || updatedInvoice.status === "Overdue") {
+          await calculateAndUpdateMemberBalance(updatedInvoice.memberId);
+        }
+      }
+    }
+    
+    res.json(updatedInvoice);
+  } catch (error) {
+    console.error("Error updating invoice:", error);
+    res.status(500).json({ error: error.message });
   }
-  invoices[index] = { ...invoices[index], ...req.body };
-  res.json(invoices[index]);
 });
 
 // DELETE invoice
-app.delete("/api/invoices/:id", (req, res) => {
-  const index = invoices.findIndex(inv => inv.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: "Invoice not found" });
+app.delete("/api/invoices/:id", async (req, res) => {
+  try {
+    const index = invoices.findIndex(inv => inv.id === req.params.id);
+    if (index === -1) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+    
+    const deletedInvoice = invoices[index];
+    invoices.splice(index, 1);
+    
+    // Update member balance after deletion if invoice was unpaid
+    if (deletedInvoice.memberId && 
+        (deletedInvoice.status === "Unpaid" || deletedInvoice.status === "Overdue")) {
+      await calculateAndUpdateMemberBalance(deletedInvoice.memberId);
+    }
+    
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting invoice:", error);
+    res.status(500).json({ error: error.message });
   }
-  invoices.splice(index, 1);
-  res.status(204).send();
 });
 
 // ========== CLOUDINARY IMAGE UPLOAD ENDPOINT ==========
@@ -621,25 +718,14 @@ app.post("/api/upload-screenshot", upload.single("screenshot"), async (req, res)
 
     // Check if Cloudinary is configured
     if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
-      // Upload to Cloudinary using v2 API
-      const uploadResult = await new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          {
-            folder: "payment-screenshots",
-            allowed_formats: ["jpg", "jpeg", "png", "gif", "webp"],
-            transformation: [{ width: 1000, crop: "limit" }],
-          },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          }
-        );
-
-        // Convert buffer to stream
-        const bufferStream = new Readable();
-        bufferStream.push(req.file.buffer);
-        bufferStream.push(null);
-        bufferStream.pipe(uploadStream);
+      // Upload to Cloudinary using v2 API - convert buffer to data URI (more reliable)
+      const base64 = req.file.buffer.toString('base64');
+      const dataUri = `data:${req.file.mimetype};base64,${base64}`;
+      
+      const uploadResult = await cloudinary.uploader.upload(dataUri, {
+        folder: "payment-screenshots",
+        allowed_formats: ["jpg", "jpeg", "png", "gif", "webp"],
+        transformation: [{ width: 1000, crop: "limit" }],
       });
 
       res.json({
@@ -661,16 +747,35 @@ app.post("/api/upload-screenshot", upload.single("screenshot"), async (req, res)
     }
   } catch (error) {
     console.error("Error uploading screenshot:", error);
-    res.status(500).json({ error: "Failed to upload screenshot: " + error.message });
+    res.status(500).json({ 
+      error: "Failed to upload screenshot: " + error.message,
+      details: error.stack 
+    });
   }
 });
 
 // Export for Vercel serverless functions
 export default app;
 
+// Function to initialize all member balances on server start
+async function initializeAllMemberBalances() {
+  try {
+    await ensureConnection();
+    const allMembers = await UserModel.find({});
+    
+    for (const member of allMembers) {
+      await calculateAndUpdateMemberBalance(member.id);
+    }
+    
+    console.log(`✓ Initialized balances for ${allMembers.length} members`);
+  } catch (error) {
+    console.error("Error initializing member balances:", error);
+  }
+}
+
 // Only listen locally (not on Vercel)
 if (!process.env.VERCEL) {
-  app.listen(PORT, () => {
+  app.listen(PORT, async () => {
     console.log(`Subscription Manager HK API running on port ${PORT}`);
     console.log(`✓ API endpoints available:`);
     console.log(`  - GET    /api/members`);
@@ -681,6 +786,9 @@ if (!process.env.VERCEL) {
     console.log(`  - POST   /api/invoices`);
     console.log(`  - PUT    /api/invoices/:id`);
     console.log(`  - DELETE /api/invoices/:id`);
+    
+    // Initialize all member balances on server start
+    await initializeAllMemberBalances();
   });
 }
 
