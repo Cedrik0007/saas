@@ -10,6 +10,7 @@ export function SignupPage() {
     phone: "",
     password: "",
     confirmPassword: "",
+    subscriptionType: "Monthly",
   });
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -22,7 +23,7 @@ export function SignupPage() {
     setSuccess(null);
 
     // Validation
-    if (!form.name || !form.email || !form.phone || !form.password) {
+    if (!form.name || !form.email || !form.phone || !form.password || !form.subscriptionType) {
       setError("Please fill in all required fields");
       return;
     }
@@ -55,6 +56,7 @@ export function SignupPage() {
           balance: "$0",
           nextDue: "",
           lastPayment: "",
+          subscriptionType: form.subscriptionType,
         }),
       });
 
@@ -143,6 +145,61 @@ export function SignupPage() {
                   placeholder="Enter Your Phone Number"
                   className="mono-input"
                 />
+              </label>
+
+              <label className="mono-label">
+                Subscription Type *
+                <div style={{ 
+                  display: "grid", 
+                  gridTemplateColumns: "1fr 1fr", 
+                  gap: "12px",
+                  marginTop: "8px"
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, subscriptionType: "Monthly" })}
+                    style={{
+                      padding: "16px",
+                      border: form.subscriptionType === "Monthly" 
+                        ? "2px solid var(--primary)" 
+                        : "2px solid #e0e0e0",
+                      borderRadius: "8px",
+                      background: form.subscriptionType === "Monthly" 
+                        ? "var(--primary)" 
+                        : "white",
+                      color: form.subscriptionType === "Monthly" ? "white" : "var(--gray-700)",
+                      cursor: "pointer",
+                      fontSize: "1rem",
+                      fontWeight: form.subscriptionType === "Monthly" ? "600" : "400",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    <div style={{ fontWeight: "600", marginBottom: "4px" }}>Monthly</div>
+                    <div style={{ fontSize: "0.875rem", opacity: 0.9 }}>$50/month</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, subscriptionType: "Yearly" })}
+                    style={{
+                      padding: "16px",
+                      border: form.subscriptionType === "Yearly" 
+                        ? "2px solid var(--primary)" 
+                        : "2px solid #e0e0e0",
+                      borderRadius: "8px",
+                      background: form.subscriptionType === "Yearly" 
+                        ? "var(--primary)" 
+                        : "white",
+                      color: form.subscriptionType === "Yearly" ? "white" : "var(--gray-700)",
+                      cursor: "pointer",
+                      fontSize: "1rem",
+                      fontWeight: form.subscriptionType === "Yearly" ? "600" : "400",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    <div style={{ fontWeight: "600", marginBottom: "4px" }}>Yearly</div>
+                    <div style={{ fontSize: "0.875rem", opacity: 0.9 }}>$500/year</div>
+                  </button>
+                </div>
               </label>
 
               <label className="mono-label">

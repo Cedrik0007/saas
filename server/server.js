@@ -5,6 +5,8 @@ import dotenv from "dotenv";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import { Readable } from "stream";
+import cron from "node-cron";
+import nodemailer from "nodemailer";
 
 dotenv.config();
 
@@ -107,6 +109,7 @@ const UserSchema = new mongoose.Schema({
     balance: String,
     nextDue: String,
     lastPayment: String,
+    subscriptionType: { type: String, default: "Monthly" },
 }, {
     timestamps: true  // Automatically adds createdAt and updatedAt fields
 })
@@ -165,6 +168,251 @@ const PaymentSchema = new mongoose.Schema({
 });
 
 const PaymentModel = mongoose.model("payments", PaymentSchema);
+
+// Email Template Schema
+const EmailTemplateSchema = new mongoose.Schema({
+  subject: { type: String, default: "Payment Reminder - Outstanding Balance" },
+  htmlTemplate: String,
+}, {
+  timestamps: true
+});
+
+const EmailTemplateModel = mongoose.model("emailtemplates", EmailTemplateSchema);
+
+// Reminder Log Schema
+const ReminderLogSchema = new mongoose.Schema({
+  memberId: String,
+  memberEmail: String,
+  sentAt: Date,
+  reminderType: String, // "overdue" or "upcoming"
+  amount: String,
+  invoiceCount: Number,
+}, {
+  timestamps: true
+});
+
+const ReminderLogModel = mongoose.model("reminderlogs", ReminderLogSchema);
+
+// Email configuration using nodemailer
+let transporter = null;
+
+function initializeEmailTransporter() {
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+    transporter = nodemailer.createTransport({
+      service: process.env.EMAIL_SERVICE || 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+    });
+    console.log("✓ Email transporter initialized");
+  } else {
+    console.warn("⚠️ Email credentials not found. Automated reminders will not send emails.");
+  }
+}
+
+// Initialize email transporter
+initializeEmailTransporter();
+
+// Function to send reminder email
+async function sendReminderEmail(member, unpaidInvoices, totalDue) {
+  if (!transporter) {
+    console.warn(`⚠️ Email not configured. Skipping email to ${member.email}`);
+    return false;
+  }
+
+  try {
+    await ensureConnection();
+    
+    // Get email template from database
+    let emailTemplate = await EmailTemplateModel.findOne({});
+    if (!emailTemplate) {
+      // Use default template if none exists
+      emailTemplate = {
+        subject: "Payment Reminder - Outstanding Balance",
+        htmlTemplate: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+    Payment Reminder - Outstanding Balance
+  </h2>
+  <p>Dear {{member_name}},</p>
+  <p>This is a friendly reminder about your outstanding subscription payments.</p>
+  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>Member ID:</strong> {{member_id}}</p>
+    <p><strong>Email:</strong> {{member_email}}</p>
+    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">${{total_due}}</span></p>
+  </div>
+  <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
+  <ul style="list-style: none; padding: 0;">
+    {{invoice_list}}
+  </ul>
+  <div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>💳 Payment Methods Available:</strong></p>
+    <ul>
+      {{payment_methods}}
+    </ul>
+  </div>
+  <p style="text-align: center; margin: 30px 0;">
+    <a href="{{portal_link}}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+      Access Member Portal
+    </a>
+  </p>
+  <p>Please settle your outstanding balance at your earliest convenience.</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+</div>`,
+      };
+    }
+
+    // Generate invoice list HTML
+    const invoiceListHTML = unpaidInvoices
+      .map((inv) => 
+        `<li style="margin-bottom: 10px;">
+          <strong>${inv.period}</strong>: ${inv.amount} 
+          <span style="color: #666;">(Due: ${inv.due})</span> - 
+          <strong style="color: ${inv.status === 'Overdue' ? '#d32f2f' : '#f57c00'}">${inv.status}</strong>
+        </li>`
+      )
+      .join('');
+
+    // Get payment methods from database (if available) or use default
+    const paymentMethodsHTML = `<li>FPS: Available in member portal</li>
+    <li>PayMe: Available in member portal</li>
+    <li>Bank Transfer: Available in member portal</li>
+    <li>Credit Card: Pay instantly online</li>`;
+
+    // Replace placeholders in template
+    const portalLink = process.env.FRONTEND_URL || 'http://localhost:5173';
+    let emailHTML = emailTemplate.htmlTemplate
+      .replace(/\{\{member_name\}\}/g, member.name)
+      .replace(/\{\{member_id\}\}/g, member.id)
+      .replace(/\{\{member_email\}\}/g, member.email)
+      .replace(/\{\{total_due\}\}/g, totalDue.toFixed(2))
+      .replace(/\{\{invoice_count\}\}/g, unpaidInvoices.length)
+      .replace(/\{\{invoice_list\}\}/g, invoiceListHTML)
+      .replace(/\{\{payment_methods\}\}/g, paymentMethodsHTML)
+      .replace(/\{\{portal_link\}\}/g, `${portalLink}/member`);
+
+    // Replace placeholders in subject
+    let emailSubject = emailTemplate.subject
+      .replace(/\{\{member_name\}\}/g, member.name)
+      .replace(/\{\{total_due\}\}/g, totalDue.toFixed(2))
+      .replace(/\{\{invoice_count\}\}/g, unpaidInvoices.length);
+
+    // Get email settings to use the configured email address
+    const emailSettings = await EmailSettingsModel.findOne({});
+    const fromEmail = emailSettings?.emailUser || process.env.EMAIL_USER || 'noreply@subscriptionhk.org';
+    
+    await transporter.sendMail({
+      from: `"Subscription Manager HK" <${fromEmail}>`,
+      to: member.email,
+      subject: emailSubject,
+      html: emailHTML,
+      text: `Dear ${member.name},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${member.id}\nTotal Outstanding: $${totalDue.toFixed(2)}\n\nOutstanding Invoices (${unpaidInvoices.length}):\n${unpaidInvoices.map(inv => `• ${inv.period}: ${inv.amount} (Due: ${inv.due}) - ${inv.status}`).join('\n')}\n\nPayment Methods: Available in member portal\n\nAccess Member Portal: ${portalLink}/member\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+    });
+
+    console.log(`✓ Reminder email sent to ${member.email}`);
+    return true;
+  } catch (error) {
+    console.error(`Error sending email to ${member.email}:`, error);
+    return false;
+  }
+}
+
+// Function to check and send automated reminders
+async function checkAndSendReminders() {
+  try {
+    await ensureConnection();
+    
+    // Get email settings from database
+    const emailSettings = await EmailSettingsModel.findOne({});
+    
+    // Check if email automation is enabled
+    if (!emailSettings || !emailSettings.automationEnabled) {
+      console.log('⏭️ Email automation is disabled');
+      return;
+    }
+
+    // Check if email is configured
+    if (!emailSettings.emailUser || !emailSettings.emailPassword) {
+      console.log('⏭️ Email not configured. Skipping reminder check.');
+      return;
+    }
+
+    // Update transporter with saved settings
+    transporter = nodemailer.createTransport({
+      service: emailSettings.emailService || 'gmail',
+      auth: {
+        user: emailSettings.emailUser,
+        pass: emailSettings.emailPassword,
+      },
+    });
+    
+    console.log('🔄 Starting automated reminder check...');
+    
+    // Get all active members
+    const members = await UserModel.find({ status: 'Active' });
+    console.log(`📋 Checking ${members.length} active members...`);
+    
+    let remindersSent = 0;
+    let remindersSkipped = 0;
+    const reminderInterval = emailSettings.reminderInterval || 7;
+    
+    for (const member of members) {
+      // Get unpaid/overdue invoices for this member
+      const unpaidInvoices = await InvoiceModel.find({
+        memberId: member.id,
+        status: { $in: ['Unpaid', 'Overdue'] }
+      });
+
+      if (unpaidInvoices.length === 0) continue;
+
+      // Calculate total due
+      const totalDue = unpaidInvoices.reduce((sum, inv) => {
+        return sum + parseFloat(inv.amount.replace('$', '').replace(',', '')) || 0;
+      }, 0);
+
+      // Check if we sent a reminder within the configured interval (avoid spamming)
+      const intervalDaysAgo = new Date();
+      intervalDaysAgo.setDate(intervalDaysAgo.getDate() - reminderInterval);
+      
+      const recentReminder = await ReminderLogModel.findOne({
+        memberId: member.id,
+        sentAt: { $gte: intervalDaysAgo }
+      });
+
+      if (recentReminder) {
+        const daysAgo = Math.floor((new Date() - recentReminder.sentAt) / (1000 * 60 * 60 * 24));
+        console.log(`⏭️ Skipping ${member.email} - reminder sent ${daysAgo} days ago (interval: ${reminderInterval} days)`);
+        remindersSkipped++;
+        continue;
+      }
+
+      // Determine reminder type
+      const hasOverdue = unpaidInvoices.some(inv => inv.status === 'Overdue');
+      const reminderType = hasOverdue ? 'overdue' : 'upcoming';
+
+      // Send reminder email
+      const sent = await sendReminderEmail(member, unpaidInvoices, totalDue);
+
+      if (sent) {
+        // Log the reminder
+        await ReminderLogModel.create({
+          memberId: member.id,
+          memberEmail: member.email,
+          sentAt: new Date(),
+          reminderType: reminderType,
+          amount: `$${totalDue}`,
+          invoiceCount: unpaidInvoices.length,
+        });
+        console.log(`✓ Automated reminder sent to ${member.name} (${member.email}) - $${totalDue} due`);
+        remindersSent++;
+      }
+    }
+    
+    console.log(`✅ Reminder check completed: ${remindersSent} sent, ${remindersSkipped} skipped`);
+  } catch (error) {
+    console.error('❌ Error in automated reminder check:', error);
+  }
+}
 
 // Middleware - must be before routes
 // CORS configuration: Allow localhost for development, production origin for production
@@ -483,6 +731,7 @@ app.post("/api/members", async (req, res) => {
       balance: req.body.balance || '$0',
       nextDue: req.body.nextDue || '',
       lastPayment: req.body.lastPayment || '',
+      subscriptionType: req.body.subscriptionType || 'Monthly',
     });
     
     const savedMember = await newMember.save();
@@ -808,6 +1057,232 @@ app.post("/api/upload-screenshot", upload.single("screenshot"), async (req, res)
   }
 });
 
+// ========== AUTOMATED REMINDERS ENDPOINT ==========
+
+// POST endpoint to trigger reminder check manually
+app.post("/api/reminders/check", async (req, res) => {
+  try {
+    await ensureConnection();
+    await checkAndSendReminders();
+    res.json({ success: true, message: "Reminder check completed" });
+  } catch (error) {
+    console.error("Error in reminder check endpoint:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET endpoint to view reminder logs
+app.get("/api/reminders/logs", async (req, res) => {
+  try {
+    await ensureConnection();
+    const logs = await ReminderLogModel.find({})
+      .sort({ sentAt: -1 })
+      .limit(100);
+    res.json(logs);
+  } catch (error) {
+    console.error("Error fetching reminder logs:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== EMAIL SETTINGS ENDPOINTS ==========
+
+// Email Settings Schema
+const EmailSettingsSchema = new mongoose.Schema({
+  emailService: { type: String, default: "gmail" },
+  emailUser: String,
+  emailPassword: String,
+  scheduleTime: { type: String, default: "09:00" },
+  automationEnabled: { type: Boolean, default: true },
+  reminderInterval: { type: Number, default: 7 },
+}, {
+  timestamps: true
+});
+
+const EmailSettingsModel = mongoose.model("emailsettings", EmailSettingsSchema);
+
+// GET email settings
+app.get("/api/email-settings", async (req, res) => {
+  try {
+    await ensureConnection();
+    let settings = await EmailSettingsModel.findOne({});
+    if (!settings) {
+      // Create default settings
+      settings = new EmailSettingsModel({
+        emailService: "gmail",
+        scheduleTime: "09:00",
+        automationEnabled: true,
+        reminderInterval: 7,
+      });
+      await settings.save();
+    }
+    // Don't send password in response
+    const response = settings.toObject();
+    delete response.emailPassword;
+    res.json(response);
+  } catch (error) {
+    console.error("Error fetching email settings:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST/PUT email settings
+app.post("/api/email-settings", async (req, res) => {
+  try {
+    await ensureConnection();
+    let settings = await EmailSettingsModel.findOne({});
+    
+    if (settings) {
+      // Update existing
+      settings.emailService = req.body.emailService || settings.emailService;
+      settings.emailUser = req.body.emailUser || settings.emailUser;
+      settings.emailPassword = req.body.emailPassword || settings.emailPassword;
+      settings.scheduleTime = req.body.scheduleTime || settings.scheduleTime;
+      settings.automationEnabled = req.body.automationEnabled !== undefined ? req.body.automationEnabled : settings.automationEnabled;
+      settings.reminderInterval = req.body.reminderInterval || settings.reminderInterval;
+      await settings.save();
+    } else {
+      // Create new
+      settings = new EmailSettingsModel(req.body);
+      await settings.save();
+    }
+
+    // Update transporter with new settings
+    if (settings.emailUser && settings.emailPassword) {
+      transporter = nodemailer.createTransport({
+        service: settings.emailService || 'gmail',
+        auth: {
+          user: settings.emailUser,
+          pass: settings.emailPassword,
+        },
+      });
+      console.log("✓ Email transporter updated with new settings");
+    }
+
+    // Don't send password in response
+    const response = settings.toObject();
+    delete response.emailPassword;
+    res.json(response);
+  } catch (error) {
+    console.error("Error saving email settings:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST test email
+app.post("/api/email-settings/test", async (req, res) => {
+  try {
+    const { emailService, emailUser, emailPassword, testEmail } = req.body;
+    
+    if (!emailUser || !emailPassword) {
+      return res.status(400).json({ error: "Email credentials required" });
+    }
+
+    // Create temporary transporter for testing
+    const testTransporter = nodemailer.createTransport({
+      service: emailService || 'gmail',
+      auth: {
+        user: emailUser,
+        pass: emailPassword,
+      },
+    });
+
+    await testTransporter.sendMail({
+      from: `"Subscription Manager HK" <${emailUser}>`,
+      to: testEmail || emailUser,
+      subject: "Test Email - Email Configuration",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #333;">✅ Email Configuration Test</h2>
+          <p>This is a test email to verify your email configuration is working correctly.</p>
+          <p>If you received this email, your email settings are configured properly!</p>
+          <p>Best regards,<br><strong>Subscription Manager HK</strong></p>
+        </div>
+      `,
+      text: "This is a test email to verify your email configuration is working correctly.",
+    });
+
+    res.json({ success: true, message: "Test email sent successfully" });
+  } catch (error) {
+    console.error("Error sending test email:", error);
+    res.status(500).json({ error: error.message || "Failed to send test email" });
+  }
+});
+
+// ========== EMAIL TEMPLATE ENDPOINTS ==========
+
+// GET email template
+app.get("/api/email-template", async (req, res) => {
+  try {
+    await ensureConnection();
+    let template = await EmailTemplateModel.findOne({});
+    if (!template) {
+      // Create default template
+      template = new EmailTemplateModel({
+        subject: "Payment Reminder - Outstanding Balance",
+        htmlTemplate: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+    Payment Reminder - Outstanding Balance
+  </h2>
+  <p>Dear {{member_name}},</p>
+  <p>This is a friendly reminder about your outstanding subscription payments.</p>
+  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>Member ID:</strong> {{member_id}}</p>
+    <p><strong>Email:</strong> {{member_email}}</p>
+    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">${{total_due}}</span></p>
+  </div>
+  <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
+  <ul style="list-style: none; padding: 0;">
+    {{invoice_list}}
+  </ul>
+  <div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>💳 Payment Methods Available:</strong></p>
+    <ul>
+      {{payment_methods}}
+    </ul>
+  </div>
+  <p style="text-align: center; margin: 30px 0;">
+    <a href="{{portal_link}}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+      Access Member Portal
+    </a>
+  </p>
+  <p>Please settle your outstanding balance at your earliest convenience.</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+</div>`,
+      });
+      await template.save();
+    }
+    res.json(template);
+  } catch (error) {
+    console.error("Error fetching email template:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST email template
+app.post("/api/email-template", async (req, res) => {
+  try {
+    await ensureConnection();
+    let template = await EmailTemplateModel.findOne({});
+    
+    if (template) {
+      // Update existing
+      template.subject = req.body.subject || template.subject;
+      template.htmlTemplate = req.body.htmlTemplate || template.htmlTemplate;
+      await template.save();
+    } else {
+      // Create new
+      template = new EmailTemplateModel(req.body);
+      await template.save();
+    }
+
+    res.json(template);
+  } catch (error) {
+    console.error("Error saving email template:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Export for Vercel serverless functions
 export default app;
 
@@ -843,9 +1318,23 @@ if (!process.env.VERCEL) {
     console.log(`  - GET    /api/payments`);
     console.log(`  - GET    /api/payments/member/:memberId`);
     console.log(`  - POST   /api/payments`);
+    console.log(`  - POST   /api/reminders/check`);
+    console.log(`  - GET    /api/reminders/logs`);
     
     // Initialize all member balances on server start
     await initializeAllMemberBalances();
+    
+    // Schedule automated reminders
+    // Runs every day at 9:00 AM
+    cron.schedule('0 9 * * *', () => {
+      console.log('🔄 Running scheduled automated reminder check...');
+      checkAndSendReminders();
+    });
+    console.log('✓ Automated reminders scheduled (daily at 9:00 AM)');
+    
+    // Optional: Run immediately on startup for testing (uncomment to enable)
+    // console.log('🔄 Running initial reminder check...');
+    // checkAndSendReminders();
   });
 }
 

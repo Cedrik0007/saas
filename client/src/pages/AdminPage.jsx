@@ -74,6 +74,7 @@ export function AdminPage() {
     balance: "$0",
     nextDue: "",
     lastPayment: "",
+    subscriptionType: "Monthly",
   });
 
   const [adminsForm, setAdminsForm] = useState({
@@ -94,7 +95,52 @@ export function AdminPage() {
   const [orgForm, setOrgForm] = useState(organizationInfo);
   const [showAdminForm, setShowAdminForm] = useState(false);
   const [adminForm, setAdminForm] = useState({ name: "", role: "Viewer", status: "Active" });
-  const [templateForm, setTemplateForm] = useState(reminderTemplates);
+  
+  // Email template state
+  const [emailTemplate, setEmailTemplate] = useState({
+    subject: "Payment Reminder - Outstanding Balance",
+    htmlTemplate: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+    Payment Reminder - Outstanding Balance
+  </h2>
+  <p>Dear {{member_name}},</p>
+  <p>This is a friendly reminder about your outstanding subscription payments.</p>
+  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>Member ID:</strong> {{member_id}}</p>
+    <p><strong>Email:</strong> {{member_email}}</p>
+    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">\${{total_due}}</span></p>
+  </div>
+  <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
+  <ul style="list-style: none; padding: 0;">
+    {{invoice_list}}
+  </ul>
+  <div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>💳 Payment Methods Available:</strong></p>
+    <ul>
+      {{payment_methods}}
+    </ul>
+  </div>
+  <p style="text-align: center; margin: 30px 0;">
+    <a href="{{portal_link}}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+      Access Member Portal
+    </a>
+  </p>
+  <p>Please settle your outstanding balance at your earliest convenience.</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+</div>`,
+  });
+  
+  // Email automation settings state
+  const [emailSettings, setEmailSettings] = useState({
+    emailService: "gmail",
+    emailUser: "",
+    emailPassword: "",
+    scheduleTime: "09:00",
+    scheduleEnabled: true,
+    reminderInterval: 7, // days between reminders
+  });
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [emailConfigStatus, setEmailConfigStatus] = useState('not_connected');
   const [dateRange, setDateRange] = useState({
     from: "2025-01-01",
     to: "2025-12-31",
@@ -150,6 +196,70 @@ export function AdminPage() {
     }));
   };
 
+  // Calculate dashboard metrics from actual data
+  const calculateDashboardMetrics = () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    
+    // Calculate Total Collected - from paymentHistory
+    const allPayments = paymentHistory || [];
+    const totalCollectedAllTime = allPayments.reduce((sum, payment) => {
+      const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+      return sum + amount;
+    }, 0);
+    
+    // Calculate collected this month
+    const thisMonthPayments = allPayments.filter((payment) => {
+      if (!payment.date) return false;
+      const paymentDate = new Date(payment.date);
+      return paymentDate.getMonth() === currentMonth && 
+             paymentDate.getFullYear() === currentYear;
+    });
+    const collectedThisMonth = thisMonthPayments.reduce((sum, payment) => {
+      const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+      return sum + amount;
+    }, 0);
+    
+    // Calculate collected this year
+    const thisYearPayments = allPayments.filter((payment) => {
+      if (!payment.date) return false;
+      const paymentDate = new Date(payment.date);
+      return paymentDate.getFullYear() === currentYear;
+    });
+    const collectedThisYear = thisYearPayments.reduce((sum, payment) => {
+      const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+      return sum + amount;
+    }, 0);
+    
+    // Calculate Total Outstanding - from unpaid/overdue invoices
+    const unpaidInvoices = invoices.filter(inv => 
+      inv.status === "Unpaid" || inv.status === "Overdue"
+    );
+    const totalOutstanding = unpaidInvoices.reduce((sum, inv) => {
+      const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
+      return sum + amount;
+    }, 0);
+    
+    // Calculate Overdue Members - members with overdue invoices
+    const overdueInvoices = invoices.filter(inv => inv.status === "Overdue");
+    const overdueMemberIds = new Set(overdueInvoices.map(inv => inv.memberId));
+    const overdueMembersCount = overdueMemberIds.size;
+    
+    // Calculate expected annual (all members * expected per member)
+    // Assuming $800 per member per year as mentioned in the UI
+    const expectedAnnual = members.length * 800;
+    
+    return {
+      totalCollected: totalCollectedAllTime,
+      collectedMonth: collectedThisMonth,
+      collectedYear: collectedThisYear,
+      outstanding: totalOutstanding,
+      overdueMembers: overdueMembersCount,
+      expectedAnnual: expectedAnnual
+    };
+  };
+
   // Get recent payments from paymentHistory
   const getRecentPayments = () => {
     return paymentHistory
@@ -172,6 +282,165 @@ export function AdminPage() {
 
   const monthlyCollectionsData = calculateMonthlyCollections();
   const recentPaymentsData = getRecentPayments();
+  const dashboardMetrics = calculateDashboardMetrics();
+
+  // Fetch email settings from server
+  const fetchEmailSettings = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/email-settings`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data) {
+          setEmailSettings({
+            emailService: data.emailService || "gmail",
+            emailUser: data.emailUser || "",
+            emailPassword: "", // Don't load password for security
+            scheduleTime: data.scheduleTime || "09:00",
+            scheduleEnabled: data.scheduleEnabled !== undefined ? data.scheduleEnabled : true,
+            reminderInterval: data.reminderInterval || 7,
+          });
+          setEmailConfigStatus(data.emailUser ? 'connected' : 'not_connected');
+          
+          // Set automationEnabled from database
+          if (data.automationEnabled !== undefined) {
+            setAutomationEnabled(data.automationEnabled);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching email settings:', error);
+    }
+  };
+
+  // Save email settings
+  const handleSaveEmailSettings = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/email-settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(emailSettings),
+      });
+      
+      if (response.ok) {
+        showToast('Email settings saved successfully!');
+        setEmailConfigStatus(emailSettings.emailUser ? 'connected' : 'not_connected');
+      } else {
+        const error = await response.json();
+        showToast(error.error || 'Failed to save email settings', 'error');
+      }
+    } catch (error) {
+      console.error('Error saving email settings:', error);
+      showToast('Failed to save email settings', 'error');
+    }
+  };
+
+  // Fetch email template from server
+  const fetchEmailTemplate = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/email-template`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data && (data.subject || data.htmlTemplate)) {
+          const defaultTemplate = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+    Payment Reminder - Outstanding Balance
+  </h2>
+  <p>Dear {{member_name}},</p>
+  <p>This is a friendly reminder about your outstanding subscription payments.</p>
+  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>Member ID:</strong> {{member_id}}</p>
+    <p><strong>Email:</strong> {{member_email}}</p>
+    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">\${{total_due}}</span></p>
+  </div>
+  <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
+  <ul style="list-style: none; padding: 0;">
+    {{invoice_list}}
+  </ul>
+  <div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>💳 Payment Methods Available:</strong></p>
+    <ul>
+      {{payment_methods}}
+    </ul>
+  </div>
+  <p style="text-align: center; margin: 30px 0;">
+    <a href="{{portal_link}}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+      Access Member Portal
+    </a>
+  </p>
+  <p>Please settle your outstanding balance at your earliest convenience.</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+</div>`;
+          setEmailTemplate({
+            subject: data.subject || "Payment Reminder - Outstanding Balance",
+            htmlTemplate: data.htmlTemplate || defaultTemplate,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching email template:', error);
+      // Don't block rendering if template fetch fails
+    }
+  };
+
+  // Save email template
+  const handleSaveEmailTemplate = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/email-template`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(emailTemplate),
+      });
+      
+      if (response.ok) {
+        showToast('Email template saved successfully!');
+      } else {
+        const error = await response.json();
+        showToast(error.error || 'Failed to save email template', 'error');
+      }
+    } catch (error) {
+      console.error('Error saving email template:', error);
+      showToast('Failed to save email template', 'error');
+    }
+  };
+
+  // Test email configuration
+  const handleTestEmail = async () => {
+    if (!emailSettings.emailUser || !emailSettings.emailPassword) {
+      showToast('Please configure email credentials first', 'error');
+      return;
+    }
+
+    setTestingEmail(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/email-settings/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emailService: emailSettings.emailService,
+          emailUser: emailSettings.emailUser,
+          emailPassword: emailSettings.emailPassword,
+          testEmail: emailSettings.emailUser, // Send test to the configured email
+        }),
+      });
+      
+      if (response.ok) {
+        showToast('Test email sent successfully! Check your inbox.');
+      } else {
+        const error = await response.json();
+        showToast(error.error || 'Failed to send test email', 'error');
+      }
+    } catch (error) {
+      console.error('Error testing email:', error);
+      showToast('Failed to send test email', 'error');
+    } finally {
+      setTestingEmail(false);
+    }
+  };
 
   // Initialize EmailJS
   useEffect(() => {
@@ -188,6 +457,17 @@ export function AdminPage() {
     } else {
       console.warn("⚠️ EmailJS not configured. Add your public key in AdminPage.jsx line ~35");
     }
+  }, []);
+
+  // Fetch email settings and templates on mount
+  useEffect(() => {
+    fetchEmailSettings().catch(err => {
+      console.error('Failed to fetch email settings:', err);
+      // Don't block rendering if email settings fail to load
+    });
+    fetchEmailTemplate().catch(err => {
+      console.error('Failed to fetch email template:', err);
+    });
   }, []);
 
   const handleNavClick = (id) => {
@@ -222,6 +502,7 @@ export function AdminPage() {
         balance: "$0",
         nextDue: "",
         lastPayment: "",
+        subscriptionType: "Monthly",
       });
       setShowMemberForm(false);
       showToast("Member added successfully!");
@@ -232,7 +513,10 @@ export function AdminPage() {
 
   const handleEditMember = (member) => {
     setEditingMember(member);
-    setMemberForm(member);
+    setMemberForm({
+      ...member,
+      subscriptionType: member.subscriptionType || "Monthly",
+    });
     setShowMemberForm(true);
   };
 
@@ -249,6 +533,7 @@ export function AdminPage() {
         balance: "$0",
         nextDue: "",
         lastPayment: "",
+        subscriptionType: "Monthly",
       });
       setShowMemberForm(false);
       showToast("Member updated successfully!");
@@ -648,17 +933,17 @@ Subscription Manager HK`;
                     </div>
                     <div className="card kpi">
                       <p>Total Collected</p>
-                      <h4>${metrics.collectedMonth.toLocaleString()}</h4>
-                      <small>${metrics.collectedYear.toLocaleString()} YTD</small>
+                      <h4>${dashboardMetrics.collectedMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+                      <small>${dashboardMetrics.collectedYear.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} YTD</small>
                     </div>
                     <div className="card kpi">
                       <p>Total Outstanding</p>
-                      <h4>${metrics.outstanding.toLocaleString()}</h4>
-                      <small>Expected ${metrics.expectedAnnual.toLocaleString()}</small>
+                      <h4>${dashboardMetrics.outstanding.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+                      <small>Expected ${dashboardMetrics.expectedAnnual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</small>
                     </div>
                     <div className="card kpi">
                       <p>Overdue Members</p>
-                      <h4>{metrics.overdueMembers}</h4>
+                      <h4>{dashboardMetrics.overdueMembers}</h4>
                       <small>Requires attention</small>
                     </div>
                   </div>
@@ -784,6 +1069,7 @@ Subscription Manager HK`;
                             balance: "$0",
                             nextDue: "",
                             lastPayment: "",
+                            subscriptionType: "Monthly",
                           });
                         }}
                       >
@@ -832,6 +1118,16 @@ Subscription Manager HK`;
                         >
                           <option>Active</option>
                           <option>Inactive</option>
+                        </select>
+                      </label>
+                      <label>
+                        Subscription Type
+                        <select
+                          value={memberForm.subscriptionType || "Monthly"}
+                          onChange={(e) => setMemberForm({ ...memberForm, subscriptionType: e.target.value })}
+                        >
+                          <option value="Monthly">Monthly - $50/month</option>
+                          <option value="Yearly">Yearly - $500/year</option>
                         </select>
                       </label>
                       <label>
@@ -1663,48 +1959,34 @@ Subscription Manager HK`;
                 <header className="screen-card__header">
                   <div>
                     <h3>Reminders &amp; Automation</h3>
-                    <p>Configure automated payment reminders and messaging templates.</p>
-                  </div>
-                  <div style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    padding: "10px 20px",
-                    background: automationEnabled 
-                      ? "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)" 
-                      : "#f5f5f5",
-                    borderRadius: "12px",
-                    border: `2px solid ${automationEnabled ? "#4caf50" : "#e0e0e0"}`
-                  }}>
-                    <span style={{ 
-                      fontSize: "0.875rem", 
-                      fontWeight: "600",
-                      color: automationEnabled ? "#2e7d32" : "#666"
-                    }}>
-                      {automationEnabled ? "✓ Active" : "○ Inactive"}
-                    </span>
+                    <p>Configure automated payment reminders and email templates.</p>
                   </div>
                 </header>
 
                 {/* Automation Toggle Section */}
                 <div style={{
-                  background: "linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)",
-                  borderRadius: "16px",
-                  padding: "28px",
-                  border: "1px solid #e0e0e0",
+                  background: "#ffffff",
+                  borderRadius: "12px",
+                  padding: "clamp(24px, 4vw, 32px)",
+                  border: "2px solid #000000",
                   marginTop: "24px",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
                 }}>
                   <div style={{
                     display: "flex",
+                    flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    marginBottom: "16px"
+                    gap: "clamp(16px, 3vw, 24px)",
+                    flexWrap: "wrap"
                   }}>
-                    <div>
+                    <div style={{ 
+                      flex: "1 1 300px", 
+                      minWidth: "250px" 
+                    }}>
                       <h4 style={{
                         margin: "0 0 8px 0",
-                        fontSize: "1.25rem",
+                        fontSize: "clamp(1.25rem, 3vw, 1.5rem)",
                         fontWeight: "700",
                         color: "#000"
                       }}>
@@ -1712,502 +1994,428 @@ Subscription Manager HK`;
                       </h4>
                       <p style={{
                         margin: 0,
-                        fontSize: "0.875rem",
+                        fontSize: "clamp(0.875rem, 2vw, 0.9375rem)",
                         color: "#666",
-                        lineHeight: "1.5"
+                        lineHeight: "1.6"
                       }}>
                         Enable or disable automated payment reminders system-wide
                       </p>
                     </div>
-                    <label className="switch" style={{ margin: 0 }}>
-                      <input
-                        type="checkbox"
-                        checked={automationEnabled}
-                        onChange={(e) => {
-                          setAutomationEnabled(e.target.checked);
-                          showToast(
-                            e.target.checked
-                              ? "Automation enabled!"
-                              : "Automation disabled!"
-                          );
+                    <div style={{
+                      display: "flex",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: "clamp(12px, 2vw, 16px)",
+                      flexShrink: 0
+                    }}>
+                      <span style={{
+                        fontSize: "clamp(0.75rem, 1.5vw, 0.875rem)",
+                        fontWeight: "600",
+                        color: automationEnabled ? "#000" : "#999",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                        minWidth: "28px",
+                        textAlign: "right"
+                      }}>
+                        {automationEnabled ? "ON" : "OFF"}
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={automationEnabled}
+                        onClick={async () => {
+                          const newValue = !automationEnabled;
+                          setAutomationEnabled(newValue);
+                          
+                          // Save to database
+                          try {
+                            const apiUrl = import.meta.env.VITE_API_URL || '';
+                            await fetch(`${apiUrl}/api/email-settings`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                ...emailSettings,
+                                automationEnabled: newValue
+                              }),
+                            });
+                            showToast(
+                              newValue
+                                ? "Automation enabled!"
+                                : "Automation disabled!"
+                            );
+                          } catch (error) {
+                            console.error('Error saving automation status:', error);
+                            showToast('Failed to save automation status', 'error');
+                            // Revert on error
+                            setAutomationEnabled(!newValue);
+                          }
                         }}
-                      />
-                      <span></span>
-                    </label>
+                        style={{
+                          position: "relative",
+                          width: "clamp(60px, 8vw, 72px)",
+                          height: "clamp(34px, 5vw, 40px)",
+                          borderRadius: "999px",
+                          border: "2px solid #000000",
+                          background: automationEnabled ? "#000000" : "#ffffff",
+                          cursor: "pointer",
+                          transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                          outline: "none",
+                          padding: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          boxShadow: automationEnabled 
+                            ? "0 4px 12px rgba(0,0,0,0.15)" 
+                            : "inset 0 2px 4px rgba(0,0,0,0.1)",
+                          WebkitTapHighlightColor: "transparent"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "scale(1.05)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "scale(1)";
+                        }}
+                      >
+                        <span style={{
+                          position: "absolute",
+                          width: "clamp(26px, 4vw, 30px)",
+                          height: "clamp(26px, 4vw, 30px)",
+                          borderRadius: "50%",
+                          background: automationEnabled ? "#ffffff" : "#000000",
+                          transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                          left: automationEnabled ? "auto" : "4px",
+                          right: automationEnabled ? "4px" : "auto",
+                          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                          border: "1px solid rgba(0,0,0,0.1)"
+                        }}></span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                {/* Reminder Rules Section */}
+                {/* Email Template Section */}
                 <div style={{ marginTop: "32px" }}>
                   <h4 style={{
                     margin: "0 0 20px 0",
-                    fontSize: "1.125rem",
+                    fontSize: "1.25rem",
                     fontWeight: "700",
-                    color: "#000",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px"
+                    color: "#000"
                   }}>
-                    <span>⏰</span>
-                    <span>Reminder Schedule</span>
+                    Email Template
                   </h4>
-                  <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-                    gap: "20px"
-                  }}>
-                    {reminderRules.map((rule) => (
-                      <div 
-                        key={rule.label}
-                        style={{
-                          background: "#fff",
-                          border: "1.5px solid #e0e0e0",
-                          borderRadius: "16px",
-                          padding: "24px",
-                          transition: "all 0.3s ease",
-                          boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)";
-                          e.currentTarget.style.borderColor = "#000";
-                          e.currentTarget.style.transform = "translateY(-2px)";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)";
-                          e.currentTarget.style.borderColor = "#e0e0e0";
-                          e.currentTarget.style.transform = "translateY(0)";
-                        }}
-                      >
-                        <div style={{
-                          fontSize: "1rem",
-                          fontWeight: "700",
-                          color: "#000",
-                          marginBottom: "16px",
-                          paddingBottom: "12px",
-                          borderBottom: "2px solid #f0f0f0"
-                        }}>
-                          {rule.label}
-                        </div>
-                        <div style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "12px"
-                        }}>
-                          {["Email", "WhatsApp"].map((channel) => {
-                            const isEnabled = rule.channels.includes(channel);
-                            return (
-                              <label 
-                                key={channel} 
-                                style={{ 
-                                  display: 'flex', 
-                                  alignItems: 'center', 
-                                  gap: '12px', 
-                                  cursor: 'pointer',
-                                  padding: "12px",
-                                  background: isEnabled ? "#f0f8ff" : "#fafafa",
-                                  borderRadius: "10px",
-                                  border: `2px solid ${isEnabled ? "#2196F3" : "#e0e0e0"}`,
-                                  transition: "all 0.2s ease"
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = isEnabled ? "#e3f2fd" : "#f5f5f5";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = isEnabled ? "#f0f8ff" : "#fafafa";
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isEnabled}
-                                  onChange={(e) => {
-                                    const newChannels = e.target.checked
-                                      ? [...rule.channels, channel]
-                                      : rule.channels.filter((c) => c !== channel);
-                                    updateReminderRule(rule.label, newChannels);
-                                    showToast(`${channel} ${e.target.checked ? "enabled" : "disabled"} for ${rule.label}`);
-                                  }}
-                                  style={{
-                                    width: "20px",
-                                    height: "20px",
-                                    cursor: "pointer"
-                                  }}
-                                />
-                                <div style={{
-                                  width: "40px",
-                                  height: "40px",
-                                  borderRadius: "10px",
-                                  background: channel === "Email" 
-                                    ? "linear-gradient(135deg, #1976D2 0%, #1565C0 100%)"
-                                    : "linear-gradient(135deg, #25D366 0%, #128C7E 100%)",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  boxShadow: "0 2px 8px rgba(0,0,0,0.15)"
-                                }}>
-                                  {channel === "Email" ? (
-                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                                      <polyline points="22,6 12,13 2,6"></polyline>
-                                    </svg>
-                                  ) : (
-                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="#ffffff">
-                                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-                                    </svg>
-                                  )}
-                                </div>
-                                <span style={{ 
-                                  fontSize: '0.9375rem', 
-                                  fontWeight: '600',
-                                  color: "#000",
-                                  flex: 1
-                                }}>
-                                  {channel}
-                                </span>
-                                {isEnabled && (
-                                  <span style={{
-                                    fontSize: "0.75rem",
-                                    fontWeight: "700",
-                                    color: "#2196F3",
-                                    background: "#e3f2fd",
-                                    padding: "4px 10px",
-                                    borderRadius: "12px"
-                                  }}>
-                                    Active
-                                  </span>
-                                )}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Message Templates Section */}
-                <div style={{ marginTop: "40px" }}>
-                  <h4 style={{
-                    margin: "0 0 24px 0",
-                    fontSize: "1.125rem",
-                    fontWeight: "700",
-                    color: "#000",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px"
-                  }}>
-                    <span>✉️</span>
-                    <span>Message Templates</span>
-                  </h4>
-                  <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))",
-                    gap: "24px"
-                  }}>
-                    <div style={{
-                      background: "#fff",
-                      border: "1.5px solid #e0e0e0",
-                      borderRadius: "16px",
-                      padding: "24px",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
-                    }}>
-                      <div style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        marginBottom: "16px",
-                        paddingBottom: "12px",
-                        borderBottom: "2px solid #f0f0f0"
-                      }}>
-                        <span style={{ fontSize: "1.5rem" }}>📅</span>
-                        <h4 style={{
-                          margin: 0,
-                          fontSize: "1.125rem",
-                          fontWeight: "700",
-                          color: "#000"
-                        }}>
-                          Upcoming Due Template
-                        </h4>
-                      </div>
-                      <textarea
-                        value={templateForm.upcomingDue}
-                        onChange={(e) =>
-                          setTemplateForm({ ...templateForm, upcomingDue: e.target.value })
-                        }
-                        rows={6}
-                        style={{
-                          width: "100%",
-                          padding: "14px",
-                          border: "1.5px solid #e0e0e0",
-                          borderRadius: "10px",
-                          fontSize: "0.9375rem",
-                          fontFamily: "inherit",
-                          resize: "vertical",
-                          transition: "all 0.2s ease"
-                        }}
-                        onFocus={(e) => {
-                          e.target.style.borderColor = "#000";
-                          e.target.style.boxShadow = "0 0 0 3px rgba(0,0,0,0.05)";
-                        }}
-                        onBlur={(e) => {
-                          e.target.style.borderColor = "#e0e0e0";
-                          e.target.style.boxShadow = "none";
-                        }}
-                        placeholder="Enter your message template here. Use {{member_name}}, {{period}}, {{amount}}, {{due_date}} as placeholders."
-                      ></textarea>
-                    </div>
-                    <div style={{
-                      background: "#fff",
-                      border: "1.5px solid #e0e0e0",
-                      borderRadius: "16px",
-                      padding: "24px",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
-                    }}>
-                      <div style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "10px",
-                        marginBottom: "16px",
-                        paddingBottom: "12px",
-                        borderBottom: "2px solid #f0f0f0"
-                      }}>
-                        <span style={{ fontSize: "1.5rem" }}>⚠️</span>
-                        <h4 style={{
-                          margin: 0,
-                          fontSize: "1.125rem",
-                          fontWeight: "700",
-                          color: "#000"
-                        }}>
-                          Overdue Template
-                        </h4>
-                      </div>
-                      <textarea
-                        value={templateForm.overdue}
-                        onChange={(e) =>
-                          setTemplateForm({ ...templateForm, overdue: e.target.value })
-                        }
-                        rows={6}
-                        style={{
-                          width: "100%",
-                          padding: "14px",
-                          border: "1.5px solid #e0e0e0",
-                          borderRadius: "10px",
-                          fontSize: "0.9375rem",
-                          fontFamily: "inherit",
-                          resize: "vertical",
-                          transition: "all 0.2s ease"
-                        }}
-                        onFocus={(e) => {
-                          e.target.style.borderColor = "#000";
-                          e.target.style.boxShadow = "0 0 0 3px rgba(0,0,0,0.05)";
-                        }}
-                        onBlur={(e) => {
-                          e.target.style.borderColor = "#e0e0e0";
-                          e.target.style.boxShadow = "none";
-                        }}
-                        placeholder="Enter your overdue message template here. Use {{member_name}}, {{period}}, {{amount}}, {{due_date}} as placeholders."
-                      ></textarea>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Preview Section */}
-                <div style={{ 
-                  marginTop: "40px",
-                  background: "linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)",
-                  borderRadius: "16px",
-                  padding: "28px",
-                  border: "1px solid #e0e0e0",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.04)"
-                }}>
-                  <h4 style={{
-                    margin: "0 0 20px 0",
-                    fontSize: "1.125rem",
-                    fontWeight: "700",
-                    color: "#000",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px"
-                  }}>
-                    <span>👁️</span>
-                    <span>Live Preview</span>
-                  </h4>
-                  <div style={{
-                    display: "flex",
-                    gap: "12px",
-                    marginBottom: "20px",
-                    borderBottom: "1px solid #e0e0e0",
-                    paddingBottom: "16px"
-                  }}>
-                    <button 
-                      className="chip active"
-                      style={{
-                        padding: "8px 16px",
-                        borderRadius: "8px",
-                        border: "2px solid #000",
-                        background: "#000",
-                        color: "#fff",
-                        fontWeight: "600",
-                        cursor: "pointer"
-                      }}
-                    >
-                      Email
-                    </button>
-                    <button 
-                      className="chip"
-                      style={{
-                        padding: "8px 16px",
-                        borderRadius: "8px",
-                        border: "2px solid #e0e0e0",
-                        background: "#fff",
-                        color: "#666",
-                        fontWeight: "600",
-                        cursor: "pointer"
-                      }}
-                    >
-                      WhatsApp
-                    </button>
-                  </div>
                   <div style={{
                     background: "#fff",
+                    border: "2px solid #000000",
                     borderRadius: "12px",
-                    padding: "24px",
-                    border: "1px solid #e0e0e0",
-                    boxShadow: "0 2px 4px rgba(0,0,0,0.04)"
+                    padding: "32px",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
                   }}>
-                    <div style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "12px",
-                      marginBottom: "16px",
-                      paddingBottom: "16px",
-                      borderBottom: "1px solid #f0f0f0"
-                    }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: "0.875rem", color: "#666", fontWeight: "600" }}>From:</span>
-                        <span style={{ fontSize: "0.875rem", color: "#000", fontWeight: "500" }}>finance@subscriptionhk.org</span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: "0.875rem", color: "#666", fontWeight: "600" }}>Subject:</span>
-                        <span style={{ fontSize: "0.875rem", color: "#000", fontWeight: "500" }}>Upcoming contribution due 05 Nov</span>
+                    <div style={{ marginBottom: "24px" }}>
+                      <label style={{
+                        display: "block",
+                        fontSize: "0.875rem",
+                        fontWeight: "600",
+                        color: "#333",
+                        marginBottom: "8px"
+                      }}>
+                        Email Subject
+                      </label>
+                      <input
+                        type="text"
+                        value={emailTemplate.subject}
+                        onChange={(e) => setEmailTemplate({ ...emailTemplate, subject: e.target.value })}
+                        placeholder="Payment Reminder - Outstanding Balance"
+                        style={{
+                          width: "100%",
+                          padding: "12px",
+                          border: "1.5px solid #e0e0e0",
+                          borderRadius: "8px",
+                          fontSize: "0.9375rem",
+                          fontFamily: "inherit"
+                        }}
+                      />
+                      <small style={{
+                        display: "block",
+                        marginTop: "6px",
+                        fontSize: "0.75rem",
+                        color: "#666"
+                      }}>
+                        You can use placeholders: {'{{member_name}}'}, {'{{total_due}}'}, {'{{invoice_count}}'}
+                      </small>
+                    </div>
+                    <div style={{ marginBottom: "24px" }}>
+                      <label style={{
+                        display: "block",
+                        fontSize: "0.875rem",
+                        fontWeight: "600",
+                        color: "#333",
+                        marginBottom: "8px"
+                      }}>
+                        HTML Email Template
+                      </label>
+                      <textarea
+                        value={emailTemplate.htmlTemplate}
+                        onChange={(e) => setEmailTemplate({ ...emailTemplate, htmlTemplate: e.target.value })}
+                        rows={20}
+                        style={{
+                          width: "100%",
+                          padding: "14px",
+                          border: "1.5px solid #e0e0e0",
+                          borderRadius: "10px",
+                          fontSize: "0.875rem",
+                          fontFamily: "monospace",
+                          resize: "vertical",
+                          transition: "all 0.2s ease"
+                        }}
+                        onFocus={(e) => {
+                          e.target.style.borderColor = "#000";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(0,0,0,0.05)";
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = "#e0e0e0";
+                          e.target.style.boxShadow = "none";
+                        }}
+                        placeholder="Enter HTML email template..."
+                      />
+                      <div style={{
+                        marginTop: "12px",
+                        padding: "12px",
+                        background: "#f8f9fa",
+                        borderRadius: "8px",
+                        fontSize: "0.75rem",
+                        color: "#666"
+                      }}>
+                        <strong>Available Placeholders:</strong>
+                        <ul style={{ margin: "8px 0 0 0", paddingLeft: "20px" }}>
+                          <li><code>{'{{member_name}}'}</code> - Member's full name</li>
+                          <li><code>{'{{member_id}}'}</code> - Member ID</li>
+                          <li><code>{'{{member_email}}'}</code> - Member email</li>
+                          <li><code>{'{{total_due}}'}</code> - Total outstanding amount</li>
+                          <li><code>{'{{invoice_count}}'}</code> - Number of unpaid invoices</li>
+                          <li><code>{'{{invoice_list}}'}</code> - HTML list of invoices</li>
+                          <li><code>{'{{payment_methods}}'}</code> - Payment methods list</li>
+                          <li><code>{'{{portal_link}}'}</code> - Member portal URL</li>
+                        </ul>
                       </div>
                     </div>
                     <div style={{
-                      fontSize: "0.9375rem",
-                      color: "#333",
-                      lineHeight: "1.6",
-                      whiteSpace: "pre-wrap"
+                      display: "flex",
+                      gap: "12px",
+                      paddingTop: "16px",
+                      borderTop: "1px solid #e0e0e0"
                     }}>
-                      {templateForm.upcomingDue.replace("{{member_name}}", "Ahmed")
-                        .replace("{{period}}", "Nov 2025")
-                        .replace("{{amount}}", "50")
-                        .replace("{{due_date}}", "05 Nov 2025")}
+                      <button
+                        className="primary-btn"
+                        onClick={handleSaveEmailTemplate}
+                        style={{
+                          padding: "12px 24px",
+                          borderRadius: "8px",
+                          fontWeight: "600"
+                        }}
+                      >
+                        💾 Save Email Template
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                {/* Integration Status Section */}
-                <div style={{ marginTop: "40px" }}>
+                {/* Email Automation Configuration Section */}
+                <div id="email-config-section" style={{ marginTop: "32px" }}>
                   <h4 style={{
                     margin: "0 0 20px 0",
-                    fontSize: "1.125rem",
+                    fontSize: "1.25rem",
                     fontWeight: "700",
-                    color: "#000",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px"
+                    color: "#000"
                   }}>
-                    <span>🔌</span>
-                    <span>Integration Status</span>
+                    Email Automation Configuration
                   </h4>
                   <div style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-                    gap: "20px"
+                    background: "#fff",
+                    border: "2px solid #000000",
+                    borderRadius: "12px",
+                    padding: "32px",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
                   }}>
                     <div style={{
-                      background: "#fff",
-                      border: "1.5px solid #4caf50",
-                      borderRadius: "16px",
-                      padding: "24px",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center"
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                      gap: "24px",
+                      marginBottom: "24px"
                     }}>
                       <div>
-                        <div style={{
-                          fontSize: "1.125rem",
-                          fontWeight: "700",
-                          color: "#000",
-                          marginBottom: "8px",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "10px"
+                        <label style={{
+                          display: "block",
+                          fontSize: "0.875rem",
+                          fontWeight: "600",
+                          color: "#333",
+                          marginBottom: "8px"
                         }}>
-                          <span>💬</span>
-                          <span>WhatsApp API</span>
-                        </div>
-                        <span className="badge badge-paid" style={{ 
-                          marginTop: "4px",
-                          fontSize: "0.75rem",
-                          padding: "4px 12px"
-                        }}>
-                          ✓ Connected
-                        </span>
+                          Email Service
+                        </label>
+                        <select
+                          value={emailSettings.emailService}
+                          onChange={(e) => setEmailSettings({ ...emailSettings, emailService: e.target.value })}
+                          style={{
+                            width: "100%",
+                            padding: "12px",
+                            border: "1.5px solid #e0e0e0",
+                            borderRadius: "8px",
+                            fontSize: "0.9375rem",
+                            fontFamily: "inherit"
+                          }}
+                        >
+                          <option value="gmail">Gmail</option>
+                          <option value="outlook">Outlook</option>
+                          <option value="yahoo">Yahoo</option>
+                          <option value="custom">Custom SMTP</option>
+                        </select>
                       </div>
-                      <button 
-                        className="ghost-btn" 
-                        onClick={() => showToast("WhatsApp settings opened")}
-                        style={{
-                          padding: "10px 20px",
-                          borderRadius: "8px",
-                          fontWeight: "600"
-                        }}
-                      >
-                        Manage
-                      </button>
+                      <div>
+                        <label style={{
+                          display: "block",
+                          fontSize: "0.875rem",
+                          fontWeight: "600",
+                          color: "#333",
+                          marginBottom: "8px"
+                        }}>
+                          Email Address *
+                        </label>
+                        <input
+                          type="email"
+                          value={emailSettings.emailUser}
+                          onChange={(e) => setEmailSettings({ ...emailSettings, emailUser: e.target.value })}
+                          placeholder="your-email@gmail.com"
+                          style={{
+                            width: "100%",
+                            padding: "12px",
+                            border: "1.5px solid #e0e0e0",
+                            borderRadius: "8px",
+                            fontSize: "0.9375rem",
+                            fontFamily: "inherit"
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{
+                          display: "block",
+                          fontSize: "0.875rem",
+                          fontWeight: "600",
+                          color: "#333",
+                          marginBottom: "8px"
+                        }}>
+                          App Password *
+                        </label>
+                        <input
+                          type="password"
+                          value={emailSettings.emailPassword}
+                          onChange={(e) => setEmailSettings({ ...emailSettings, emailPassword: e.target.value })}
+                          placeholder="Enter app password"
+                          style={{
+                            width: "100%",
+                            padding: "12px",
+                            border: "1.5px solid #e0e0e0",
+                            borderRadius: "8px",
+                            fontSize: "0.9375rem",
+                            fontFamily: "inherit"
+                          }}
+                        />
+                        <small style={{
+                          display: "block",
+                          marginTop: "6px",
+                          fontSize: "0.75rem",
+                          color: "#666"
+                        }}>
+                          For Gmail: Use App Password (not regular password)
+                        </small>
+                      </div>
+                      <div>
+                        <label style={{
+                          display: "block",
+                          fontSize: "0.875rem",
+                          fontWeight: "600",
+                          color: "#333",
+                          marginBottom: "8px"
+                        }}>
+                          Schedule Time
+                        </label>
+                        <input
+                          type="time"
+                          value={emailSettings.scheduleTime}
+                          onChange={(e) => setEmailSettings({ ...emailSettings, scheduleTime: e.target.value })}
+                          style={{
+                            width: "100%",
+                            padding: "12px",
+                            border: "1.5px solid #e0e0e0",
+                            borderRadius: "8px",
+                            fontSize: "0.9375rem",
+                            fontFamily: "inherit"
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{
+                          display: "block",
+                          fontSize: "0.875rem",
+                          fontWeight: "600",
+                          color: "#333",
+                          marginBottom: "8px"
+                        }}>
+                          Reminder Interval (days)
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="30"
+                          value={emailSettings.reminderInterval}
+                          onChange={(e) => setEmailSettings({ ...emailSettings, reminderInterval: parseInt(e.target.value) || 7 })}
+                          style={{
+                            width: "100%",
+                            padding: "12px",
+                            border: "1.5px solid #e0e0e0",
+                            borderRadius: "8px",
+                            fontSize: "0.9375rem",
+                            fontFamily: "inherit"
+                          }}
+                        />
+                        <small style={{
+                          display: "block",
+                          marginTop: "6px",
+                          fontSize: "0.75rem",
+                          color: "#666"
+                        }}>
+                          Days between reminder emails (min: 1, max: 30)
+                        </small>
+                      </div>
                     </div>
                     <div style={{
-                      background: "#fff",
-                      border: "1.5px solid #e0e0e0",
-                      borderRadius: "16px",
-                      padding: "24px",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
                       display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center"
+                      gap: "12px",
+                      paddingTop: "16px",
+                      borderTop: "1px solid #e0e0e0"
                     }}>
-                      <div>
-                        <div style={{
-                          fontSize: "1.125rem",
-                          fontWeight: "700",
-                          color: "#000",
-                          marginBottom: "8px",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "10px"
-                        }}>
-                          <span>📧</span>
-                          <span>Email SMTP</span>
-                        </div>
-                        <span className="badge badge-unpaid" style={{ 
-                          marginTop: "4px",
-                          fontSize: "0.75rem",
-                          padding: "4px 12px"
-                        }}>
-                          ○ Not Connected
-                        </span>
-                      </div>
-                      <button 
-                        className="secondary-btn" 
-                        onClick={() => showToast("Email setup initiated")}
+                      <button
+                        className="secondary-btn"
+                        onClick={handleTestEmail}
+                        disabled={testingEmail || !emailSettings.emailUser || !emailSettings.emailPassword}
                         style={{
-                          padding: "10px 20px",
+                          padding: "12px 24px",
+                          borderRadius: "8px",
+                          fontWeight: "600",
+                          opacity: (testingEmail || !emailSettings.emailUser || !emailSettings.emailPassword) ? 0.5 : 1,
+                          cursor: (testingEmail || !emailSettings.emailUser || !emailSettings.emailPassword) ? "not-allowed" : "pointer"
+                        }}
+                      >
+                        {testingEmail ? "Sending..." : "📧 Test Email"}
+                      </button>
+                      <button
+                        className="primary-btn"
+                        onClick={handleSaveEmailSettings}
+                        style={{
+                          padding: "12px 24px",
                           borderRadius: "8px",
                           fontWeight: "600"
                         }}
                       >
-                        Connect
+                        💾 Save Email Settings
                       </button>
                     </div>
                   </div>
@@ -2226,8 +2434,6 @@ Subscription Manager HK`;
                       transition: "all 0.2s ease"
                     }}
                     onClick={() => {
-                      updateReminderTemplate("upcomingDue", templateForm.upcomingDue);
-                      updateReminderTemplate("overdue", templateForm.overdue);
                       showToast("All automation settings saved!");
                     }}
                     onMouseEnter={(e) => {

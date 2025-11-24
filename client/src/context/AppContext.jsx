@@ -55,10 +55,7 @@ export function AppProvider({ children }) {
     return saved ? JSON.parse(saved) : initialReminderRules;
   });
 
-  const [automationEnabled, setAutomationEnabled] = useState(() => {
-    const saved = localStorage.getItem("automationEnabled");
-    return saved ? JSON.parse(saved) : true;
-  });
+  const [automationEnabled, setAutomationEnabled] = useState(true);
 
   const [reminderTemplates, setReminderTemplates] = useState(() => {
     const saved = localStorage.getItem("reminderTemplates");
@@ -197,9 +194,6 @@ export function AppProvider({ children }) {
     localStorage.setItem("reminderRules", JSON.stringify(reminderRules));
   }, [reminderRules]);
 
-  useEffect(() => {
-    localStorage.setItem("automationEnabled", JSON.stringify(automationEnabled));
-  }, [automationEnabled]);
 
   useEffect(() => {
     localStorage.setItem("reminderTemplates", JSON.stringify(reminderTemplates));

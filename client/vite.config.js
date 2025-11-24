@@ -14,6 +14,7 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: "https://subs-manager-backend-ag8gejsit-shans-projects-f903a935.vercel.app",
+        // target:"http://localhost:4000",
         changeOrigin: true,
       },
     },
