@@ -22,6 +22,7 @@ export function AppProvider({ children }) {
   const [members, setMembers] = useState([]);
   const [admins,setAdmins] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [recentPayments, setRecentPayments] = useState(() => {
@@ -86,6 +87,7 @@ export function AppProvider({ children }) {
     fetchMembers();
     fetchAdmins();
     fetchInvoices();
+    fetchPayments();
   }, []);
 
   // Fetch members from server
@@ -134,16 +136,35 @@ export function AppProvider({ children }) {
   // Fetch invoices from server
   const fetchInvoices = async () => {
     try {
-      // const response = await fetch('/api/invoices');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/invoices`);
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/invoices`);
       if (!response.ok) throw new Error('Failed to fetch invoices');
       const data = await response.json();
       setInvoices(data);
-      console.log('✓ Loaded', data.length, 'invoices from server');
+      console.log('✓ Loaded', data.length, 'invoices from MongoDB');
     } catch (error) {
       console.error('Error fetching invoices:', error);
       console.warn('⚠️ Using fallback data from data.js');
       setInvoices(initialInvoices);
+    }
+  };
+
+  // Fetch payments from server
+  const fetchPayments = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/payments`);
+      if (!response.ok) throw new Error('Failed to fetch payments');
+      const data = await response.json();
+      setPayments(data);
+      // Sync paymentHistory with MongoDB payments
+      setPaymentHistory(data);
+      setRecentPayments(data.slice(0, 10)); // Keep recent payments for dashboard
+      console.log('✓ Loaded', data.length, 'payments from MongoDB');
+    } catch (error) {
+      console.error('Error fetching payments:', error);
+      console.warn('⚠️ Using fallback data from data.js');
+      setPayments(initialPaymentHistory);
     }
   };
 
@@ -312,32 +333,74 @@ export function AppProvider({ children }) {
   };
 
   // Payment Operations
-  const addPayment = (payment) => {
-    const newPayment = {
-      ...payment,
-      date: new Date().toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
-    };
-    setRecentPayments([newPayment, ...recentPayments]);
-    setPaymentHistory([newPayment, ...paymentHistory]);
-    
-    // Update related invoice
-    if (payment.invoiceId) {
-      updateInvoice(payment.invoiceId, { status: "Paid", method: payment.method, reference: payment.reference });
-    }
-    
-    // Update metrics
-    const amount = parseFloat(payment.amount.replace("$", ""));
-    updateMetrics({
-      collectedMonth: metrics.collectedMonth + amount,
-      collectedYear: metrics.collectedYear + amount,
-      outstanding: Math.max(0, metrics.outstanding - amount),
-    });
+  const addPayment = async (payment) => {
+    try {
+      const paymentData = {
+        ...payment,
+        date: payment.date || new Date().toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+      };
+      
+      // Save payment to MongoDB
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentData),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to save payment');
+      }
+      
+      const newPayment = await response.json();
+      
+      // Update local state
+      setPayments([newPayment, ...payments]);
+      setRecentPayments([newPayment, ...recentPayments]);
+      setPaymentHistory([newPayment, ...paymentHistory]);
+      
+      // Update related invoice
+      if (payment.invoiceId) {
+        await updateInvoice(payment.invoiceId, { 
+          status: "Paid", 
+          method: payment.method, 
+          reference: payment.reference,
+          screenshot: payment.screenshot || payment.screenshotUrl,
+          paidToAdmin: payment.paidToAdmin,
+          paidToAdminName: payment.paidToAdminName,
+        });
+      }
+      
+      // Update metrics
+      const amount = parseFloat(payment.amount.replace("$", ""));
+      updateMetrics({
+        collectedMonth: metrics.collectedMonth + amount,
+        collectedYear: metrics.collectedYear + amount,
+        outstanding: Math.max(0, metrics.outstanding - amount),
+      });
 
-    return newPayment;
+      console.log('✓ Payment saved to MongoDB:', newPayment);
+      return newPayment;
+    } catch (error) {
+      console.error('Error adding payment:', error);
+      // Still update local state for UI feedback, but log the error
+      const fallbackPayment = {
+        ...payment,
+        date: payment.date || new Date().toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+      };
+      setRecentPayments([fallbackPayment, ...recentPayments]);
+      setPaymentHistory([fallbackPayment, ...paymentHistory]);
+      throw error;
+    }
   };
 
   // Communication Operations
@@ -476,10 +539,12 @@ export function AppProvider({ children }) {
   const value = {
     members,
     invoices,
+    payments,
     loading,
     fetchMembers,
     fetchAdmins,
     fetchInvoices,
+    fetchPayments,
     recentPayments,
     paymentHistory,
     communicationLog,

@@ -124,6 +124,48 @@ const AdminSchema = new mongoose.Schema({
 
 const AdminModel = mongoose.model("admins", AdminSchema);
 
+// Invoice Schema
+const InvoiceSchema = new mongoose.Schema({
+  id: String,
+  memberId: String,
+  memberName: String,
+  memberEmail: String,
+  period: String,
+  amount: String,
+  status: { type: String, default: "Unpaid" },
+  due: String,
+  method: String,
+  reference: String,
+  screenshot: String,
+  paidToAdmin: String,
+  paidToAdminName: String,
+}, {
+  timestamps: true
+});
+
+const InvoiceModel = mongoose.model("invoices", InvoiceSchema);
+
+// Payment Schema
+const PaymentSchema = new mongoose.Schema({
+  invoiceId: String,
+  memberId: String,
+  memberEmail: String,
+  member: String,
+  amount: String,
+  method: String,
+  reference: String,
+  period: String,
+  status: { type: String, default: "Paid" },
+  date: String,
+  screenshot: String,
+  paidToAdmin: String,
+  paidToAdminName: String,
+}, {
+  timestamps: true
+});
+
+const PaymentModel = mongoose.model("payments", PaymentSchema);
+
 // Middleware - must be before routes
 // CORS configuration: Allow localhost for development, production origin for production
 app.use(cors({
@@ -271,74 +313,8 @@ const metrics = {
   overdueMembers: 27,
 };
 
-const invoices = [
-  {
-    id: "INV-2025-095",
-    memberId: "HK1001",
-    memberName: "Shan Yeager",
-    period: "Nov 2025 Monthly",
-    amount: "$50",
-    status: "Unpaid",
-    due: "20 Nov 2025",
-    method: "-",
-    reference: "-",
-  },
-  {
-    id: "INV-2025-094",
-    memberId: "HK1001",
-    memberName: "Shan Yeager",
-    period: "Oct 2025 Monthly",
-    amount: "$50",
-    status: "Overdue",
-    due: "20 Oct 2025",
-    method: "-",
-    reference: "-",
-  },
-  {
-    id: "INV-2025-093",
-    memberId: "HK1001",
-    memberName: "Shan Yeager",
-    period: "Sep 2025 Eid 2",
-    amount: "$100",
-    status: "Overdue",
-    due: "30 Sep 2025",
-    method: "-",
-    reference: "-",
-  },
-  {
-    id: "INV-2025-092",
-    memberId: "HK1001",
-    memberName: "Shan Yeager",
-    period: "Sep 2025 Monthly",
-    amount: "$50",
-    status: "Overdue",
-    due: "20 Sep 2025",
-    method: "-",
-    reference: "-",
-  },
-  {
-    id: "INV-2025-091",
-    memberId: "HK1021",
-    memberName: "Ahmed Al-Rashid",
-    period: "Oct 2025",
-    amount: "$50",
-    status: "Paid",
-    due: "05 Oct 2025",
-    method: "FPS",
-    reference: "FP89231",
-  },
-  {
-    id: "INV-2025-072",
-    memberId: "HK1112",
-    memberName: "Aisha Malik",
-    period: "Sep 2025 (Eid)",
-    amount: "$100",
-    status: "Unpaid",
-    due: "30 Sep 2025",
-    method: "-",
-    reference: "-",
-  },
-];
+// Invoices are now stored in MongoDB - no need for in-memory array
+// All invoice data is fetched from MongoDB database 'subscriptionmanager' collection 'invoices'
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
@@ -573,11 +549,11 @@ async function calculateAndUpdateMemberBalance(memberId) {
   try {
     await ensureConnection();
     
-    // Get all unpaid invoices for this member
-    const unpaidInvoices = invoices.filter(
-      inv => inv.memberId === memberId && 
-      (inv.status === "Unpaid" || inv.status === "Overdue")
-    );
+    // Get all unpaid invoices for this member from MongoDB
+    const unpaidInvoices = await InvoiceModel.find({
+      memberId: memberId,
+      status: { $in: ["Unpaid", "Overdue"] }
+    });
     
     // Calculate total outstanding
     const outstandingTotal = unpaidInvoices.reduce((sum, inv) => {
@@ -611,32 +587,51 @@ async function calculateAndUpdateMemberBalance(memberId) {
 }
 
 // GET all invoices
-app.get("/api/invoices", (_req, res) => {
-  res.json(invoices);
+app.get("/api/invoices", async (req, res) => {
+  try {
+    await ensureConnection();
+    const allInvoices = await InvoiceModel.find({}).sort({ createdAt: -1 });
+    res.json(allInvoices);
+  } catch (error) {
+    console.error("Error fetching invoices:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // GET invoices for specific member
-app.get("/api/invoices/member/:memberId", (req, res) => {
-  const memberInvoices = invoices.filter(inv => inv.memberId === req.params.memberId);
-  res.json(memberInvoices);
+app.get("/api/invoices/member/:memberId", async (req, res) => {
+  try {
+    await ensureConnection();
+    const memberInvoices = await InvoiceModel.find({ 
+      memberId: req.params.memberId 
+    }).sort({ createdAt: -1 });
+    res.json(memberInvoices);
+  } catch (error) {
+    console.error("Error fetching member invoices:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // POST create new invoice
 app.post("/api/invoices", async (req, res) => {
   try {
-    const invoice = {
+    await ensureConnection();
+    
+    const invoiceData = {
       id: `INV-2025-${Math.floor(100 + Math.random() * 900)}`,
       ...req.body,
       status: req.body.status || "Unpaid",
     };
-    invoices.push(invoice);
+    
+    const newInvoice = new InvoiceModel(invoiceData);
+    await newInvoice.save();
     
     // Update member balance if invoice is unpaid
-    if (invoice.memberId && (invoice.status === "Unpaid" || invoice.status === "Overdue")) {
-      await calculateAndUpdateMemberBalance(invoice.memberId);
+    if (invoiceData.memberId && (invoiceData.status === "Unpaid" || invoiceData.status === "Overdue")) {
+      await calculateAndUpdateMemberBalance(invoiceData.memberId);
     }
     
-    res.status(201).json(invoice);
+    res.status(201).json(newInvoice);
   } catch (error) {
     console.error("Error creating invoice:", error);
     res.status(500).json({ error: error.message });
@@ -646,14 +641,18 @@ app.post("/api/invoices", async (req, res) => {
 // PUT update invoice
 app.put("/api/invoices/:id", async (req, res) => {
   try {
-    const index = invoices.findIndex(inv => inv.id === req.params.id);
-    if (index === -1) {
+    await ensureConnection();
+    
+    const oldInvoice = await InvoiceModel.findOne({ id: req.params.id });
+    if (!oldInvoice) {
       return res.status(404).json({ message: "Invoice not found" });
     }
     
-    const oldInvoice = invoices[index];
-    invoices[index] = { ...invoices[index], ...req.body };
-    const updatedInvoice = invoices[index];
+    const updatedInvoice = await InvoiceModel.findOneAndUpdate(
+      { id: req.params.id },
+      { $set: req.body },
+      { new: true, runValidators: true }
+    );
     
     // Update member balance if status, amount, or memberId changed
     const statusChanged = oldInvoice.status !== updatedInvoice.status;
@@ -686,13 +685,12 @@ app.put("/api/invoices/:id", async (req, res) => {
 // DELETE invoice
 app.delete("/api/invoices/:id", async (req, res) => {
   try {
-    const index = invoices.findIndex(inv => inv.id === req.params.id);
-    if (index === -1) {
+    await ensureConnection();
+    
+    const deletedInvoice = await InvoiceModel.findOneAndDelete({ id: req.params.id });
+    if (!deletedInvoice) {
       return res.status(404).json({ message: "Invoice not found" });
     }
-    
-    const deletedInvoice = invoices[index];
-    invoices.splice(index, 1);
     
     // Update member balance after deletion if invoice was unpaid
     if (deletedInvoice.memberId && 
@@ -703,6 +701,62 @@ app.delete("/api/invoices/:id", async (req, res) => {
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting invoice:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== PAYMENTS CRUD ENDPOINTS ==========
+
+// GET all payments
+app.get("/api/payments", async (req, res) => {
+  try {
+    await ensureConnection();
+    const allPayments = await PaymentModel.find({}).sort({ createdAt: -1 });
+    res.json(allPayments);
+  } catch (error) {
+    console.error("Error fetching payments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET payments for specific member
+app.get("/api/payments/member/:memberId", async (req, res) => {
+  try {
+    await ensureConnection();
+    const memberPayments = await PaymentModel.find({
+      $or: [
+        { memberId: req.params.memberId },
+        { memberEmail: req.params.memberId }
+      ]
+    }).sort({ createdAt: -1 });
+    res.json(memberPayments);
+  } catch (error) {
+    console.error("Error fetching member payments:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST create new payment
+app.post("/api/payments", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    const paymentData = {
+      ...req.body,
+      date: req.body.date || new Date().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }),
+      status: req.body.status || "Paid",
+    };
+    
+    const newPayment = new PaymentModel(paymentData);
+    await newPayment.save();
+    
+    res.status(201).json(newPayment);
+  } catch (error) {
+    console.error("Error creating payment:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -786,6 +840,9 @@ if (!process.env.VERCEL) {
     console.log(`  - POST   /api/invoices`);
     console.log(`  - PUT    /api/invoices/:id`);
     console.log(`  - DELETE /api/invoices/:id`);
+    console.log(`  - GET    /api/payments`);
+    console.log(`  - GET    /api/payments/member/:memberId`);
+    console.log(`  - POST   /api/payments`);
     
     // Initialize all member balances on server start
     await initializeAllMemberBalances();

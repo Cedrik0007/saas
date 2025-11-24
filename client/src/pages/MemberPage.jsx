@@ -196,7 +196,7 @@ export function MemberPage() {
           });
 
           // Add payment record
-          addPayment({
+          await addPayment({
             invoiceId: invoiceId,
             amount: invoice.amount,
             method: "Screenshot",
@@ -300,7 +300,7 @@ export function MemberPage() {
           });
 
           // Add payment record
-          addPayment({
+          await addPayment({
             invoiceId: invoiceId,
             amount: invoice.amount,
             method: "Cash to Admin",

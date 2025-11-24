@@ -301,7 +301,7 @@ export function AdminPage() {
     showToast("Invoice created successfully!");
   };
 
-  const handleMarkAsPaid = (invoiceId, method = "Manual") => {
+  const handleMarkAsPaid = async (invoiceId, method = "Manual") => {
     const invoice = invoices.find((inv) => inv.id === invoiceId);
     if (invoice) {
       const adminEmail = sessionStorage.getItem('adminEmail');
@@ -310,7 +310,7 @@ export function AdminPage() {
       const paymentMethod = method === "Cash" ? "Cash" : "Manual";
       const reference = method === "Cash" ? `CASH_${Date.now()}` : `MAN${Date.now()}`;
       
-      updateInvoice(invoiceId, {
+      await updateInvoice(invoiceId, {
         status: "Paid",
         method: paymentMethod,
         reference: reference,
@@ -319,13 +319,14 @@ export function AdminPage() {
       });
       
       // Add payment record
-      addPayment({
+      await addPayment({
         invoiceId: invoiceId,
         amount: invoice.amount,
         method: paymentMethod,
         reference: reference,
         member: invoice.memberName || "Member",
         memberId: invoice.memberId,
+        memberEmail: invoice.memberEmail,
         period: invoice.period,
         status: "Paid",
         paidToAdmin: currentAdmin?.id,
