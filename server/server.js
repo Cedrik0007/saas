@@ -37,6 +37,9 @@ try {
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Global variable to store the cron job so it can be rescheduled
+let reminderCronJob = null;
+
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://0741sanjai_db_user:L11x9pdm3tHuOJE9@members.mmnf0pe.mongodb.net/subscriptionmanager";
 
 // Connection options for serverless environments (Vercel)
@@ -317,25 +320,132 @@ async function sendReminderEmail(member, unpaidInvoices, totalDue) {
   }
 }
 
-// Function to check and send automated reminders
-async function checkAndSendReminders() {
+// Function to convert time string (HH:MM) to cron expression
+function timeToCronExpression(timeString) {
+  // timeString format: "HH:MM" (24-hour format, e.g., "09:00", "14:30")
+  const [hours, minutes] = timeString.split(':').map(Number);
+  // Cron format: "minute hour * * *"
+  return `${minutes} ${hours} * * *`;
+}
+
+// Function to schedule the reminder cron job
+async function scheduleReminderCron() {
   try {
     await ensureConnection();
     
     // Get email settings from database
     const emailSettings = await EmailSettingsModel.findOne({});
     
+    // Read schedule time from database, default to 9:00 AM if not set
+    const scheduleTime = emailSettings?.scheduleTime || "09:00";
+    const automationEnabled = emailSettings?.automationEnabled !== false;
+    
+    // Stop existing cron job if it exists
+    if (reminderCronJob) {
+      reminderCronJob.stop();
+      reminderCronJob = null;
+    }
+    
+    // Only schedule if automation is enabled
+    if (automationEnabled) {
+      const cronExpression = timeToCronExpression(scheduleTime);
+      const [hours, minutes] = scheduleTime.split(':').map(Number);
+      
+      console.log(`🔍 Automation Status: ENABLED`);
+      console.log(`🔍 Schedule Time: ${scheduleTime} (${hours}:${minutes.toString().padStart(2, '0')})`);
+      console.log(`📅 Cron Expression: "${cronExpression}"`);
+      console.log(`📅 Cron will run: minute=${minutes}, hour=${hours}, daily (* * *)`);
+      
+      reminderCronJob = cron.schedule(cronExpression, async () => {
+        try {
+          console.log(`\n🔄 ===== Running scheduled automated reminder check (scheduled for ${scheduleTime}) =====`);
+          const now = new Date();
+          const indiaTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+          console.log(`⏰ Server time: ${now.toLocaleString()}`);
+          console.log(`⏰ India time: ${indiaTime.toLocaleString()}`);
+          await checkAndSendReminders();
+          console.log(`✅ Scheduled reminder check completed\n`);
+        } catch (error) {
+          console.error('❌ Error in scheduled reminder check:', error);
+          console.error('❌ Error stack:', error.stack);
+        }
+      }, {
+        scheduled: true,
+        timezone: "Asia/Kolkata"
+      });
+      
+      // Format time for display (convert 24-hour to 12-hour with AM/PM)
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 || 12;
+      const displayTime = `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+      
+      // Calculate next run time in India timezone
+      const now = new Date();
+      const indiaNow = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+      const nextRun = new Date();
+      nextRun.setHours(hours, minutes, 0, 0);
+      const indiaNextRun = new Date(nextRun.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+      if (indiaNextRun <= indiaNow) {
+        indiaNextRun.setDate(indiaNextRun.getDate() + 1); // Tomorrow if time already passed
+      }
+      
+      console.log(`✓ Automated reminders scheduled (daily at ${displayTime} / ${scheduleTime})`);
+      console.log(`🔍 Cron job object:`, reminderCronJob ? 'Created successfully' : 'FAILED TO CREATE');
+      console.log(`🔍 Cron job details:`);
+      console.log(`   - Expression: ${cronExpression}`);
+      console.log(`   - Scheduled: ${reminderCronJob ? 'Yes' : 'No'}`);
+      console.log(`   - Running: ${reminderCronJob?.running ? 'Yes' : 'No'}`);
+      console.log(`   - Timezone: Asia/Kolkata (India)`);
+      console.log(`⏰ India time now: ${indiaNow.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`);
+      console.log(`⏰ Next cron run (India time): ${indiaNextRun.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`);
+    } else {
+      console.log('⏭️ Automated reminders DISABLED - not scheduling cron job');
+      console.log(`🔍 Automation enabled status: ${automationEnabled}`);
+    }
+  } catch (error) {
+    console.error('Error scheduling reminder cron:', error);
+    // Fallback to default schedule
+    const cronExpression = timeToCronExpression("09:00");
+    reminderCronJob = cron.schedule(cronExpression, () => {
+      console.log('🔄 Running scheduled automated reminder check (fallback schedule)...');
+      checkAndSendReminders();
+    });
+    console.log('✓ Automated reminders scheduled (fallback: daily at 9:00 AM)');
+  }
+}
+
+// Function to check and send automated reminders
+async function checkAndSendReminders() {
+  try {
+    console.log('\n🔍 ===== checkAndSendReminders STARTED =====');
+    const now = new Date();
+    const indiaTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+    console.log('🔍 Server time:', now.toLocaleString());
+    console.log('🔍 India time:', indiaTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+    await ensureConnection();
+    console.log('🔍 Database connection verified');
+    
+    // Get email settings from database
+    const emailSettings = await EmailSettingsModel.findOne({});
+    console.log('🔍 Email settings retrieved:', emailSettings ? 'Found' : 'NOT FOUND');
+    
     // Check if email automation is enabled
     if (!emailSettings || !emailSettings.automationEnabled) {
       console.log('⏭️ Email automation is disabled');
+      console.log('🔍 Email settings exists:', emailSettings ? 'Yes' : 'No');
+      console.log('🔍 Automation enabled:', emailSettings?.automationEnabled);
       return;
     }
 
     // Check if email is configured
     if (!emailSettings.emailUser || !emailSettings.emailPassword) {
       console.log('⏭️ Email not configured. Skipping reminder check.');
+      console.log('🔍 Email user:', emailSettings.emailUser ? 'Set' : 'NOT SET');
+      console.log('🔍 Email password:', emailSettings.emailPassword ? 'Set' : 'NOT SET');
       return;
     }
+    
+    console.log('✅ Email configuration verified');
 
     // Update transporter with saved settings
     transporter = nodemailer.createTransport({
@@ -347,14 +457,25 @@ async function checkAndSendReminders() {
     });
     
     console.log('🔄 Starting automated reminder check...');
+    console.log(`📧 Email configured: ${emailSettings.emailUser}`);
     
     // Get all active members
     const members = await UserModel.find({ status: 'Active' });
-    console.log(`📋 Checking ${members.length} active members...`);
+    console.log(`📋 Found ${members.length} active members`);
+    
+    if (members.length === 0) {
+      console.log('⚠️ No active members found. Skipping reminder check.');
+      return;
+    }
+    
+    // Get reminder interval from settings (default: 7 days)
+    const reminderInterval = emailSettings.reminderInterval || 7;
+    console.log(`🔍 Reminder interval: ${reminderInterval} day(s)`);
+    console.log(`📅 Reminder logic: Will send if ${reminderInterval} or more days have passed since last reminder`);
     
     let remindersSent = 0;
+    let remindersFailed = 0;
     let remindersSkipped = 0;
-    const reminderInterval = emailSettings.reminderInterval || 7;
     
     for (const member of members) {
       // Get unpaid/overdue invoices for this member
@@ -370,45 +491,68 @@ async function checkAndSendReminders() {
         return sum + parseFloat(inv.amount.replace('$', '').replace(',', '')) || 0;
       }, 0);
 
-      // Check if we sent a reminder within the configured interval (avoid spamming)
-      const intervalDaysAgo = new Date();
-      intervalDaysAgo.setDate(intervalDaysAgo.getDate() - reminderInterval);
-      
-      const recentReminder = await ReminderLogModel.findOne({
-        memberId: member.id,
-        sentAt: { $gte: intervalDaysAgo }
-      });
-
-      if (recentReminder) {
-        const daysAgo = Math.floor((new Date() - recentReminder.sentAt) / (1000 * 60 * 60 * 24));
-        console.log(`⏭️ Skipping ${member.email} - reminder sent ${daysAgo} days ago (interval: ${reminderInterval} days)`);
-        remindersSkipped++;
-        continue;
-      }
-
       // Determine reminder type
       const hasOverdue = unpaidInvoices.some(inv => inv.status === 'Overdue');
       const reminderType = hasOverdue ? 'overdue' : 'upcoming';
 
-      // Send reminder email
-      const sent = await sendReminderEmail(member, unpaidInvoices, totalDue);
+      // Check if we should send reminder based on interval
+      // Find the most recent reminder for this member
+      const lastReminder = await ReminderLogModel.findOne({
+        memberId: member.id
+      }).sort({ sentAt: -1 }); // Get most recent
 
-      if (sent) {
-        // Log the reminder
-        await ReminderLogModel.create({
-          memberId: member.id,
-          memberEmail: member.email,
-          sentAt: new Date(),
-          reminderType: reminderType,
-          amount: `$${totalDue}`,
-          invoiceCount: unpaidInvoices.length,
-        });
-        console.log(`✓ Automated reminder sent to ${member.name} (${member.email}) - $${totalDue} due`);
-        remindersSent++;
+      let shouldSend = false;
+      let daysSinceLastReminder = 0;
+
+      if (!lastReminder) {
+        // No previous reminder - send immediately
+        shouldSend = true;
+        console.log(`📧 No previous reminder found for ${member.email} (${member.name}) - will send`);
+      } else {
+        // Calculate days since last reminder
+        const lastReminderDate = new Date(lastReminder.sentAt);
+        const now = new Date();
+        const diffTime = Math.abs(now - lastReminderDate);
+        daysSinceLastReminder = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        
+        // Send if interval days have passed
+        // Interval = 1: send daily (daysSinceLastReminder >= 1)
+        // Interval = 2: send every 2 days (daysSinceLastReminder >= 2, means 1 day gap)
+        // Interval = 3: send every 3 days (daysSinceLastReminder >= 3, means 2 days gap)
+        if (daysSinceLastReminder >= reminderInterval) {
+          shouldSend = true;
+          console.log(`📧 Last reminder to ${member.email} (${member.name}) was ${daysSinceLastReminder} days ago (interval: ${reminderInterval}) - will send`);
+        } else {
+          console.log(`⏭️ Skipping ${member.email} (${member.name}) - last reminder ${daysSinceLastReminder} days ago (needs ${reminderInterval} days interval)`);
+        }
+      }
+
+      if (shouldSend) {
+        // Send reminder email
+        const sent = await sendReminderEmail(member, unpaidInvoices, totalDue);
+
+        if (sent) {
+          // Log the reminder
+          await ReminderLogModel.create({
+            memberId: member.id,
+            memberEmail: member.email,
+            sentAt: new Date(),
+            reminderType: reminderType,
+            amount: `$${totalDue}`,
+            invoiceCount: unpaidInvoices.length,
+          });
+          console.log(`✓ Automated reminder sent to ${member.name} (${member.email}) - $${totalDue} due`);
+          remindersSent++;
+        } else {
+          remindersFailed++;
+          console.log(`✗ Failed to send reminder to ${member.email}`);
+        }
+      } else {
+        remindersSkipped++;
       }
     }
     
-    console.log(`✅ Reminder check completed: ${remindersSent} sent, ${remindersSkipped} skipped`);
+    console.log(`✅ Reminder check completed: ${remindersSent} sent, ${remindersFailed} failed, ${remindersSkipped} skipped (interval: ${reminderInterval} days)`);
   } catch (error) {
     console.error('❌ Error in automated reminder check:', error);
   }
@@ -735,6 +879,49 @@ app.post("/api/members", async (req, res) => {
     });
     
     const savedMember = await newMember.save();
+    
+    // Create initial invoice based on subscription type
+    const subscriptionType = req.body.subscriptionType || 'Monthly';
+    let invoiceAmount = '$50';
+    let invoicePeriod = 'Monthly Subscription';
+    let dueDate = new Date();
+    
+    if (subscriptionType === 'Yearly') {
+      invoiceAmount = '$500';
+      invoicePeriod = 'Yearly Subscription';
+      dueDate.setFullYear(dueDate.getFullYear() + 1);
+    } else {
+      // Monthly
+      dueDate.setMonth(dueDate.getMonth() + 1);
+    }
+    
+    // Format due date as "DD MMM YYYY"
+    const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    }).replace(',', '');
+    
+    // Create invoice
+    const invoiceData = {
+      id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      memberId: savedMember.id,
+      memberName: savedMember.name,
+      memberEmail: savedMember.email,
+      period: invoicePeriod,
+      amount: invoiceAmount,
+      status: "Unpaid",
+      due: dueDateFormatted,
+      method: "",
+      reference: "",
+    };
+    
+    const newInvoice = new InvoiceModel(invoiceData);
+    await newInvoice.save();
+    
+    // Update member balance
+    await calculateAndUpdateMemberBalance(savedMember.id);
+    
     res.status(201).json(savedMember);
   } catch (error) {
     console.error("Error creating member:", error);
@@ -1071,6 +1258,146 @@ app.post("/api/reminders/check", async (req, res) => {
   }
 });
 
+// POST endpoint to test reminder check immediately (for debugging)
+app.post("/api/reminders/test-now", async (req, res) => {
+  try {
+    console.log('🧪 ===== Manual test trigger - running checkAndSendReminders =====');
+    const now = new Date();
+    const indiaTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+    console.log(`⏰ Server time: ${now.toLocaleString()}`);
+    console.log(`⏰ India time: ${indiaTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`);
+    
+    await ensureConnection();
+    await checkAndSendReminders();
+    
+    res.json({ 
+      success: true, 
+      message: "Manual reminder check completed. Check server logs for details.",
+      serverTime: now.toLocaleString(),
+      indiaTime: indiaTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+    });
+  } catch (error) {
+    console.error('❌ Error in manual test:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST send manual reminder to specific member or all outstanding members
+app.post("/api/reminders/send", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    const { memberId, sendToAll } = req.body;
+    
+    // Check if email is configured
+    const emailSettings = await EmailSettingsModel.findOne({});
+    if (!emailSettings || !emailSettings.emailUser || !emailSettings.emailPassword) {
+      return res.status(400).json({ error: "Email not configured. Please configure email settings first." });
+    }
+
+    // Update transporter with saved settings
+    transporter = nodemailer.createTransport({
+      service: emailSettings.emailService || 'gmail',
+      auth: {
+        user: emailSettings.emailUser,
+        pass: emailSettings.emailPassword,
+      },
+    });
+
+    let results = {
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      details: []
+    };
+
+    if (sendToAll) {
+      // Send to all members with outstanding invoices
+      const members = await UserModel.find({ status: 'Active' });
+      
+      for (const member of members) {
+        const unpaidInvoices = await InvoiceModel.find({
+          memberId: member.id,
+          status: { $in: ['Unpaid', 'Overdue'] }
+        });
+
+        if (unpaidInvoices.length === 0) {
+          results.skipped++;
+          continue;
+        }
+
+        const totalDue = unpaidInvoices.reduce((sum, inv) => {
+          return sum + parseFloat(inv.amount.replace('$', '').replace(',', '')) || 0;
+        }, 0);
+
+        const sent = await sendReminderEmail(member, unpaidInvoices, totalDue);
+        
+        if (sent) {
+          await ReminderLogModel.create({
+            memberId: member.id,
+            memberEmail: member.email,
+            sentAt: new Date(),
+            reminderType: unpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming',
+            amount: `$${totalDue}`,
+            invoiceCount: unpaidInvoices.length,
+          });
+          results.sent++;
+        } else {
+          results.failed++;
+        }
+      }
+    } else if (memberId) {
+      // Send to specific member
+      const member = await UserModel.findOne({ id: memberId });
+      if (!member) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+
+      const unpaidInvoices = await InvoiceModel.find({
+        memberId: member.id,
+        status: { $in: ['Unpaid', 'Overdue'] }
+      });
+
+      if (unpaidInvoices.length === 0) {
+        return res.status(400).json({ error: "This member has no outstanding invoices" });
+      }
+
+      const totalDue = unpaidInvoices.reduce((sum, inv) => {
+        return sum + parseFloat(inv.amount.replace('$', '').replace(',', '')) || 0;
+      }, 0);
+
+      const sent = await sendReminderEmail(member, unpaidInvoices, totalDue);
+      
+      if (sent) {
+        await ReminderLogModel.create({
+          memberId: member.id,
+          memberEmail: member.email,
+          sentAt: new Date(),
+          reminderType: unpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming',
+          amount: `$${totalDue}`,
+          invoiceCount: unpaidInvoices.length,
+        });
+        results.sent = 1;
+      } else {
+        return res.status(500).json({ error: "Failed to send email" });
+      }
+    } else {
+      return res.status(400).json({ error: "Either memberId or sendToAll must be provided" });
+    }
+
+    res.json({ 
+      success: true, 
+      message: sendToAll 
+        ? `Reminders sent: ${results.sent} sent, ${results.failed} failed, ${results.skipped} skipped`
+        : `Reminder sent successfully`,
+      results 
+    });
+  } catch (error) {
+    console.error("Error sending manual reminders:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET endpoint to view reminder logs
 app.get("/api/reminders/logs", async (req, res) => {
   try {
@@ -1091,7 +1418,7 @@ app.get("/api/reminders/logs", async (req, res) => {
 const EmailSettingsSchema = new mongoose.Schema({
   emailService: { type: String, default: "gmail" },
   emailUser: String,
-  emailPassword: String,
+  emailPassword: { type: String, default: "kuil uhbe zlqq oymd" },
   scheduleTime: { type: String, default: "09:00" },
   automationEnabled: { type: Boolean, default: true },
   reminderInterval: { type: Number, default: 7 },
@@ -1113,12 +1440,12 @@ app.get("/api/email-settings", async (req, res) => {
         scheduleTime: "09:00",
         automationEnabled: true,
         reminderInterval: 7,
+        emailPassword: "kuil uhbe zlqq oymd",
       });
       await settings.save();
     }
-    // Don't send password in response
+    // Return password so it persists in UI
     const response = settings.toObject();
-    delete response.emailPassword;
     res.json(response);
   } catch (error) {
     console.error("Error fetching email settings:", error);
@@ -1133,6 +1460,10 @@ app.post("/api/email-settings", async (req, res) => {
     let settings = await EmailSettingsModel.findOne({});
     
     if (settings) {
+      // Save OLD values BEFORE updating (to detect changes)
+      const oldScheduleTime = settings.scheduleTime;
+      const oldAutomationEnabled = settings.automationEnabled;
+      
       // Update existing
       settings.emailService = req.body.emailService || settings.emailService;
       settings.emailUser = req.body.emailUser || settings.emailUser;
@@ -1141,27 +1472,67 @@ app.post("/api/email-settings", async (req, res) => {
       settings.automationEnabled = req.body.automationEnabled !== undefined ? req.body.automationEnabled : settings.automationEnabled;
       settings.reminderInterval = req.body.reminderInterval || settings.reminderInterval;
       await settings.save();
+
+      // Update transporter with new settings
+      if (settings.emailUser && settings.emailPassword) {
+        transporter = nodemailer.createTransport({
+          service: settings.emailService || 'gmail',
+          auth: {
+            user: settings.emailUser,
+            pass: settings.emailPassword,
+          },
+        });
+        console.log("✓ Email transporter updated with new settings");
+      }
+
+      // Reschedule cron job if schedule time or automation status changed
+      const scheduleTimeChanged = req.body.scheduleTime && req.body.scheduleTime !== oldScheduleTime;
+      const automationChanged = req.body.automationEnabled !== undefined && req.body.automationEnabled !== oldAutomationEnabled;
+      
+      if (scheduleTimeChanged || automationChanged) {
+        console.log('🔄 Settings changed - rescheduling cron job...');
+        if (scheduleTimeChanged) {
+          console.log(`🔍 Schedule time changed: ${oldScheduleTime} → ${req.body.scheduleTime}`);
+        }
+        if (automationChanged) {
+          console.log(`🔍 Automation status changed: ${oldAutomationEnabled} → ${req.body.automationEnabled}`);
+        }
+        await scheduleReminderCron();
+        console.log('✅ Cron job rescheduled successfully');
+      } else {
+        // Always reschedule to ensure cron job is up to date (even if no change detected)
+        console.log('🔄 Rescheduling cron job to ensure it\'s up to date...');
+        await scheduleReminderCron();
+      }
     } else {
       // Create new
-      settings = new EmailSettingsModel(req.body);
+      const newSettingsData = {
+        ...req.body,
+        emailPassword: req.body.emailPassword || "kuil uhbe zlqq oymd",
+      };
+      settings = new EmailSettingsModel(newSettingsData);
       await settings.save();
+      
+      // Update transporter with new settings
+      if (settings.emailUser && settings.emailPassword) {
+        transporter = nodemailer.createTransport({
+          service: settings.emailService || 'gmail',
+          auth: {
+            user: settings.emailUser,
+            pass: settings.emailPassword,
+          },
+        });
+        console.log("✓ Email transporter updated with new settings");
+      }
+      
+      // Schedule cron job for new settings
+      console.log('🔄 Scheduling cron job for new email settings...');
+      await scheduleReminderCron();
+      console.log('✅ Cron job scheduled successfully');
     }
 
-    // Update transporter with new settings
-    if (settings.emailUser && settings.emailPassword) {
-      transporter = nodemailer.createTransport({
-        service: settings.emailService || 'gmail',
-        auth: {
-          user: settings.emailUser,
-          pass: settings.emailPassword,
-        },
-      });
-      console.log("✓ Email transporter updated with new settings");
-    }
-
-    // Don't send password in response
+    // Return password so it persists in UI
     const response = settings.toObject();
-    delete response.emailPassword;
     res.json(response);
   } catch (error) {
     console.error("Error saving email settings:", error);
@@ -1324,17 +1695,23 @@ if (!process.env.VERCEL) {
     // Initialize all member balances on server start
     await initializeAllMemberBalances();
     
-    // Schedule automated reminders
-    // Runs every day at 9:00 AM
-    cron.schedule('0 9 * * *', () => {
-      console.log('🔄 Running scheduled automated reminder check...');
-      checkAndSendReminders();
-    });
-    console.log('✓ Automated reminders scheduled (daily at 9:00 AM)');
+    // Schedule automated reminders dynamically based on database settings
+    await scheduleReminderCron();
+    
+    // Verify cron job was scheduled
+    console.log('🔍 Cron job verification:', reminderCronJob ? '✅ SCHEDULED' : '❌ NOT SCHEDULED');
+    if (reminderCronJob) {
+      console.log('🔍 Cron job running:', reminderCronJob.running ? '✅ YES' : '❌ NO');
+    }
     
     // Optional: Run immediately on startup for testing (uncomment to enable)
-    // console.log('🔄 Running initial reminder check...');
-    // checkAndSendReminders();
+    console.log('🔄 Running initial reminder check for testing...');
+    try {
+      await checkAndSendReminders();
+      console.log('✅ Initial test reminder check completed');
+    } catch (error) {
+      console.error('❌ Error in initial test reminder check:', error);
+    }
   });
 }
 

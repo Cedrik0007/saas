@@ -134,13 +134,15 @@ export function AdminPage() {
   const [emailSettings, setEmailSettings] = useState({
     emailService: "gmail",
     emailUser: "",
-    emailPassword: "",
-    scheduleTime: "09:00",
+    emailPassword: "kuil uhbe zlqq oymd",
+    scheduleTime: "09:00", // 24-hour format for storage
     scheduleEnabled: true,
     reminderInterval: 7, // days between reminders
   });
+  const [schedulePeriod, setSchedulePeriod] = useState("AM"); // AM or PM
   const [testingEmail, setTestingEmail] = useState(false);
   const [emailConfigStatus, setEmailConfigStatus] = useState('not_connected');
+  const [showEmailPassword, setShowEmailPassword] = useState(false);
   const [dateRange, setDateRange] = useState({
     from: "2025-01-01",
     to: "2025-12-31",
@@ -149,6 +151,8 @@ export function AdminPage() {
   const [selectedPeriod, setSelectedPeriod] = useState("This Year");
   const [hoveredMonth, setHoveredMonth] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [sendingEmails, setSendingEmails] = useState({}); // Track which member is sending
+  const [sendingToAll, setSendingToAll] = useState(false);
 
   const navigate = useNavigate();
 
@@ -292,14 +296,23 @@ export function AdminPage() {
       if (response.ok) {
         const data = await response.json();
         if (data) {
+          const scheduleTime = data.scheduleTime || "09:00";
+          // Convert 24-hour to 12-hour format for display
+          const [hours, minutes] = scheduleTime.split(':').map(Number);
+          const period = hours >= 12 ? 'PM' : 'AM';
+          const displayHours = hours % 12 || 12;
+          const displayTime = `${displayHours}:${minutes.toString().padStart(2, '0')}`;
+          
           setEmailSettings({
             emailService: data.emailService || "gmail",
             emailUser: data.emailUser || "",
-            emailPassword: "", // Don't load password for security
-            scheduleTime: data.scheduleTime || "09:00",
+            emailPassword: data.emailPassword || "kuil uhbe zlqq oymd",
+            scheduleTime: scheduleTime,
             scheduleEnabled: data.scheduleEnabled !== undefined ? data.scheduleEnabled : true,
             reminderInterval: data.reminderInterval || 7,
           });
+          setSchedulePeriod(period);
+          // Set the time input value (we'll handle this in the component)
           setEmailConfigStatus(data.emailUser ? 'connected' : 'not_connected');
           
           // Set automationEnabled from database
@@ -439,6 +452,77 @@ export function AdminPage() {
       showToast('Failed to send test email', 'error');
     } finally {
       setTestingEmail(false);
+    }
+  };
+
+  // Send manual reminder email to a specific member
+  const handleSendManualReminder = async (memberId) => {
+    if (!emailSettings.emailUser || !emailSettings.emailPassword) {
+      showToast('Please configure email credentials first', 'error');
+      return;
+    }
+
+    setSendingEmails(prev => ({ ...prev, [memberId]: true }));
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/reminders/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId: memberId,
+          sendToAll: false
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        showToast(`Reminder email sent to ${members.find(m => m.id === memberId)?.name || 'member'}!`);
+      } else {
+        showToast(data.error || 'Failed to send reminder email', 'error');
+      }
+    } catch (error) {
+      console.error('Error sending reminder:', error);
+      showToast('Failed to send reminder email', 'error');
+    } finally {
+      setSendingEmails(prev => ({ ...prev, [memberId]: false }));
+    }
+  };
+
+  // Send reminder to all outstanding members
+  const handleSendToAllOutstanding = async () => {
+    if (!emailSettings.emailUser || !emailSettings.emailPassword) {
+      showToast('Please configure email credentials first', 'error');
+      return;
+    }
+
+    if (!window.confirm('Are you sure you want to send reminder emails to ALL outstanding members?')) {
+      return;
+    }
+
+    setSendingToAll(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/reminders/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sendToAll: true
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (response.ok) {
+        showToast(data.message || 'Reminder emails sent successfully!');
+      } else {
+        showToast(data.error || 'Failed to send reminder emails', 'error');
+      }
+    } catch (error) {
+      console.error('Error sending reminders:', error);
+      showToast('Failed to send reminder emails', 'error');
+    } finally {
+      setSendingToAll(false);
     }
   };
 
@@ -2092,6 +2176,176 @@ Subscription Manager HK`;
                   </div>
                 </div>
 
+                {/* Outstanding Members with Manual Send Section */}
+                <div style={{
+                  background: "#ffffff",
+                  borderRadius: "12px",
+                  padding: "clamp(24px, 4vw, 32px)",
+                  border: "2px solid #000000",
+                  marginTop: "24px",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
+                }}>
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: "24px",
+                    flexWrap: "wrap",
+                    gap: "16px"
+                  }}>
+                    <div>
+                      <h4 style={{
+                        margin: "0 0 8px 0",
+                        fontSize: "clamp(1.25rem, 3vw, 1.5rem)",
+                        fontWeight: "700",
+                        color: "#000"
+                      }}>
+                        Outstanding Members
+                      </h4>
+                      <p style={{
+                        margin: 0,
+                        fontSize: "clamp(0.875rem, 2vw, 0.9375rem)",
+                        color: "#666",
+                        lineHeight: "1.6"
+                      }}>
+                        Send manual reminder emails to members with outstanding invoices
+                      </p>
+                    </div>
+                    <button
+                      className="primary-btn"
+                      onClick={handleSendToAllOutstanding}
+                      disabled={sendingToAll}
+                      style={{
+                        padding: "12px 24px",
+                        borderRadius: "8px",
+                        fontWeight: "600",
+                        opacity: sendingToAll ? 0.5 : 1,
+                        cursor: sendingToAll ? "not-allowed" : "pointer"
+                      }}
+                    >
+                      {sendingToAll ? "Sending..." : "📧 Send to All Outstanding"}
+                    </button>
+                  </div>
+
+                  {/* Members List */}
+                  <div style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "12px"
+                  }}>
+                    {members
+                      .filter(member => {
+                        // Only show members with outstanding invoices
+                        const memberInvoices = invoices.filter(inv => 
+                          inv.memberId === member.id && 
+                          (inv.status === "Unpaid" || inv.status === "Overdue")
+                        );
+                        return memberInvoices.length > 0;
+                      })
+                      .map(member => {
+                        const memberInvoices = invoices.filter(inv => 
+                          inv.memberId === member.id && 
+                          (inv.status === "Unpaid" || inv.status === "Overdue")
+                        );
+                        const totalDue = memberInvoices.reduce((sum, inv) => {
+                          const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
+                          return sum + amount;
+                        }, 0);
+                        const overdueCount = memberInvoices.filter(inv => inv.status === "Overdue").length;
+                        const unpaidCount = memberInvoices.filter(inv => inv.status === "Unpaid").length;
+                        const isSending = sendingEmails[member.id];
+
+                        return (
+                          <div
+                            key={member.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              padding: "16px",
+                              background: "#f9f9f9",
+                              borderRadius: "8px",
+                              border: "1px solid #e0e0e0",
+                              gap: "16px",
+                              flexWrap: "wrap"
+                            }}
+                          >
+                            <div style={{ flex: "1 1 300px", minWidth: "200px" }}>
+                              <div style={{
+                                fontSize: "1rem",
+                                fontWeight: "600",
+                                color: "#000",
+                                marginBottom: "4px"
+                              }}>
+                                {member.name}
+                              </div>
+                              <div style={{
+                                fontSize: "0.875rem",
+                                color: "#666",
+                                marginBottom: "4px"
+                              }}>
+                                {member.email}
+                              </div>
+                              <div style={{
+                                display: "flex",
+                                gap: "12px",
+                                fontSize: "0.8125rem",
+                                color: "#666"
+                              }}>
+                                <span>
+                                  <strong style={{ color: "#000" }}>${totalDue.toFixed(2)}</strong> outstanding
+                                </span>
+                                {overdueCount > 0 && (
+                                  <span style={{ color: "#d32f2f", fontWeight: "600" }}>
+                                    {overdueCount} overdue
+                                  </span>
+                                )}
+                                {unpaidCount > 0 && (
+                                  <span style={{ color: "#f57c00", fontWeight: "600" }}>
+                                    {unpaidCount} unpaid
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              className="secondary-btn"
+                              onClick={() => handleSendManualReminder(member.id)}
+                              disabled={isSending}
+                              style={{
+                                padding: "10px 20px",
+                                borderRadius: "8px",
+                                fontWeight: "600",
+                                fontSize: "0.875rem",
+                                opacity: isSending ? 0.5 : 1,
+                                cursor: isSending ? "not-allowed" : "pointer",
+                                flexShrink: 0
+                              }}
+                            >
+                              {isSending ? "Sending..." : "📧 Send Email"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    
+                    {members.filter(member => {
+                      const memberInvoices = invoices.filter(inv => 
+                        inv.memberId === member.id && 
+                        (inv.status === "Unpaid" || inv.status === "Overdue")
+                      );
+                      return memberInvoices.length > 0;
+                    }).length === 0 && (
+                      <div style={{
+                        padding: "24px",
+                        textAlign: "center",
+                        color: "#666",
+                        fontSize: "0.9375rem"
+                      }}>
+                        No members with outstanding invoices
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* Email Template Section */}
                 <div style={{ marginTop: "32px" }}>
                   <h4 style={{
@@ -2304,20 +2558,54 @@ Subscription Manager HK`;
                         }}>
                           App Password *
                         </label>
-                        <input
-                          type="password"
-                          value={emailSettings.emailPassword}
-                          onChange={(e) => setEmailSettings({ ...emailSettings, emailPassword: e.target.value })}
-                          placeholder="Enter app password"
-                          style={{
-                            width: "100%",
-                            padding: "12px",
-                            border: "1.5px solid #e0e0e0",
-                            borderRadius: "8px",
-                            fontSize: "0.9375rem",
-                            fontFamily: "inherit"
-                          }}
-                        />
+                        <div style={{ position: "relative" }}>
+                          <input
+                            type={showEmailPassword ? "text" : "password"}
+                            value={emailSettings.emailPassword}
+                            onChange={(e) => setEmailSettings({ ...emailSettings, emailPassword: e.target.value })}
+                            placeholder="Enter app password"
+                            style={{
+                              width: "100%",
+                              padding: "12px",
+                              paddingRight: "45px",
+                              border: "1.5px solid #e0e0e0",
+                              borderRadius: "8px",
+                              fontSize: "0.9375rem",
+                              fontFamily: "inherit"
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowEmailPassword(!showEmailPassword)}
+                            style={{
+                              position: "absolute",
+                              right: "12px",
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              padding: "4px",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#666",
+                            }}
+                            aria-label={showEmailPassword ? "Hide password" : "Show password"}
+                          >
+                            {showEmailPassword ? (
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                                <line x1="1" y1="1" x2="23" y2="23"></line>
+                              </svg>
+                            ) : (
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                              </svg>
+                            )}
+                          </button>
+                        </div>
                         <small style={{
                           display: "block",
                           marginTop: "6px",
@@ -2337,19 +2625,71 @@ Subscription Manager HK`;
                         }}>
                           Schedule Time
                         </label>
-                        <input
-                          type="time"
-                          value={emailSettings.scheduleTime}
-                          onChange={(e) => setEmailSettings({ ...emailSettings, scheduleTime: e.target.value })}
-                          style={{
-                            width: "100%",
-                            padding: "12px",
-                            border: "1.5px solid #e0e0e0",
-                            borderRadius: "8px",
-                            fontSize: "0.9375rem",
-                            fontFamily: "inherit"
-                          }}
-                        />
+                        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                          <input
+                            type="time"
+                            value={emailSettings.scheduleTime}
+                            onChange={(e) => {
+                              const newTime = e.target.value;
+                              setEmailSettings({ ...emailSettings, scheduleTime: newTime });
+                              // Update period based on hour
+                              const [hours] = newTime.split(':').map(Number);
+                              setSchedulePeriod(hours >= 12 ? 'PM' : 'AM');
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: "12px",
+                              border: "1.5px solid #e0e0e0",
+                              borderRadius: "8px",
+                              fontSize: "0.9375rem",
+                              fontFamily: "inherit"
+                            }}
+                          />
+                          <select
+                            value={schedulePeriod}
+                            onChange={(e) => {
+                              const newPeriod = e.target.value;
+                              setSchedulePeriod(newPeriod);
+                              // Convert 12-hour to 24-hour format
+                              const [hours, minutes] = emailSettings.scheduleTime.split(':').map(Number);
+                              let newHours = hours;
+                              
+                              if (newPeriod === 'AM' && hours === 12) {
+                                newHours = 0;
+                              } else if (newPeriod === 'PM' && hours !== 12) {
+                                newHours = hours + 12;
+                              } else if (newPeriod === 'AM' && hours >= 12) {
+                                newHours = hours - 12;
+                              } else if (newPeriod === 'PM' && hours < 12) {
+                                newHours = hours + 12;
+                              }
+                              
+                              const newTime = `${newHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                              setEmailSettings({ ...emailSettings, scheduleTime: newTime });
+                            }}
+                            style={{
+                              padding: "12px 16px",
+                              border: "1.5px solid #e0e0e0",
+                              borderRadius: "8px",
+                              fontSize: "0.9375rem",
+                              fontFamily: "inherit",
+                              background: "white",
+                              cursor: "pointer",
+                              fontWeight: "500"
+                            }}
+                          >
+                            <option value="AM">AM</option>
+                            <option value="PM">PM</option>
+                          </select>
+                        </div>
+                        <small style={{
+                          display: "block",
+                          marginTop: "6px",
+                          fontSize: "0.75rem",
+                          color: "#666"
+                        }}>
+                          Daily reminder time (24-hour format stored: {emailSettings.scheduleTime})
+                        </small>
                       </div>
                       <div>
                         <label style={{
