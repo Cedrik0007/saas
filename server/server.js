@@ -196,8 +196,27 @@ const ReminderLogSchema = new mongoose.Schema({
 
 const ReminderLogModel = mongoose.model("reminderlogs", ReminderLogSchema);
 
+// Payment Method Schema
+const PaymentMethodSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true }, // "Alipay", "PayMe", "FPS", "Direct Bank Transfer"
+  visible: { type: Boolean, default: true },
+  qrImageUrl: String,
+  details: [String], // Array of payment details for non-QR methods
+}, {
+  timestamps: true
+});
+
+const PaymentMethodModel = mongoose.model("paymentmethods", PaymentMethodSchema);
+
 // Email configuration using nodemailer
 let transporter = null;
+
+// Helper function to generate unique message ID for each email (prevents threading)
+function generateUniqueMessageId() {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  return `<${timestamp}-${random}@subscriptionhk.org>`;
+}
 
 function initializeEmailTransporter() {
   if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
@@ -304,12 +323,24 @@ async function sendReminderEmail(member, unpaidInvoices, totalDue) {
     const emailSettings = await EmailSettingsModel.findOne({});
     const fromEmail = emailSettings?.emailUser || process.env.EMAIL_USER || 'noreply@subscriptionhk.org';
     
+    // Add date to subject to make it unique and prevent threading
+    const uniqueSubject = `${emailSubject} - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    
     await transporter.sendMail({
       from: `"Subscription Manager HK" <${fromEmail}>`,
       to: member.email,
-      subject: emailSubject,
+      subject: uniqueSubject,
       html: emailHTML,
       text: `Dear ${member.name},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${member.id}\nTotal Outstanding: $${totalDue.toFixed(2)}\n\nOutstanding Invoices (${unpaidInvoices.length}):\n${unpaidInvoices.map(inv => `• ${inv.period}: ${inv.amount} (Due: ${inv.due}) - ${inv.status}`).join('\n')}\n\nPayment Methods: Available in member portal\n\nAccess Member Portal: ${portalLink}/member\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+      // Add unique headers to prevent email threading
+      messageId: generateUniqueMessageId(),
+      headers: {
+        'X-Entity-Ref-ID': `${member.id}-${Date.now()}`,
+        'In-Reply-To': undefined,
+        'References': undefined,
+        'Thread-Topic': undefined,
+        'Thread-Index': undefined,
+      },
     });
 
     console.log(`✓ Reminder email sent to ${member.email}`);
@@ -1197,6 +1228,124 @@ app.post("/api/payments", async (req, res) => {
   }
 });
 
+// ========== INVOICE REMINDER EMAIL ENDPOINT ==========
+
+// POST send invoice reminder email (for invoice creation and manual sending)
+app.post("/api/invoices/send-reminder", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    const { 
+      toEmail, 
+      toName, 
+      memberId, 
+      totalDue, 
+      invoiceCount, 
+      invoiceListText, 
+      invoiceListHTML,
+      paymentMethods,
+      portalLink 
+    } = req.body;
+    
+    if (!toEmail || !toName) {
+      return res.status(400).json({ error: "Email and name are required" });
+    }
+    
+    // Check if email is configured
+    const emailSettings = await EmailSettingsModel.findOne({});
+    if (!emailSettings || !emailSettings.emailUser || !emailSettings.emailPassword) {
+      return res.status(400).json({ error: "Email not configured. Please configure email settings first." });
+    }
+
+    // Get email template
+    const emailTemplate = await EmailTemplateModel.findOne({});
+    const emailSubject = emailTemplate?.subject || "Payment Reminder - Outstanding Balance";
+    let emailHTML = emailTemplate?.htmlTemplate || `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+          Payment Reminder - Outstanding Balance
+        </h2>
+        <p>Dear {{member_name}},</p>
+        <p>This is a friendly reminder about your outstanding subscription payments.</p>
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p><strong>Member ID:</strong> {{member_id}}</p>
+          <p><strong>Email:</strong> {{member_email}}</p>
+          <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">\${{total_due}}</span></p>
+        </div>
+        <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
+        <ul style="list-style: none; padding: 0;">
+          {{invoice_list}}
+        </ul>
+        <div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <p><strong>💳 Payment Methods Available:</strong></p>
+          <ul>
+            {{payment_methods}}
+          </ul>
+        </div>
+        <p style="text-align: center; margin: 30px 0;">
+          <a href="{{portal_link}}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+            Access Member Portal
+          </a>
+        </p>
+        <p>Please settle your outstanding balance at your earliest convenience.</p>
+        <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+      </div>
+    `;
+
+    // Replace template variables
+    emailHTML = emailHTML
+      .replace(/\{\{member_name\}\}/g, toName)
+      .replace(/\{\{member_id\}\}/g, memberId || 'N/A')
+      .replace(/\{\{member_email\}\}/g, toEmail)
+      .replace(/\{\{total_due\}\}/g, totalDue)
+      .replace(/\{\{invoice_count\}\}/g, invoiceCount)
+      .replace(/\{\{invoice_list\}\}/g, invoiceListHTML || invoiceListText)
+      .replace(/\{\{payment_methods\}\}/g, paymentMethods || 'Available in member portal')
+      .replace(/\{\{portal_link\}\}/g, portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`);
+
+    // Update transporter with saved settings
+    const invoiceTransporter = nodemailer.createTransport({
+      service: emailSettings.emailService || 'gmail',
+      auth: {
+        user: emailSettings.emailUser,
+        pass: emailSettings.emailPassword,
+      },
+    });
+
+    // Prepare unique subject with date to prevent threading
+    const finalSubject = emailSubject.replace(/\{\{total_due\}\}/g, totalDue);
+    const uniqueSubject = `${finalSubject} - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    
+    // Send email
+    await invoiceTransporter.sendMail({
+      from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
+      to: toEmail,
+      subject: uniqueSubject,
+      html: emailHTML,
+      text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${invoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+      // Add unique headers to prevent email threading
+      messageId: generateUniqueMessageId(),
+      headers: {
+        'X-Entity-Ref-ID': `${memberId || 'invoice'}-${Date.now()}`,
+        'In-Reply-To': undefined,
+        'References': undefined,
+        'Thread-Topic': undefined,
+        'Thread-Index': undefined,
+      },
+    });
+
+    console.log(`✓ Invoice reminder email sent to ${toEmail}`);
+
+    res.json({ 
+      success: true, 
+      message: `Email sent successfully to ${toEmail}` 
+    });
+  } catch (error) {
+    console.error("Error sending invoice reminder email:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ========== CLOUDINARY IMAGE UPLOAD ENDPOINT ==========
 
 // POST upload payment screenshot to Cloudinary
@@ -1206,6 +1355,10 @@ app.post("/api/upload-screenshot", upload.single("screenshot"), async (req, res)
       return res.status(400).json({ error: "No file uploaded" });
     }
 
+    // Determine folder based on upload type (QR code vs payment screenshot)
+    const uploadType = req.body.uploadType || "screenshot"; // Default to screenshot
+    const folder = uploadType === "qr-code" ? "qr-codes" : "payment-screenshots";
+
     // Check if Cloudinary is configured
     if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
       // Upload to Cloudinary using v2 API - convert buffer to data URI (more reliable)
@@ -1213,9 +1366,11 @@ app.post("/api/upload-screenshot", upload.single("screenshot"), async (req, res)
       const dataUri = `data:${req.file.mimetype};base64,${base64}`;
       
       const uploadResult = await cloudinary.uploader.upload(dataUri, {
-        folder: "payment-screenshots",
+        folder: folder,
         allowed_formats: ["jpg", "jpeg", "png", "gif", "webp"],
-        transformation: [{ width: 1000, crop: "limit" }],
+        transformation: uploadType === "qr-code" 
+          ? [{ width: 500, height: 500, crop: "limit" }] // Optimize for QR codes
+          : [{ width: 1000, crop: "limit" }], // Original transformation for screenshots
       });
 
       res.json({
@@ -1398,6 +1553,136 @@ app.post("/api/reminders/send", async (req, res) => {
   }
 });
 
+// POST send invoice reminder email (for invoice creation and manual reminders)
+app.post("/api/invoices/send-reminder", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    const { 
+      toEmail, 
+      toName, 
+      memberId, 
+      totalDue, 
+      invoiceCount, 
+      invoiceListText, 
+      invoiceListHTML,
+      paymentMethods,
+      portalLink 
+    } = req.body;
+    
+    if (!toEmail || !toName) {
+      return res.status(400).json({ error: "Email and name are required" });
+    }
+    
+    // Check if email is configured
+    const emailSettings = await EmailSettingsModel.findOne({});
+    if (!emailSettings || !emailSettings.emailUser || !emailSettings.emailPassword) {
+      return res.status(400).json({ error: "Email not configured. Please configure email settings first." });
+    }
+
+    // Get email template from database
+    let emailTemplate = await EmailTemplateModel.findOne({});
+    if (!emailTemplate) {
+      // Use default template if none exists
+      emailTemplate = {
+        subject: "Payment Reminder - Outstanding Balance",
+        htmlTemplate: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+    Payment Reminder - Outstanding Balance
+  </h2>
+  <p>Dear {{member_name}},</p>
+  <p>This is a friendly reminder about your outstanding subscription payments.</p>
+  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>Member ID:</strong> {{member_id}}</p>
+    <p><strong>Email:</strong> {{member_email}}</p>
+    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">\${{total_due}}</span></p>
+  </div>
+  <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
+  <ul style="list-style: none; padding: 0;">
+    {{invoice_list}}
+  </ul>
+  <div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>💳 Payment Methods Available:</strong></p>
+    <ul>
+      {{payment_methods}}
+    </ul>
+  </div>
+  <p style="text-align: center; margin: 30px 0;">
+    <a href="{{portal_link}}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+      Access Member Portal
+    </a>
+  </p>
+  <p>Please settle your outstanding balance at your earliest convenience.</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+</div>`,
+      };
+    }
+
+    // Replace template variables
+    const portalLinkFinal = portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`;
+    const paymentMethodsHTML = paymentMethods || `<li>FPS: Available in member portal</li>
+    <li>PayMe: Available in member portal</li>
+    <li>Bank Transfer: Available in member portal</li>
+    <li>Credit Card: Pay instantly online</li>`;
+
+    let emailHTML = emailTemplate.htmlTemplate
+      .replace(/\{\{member_name\}\}/g, toName)
+      .replace(/\{\{member_id\}\}/g, memberId || 'N/A')
+      .replace(/\{\{member_email\}\}/g, toEmail)
+      .replace(/\{\{total_due\}\}/g, totalDue)
+      .replace(/\{\{invoice_count\}\}/g, invoiceCount)
+      .replace(/\{\{invoice_list\}\}/g, invoiceListHTML || invoiceListText || 'No invoices')
+      .replace(/\{\{payment_methods\}\}/g, paymentMethodsHTML)
+      .replace(/\{\{portal_link\}\}/g, portalLinkFinal);
+
+    // Replace placeholders in subject
+    let emailSubject = emailTemplate.subject
+      .replace(/\{\{member_name\}\}/g, toName)
+      .replace(/\{\{total_due\}\}/g, totalDue)
+      .replace(/\{\{invoice_count\}\}/g, invoiceCount);
+
+    // Create transporter with saved settings
+    const invoiceTransporter = nodemailer.createTransport({
+      service: emailSettings.emailService || 'gmail',
+      auth: {
+        user: emailSettings.emailUser,
+        pass: emailSettings.emailPassword,
+      },
+    });
+
+    // Prepare unique subject with date to prevent threading
+    const uniqueSubject = `${emailSubject} - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    
+    // Send email
+    await invoiceTransporter.sendMail({
+      from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
+      to: toEmail,
+      subject: uniqueSubject,
+      html: emailHTML,
+      text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${invoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLinkFinal}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+      // Add unique headers to prevent email threading
+      messageId: generateUniqueMessageId(),
+      headers: {
+        'X-Entity-Ref-ID': `${memberId || 'invoice'}-${Date.now()}`,
+        'In-Reply-To': undefined,
+        'References': undefined,
+        'Thread-Topic': undefined,
+        'Thread-Index': undefined,
+      },
+    });
+
+    console.log(`✓ Invoice reminder email sent to ${toEmail}`);
+
+    res.json({ 
+      success: true, 
+      message: `Email sent successfully to ${toEmail}` 
+    });
+  } catch (error) {
+    console.error("Error sending invoice reminder email:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET endpoint to view reminder logs
 app.get("/api/reminders/logs", async (req, res) => {
   try {
@@ -1558,10 +1843,13 @@ app.post("/api/email-settings/test", async (req, res) => {
       },
     });
 
+    // Add date to test email subject to make it unique
+    const testSubject = `Test Email - Email Configuration - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+    
     await testTransporter.sendMail({
       from: `"Subscription Manager HK" <${emailUser}>`,
       to: testEmail || emailUser,
-      subject: "Test Email - Email Configuration",
+      subject: testSubject,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2 style="color: #333;">✅ Email Configuration Test</h2>
@@ -1571,6 +1859,15 @@ app.post("/api/email-settings/test", async (req, res) => {
         </div>
       `,
       text: "This is a test email to verify your email configuration is working correctly.",
+      // Add unique headers to prevent email threading
+      messageId: generateUniqueMessageId(),
+      headers: {
+        'X-Entity-Ref-ID': `test-${Date.now()}`,
+        'In-Reply-To': undefined,
+        'References': undefined,
+        'Thread-Topic': undefined,
+        'Thread-Index': undefined,
+      },
     });
 
     res.json({ success: true, message: "Test email sent successfully" });
@@ -1654,6 +1951,92 @@ app.post("/api/email-template", async (req, res) => {
   }
 });
 
+// ========== PAYMENT METHODS ENDPOINTS ==========
+
+// GET all payment methods
+app.get("/api/payment-methods", async (req, res) => {
+  try {
+    await ensureConnection();
+    const paymentMethods = await PaymentMethodModel.find({}).sort({ name: 1 });
+    res.json(paymentMethods);
+  } catch (error) {
+    console.error("Error fetching payment methods:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET single payment method by name
+app.get("/api/payment-methods/:name", async (req, res) => {
+  try {
+    await ensureConnection();
+    const method = await PaymentMethodModel.findOne({ name: req.params.name });
+    if (!method) {
+      return res.status(404).json({ message: "Payment method not found" });
+    }
+    res.json(method);
+  } catch (error) {
+    console.error("Error fetching payment method:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST create or update payment method
+app.post("/api/payment-methods", async (req, res) => {
+  try {
+    await ensureConnection();
+    const { name, visible, qrImageUrl, details } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: "Payment method name is required" });
+    }
+
+    // Find existing or create new
+    let method = await PaymentMethodModel.findOne({ name });
+    
+    if (method) {
+      // Update existing
+      if (visible !== undefined) method.visible = visible;
+      if (qrImageUrl !== undefined) method.qrImageUrl = qrImageUrl;
+      if (details !== undefined) method.details = details;
+      await method.save();
+    } else {
+      // Create new
+      method = new PaymentMethodModel({
+        name,
+        visible: visible !== undefined ? visible : true,
+        qrImageUrl: qrImageUrl || "",
+        details: details || [],
+      });
+      await method.save();
+    }
+
+    res.json(method);
+  } catch (error) {
+    console.error("Error saving payment method:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Payment method already exists" });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT update payment method
+app.put("/api/payment-methods/:name", async (req, res) => {
+  try {
+    await ensureConnection();
+    const method = await PaymentMethodModel.findOneAndUpdate(
+      { name: req.params.name },
+      { $set: req.body },
+      { new: true, upsert: true, runValidators: true }
+    );
+    
+    res.json(method);
+  } catch (error) {
+    console.error("Error updating payment method:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Export for Vercel serverless functions
 export default app;
 
@@ -1690,7 +2073,16 @@ if (!process.env.VERCEL) {
     console.log(`  - GET    /api/payments/member/:memberId`);
     console.log(`  - POST   /api/payments`);
     console.log(`  - POST   /api/reminders/check`);
+    console.log(`  - POST   /api/reminders/send`);
+    console.log(`  - POST   /api/reminders/test-now`);
     console.log(`  - GET    /api/reminders/logs`);
+    console.log(`  - POST   /api/invoices/send-reminder`);
+    console.log(`  - POST   /api/upload-screenshot`);
+    console.log(`  - GET    /api/email-settings`);
+    console.log(`  - POST   /api/email-settings`);
+    console.log(`  - POST   /api/email-settings/test`);
+    console.log(`  - GET    /api/email-template`);
+    console.log(`  - POST   /api/email-template`);
     
     // Initialize all member balances on server start
     await initializeAllMemberBalances();

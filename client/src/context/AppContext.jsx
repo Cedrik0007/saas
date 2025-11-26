@@ -40,10 +40,7 @@ export function AppProvider({ children }) {
     return saved ? JSON.parse(saved) : initialCommunicationLog;
   });
 
-  const [paymentMethods, setPaymentMethods] = useState(() => {
-    const saved = localStorage.getItem("paymentMethods");
-    return saved ? JSON.parse(saved) : initialPaymentMethods;
-  });
+  const [paymentMethods, setPaymentMethods] = useState(initialPaymentMethods); // Will be loaded from database
 
   const [metrics, setMetrics] = useState(() => {
     const saved = localStorage.getItem("metrics");
@@ -85,6 +82,7 @@ export function AppProvider({ children }) {
     fetchAdmins();
     fetchInvoices();
     fetchPayments();
+    fetchPaymentMethods();
   }, []);
 
   // Fetch members from server
@@ -165,6 +163,51 @@ export function AppProvider({ children }) {
     }
   };
 
+  // Fetch payment methods from server
+  const fetchPaymentMethods = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/payment-methods`);
+      if (!response.ok) throw new Error('Failed to fetch payment methods');
+      const data = await response.json();
+      
+      // If database is empty, initialize with default payment methods
+      if (data.length === 0) {
+        console.log('⚠️ No payment methods in database, initializing defaults...');
+        const defaultMethods = [
+          { name: "Alipay", visible: false, qrImageUrl: "", details: [] },
+          { name: "PayMe", visible: false, qrImageUrl: "", details: [] },
+          { name: "FPS", visible: true, details: ["FPS ID 1234567"] },
+          { name: "Direct Bank Transfer", visible: true, details: ["HSBC Hong Kong", "123-456789-001", "Subscription Manager HK"] },
+          { name: "Credit/Debit Cards", visible: true, details: ["Gateway: Stripe"] },
+        ];
+        
+        // Save defaults to database
+        for (const method of defaultMethods) {
+          try {
+            await fetch(`${apiUrl}/api/payment-methods`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(method),
+            });
+          } catch (err) {
+            console.error(`Error initializing payment method ${method.name}:`, err);
+          }
+        }
+        
+        setPaymentMethods(defaultMethods);
+        console.log('✓ Initialized default payment methods in database');
+      } else {
+        setPaymentMethods(data);
+        console.log('✓ Loaded', data.length, 'payment methods from MongoDB');
+      }
+    } catch (error) {
+      console.error('Error fetching payment methods:', error);
+      console.warn('⚠️ Using fallback data from data.js');
+      setPaymentMethods(initialPaymentMethods);
+    }
+  };
+
   // Persist other data to localStorage
   useEffect(() => {
     localStorage.setItem("recentPayments", JSON.stringify(recentPayments));
@@ -182,9 +225,8 @@ export function AppProvider({ children }) {
     localStorage.setItem("communicationLog", JSON.stringify(communicationLog));
   }, [communicationLog]);
 
-  useEffect(() => {
-    localStorage.setItem("paymentMethods", JSON.stringify(paymentMethods));
-  }, [paymentMethods]);
+  // Payment methods are now stored in MongoDB, not localStorage
+  // useEffect removed - payment methods persist in database
 
   useEffect(() => {
     localStorage.setItem("metrics", JSON.stringify(metrics));
@@ -413,10 +455,36 @@ export function AppProvider({ children }) {
   };
 
   // Payment Methods Operations
-  const updatePaymentMethod = (name, updatedData) => {
-    setPaymentMethods(
-      paymentMethods.map((pm) => (pm.name === name ? { ...pm, ...updatedData } : pm))
-    );
+  const updatePaymentMethod = async (name, updatedData) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/payment-methods/${name}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update payment method');
+      }
+
+      const updatedMethod = await response.json();
+      
+      // Update local state
+      setPaymentMethods(
+        paymentMethods.map((pm) => (pm.name === name ? updatedMethod : pm))
+      );
+      
+      console.log('✓ Payment method updated in database:', updatedMethod);
+      return updatedMethod;
+    } catch (error) {
+      console.error('Error updating payment method:', error);
+      // Still update local state for immediate UI feedback
+      setPaymentMethods(
+        paymentMethods.map((pm) => (pm.name === name ? { ...pm, ...updatedData } : pm))
+      );
+      throw error;
+    }
   };
 
   // Metrics Operations

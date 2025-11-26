@@ -4,9 +4,8 @@ import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
 import { useApp } from "../context/AppContext.jsx";
-import emailjs from "@emailjs/browser";
+import jsPDF from "jspdf";
 import {
-  reportStats,
 } from "../data";
 import { statusClass } from "../statusClasses";
 
@@ -153,6 +152,8 @@ export function AdminPage() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [sendingEmails, setSendingEmails] = useState({}); // Track which member is sending
   const [sendingToAll, setSendingToAll] = useState(false);
+  const [sendingWhatsApp, setSendingWhatsApp] = useState({}); // Track which member is sending WhatsApp
+  const [sendingWhatsAppToAll, setSendingWhatsAppToAll] = useState(false);
 
   const navigate = useNavigate();
 
@@ -287,6 +288,295 @@ export function AdminPage() {
   const monthlyCollectionsData = calculateMonthlyCollections();
   const recentPaymentsData = getRecentPayments();
   const dashboardMetrics = calculateDashboardMetrics();
+
+  // Calculate report stats based on date range from real database data
+  const calculateReportStats = () => {
+    const fromDate = new Date(dateRange.from);
+    const toDate = new Date(dateRange.to);
+    toDate.setHours(23, 59, 59, 999); // Include entire end date
+
+    // Filter payments within date range
+    const paymentsInRange = paymentHistory.filter(payment => {
+      if (!payment.date) return false;
+      const paymentDate = new Date(payment.date);
+      return paymentDate >= fromDate && paymentDate <= toDate;
+    });
+
+    // Calculate collected amount in range
+    const collected = paymentsInRange.reduce((sum, payment) => {
+      const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+      return sum + amount;
+    }, 0);
+
+    // Calculate expected revenue based on members and their subscription types
+    // Monthly: $50/month, Yearly: $500/year
+    const activeMembers = members.filter(m => m.status === 'Active');
+    let expected = 0;
+    
+    activeMembers.forEach(member => {
+      const subscriptionType = member.subscriptionType || 'Monthly';
+      // Try to get member creation date or use a default
+      const memberStartDate = member.createdAt ? new Date(member.createdAt) : new Date('2025-01-01');
+      
+      if (subscriptionType === 'Yearly') {
+        // For yearly: $500 per year
+        // Calculate how many years in the date range
+        const rangeStart = Math.max(fromDate.getTime(), memberStartDate.getTime());
+        const rangeEnd = toDate.getTime();
+        const yearsInRange = Math.max(0, (rangeEnd - rangeStart) / (365.25 * 24 * 60 * 60 * 1000));
+        expected += Math.ceil(yearsInRange) * 500;
+      } else {
+        // For monthly: $50 per month
+        const rangeStart = Math.max(fromDate.getTime(), memberStartDate.getTime());
+        const rangeEnd = toDate.getTime();
+        const monthsInRange = Math.max(0, (rangeEnd - rangeStart) / (30.44 * 24 * 60 * 60 * 1000));
+        expected += Math.ceil(monthsInRange) * 50;
+      }
+    });
+
+    // If no expected calculated, use a default based on active members
+    if (expected === 0 && activeMembers.length > 0) {
+      // Default: assume monthly subscription for all
+      const monthsInRange = Math.ceil((toDate - fromDate) / (30.44 * 24 * 60 * 60 * 1000));
+      expected = activeMembers.length * 50 * monthsInRange;
+    }
+
+    // Calculate average per member
+    const averagePerMember = activeMembers.length > 0 
+      ? Math.round(collected / activeMembers.length) 
+      : 0;
+
+    // Calculate payment method breakdown
+    const methodCounts = {};
+    paymentsInRange.forEach(payment => {
+      const method = payment.method || payment.paymentMethod || 'Unknown';
+      methodCounts[method] = (methodCounts[method] || 0) + 1;
+    });
+
+    const methodMix = Object.entries(methodCounts).map(([label, value]) => ({
+      label,
+      value
+    }));
+
+    // If no methods found, add default empty array
+    if (methodMix.length === 0) {
+      methodMix.push({ label: 'No payments', value: 0 });
+    }
+
+    return {
+      collected,
+      expected: expected || 1, // Avoid division by zero
+      averagePerMember,
+      methodMix,
+      transactionCount: paymentsInRange.length
+    };
+  };
+
+  // Calculate real-time report stats
+  const reportStats = calculateReportStats();
+
+  // Export CSV function
+  const handleExportCSV = () => {
+    try {
+      // Get payments in date range for detailed export
+      const fromDate = new Date(dateRange.from);
+      const toDate = new Date(dateRange.to);
+      toDate.setHours(23, 59, 59, 999);
+      
+      const paymentsInRange = paymentHistory.filter(payment => {
+        if (!payment.date) return false;
+        const paymentDate = new Date(payment.date);
+        return paymentDate >= fromDate && paymentDate <= toDate;
+      });
+
+      // Create CSV content
+      let csvContent = "Financial Report\n";
+      csvContent += `Period,${dateRange.from} to ${dateRange.to}\n\n`;
+      csvContent += "Summary\n";
+      csvContent += `Collected,$${reportStats.collected.toFixed(2)}\n`;
+      csvContent += `Expected,$${reportStats.expected.toFixed(2)}\n`;
+      csvContent += `Outstanding,$${dashboardMetrics.outstanding.toFixed(2)}\n`;
+      csvContent += `Average per Member,$${reportStats.averagePerMember.toFixed(2)}\n`;
+      csvContent += `Total Transactions,${reportStats.transactionCount}\n\n`;
+      
+      // Payment method breakdown
+      csvContent += "Payment Method Breakdown\n";
+      reportStats.methodMix.forEach(item => {
+        csvContent += `${item.label},${item.value}\n`;
+      });
+      
+      // Detailed transactions
+      csvContent += "\nDetailed Transactions\n";
+      csvContent += "Date,Member,Period,Amount,Method,Status,Reference\n";
+      paymentsInRange.forEach(payment => {
+        const date = payment.date || "N/A";
+        const member = payment.member || "Unknown";
+        const period = payment.period || "N/A";
+        const amount = payment.amount || "$0";
+        const method = payment.method || "N/A";
+        const status = payment.status || "N/A";
+        const reference = payment.reference || "N/A";
+        csvContent += `"${date}","${member}","${period}","${amount}","${method}","${status}","${reference}"\n`;
+      });
+
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `financial-report-${dateRange.from}-to-${dateRange.to}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      showToast("CSV report downloaded successfully!");
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      showToast("Failed to export CSV", "error");
+    }
+  };
+
+  // Export PDF function
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      let yPos = 20;
+      const margin = 20;
+      const lineHeight = 7;
+
+      // Title
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.text('Financial Report', margin, yPos);
+      yPos += 10;
+
+      // Period
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Period: ${dateRange.from} to ${dateRange.to}`, margin, yPos);
+      yPos += 15;
+
+      // Summary section
+      doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
+      doc.text('Summary', margin, yPos);
+      yPos += 8;
+
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Collected: $${reportStats.collected.toFixed(2)}`, margin, yPos);
+      yPos += lineHeight;
+      doc.text(`Expected: $${reportStats.expected.toFixed(2)}`, margin, yPos);
+      yPos += lineHeight;
+      doc.text(`Outstanding: $${dashboardMetrics.outstanding.toFixed(2)}`, margin, yPos);
+      yPos += lineHeight;
+      doc.text(`Average per Member: $${reportStats.averagePerMember.toFixed(2)}`, margin, yPos);
+      yPos += lineHeight;
+      doc.text(`Total Transactions: ${reportStats.transactionCount}`, margin, yPos);
+      yPos += 10;
+
+      // Payment method breakdown
+      doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
+      doc.text('Payment Method Breakdown', margin, yPos);
+      yPos += 8;
+
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      reportStats.methodMix.forEach(item => {
+        doc.text(`${item.label}: ${item.value}`, margin, yPos);
+        yPos += lineHeight;
+      });
+
+      // Check if we need a new page for transactions
+      const fromDate = new Date(dateRange.from);
+      const toDate = new Date(dateRange.to);
+      toDate.setHours(23, 59, 59, 999);
+      
+      const paymentsInRange = paymentHistory.filter(payment => {
+        if (!payment.date) return false;
+        const paymentDate = new Date(payment.date);
+        return paymentDate >= fromDate && paymentDate <= toDate;
+      });
+
+      if (paymentsInRange.length > 0) {
+        yPos += 10;
+        if (yPos > pageHeight - 40) {
+          doc.addPage();
+          yPos = 20;
+        }
+
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.text('Recent Transactions', margin, yPos);
+        yPos += 8;
+
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        
+        // Table headers
+        doc.setFont(undefined, 'bold');
+        doc.text('Date', margin, yPos);
+        doc.text('Member', margin + 40, yPos);
+        doc.text('Amount', margin + 90, yPos);
+        doc.text('Method', margin + 130, yPos);
+        yPos += lineHeight;
+        
+        doc.setFont(undefined, 'normal');
+        // Add transactions (limit to fit on page)
+        const maxTransactions = Math.min(paymentsInRange.length, Math.floor((pageHeight - yPos - 20) / lineHeight));
+        paymentsInRange.slice(0, maxTransactions).forEach(payment => {
+          if (yPos > pageHeight - 20) {
+            doc.addPage();
+            yPos = 20;
+          }
+          doc.text(payment.date || "N/A", margin, yPos);
+          doc.text((payment.member || "Unknown").substring(0, 15), margin + 40, yPos);
+          doc.text(payment.amount || "$0", margin + 90, yPos);
+          doc.text((payment.method || "N/A").substring(0, 15), margin + 130, yPos);
+          yPos += lineHeight;
+        });
+        
+        if (paymentsInRange.length > maxTransactions) {
+          doc.text(`... and ${paymentsInRange.length - maxTransactions} more transactions`, margin, yPos);
+        }
+      }
+
+      // Footer
+      const totalPages = doc.internal.pages.length - 1;
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.text(`Generated on ${new Date().toLocaleDateString()} - Page ${i} of ${totalPages}`, margin, pageHeight - 10);
+      }
+
+      // Save PDF
+      doc.save(`financial-report-${dateRange.from}-to-${dateRange.to}.pdf`);
+      showToast("PDF report downloaded successfully!");
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      showToast("Failed to export PDF", "error");
+    }
+  };
+  
+  // Get recent payments in date range
+  const recentPaymentsInRange = paymentHistory
+    .filter(payment => {
+      if (!payment.date) return false;
+      const paymentDate = new Date(payment.date);
+      const fromDate = new Date(dateRange.from);
+      const toDate = new Date(dateRange.to);
+      toDate.setHours(23, 59, 59, 999);
+      return paymentDate >= fromDate && paymentDate <= toDate;
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.date || 0);
+      const dateB = new Date(b.date || 0);
+      return dateB - dateA;
+    });
 
   // Fetch email settings from server
   const fetchEmailSettings = async () => {
@@ -526,22 +816,113 @@ export function AdminPage() {
     }
   };
 
-  // Initialize EmailJS
-  useEffect(() => {
-    const publicKey = "G8OQbtdWodMBUv53Y";
-    
-    // Only initialize if key is configured
-    if (publicKey && publicKey !== "YOUR_PUBLIC_KEY") {
-      try {
-        emailjs.init(publicKey);
-        console.log("✓ EmailJS initialized successfully");
-      } catch (error) {
-        console.error("EmailJS initialization error:", error);
-      }
-    } else {
-      console.warn("⚠️ EmailJS not configured. Add your public key in AdminPage.jsx line ~35");
+  // Send WhatsApp reminder to all outstanding members
+  const handleSendWhatsAppToAllOutstanding = async () => {
+    const outstandingMembers = members.filter(member => {
+      const memberInvoices = invoices.filter(inv => 
+        inv.memberId === member.id && 
+        (inv.status === "Unpaid" || inv.status === "Overdue")
+      );
+      return memberInvoices.length > 0 && member.phone;
+    });
+
+    if (outstandingMembers.length === 0) {
+      showToast('No outstanding members with phone numbers found', 'error');
+      return;
     }
-  }, []);
+
+    if (!window.confirm(`Are you sure you want to open WhatsApp for ${outstandingMembers.length} outstanding members? This will open multiple WhatsApp windows.`)) {
+      return;
+    }
+
+    setSendingWhatsAppToAll(true);
+    
+    try {
+      // Open WhatsApp for each member with a small delay to avoid browser blocking
+      for (let i = 0; i < outstandingMembers.length; i++) {
+        const member = outstandingMembers[i];
+        
+        // Get member's unpaid/overdue invoices
+        const memberUnpaidInvoices = invoices.filter(
+          (inv) =>
+            inv.memberId === member.id &&
+            (inv.status === "Unpaid" || inv.status === "Overdue")
+        );
+
+        // Calculate total due
+        const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
+          return sum + parseFloat(inv.amount.replace("$", ""));
+        }, 0);
+
+        // Create invoice list for WhatsApp
+        const invoiceList = memberUnpaidInvoices
+          .map(
+            (inv, index) =>
+              `${index + 1}. *${inv.period}*: ${inv.amount} (Due: ${inv.due}) - _${inv.status}_`
+          )
+          .join("\n");
+
+        // Create WhatsApp message
+        const message = `السلام عليكم ورحمة الله وبركاته
+
+Dear *${member.name}*,
+
+This is a friendly reminder about your outstanding subscription payments.
+
+*Member ID:* ${member.id}
+*Email:* ${member.email}
+*Total Outstanding:* $${totalDue}
+
+*📋 Outstanding Invoices (${memberUnpaidInvoices.length}):*
+${invoiceList}
+
+*💳 Payment Methods Available:*
+• FPS: ID 1234567
+• PayMe: Scan QR code in portal
+• Bank Transfer: HSBC 123-456789-001
+• Credit Card: Pay instantly online
+
+*🔗 Member Portal:*
+${window.location.origin}/member
+
+Please settle your outstanding balance at your earliest convenience.
+
+جزاك الله خيرا
+
+_Best regards,_
+*Finance Team*
+Subscription Manager HK`;
+
+        // Clean phone number
+        const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
+        
+        // WhatsApp Click-to-Chat URL
+        const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+
+        // Open WhatsApp with delay between each
+        setTimeout(() => {
+          window.open(whatsappUrl, '_blank');
+          
+          // Log to communication
+          const comm = {
+            channel: "WhatsApp",
+            message: `WhatsApp reminder sent to ${member.name} (${member.phone}) - $${totalDue} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
+            status: "Delivered",
+          };
+          addCommunication(comm);
+        }, i * 1000); // 1 second delay between each
+      }
+
+      showToast(`✓ Opening WhatsApp for ${outstandingMembers.length} members. Please review and send each message.`);
+    } catch (error) {
+      console.error('Error sending WhatsApp reminders:', error);
+      showToast('Failed to open WhatsApp', 'error');
+    } finally {
+      setSendingWhatsAppToAll(false);
+    }
+  };
+
+  // Email sending is now handled via nodemailer API endpoint
 
   // Fetch email settings and templates on mount
   useEffect(() => {
@@ -720,6 +1101,14 @@ export function AdminPage() {
       return;
     }
 
+    if (!memberData.phone) {
+      showToast("This member has no phone number", "error");
+      return;
+    }
+
+    // Set sending state
+    setSendingWhatsApp(prev => ({ ...prev, [memberData.id]: true }));
+
     // Get member's unpaid/overdue invoices
     const memberUnpaidInvoices = invoices.filter(
       (inv) =>
@@ -727,14 +1116,11 @@ export function AdminPage() {
         (inv.status === "Unpaid" || inv.status === "Overdue")
     );
 
-    if (memberData.balance === "$0") {
+    if (memberUnpaidInvoices.length === 0) {
       showToast("This member has no outstanding payments", "error");
+      setSendingWhatsApp(prev => ({ ...prev, [memberData.id]: false }));
       return;
     }
-    // if (memberData.balance.length === 0) {
-    //     showToast("This member has no outstanding payments", "error");
-    //     return;
-    //   }
 
     // Calculate total due
     const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
@@ -798,9 +1184,14 @@ Subscription Manager HK`;
     addCommunication(comm);
 
     showToast(`✓ WhatsApp opened for ${memberData.name}! Review and send the message.`);
+    
+    // Reset sending state after a short delay
+    setTimeout(() => {
+      setSendingWhatsApp(prev => ({ ...prev, [memberData.id]: false }));
+    }, 2000);
   };
 
-  // Email Reminder (EmailJS)
+  // Email Reminder (using nodemailer via API)
   const handleSendReminder = async (memberData) => {
     if (!memberData) {
       showToast("No member selected", "error");
@@ -814,14 +1205,14 @@ Subscription Manager HK`;
         (inv.status === "Unpaid" || inv.status === "Overdue")
     );
 
-    if (memberData.balance === "$0") {
+    if (memberUnpaidInvoices.length === 0) {
       showToast("This member has no outstanding payments", "error");
       return;
     }
 
     // Calculate total due
     const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
-      return sum + parseFloat(inv.amount.replace("$", ""));
+      return sum + parseFloat(inv.amount.replace("$", "").replace(",", "") || 0);
     }, 0);
 
     // Create invoice list for email
@@ -838,82 +1229,51 @@ Subscription Manager HK`;
           `<li style="margin-bottom: 10px;">
             <strong>${inv.period}</strong>: ${inv.amount} 
             <span style="color: #666;">(Due: ${inv.due})</span> - 
-            <strong>${inv.status}</strong>
+            <strong style="color: ${inv.status === 'Overdue' ? '#d32f2f' : '#f57c00'}">${inv.status}</strong>
           </li>`
       )
       .join("");
 
-    // Prepare email parameters
-    const emailParams = {
-      to_email: memberData.email,
-      to_name: memberData.name,
-      member_id: memberData.id,
-      member_phone: memberData.phone,
-      total_due: memberData.balance,
-      invoice_count: memberUnpaidInvoices.length,
-      invoice_list_text: invoiceListText,
-      invoice_list_html: invoiceListHTML,
-      payment_methods:
-        "FPS (ID: 1234567), PayMe, Bank Transfer (HSBC 123-456789-001), or Credit Card",
-      portal_link: `${window.location.origin}/member`,
-      current_date: new Date().toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-      }),
-    };
-
-    // EmailJS configuration
-    const serviceId = "service_yb0uo4k";
-    const templateId = "template_5uhd93r";
-    
-    if (serviceId === "YOUR_SERVICE_ID" || templateId === "YOUR_TEMPLATE_ID") {
-      // EmailJS not configured yet - simulate email for now
-      console.log("📧 Email Preview (EmailJS not configured yet):");
-      console.log("To:", memberData.email);
-      console.log("Subject: Payment Reminder - Outstanding Balance $" + totalDue);
-      console.log("Invoices:", memberUnpaidInvoices);
-      console.log("\n⚠️ To send real emails, configure EmailJS:");
-      console.log("1. Sign up at https://www.emailjs.com");
-      console.log("2. Get Service ID, Template ID, and Public Key");
-      console.log("3. Update AdminPage.jsx lines ~35 and ~271");
-      
-      // Log to communication (simulated)
-      const comm = {
-        channel: "Email",
-        message: `Payment reminder: ${memberData.name} (${memberData.email}) - $${totalDue} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""}) [SIMULATED]`,
-        status: "Delivered",
-      };
-      addCommunication(comm);
-
-      showToast(
-        `📧 Reminder logged (Configure EmailJS to send real emails). Check console for details.`
-      );
-      return;
-    }
-
     try {
       showToast("Sending reminder email...");
 
-      // Send email using EmailJS
-      const result = await emailjs.send(
-        serviceId,
-        templateId,
-        emailParams
-      );
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/invoices/send-reminder`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          toEmail: memberData.email,
+          toName: memberData.name,
+          memberId: memberData.id,
+          totalDue: `$${totalDue.toFixed(2)}`,
+          invoiceCount: memberUnpaidInvoices.length,
+          invoiceListText: invoiceListText,
+          invoiceListHTML: invoiceListHTML,
+          paymentMethods: "FPS, PayMe, Bank Transfer, Alipay, or Credit Card",
+          portalLink: `${window.location.origin}/member`,
+        }),
+      });
 
-      console.log("✓ Email sent successfully:", result);
+      const data = await response.json();
 
-      // Log to communication with details
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to send email");
+      }
+
+      console.log("✓ Email sent successfully:", data);
+
+      // Log to communication
       const comm = {
         channel: "Email",
-        message: `Payment reminder: ${memberData.name} (${memberData.email}) - $${totalDue} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
+        message: `Payment reminder: ${memberData.name} (${memberData.email}) - $${totalDue.toFixed(2)} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
         status: "Delivered",
       };
       addCommunication(comm);
 
       showToast(
-        `✓ Reminder email sent to ${memberData.name} for $${memberData.balance} outstanding!`
+        `✓ Reminder email sent to ${memberData.name} for $${totalDue.toFixed(2)} outstanding!`
       );
     } catch (error) {
       console.error("✗ Email send error:", error);
@@ -921,13 +1281,13 @@ Subscription Manager HK`;
       // Log failed attempt
       const comm = {
         channel: "Email",
-        message: `Reminder attempt to ${memberData.name} - $${totalDue} due`,
+        message: `Reminder attempt to ${memberData.name} - $${totalDue.toFixed(2)} due`,
         status: "Failed",
       };
       addCommunication(comm);
 
       showToast(
-        "Failed to send email. Please check EmailJS configuration.",
+        error.message || "Failed to send email. Please check email configuration.",
         "error"
       );
     }
@@ -1918,77 +2278,35 @@ Subscription Manager HK`;
                           )
                           .join("");
 
-                        // Prepare email parameters with the newly created invoice
-                        const emailParams = {
-                          to_email: member.email,
-                          to_name: member.name,
-                          member_id: member.id,
-                          member_phone: member.phone,
-                          total_due: `$${totalDue.toFixed(2)}`,
-                          invoice_count: allUnpaidInvoices.length,
-                          invoice_list_text: invoiceListText,
-                          invoice_list_html: invoiceListHTML,
-                          payment_methods:
-                            "FPS (ID: 1234567), PayMe, Bank Transfer (HSBC 123-456789-001), or Credit Card",
-                          portal_link: `${window.location.origin}/member`,
-                          current_date: new Date().toLocaleDateString("en-GB", {
-                            day: "2-digit",
-                            month: "long",
-                            year: "numeric",
-                          }),
-                        };
-
-                        // EmailJS configuration
-                        const serviceId = "service_yb0uo4k";
-                        const templateId = "template_5uhd93r";
-
-                        if (serviceId === "YOUR_SERVICE_ID" || templateId === "YOUR_TEMPLATE_ID") {
-                          // EmailJS not configured yet - simulate email for now
-                          console.log("📧 Email Preview (EmailJS not configured yet):");
-                          console.log("To:", member.email);
-                          console.log("Subject: Payment Reminder - Outstanding Balance $" + totalDue.toFixed(2));
-                          console.log("Invoices:", allUnpaidInvoices);
-                          console.log("\n⚠️ To send real emails, configure EmailJS:");
-                          console.log("1. Sign up at https://www.emailjs.com");
-                          console.log("2. Get Service ID, Template ID, and Public Key");
-                          console.log("3. Update AdminPage.jsx lines ~35 and ~271");
-                          
-                          // Log to communication (simulated)
-                          const comm = {
-                            channel: "Email",
-                            message: `Payment reminder: ${member.name} (${member.email}) - $${totalDue.toFixed(2)} due (${allUnpaidInvoices.length} invoice${allUnpaidInvoices.length > 1 ? "s" : ""}) [SIMULATED]`,
-                            status: "Delivered",
-                          };
-                          addCommunication(comm);
-
-                          // Reset form
-                          setInvoiceForm({
-                            memberId: "",
-                            period: "",
-                            amount: "50",
-                            invoiceType: "Monthly",
-                            due: "",
-                            notes: "",
-                          });
-                          setShowInvoiceForm(false);
-
-                          showToast(
-                            `📧 Invoice created! Reminder logged (Configure EmailJS to send real emails). Check console for details.`
-                          );
-                          return;
-                        }
-
                         try {
                           showToast("Sending reminder email...");
 
-                          // Send email using EmailJS
-                          const result = await emailjs.send(
-                            serviceId,
-                            templateId,
-                            emailParams
-                          );
+                          const apiUrl = import.meta.env.VITE_API_URL || '';
+                          const response = await fetch(`${apiUrl}/api/invoices/send-reminder`, {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                              toEmail: member.email,
+                              toName: member.name,
+                              memberId: member.id,
+                              totalDue: `$${totalDue.toFixed(2)}`,
+                              invoiceCount: allUnpaidInvoices.length,
+                              invoiceListText: invoiceListText,
+                              invoiceListHTML: invoiceListHTML,
+                              paymentMethods: "FPS, PayMe, Bank Transfer, Alipay, or Credit Card",
+                              portalLink: `${window.location.origin}/member`,
+                            }),
+                          });
 
-                          console.log("✓ Email sent successfully:", result);
+                          const data = await response.json();
+
+                          if (!response.ok) {
+                            throw new Error(data.error || "Failed to send email");
+                          }
+
+                          console.log("✓ Email sent successfully:", data);
 
                           // Log to communication
                           const comm = {
@@ -2024,7 +2342,7 @@ Subscription Manager HK`;
                           addCommunication(comm);
 
                           showToast(
-                            "Invoice created but failed to send email. Please check EmailJS configuration.",
+                            error.message || "Invoice created but failed to send email. Please check email configuration.",
                             "error"
                           );
                         }
@@ -2208,23 +2526,46 @@ Subscription Manager HK`;
                         color: "#666",
                         lineHeight: "1.6"
                       }}>
-                        Send manual reminder emails to members with outstanding invoices
+                        Send manual reminder emails or WhatsApp messages to members with outstanding invoices
                       </p>
                     </div>
-                    <button
-                      className="primary-btn"
-                      onClick={handleSendToAllOutstanding}
-                      disabled={sendingToAll}
-                      style={{
-                        padding: "12px 24px",
-                        borderRadius: "8px",
-                        fontWeight: "600",
-                        opacity: sendingToAll ? 0.5 : 1,
-                        cursor: sendingToAll ? "not-allowed" : "pointer"
-                      }}
-                    >
-                      {sendingToAll ? "Sending..." : "📧 Send to All Outstanding"}
-                    </button>
+                    <div style={{
+                      display: "flex",
+                      gap: "12px",
+                      flexWrap: "wrap"
+                    }}>
+                      <button
+                        className="primary-btn"
+                        onClick={handleSendToAllOutstanding}
+                        disabled={sendingToAll}
+                        style={{
+                          padding: "12px 24px",
+                          borderRadius: "8px",
+                          fontWeight: "600",
+                          opacity: sendingToAll ? 0.5 : 1,
+                          cursor: sendingToAll ? "not-allowed" : "pointer"
+                        }}
+                      >
+                        {sendingToAll ? "Sending..." : "📧 Send Email to All"}
+                      </button>
+                      <button
+                        className="primary-btn"
+                        onClick={handleSendWhatsAppToAllOutstanding}
+                        disabled={sendingWhatsAppToAll}
+                        style={{
+                          padding: "12px 24px",
+                          display:"none",
+                          borderRadius: "8px",
+                          fontWeight: "600",
+                          backgroundColor: "#25D366",
+                          borderColor: "#25D366",
+                          opacity: sendingWhatsAppToAll ? 0.5 : 1,
+                          cursor: sendingWhatsAppToAll ? "not-allowed" : "pointer"
+                        }}
+                      >
+                        {sendingWhatsAppToAll ? "Opening..." : "💬 Send WhatsApp to All"}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Members List */}
@@ -2307,22 +2648,47 @@ Subscription Manager HK`;
                                 )}
                               </div>
                             </div>
-                            <button
-                              className="secondary-btn"
-                              onClick={() => handleSendManualReminder(member.id)}
-                              disabled={isSending}
-                              style={{
-                                padding: "10px 20px",
-                                borderRadius: "8px",
-                                fontWeight: "600",
-                                fontSize: "0.875rem",
-                                opacity: isSending ? 0.5 : 1,
-                                cursor: isSending ? "not-allowed" : "pointer",
-                                flexShrink: 0
-                              }}
-                            >
-                              {isSending ? "Sending..." : "📧 Send Email"}
-                            </button>
+                            <div style={{
+                              display: "flex",
+                              gap: "8px",
+                              flexShrink: 0
+                            }}>
+                              <button
+                                className="secondary-btn"
+                                onClick={() => handleSendManualReminder(member.id)}
+                                disabled={isSending}
+                                style={{
+                                  padding: "10px 20px",
+                                  borderRadius: "8px",
+                                  fontWeight: "600",
+                                  fontSize: "0.875rem",
+                                  opacity: isSending ? 0.5 : 1,
+                                  cursor: isSending ? "not-allowed" : "pointer"
+                                }}
+                              >
+                                {isSending ? "Sending..." : "📧 Email"}
+                              </button>
+                              {member.phone && (
+                                <button
+                                  className="secondary-btn"
+                                  onClick={() => handleSendWhatsAppReminder(member)}
+                                  disabled={sendingWhatsApp[member.id]}
+                                  style={{
+                                    padding: "10px 20px",
+                                    borderRadius: "8px",
+                                    fontWeight: "600",
+                                    fontSize: "0.875rem",
+                                    backgroundColor: "#25D366",
+                                    borderColor: "#25D366",
+                                    color: "#fff",
+                                    opacity: sendingWhatsApp[member.id] ? 0.5 : 1,
+                                    cursor: sendingWhatsApp[member.id] ? "not-allowed" : "pointer"
+                                  }}
+                                >
+                                  {sendingWhatsApp[member.id] ? "Opening..." : "💬 WhatsApp"}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
@@ -2845,6 +3211,7 @@ Subscription Manager HK`;
                           const apiUrl = import.meta.env.VITE_API_URL || "";
                           const formData = new FormData();
                           formData.append("screenshot", file);
+                          formData.append("uploadType", "qr-code"); // Specify this is a QR code upload
 
                           const uploadResponse = await fetch(`${apiUrl}/api/upload-screenshot`, {
                             method: "POST",
@@ -2875,7 +3242,7 @@ Subscription Manager HK`;
                           const qrUrl = uploadData.url;
 
                           // Update payment method with QR code URL
-                          updatePaymentMethod(methodName, { qrImageUrl: qrUrl });
+                          await updatePaymentMethod(methodName, { qrImageUrl: qrUrl });
                           showToast(`${methodName} QR code uploaded successfully!`);
                         } catch (error) {
                           console.error("Error uploading QR code:", error);
@@ -2919,7 +3286,13 @@ Subscription Manager HK`;
                         >
                           {/* Status Badge - Clickable */}
                           <div 
-                            onClick={() => updatePaymentMethod(method.name, { visible: !method.visible })}
+                            onClick={async () => {
+                              try {
+                                await updatePaymentMethod(method.name, { visible: !method.visible });
+                              } catch (error) {
+                                console.error('Error updating payment method:', error);
+                              }
+                            }}
                             style={{
                               position: "absolute",
                               top: "20px",
@@ -3245,7 +3618,13 @@ Subscription Manager HK`;
 
                           {/* Toggle Switch */}
                           <div 
-                            onClick={() => updatePaymentMethod(method.name, { visible: !method.visible })}
+                            onClick={async () => {
+                              try {
+                                await updatePaymentMethod(method.name, { visible: !method.visible });
+                              } catch (error) {
+                                console.error('Error updating payment method:', error);
+                              }
+                            }}
                             style={{
                               display: "flex",
                               alignItems: "center",
@@ -3303,9 +3682,13 @@ Subscription Manager HK`;
                               <input
                                 type="checkbox"
                                 checked={method.visible}
-                                onChange={(e) => {
+                                onChange={async (e) => {
                                   e.stopPropagation();
-                                  updatePaymentMethod(method.name, { visible: e.target.checked });
+                                  try {
+                                    await updatePaymentMethod(method.name, { visible: e.target.checked });
+                                  } catch (error) {
+                                    console.error('Error updating payment method:', error);
+                                  }
                                 }}
                                 tabIndex={-1}
                                 onFocus={(e) => e.target.blur()}
@@ -3398,12 +3781,12 @@ Subscription Manager HK`;
                     </div>
                     <div className="card kpi">
                       <p>Total Transactions</p>
-                      <h4>{recentPayments.length}</h4>
+                      <h4>{reportStats.transactionCount}</h4>
                       <small>In selected period</small>
                     </div>
                     <div className="card kpi">
                       <p>Outstanding</p>
-                      <h4>${metrics.outstanding.toLocaleString()}</h4>
+                      <h4>${dashboardMetrics.outstanding.toLocaleString()}</h4>
                       <small>Pending collection</small>
                     </div>
                   </div>
@@ -3415,7 +3798,7 @@ Subscription Manager HK`;
                         <div
                           className="collected"
                           style={{
-                            width: `${Math.round((reportStats.collected / reportStats.expected) * 100)}%`,
+                            width: `${Math.min(100, Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 100) || 0)}%`,
                           }}
                         >
                           Collected
@@ -3423,7 +3806,7 @@ Subscription Manager HK`;
                         <div
                           className="outstanding"
                           style={{
-                            width: `${100 - Math.round((reportStats.collected / reportStats.expected) * 100)}%`,
+                            width: `${Math.max(0, 100 - Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 100) || 0)}%`,
                           }}
                         >
                           Outstanding
@@ -3451,35 +3834,25 @@ Subscription Manager HK`;
                   <div style={{ display: "flex", gap: "12px", marginTop: "24px", flexWrap: "wrap" }}>
                     <button
                       className="secondary-btn"
-                      onClick={() => {
-                        const csvData = `Period,${dateRange.from} to ${dateRange.to}\nCollected,$${reportStats.collected}\nExpected,$${reportStats.expected}\nOutstanding,$${metrics.outstanding}\nAverage per Member,$${reportStats.averagePerMember}`;
-                        showToast("Report generated! Check console for CSV data");
-                        console.log("CSV Export:", csvData);
-                      }}
+                      onClick={handleExportCSV}
                     >
-                      Export CSV
+                      📥 Export CSV
+                    </button>
+                    <button
+                      className="ghost-btn"
+                      onClick={handleExportPDF}
+                    >
+                      📄 Export PDF
                     </button>
                     <button
                       className="ghost-btn"
                       onClick={() => {
-                        showToast("PDF report generation initiated");
-                        console.log("PDF Export: Financial Report", {
-                          period: `${dateRange.from} to ${dateRange.to}`,
-                          collected: reportStats.collected,
-                          expected: reportStats.expected,
-                          methodMix: reportStats.methodMix,
-                        });
-                      }}
-                    >
-                      Export PDF
-                    </button>
-                    <button
-                      className="ghost-btn"
-                      onClick={() => {
+                        // Force re-render by updating date range slightly
+                        setDateRange({ ...dateRange });
                         showToast("Report refreshed with latest data");
                       }}
                     >
-                      Refresh Data
+                      🔄 Refresh Data
                     </button>
                   </div>
                 </div>
