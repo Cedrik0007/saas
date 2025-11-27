@@ -855,6 +855,12 @@ tbody td {
   color: #000000;
 }
 
+.badge-pending {
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffc107;
+}
+
 .filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

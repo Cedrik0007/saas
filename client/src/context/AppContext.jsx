@@ -23,6 +23,7 @@ export function AppProvider({ children }) {
   const [admins,setAdmins] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [donations, setDonations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [recentPayments, setRecentPayments] = useState(() => {
@@ -82,6 +83,7 @@ export function AppProvider({ children }) {
     fetchAdmins();
     fetchInvoices();
     fetchPayments();
+    fetchDonations();
     fetchPaymentMethods();
   }, []);
 
@@ -160,6 +162,21 @@ export function AppProvider({ children }) {
       console.error('Error fetching payments:', error);
       console.warn('⚠️ Using fallback data from data.js');
       setPayments(initialPaymentHistory);
+    }
+  };
+
+  // Fetch donations from server
+  const fetchDonations = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/donations`);
+      if (!response.ok) throw new Error('Failed to fetch donations');
+      const data = await response.json();
+      setDonations(data);
+      console.log('✓ Loaded', data.length, 'donations from MongoDB');
+    } catch (error) {
+      console.error('Error fetching donations:', error);
+      setDonations([]);
     }
   };
 
@@ -598,15 +615,62 @@ export function AppProvider({ children }) {
     }
   };
 
+  // Donation Operations
+  const addDonation = async (donation) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/donations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(donation),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to add donation');
+      }
+      
+      const newDonation = await response.json();
+      setDonations([newDonation, ...donations]);
+      console.log('✓ Donation added to server:', newDonation);
+      return newDonation;
+    } catch (error) {
+      console.error('Error adding donation:', error);
+      throw error;
+    }
+  };
+
+  const deleteDonation = async (id) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/donations/${id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to delete donation');
+      }
+      
+      setDonations(donations.filter(d => d._id !== id));
+      console.log('✓ Donation deleted from server:', id);
+    } catch (error) {
+      console.error('Error deleting donation:', error);
+      throw error;
+    }
+  };
+
   const value = {
     members,
     invoices,
     payments,
+    donations,
     loading,
     fetchMembers,
     fetchAdmins,
     fetchInvoices,
     fetchPayments,
+    fetchDonations,
     recentPayments,
     paymentHistory,
     communicationLog,
@@ -627,6 +691,8 @@ export function AppProvider({ children }) {
     updateInvoice,
     deleteInvoice,
     addPayment,
+    addDonation,
+    deleteDonation,
     addCommunication,
     updatePaymentMethod,
     updateMetrics,

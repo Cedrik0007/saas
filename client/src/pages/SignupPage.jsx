@@ -54,7 +54,7 @@ export function SignupPage() {
           email: form.email.trim().toLowerCase(),
           phone: form.phone.trim(),
           password: form.password,
-          status: "Active",
+          status: "Pending",
           balance: "$0",
           nextDue: "",
           lastPayment: "",
@@ -68,18 +68,18 @@ export function SignupPage() {
         throw new Error(data.message || data.error || 'Failed to create account');
       }
 
-      setSuccess("Account created successfully! Redirecting to login...");
+      setSuccess("Account created successfully! Your account is pending approval. You will be able to login once an admin approves your account.");
       
-      // Redirect to login after 2 seconds
+      // Redirect to login after 3 seconds
       setTimeout(() => {
         navigate("/login", { 
           replace: true,
           state: { 
-            message: "Account created successfully! Please login with your credentials.",
+            message: "Account created successfully! Your account is pending approval. Please wait for admin approval before logging in.",
             email: form.email 
           }
         });
-      }, 2000);
+      }, 3000);
     } catch (error) {
       console.error("Signup error:", error);
       setError(error.message || "Failed to create account. Please try again.");

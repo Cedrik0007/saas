@@ -39,6 +39,7 @@ const PORT = process.env.PORT || 4000;
 
 // Global variable to store the cron job so it can be rescheduled
 let reminderCronJob = null;
+let invoiceCronJob = null;
 
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://0741sanjai_db_user:L11x9pdm3tHuOJE9@members.mmnf0pe.mongodb.net/subscriptionmanager";
 
@@ -161,16 +162,35 @@ const PaymentSchema = new mongoose.Schema({
   method: String,
   reference: String,
   period: String,
-  status: { type: String, default: "Paid" },
+  status: { type: String, default: "Pending" }, // Changed default to "Pending"
   date: String,
   screenshot: String,
   paidToAdmin: String,
   paidToAdminName: String,
+  rejectionReason: String, // Reason for rejection
+  approvedBy: String, // Admin who approved
+  approvedAt: Date, // When approved
+  rejectedBy: String, // Admin who rejected
+  rejectedAt: Date, // When rejected
 }, {
   timestamps: true
 });
 
 const PaymentModel = mongoose.model("payments", PaymentSchema);
+
+// Donation Schema
+const DonationSchema = new mongoose.Schema({
+  donorName: { type: String, required: true },
+  isMember: { type: Boolean, default: false },
+  memberId: String, // If isMember is true, link to member
+  amount: { type: String, required: true },
+  notes: String,
+  date: String, // Auto-generated
+}, {
+  timestamps: true
+});
+
+const DonationModel = mongoose.model("donations", DonationSchema);
 
 // Email Template Schema
 const EmailTemplateSchema = new mongoose.Schema({
@@ -589,6 +609,199 @@ async function checkAndSendReminders() {
   }
 }
 
+// Function to automatically generate invoices for subscriptions based on payment dates
+async function generateSubscriptionInvoices() {
+  try {
+    console.log('\n🔄 ===== Starting automatic invoice generation =====');
+    await ensureConnection();
+    
+    // Get all active members
+    const activeMembers = await UserModel.find({ status: 'Active' });
+    console.log(`📋 Found ${activeMembers.length} active members to check`);
+    
+    let invoicesCreated = 0;
+    let invoicesSkipped = 0;
+    
+    for (const member of activeMembers) {
+      try {
+        const subscriptionType = member.subscriptionType || 'Monthly';
+        
+        // Find the last paid payment for this member
+        const lastPayment = await PaymentModel.findOne({
+          memberId: member.id,
+          status: 'Paid'
+        }).sort({ createdAt: -1 });
+        
+        if (!lastPayment) {
+          // No payment found, check if they have any invoice
+          const lastInvoice = await InvoiceModel.findOne({ 
+            memberId: member.id 
+          }).sort({ createdAt: -1 });
+          
+          if (!lastInvoice) {
+            // No invoice exists, create initial invoice
+            console.log(`📝 No invoice/payment found for ${member.name} (${member.id}), creating initial invoice...`);
+            await createSubscriptionInvoice(member, subscriptionType);
+            invoicesCreated++;
+            continue;
+          } else {
+            // Has invoice but no payment - check if invoice is old enough
+            const invoiceDate = new Date(lastInvoice.createdAt);
+            const now = new Date();
+            const timeDiff = now - invoiceDate;
+            
+            const periodMs = subscriptionType === 'Yearly' 
+              ? 365 * 24 * 60 * 60 * 1000 
+              : 30 * 24 * 60 * 60 * 1000;
+            
+            if (timeDiff >= periodMs) {
+              console.log(`📝 Creating invoice for ${member.name} based on old invoice date...`);
+              await createSubscriptionInvoice(member, subscriptionType);
+              invoicesCreated++;
+            } else {
+              invoicesSkipped++;
+            }
+            continue;
+          }
+        }
+        
+        // Use payment date to calculate next invoice date
+        const paymentDate = new Date(lastPayment.createdAt);
+        const now = new Date();
+        const timeSincePayment = now - paymentDate;
+        
+        let shouldCreate = false;
+        let periodName = '';
+        const periodMs = subscriptionType === 'Yearly' 
+          ? 365 * 24 * 60 * 60 * 1000 
+          : 30 * 24 * 60 * 60 * 1000;
+        
+        if (timeSincePayment >= periodMs) {
+          shouldCreate = true;
+          const monthYear = now.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+          periodName = subscriptionType === 'Yearly' 
+            ? `${monthYear} Yearly Subscription`
+            : `${monthYear} Monthly Subscription`;
+        }
+        
+        // Check if there's already an unpaid invoice for current period
+        if (shouldCreate) {
+          const currentMonth = now.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+          const existingUnpaid = await InvoiceModel.findOne({
+            memberId: member.id,
+            status: { $in: ['Unpaid', 'Overdue'] },
+            period: { $regex: currentMonth, $options: 'i' }
+          });
+          
+          if (existingUnpaid) {
+            console.log(`⏭️ Skipping ${member.name} - already has unpaid invoice for current period`);
+            invoicesSkipped++;
+            continue;
+          }
+          
+          console.log(`✅ Creating ${subscriptionType} invoice for ${member.name} (${member.id}) based on payment date`);
+          await createSubscriptionInvoice(member, subscriptionType, periodName);
+          invoicesCreated++;
+        } else {
+          const daysSincePayment = Math.floor(timeSincePayment / (24 * 60 * 60 * 1000));
+          const daysNeeded = subscriptionType === 'Yearly' ? 365 : 30;
+          console.log(`⏭️ Skipping ${member.name} - last payment was ${daysSincePayment} days ago (needs ${daysNeeded} days)`);
+          invoicesSkipped++;
+        }
+      } catch (error) {
+        console.error(`❌ Error processing member ${member.name} (${member.id}):`, error);
+      }
+    }
+    
+    console.log(`✅ Invoice generation completed: ${invoicesCreated} created, ${invoicesSkipped} skipped`);
+    return { created: invoicesCreated, skipped: invoicesSkipped };
+  } catch (error) {
+    console.error('❌ Error in automatic invoice generation:', error);
+    throw error;
+  }
+}
+
+// Helper function to create a subscription invoice
+async function createSubscriptionInvoice(member, subscriptionType, customPeriod = null) {
+  try {
+    const invoiceAmount = subscriptionType === 'Yearly' ? '$500' : '$50';
+    const invoicePeriod = customPeriod || (subscriptionType === 'Yearly' ? 'Yearly Subscription' : 'Monthly Subscription');
+    
+    // Calculate due date (1 month for monthly, 1 year for yearly)
+    const dueDate = new Date();
+    if (subscriptionType === 'Yearly') {
+      dueDate.setFullYear(dueDate.getFullYear() + 1);
+    } else {
+      dueDate.setMonth(dueDate.getMonth() + 1);
+    }
+    
+    // Format due date
+    const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    }).replace(',', '');
+    
+    // Create invoice
+    const invoiceData = {
+      id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      memberId: member.id,
+      memberName: member.name,
+      memberEmail: member.email,
+      period: invoicePeriod,
+      amount: invoiceAmount,
+      status: "Unpaid",
+      due: dueDateFormatted,
+      method: "",
+      reference: "",
+    };
+    
+    const newInvoice = new InvoiceModel(invoiceData);
+    await newInvoice.save();
+    
+    // Update member balance
+    await calculateAndUpdateMemberBalance(member.id);
+    
+    console.log(`✓ Invoice created: ${newInvoice.id} for ${member.name} - ${invoiceAmount} due ${dueDateFormatted}`);
+    return newInvoice;
+  } catch (error) {
+    console.error(`Error creating invoice for ${member.name}:`, error);
+    throw error;
+  }
+}
+
+// Function to schedule the invoice generation cron job
+function scheduleInvoiceGenerationCron() {
+  try {
+    // Stop existing cron job if it exists
+    if (invoiceCronJob) {
+      invoiceCronJob.stop();
+      invoiceCronJob = null;
+    }
+    
+    // Schedule to run daily at 2:00 AM (after reminder cron)
+    // This ensures invoices are generated before reminders are sent
+    invoiceCronJob = cron.schedule('0 2 * * *', async () => {
+      try {
+        console.log(`\n🔄 ===== Running scheduled invoice generation (daily at 2:00 AM) =====`);
+        const now = new Date();
+        console.log(`⏰ Server time: ${now.toLocaleString()}`);
+        await generateSubscriptionInvoices();
+        console.log(`✅ Scheduled invoice generation completed\n`);
+      } catch (error) {
+        console.error('❌ Error in scheduled invoice generation:', error);
+      }
+    }, {
+      scheduled: true,
+      timezone: "Asia/Kolkata"
+    });
+    
+    console.log('✓ Invoice generation scheduled (daily at 2:00 AM)');
+  } catch (error) {
+    console.error('Error scheduling invoice generation cron:', error);
+  }
+}
+
 // Middleware - must be before routes
 // CORS configuration: Allow localhost for development, production origin for production
 app.use(cors({
@@ -826,8 +1039,16 @@ app.post("/api/login", async (req, res) => {
         });
       }
 
-      // Check if member is active
-      if (member.status && member.status !== 'Active') {
+      // Check if member is approved (status must be 'Active')
+      if (member.status === 'Pending') {
+        return res.status(403).json({ 
+          message: "Your account is pending approval. Please wait for admin approval before logging in.",
+          success: false 
+        });
+      }
+
+      // Check if member is active (not suspended/inactive)
+      if (member.status && member.status !== 'Active' && member.status !== 'Pending') {
         return res.status(403).json({ 
           message: "Your account is not active. Please contact administrator.",
           success: false 
@@ -902,7 +1123,7 @@ app.post("/api/members", async (req, res) => {
       email: (req.body.email || '').trim().toLowerCase(),  // Ensure lowercase storage
       phone: req.body.phone || '',
       password: req.body.password || '',
-      status: req.body.status || 'Active',
+      status: req.body.status || 'Pending',
       balance: req.body.balance || '$0',
       nextDue: req.body.nextDue || '',
       lastPayment: req.body.lastPayment || '',
@@ -1215,7 +1436,7 @@ app.post("/api/payments", async (req, res) => {
         month: "short",
         year: "numeric",
       }),
-      status: req.body.status || "Paid",
+      status: req.body.status || "Pending", // Changed default to "Pending"
     };
     
     const newPayment = new PaymentModel(paymentData);
@@ -1224,6 +1445,146 @@ app.post("/api/payments", async (req, res) => {
     res.status(201).json(newPayment);
   } catch (error) {
     console.error("Error creating payment:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== PAYMENT APPROVAL ENDPOINTS ==========
+
+// PUT approve payment
+app.put("/api/payments/:id/approve", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    // Try to find by _id first, then by id field
+    let payment = await PaymentModel.findById(req.params.id);
+    if (!payment) {
+      payment = await PaymentModel.findOne({ id: req.params.id });
+    }
+    if (!payment) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    // Update payment status
+    payment.status = "Completed";
+    payment.approvedBy = req.body.adminId || req.body.adminName || "Admin";
+    payment.approvedAt = new Date();
+    await payment.save();
+
+    // Update related invoice to Paid
+    if (payment.invoiceId) {
+      await InvoiceModel.findOneAndUpdate(
+        { id: payment.invoiceId },
+        { 
+          $set: { 
+            status: "Paid",
+            method: payment.method,
+            reference: payment.reference,
+            screenshot: payment.screenshot
+          }
+        }
+      );
+      
+      // Update member balance
+      await calculateAndUpdateMemberBalance(payment.memberId);
+    }
+
+    res.json({ success: true, payment });
+  } catch (error) {
+    console.error("Error approving payment:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT reject payment
+app.put("/api/payments/:id/reject", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    // Try to find by _id first, then by id field
+    let payment = await PaymentModel.findById(req.params.id);
+    if (!payment) {
+      payment = await PaymentModel.findOne({ id: req.params.id });
+    }
+    if (!payment) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    // Update payment status
+    payment.status = "Rejected";
+    payment.rejectionReason = req.body.reason || "";
+    payment.rejectedBy = req.body.adminId || req.body.adminName || "Admin";
+    payment.rejectedAt = new Date();
+    await payment.save();
+
+    // Update related invoice back to Unpaid
+    if (payment.invoiceId) {
+      await InvoiceModel.findOneAndUpdate(
+        { id: payment.invoiceId },
+        { 
+          $set: { 
+            status: "Unpaid",
+            method: "",
+            reference: "",
+            screenshot: ""
+          }
+        }
+      );
+      
+      // Update member balance
+      await calculateAndUpdateMemberBalance(payment.memberId);
+    }
+
+    res.json({ success: true, payment });
+  } catch (error) {
+    console.error("Error rejecting payment:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== DONATION ENDPOINTS ==========
+
+// GET all donations
+app.get("/api/donations", async (req, res) => {
+  try {
+    await ensureConnection();
+    const donations = await DonationModel.find().sort({ createdAt: -1 });
+    res.json(donations);
+  } catch (error) {
+    console.error("Error fetching donations:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST create donation
+app.post("/api/donations", async (req, res) => {
+  try {
+    await ensureConnection();
+    const donationData = {
+      ...req.body,
+      date: new Date().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }),
+    };
+    const donation = new DonationModel(donationData);
+    await donation.save();
+    res.json(donation);
+  } catch (error) {
+    console.error("Error creating donation:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE donation
+app.delete("/api/donations/:id", async (req, res) => {
+  try {
+    await ensureConnection();
+    await DonationModel.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting donation:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -2037,6 +2398,42 @@ app.put("/api/payment-methods/:name", async (req, res) => {
   }
 });
 
+// ========== INVOICE GENERATION ENDPOINTS ==========
+
+// POST endpoint to manually trigger invoice generation
+app.post("/api/invoices/generate", async (req, res) => {
+  try {
+    await ensureConnection();
+    const result = await generateSubscriptionInvoices();
+    res.json({ 
+      success: true, 
+      message: `Invoice generation completed: ${result.created} created, ${result.skipped} skipped`,
+      result 
+    });
+  } catch (error) {
+    console.error("Error in manual invoice generation:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== INVOICE GENERATION ENDPOINTS ==========
+
+// POST endpoint to manually trigger invoice generation
+app.post("/api/invoices/generate", async (req, res) => {
+  try {
+    await ensureConnection();
+    const result = await generateSubscriptionInvoices();
+    res.json({ 
+      success: true, 
+      message: `Invoice generation completed: ${result.created} created, ${result.skipped} skipped`,
+      result 
+    });
+  } catch (error) {
+    console.error("Error in manual invoice generation:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Export for Vercel serverless functions
 export default app;
 
@@ -2083,6 +2480,9 @@ if (!process.env.VERCEL) {
     console.log(`  - POST   /api/email-settings/test`);
     console.log(`  - GET    /api/email-template`);
     console.log(`  - POST   /api/email-template`);
+    console.log(`  - GET    /api/donations`);
+    console.log(`  - POST   /api/donations`);
+    console.log(`  - DELETE /api/donations/:id`);
     
     // Initialize all member balances on server start
     await initializeAllMemberBalances();

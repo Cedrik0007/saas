@@ -15,6 +15,7 @@ export function AdminPage() {
     members,
     admins,
     invoices,
+    payments,
     recentPayments,
     paymentHistory,
     communicationLog,
@@ -26,6 +27,8 @@ export function AdminPage() {
     reminderTemplates,
     organizationInfo,
     fetchAdmins,
+    fetchInvoices,
+    fetchPayments,
     selectedMember,
     setSelectedMember,
     addMember,
@@ -44,6 +47,10 @@ export function AdminPage() {
     deleteAdminUser,
     resetAllData,
     addPayment,
+    donations,
+    fetchDonations,
+    addDonation,
+    deleteDonation,
   } = useApp();
 
   const sections = [
@@ -53,6 +60,8 @@ export function AdminPage() {
     { id: "invoice-builder", label: "Invoice Builder" },
     { id: "automation", label: "Reminders" },
     { id: "payment-methods", label: "Payments" },
+    { id: "payment-approvals", label: "Payment Approvals" },
+    { id: "donations", label: "Donations" },
     { id: "reports", label: "Reports" },
     { id: "settings", label: "Settings" },
   ];
@@ -88,6 +97,15 @@ export function AdminPage() {
     amount: "50",
     invoiceType: "Monthly",
     due: "",
+    notes: "",
+  });
+
+  const [showDonationForm, setShowDonationForm] = useState(false);
+  const [donationForm, setDonationForm] = useState({
+    donorName: "",
+    isMember: false,
+    memberId: "",
+    amount: "",
     notes: "",
   });
 
@@ -154,6 +172,9 @@ export function AdminPage() {
   const [sendingToAll, setSendingToAll] = useState(false);
   const [sendingWhatsApp, setSendingWhatsApp] = useState({}); // Track which member is sending WhatsApp
   const [sendingWhatsAppToAll, setSendingWhatsAppToAll] = useState(false);
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
+  const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
+  const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
 
   const navigate = useNavigate();
 
@@ -169,8 +190,11 @@ export function AdminPage() {
       const monthKey = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
       const monthLabel = monthNames[date.getMonth()];
       
-      // Filter payments for this month
+      // Filter payments for this month (only completed/paid)
       const monthPayments = paymentHistory.filter((payment) => {
+        // Only count completed or paid payments
+        const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+        if (!isCompleted) return false;
         if (!payment.date) return false;
         const paymentDate = new Date(payment.date);
         return paymentDate.getMonth() === date.getMonth() && 
@@ -207,34 +231,52 @@ export function AdminPage() {
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
     
-    // Calculate Total Collected - from paymentHistory
+    // Calculate Total Collected - from paymentHistory (only completed/paid)
     const allPayments = paymentHistory || [];
     const totalCollectedAllTime = allPayments.reduce((sum, payment) => {
-      const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
-      return sum + amount;
+      // Only count completed or paid payments
+      if (payment.status === "Completed" || payment.status === "Paid") {
+        const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+        return sum + amount;
+      }
+      return sum;
     }, 0);
     
     // Calculate collected this month
     const thisMonthPayments = allPayments.filter((payment) => {
+      // Only count completed or paid payments
+      const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+      if (!isCompleted) return false;
       if (!payment.date) return false;
       const paymentDate = new Date(payment.date);
       return paymentDate.getMonth() === currentMonth && 
              paymentDate.getFullYear() === currentYear;
     });
     const collectedThisMonth = thisMonthPayments.reduce((sum, payment) => {
-      const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
-      return sum + amount;
+      // Only count completed or paid payments
+      if (payment.status === "Completed" || payment.status === "Paid") {
+        const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+        return sum + amount;
+      }
+      return sum;
     }, 0);
     
     // Calculate collected this year
     const thisYearPayments = allPayments.filter((payment) => {
+      // Only count completed or paid payments
+      const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+      if (!isCompleted) return false;
       if (!payment.date) return false;
       const paymentDate = new Date(payment.date);
       return paymentDate.getFullYear() === currentYear;
     });
     const collectedThisYear = thisYearPayments.reduce((sum, payment) => {
-      const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
-      return sum + amount;
+      // Only count completed or paid payments
+      if (payment.status === "Completed" || payment.status === "Paid") {
+        const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+        return sum + amount;
+      }
+      return sum;
     }, 0);
     
     // Calculate Total Outstanding - from unpaid/overdue invoices
@@ -268,10 +310,10 @@ export function AdminPage() {
   // Get recent payments from paymentHistory
   const getRecentPayments = () => {
     return paymentHistory
-      .filter(payment => payment.status === "Paid" || payment.status === "Pending Verification")
+      .filter(payment => payment.status === "Paid" || payment.status === "Completed" || payment.status === "Pending Verification" || payment.status === "Pending")
       .sort((a, b) => {
-        const dateA = new Date(a.date || 0);
-        const dateB = new Date(b.date || 0);
+        const dateA = new Date(a.date || a.createdAt || 0);
+        const dateB = new Date(b.date || b.createdAt || 0);
         return dateB - dateA;
       })
       .slice(0, 5)
@@ -280,8 +322,8 @@ export function AdminPage() {
         Period: payment.period || "N/A",
         Amount: payment.amount || "$0",
         Method: payment.method || "N/A",
-        Status: payment.status || "Paid",
-        Date: payment.date || "N/A",
+        Status: payment.status || "Pending",
+        Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString() : "N/A"),
       }));
   };
 
@@ -295,18 +337,40 @@ export function AdminPage() {
     const toDate = new Date(dateRange.to);
     toDate.setHours(23, 59, 59, 999); // Include entire end date
 
-    // Filter payments within date range
+    // Filter payments within date range (only completed/paid payments count)
     const paymentsInRange = paymentHistory.filter(payment => {
       if (!payment.date) return false;
       const paymentDate = new Date(payment.date);
-      return paymentDate >= fromDate && paymentDate <= toDate;
+      // Only count completed/paid payments in financial reports
+      const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+      return paymentDate >= fromDate && paymentDate <= toDate && isCompleted;
     });
 
-    // Calculate collected amount in range
-    const collected = paymentsInRange.reduce((sum, payment) => {
+    // Filter donations within date range
+    const donationsInRange = (Array.isArray(donations) ? donations : []).filter(donation => {
+      if (!donation || (!donation.date && !donation.createdAt)) return false;
+      try {
+        const donationDate = donation.createdAt ? new Date(donation.createdAt) : new Date(donation.date);
+        return donationDate >= fromDate && donationDate <= toDate;
+      } catch (e) {
+        return false;
+      }
+    });
+
+    // Calculate collected amount from payments
+    const paymentsTotal = paymentsInRange.reduce((sum, payment) => {
       const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
       return sum + amount;
     }, 0);
+
+    // Calculate collected amount from donations
+    const donationsTotal = donationsInRange.reduce((sum, donation) => {
+      const amount = parseFloat(donation.amount?.replace(/[^0-9.]/g, '') || 0);
+      return sum + amount;
+    }, 0);
+
+    // Total collected (payments + donations)
+    const collected = paymentsTotal + donationsTotal;
 
     // Calculate expected revenue based on members and their subscription types
     // Monthly: $50/month, Yearly: $500/year
@@ -365,10 +429,16 @@ export function AdminPage() {
 
     return {
       collected,
+      paymentsTotal,
+      donationsTotal,
+      paymentsCount: paymentsInRange.length,
+      donationsCount: donationsInRange.length,
       expected: expected || 1, // Avoid division by zero
       averagePerMember,
       methodMix,
-      transactionCount: paymentsInRange.length
+      transactionCount: paymentsInRange.length + donationsInRange.length,
+      paymentsInRange,
+      donationsInRange,
     };
   };
 
@@ -405,19 +475,21 @@ export function AdminPage() {
         csvContent += `${item.label},${item.value}\n`;
       });
       
-      // Detailed transactions
-      csvContent += "\nDetailed Transactions\n";
+      // Detailed transactions (only completed/paid)
+      csvContent += "\nDetailed Transactions (Completed Payments Only)\n";
       csvContent += "Date,Member,Period,Amount,Method,Status,Reference\n";
-      paymentsInRange.forEach(payment => {
-        const date = payment.date || "N/A";
-        const member = payment.member || "Unknown";
-        const period = payment.period || "N/A";
-        const amount = payment.amount || "$0";
-        const method = payment.method || "N/A";
-        const status = payment.status || "N/A";
-        const reference = payment.reference || "N/A";
-        csvContent += `"${date}","${member}","${period}","${amount}","${method}","${status}","${reference}"\n`;
-      });
+      paymentsInRange
+        .filter(payment => payment.status === "Completed" || payment.status === "Paid")
+        .forEach(payment => {
+          const date = payment.date || "N/A";
+          const member = payment.member || "Unknown";
+          const period = payment.period || "N/A";
+          const amount = payment.amount || "$0";
+          const method = payment.method || "N/A";
+          const status = payment.status || "N/A";
+          const reference = payment.reference || "N/A";
+          csvContent += `"${date}","${member}","${period}","${amount}","${method}","${status}","${reference}"\n`;
+        });
 
       // Create blob and download
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -526,9 +598,10 @@ export function AdminPage() {
         yPos += lineHeight;
         
         doc.setFont(undefined, 'normal');
-        // Add transactions (limit to fit on page)
-        const maxTransactions = Math.min(paymentsInRange.length, Math.floor((pageHeight - yPos - 20) / lineHeight));
-        paymentsInRange.slice(0, maxTransactions).forEach(payment => {
+        // Add transactions (limit to fit on page, only completed/paid)
+        const completedPayments = paymentsInRange.filter(p => p.status === "Completed" || p.status === "Paid");
+        const maxTransactions = Math.min(completedPayments.length, Math.floor((pageHeight - yPos - 20) / lineHeight));
+        completedPayments.slice(0, maxTransactions).forEach(payment => {
           if (yPos > pageHeight - 20) {
             doc.addPage();
             yPos = 20;
@@ -540,8 +613,8 @@ export function AdminPage() {
           yPos += lineHeight;
         });
         
-        if (paymentsInRange.length > maxTransactions) {
-          doc.text(`... and ${paymentsInRange.length - maxTransactions} more transactions`, margin, yPos);
+        if (completedPayments.length > maxTransactions) {
+          doc.text(`... and ${completedPayments.length - maxTransactions} more transactions`, margin, yPos);
         }
       }
 
@@ -779,6 +852,58 @@ export function AdminPage() {
     }
   };
 
+  // Payment Approval Functions
+  const handleApprovePayment = async (paymentId) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
+      
+      const response = await fetch(`${apiUrl}/api/payments/${paymentId}/approve`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId, adminName: sessionStorage.getItem('adminName') || 'Admin' }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to approve payment');
+      }
+      
+      await fetchPayments(); // Refresh payments
+      await fetchInvoices(); // Refresh invoices
+      showToast("Payment approved successfully!");
+    } catch (error) {
+      console.error('Error approving payment:', error);
+      showToast(error.message || "Failed to approve payment", "error");
+    }
+  };
+
+  const handleRejectPayment = async (paymentId) => {
+    try {
+      const reason = window.prompt("Enter rejection reason (optional):") || "";
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
+      
+      const response = await fetch(`${apiUrl}/api/payments/${paymentId}/reject`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId, adminName: sessionStorage.getItem('adminName') || 'Admin', reason }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to reject payment');
+      }
+      
+      await fetchPayments(); // Refresh payments
+      await fetchInvoices(); // Refresh invoices
+      showToast("Payment rejected successfully!");
+    } catch (error) {
+      console.error('Error rejecting payment:', error);
+      showToast(error.message || "Failed to reject payment", "error");
+    }
+  };
+
   // Send reminder to all outstanding members
   const handleSendToAllOutstanding = async () => {
     if (!emailSettings.emailUser || !emailSettings.emailPassword) {
@@ -925,6 +1050,13 @@ Subscription Manager HK`;
   // Email sending is now handled via nodemailer API endpoint
 
   // Fetch email settings and templates on mount
+  // Fetch donations when component mounts or when donations section is active
+  useEffect(() => {
+    if (activeSection === "donations") {
+      fetchDonations();
+    }
+  }, [activeSection, fetchDonations]);
+
   useEffect(() => {
     fetchEmailSettings().catch(err => {
       console.error('Failed to fetch email settings:', err);
@@ -936,9 +1068,11 @@ Subscription Manager HK`;
   }, []);
 
   const handleNavClick = (id) => {
+    console.log('Navigating to section:', id);
     setActiveSection(id);
     setShowMemberForm(false);
     setShowInvoiceForm(false);
+    setShowDonationForm(false);
   };
 
   const handleLogout = () => {
@@ -1303,6 +1437,17 @@ Subscription Manager HK`;
     return invoices.filter((inv) => inv.memberId === memberId);
   };
 
+  // Approve pending member
+  const handleApproveMember = async (memberId) => {
+    try {
+      await updateMember(memberId, { status: "Active" });
+      showToast("Member approved successfully! They can now login.");
+    } catch (error) {
+      console.error('Error approving member:', error);
+      showToast("Failed to approve member", "error");
+    }
+  };
+
   return (
     <>
       <SiteHeader showCTA={false} showLogout={true} onLogout={handleLogout} />
@@ -1352,7 +1497,10 @@ Subscription Manager HK`;
                 <button
                   key={section.id}
                   className={`admin-tab ${activeSection === section.id ? "active" : ""}`}
-                  onClick={() => handleNavClick(section.id)}
+                  onClick={() => {
+                    console.log('Clicking section:', section.id, section.label);
+                    handleNavClick(section.id);
+                  }}
                 >
                   {section.label}
                 </button>
@@ -1610,6 +1758,89 @@ Subscription Manager HK`;
                   </div>
                 )}
 
+                {/* Pending Members Section */}
+                {members.filter(m => m.status === 'Pending').length > 0 && (
+                  <div style={{
+                    background: "#fff3cd",
+                    border: "2px solid #ffc107",
+                    borderRadius: "12px",
+                    padding: "24px",
+                    marginBottom: "24px"
+                  }}>
+                    <div style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: "16px"
+                    }}>
+                      <h4 style={{ margin: 0, color: "#856404", display: "flex", alignItems: "center", gap: "8px" }}>
+                        ⏳ Pending Approval ({members.filter(m => m.status === 'Pending').length})
+                      </h4>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      {members
+                        .filter(m => m.status === 'Pending')
+                        .map(member => (
+                          <div
+                            key={member.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              padding: "16px",
+                              background: "#fff",
+                              borderRadius: "8px",
+                              border: "1px solid #ffc107",
+                              flexWrap: "wrap",
+                              gap: "12px"
+                            }}
+                          >
+                            <div style={{ flex: "1 1 300px" }}>
+                              <div style={{ fontWeight: "600", marginBottom: "4px", fontSize: "1rem" }}>
+                                {member.name}
+                              </div>
+                              <div style={{ fontSize: "0.875rem", color: "#666", marginBottom: "4px" }}>
+                                {member.email}
+                              </div>
+                              <div style={{ fontSize: "0.875rem", color: "#666", marginBottom: "4px" }}>
+                                📱 {member.phone || "No phone"}
+                              </div>
+                              <div style={{ fontSize: "0.8125rem", color: "#856404", marginTop: "8px" }}>
+                                📅 Subscription: {member.subscriptionType || 'Monthly'}
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+                              <button
+                                className="primary-btn"
+                                onClick={() => handleApproveMember(member.id)}
+                                style={{
+                                  padding: "10px 20px",
+                                  borderRadius: "8px",
+                                  fontWeight: "600",
+                                  fontSize: "0.875rem"
+                                }}
+                              >
+                                ✓ Approve
+                              </button>
+                              <button
+                                className="ghost-btn"
+                                onClick={() => handleViewMemberDetail(member)}
+                                style={{
+                                  padding: "10px 20px",
+                                  borderRadius: "8px",
+                                  fontWeight: "600",
+                                  fontSize: "0.875rem"
+                                }}
+                              >
+                                View Details
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="card">
                   <div className="table-wrapper">
                     <Table
@@ -1637,7 +1868,16 @@ Subscription Manager HK`;
                         Balance: member.balance,
                         Actions: {
                           render: () => (
-                            <div style={{ display: "flex", gap: "8px" }}>
+                            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                              {member.status === 'Pending' && (
+                                <button
+                                  className="primary-btn"
+                                  style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                                  onClick={() => handleApproveMember(member.id)}
+                                >
+                                  ✓ Approve
+                                </button>
+                              )}
                               <button
                                 className="ghost-btn"
                                 style={{ padding: "6px 12px", fontSize: "0.85rem" }}
@@ -3703,6 +3943,368 @@ Subscription Manager HK`;
               </article>
             )}
 
+            {/* PAYMENT APPROVALS */}
+            {activeSection === "payment-approvals" && (
+              <article className="screen-card" id="payment-approvals">
+                <header className="screen-card__header">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
+                    <div>
+                      <h3>Payment Approvals</h3>
+                      <p>Review and approve member payment submissions.</p>
+                    </div>
+                    <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                      <select
+                        value={paymentStatusFilter}
+                        onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                        style={{
+                          padding: "10px 16px",
+                          borderRadius: "8px",
+                          border: "1px solid #e0e0e0",
+                          fontSize: "0.875rem",
+                          background: "#fff",
+                          cursor: "pointer"
+                        }}
+                      >
+                        <option value="All">All Payments</option>
+                        <option value="Pending">Pending Approval</option>
+                        <option value="Completed">Approved</option>
+                        <option value="Rejected">Rejected</option>
+                      </select>
+                      <div style={{
+                        padding: "10px 16px",
+                        background: "#fff3cd",
+                        borderRadius: "8px",
+                        fontSize: "0.875rem",
+                        fontWeight: "600",
+                        color: "#856404",
+                        border: "1px solid #ffc107"
+                      }}>
+                        ⏳ Pending: {(payments || []).filter(p => p.status === 'Pending').length}
+                      </div>
+                    </div>
+                  </div>
+                </header>
+
+                <div className="card">
+                  <div className="table-wrapper">
+                    <Table
+                      columns={[
+                        "Date",
+                        "Member",
+                        "Invoice ID",
+                        "Amount",
+                        "Method",
+                        "Screenshot",
+                        "Status",
+                        "Actions",
+                      ]}
+                      rows={(payments || [])
+                        .filter(payment => {
+                          if (paymentStatusFilter === "All") return true;
+                          return payment.status === paymentStatusFilter;
+                        })
+                        .sort((a, b) => {
+                          // Sort by date, pending first
+                          if (a.status === 'Pending' && b.status !== 'Pending') return -1;
+                          if (a.status !== 'Pending' && b.status === 'Pending') return 1;
+                          const dateA = a.createdAt ? new Date(a.createdAt) : new Date(a.date || 0);
+                          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.date || 0);
+                          return dateB - dateA;
+                        })
+                        .map((payment) => {
+                          const paymentId = payment._id || payment.id;
+                          const paymentIdString = paymentId?.toString ? paymentId.toString() : paymentId;
+                          
+                          return {
+                            Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            }) : "N/A"),
+                            Member: payment.member || "Unknown",
+                            "Invoice ID": payment.invoiceId || "N/A",
+                            Amount: payment.amount || "$0",
+                            Method: payment.method || "Screenshot",
+                            Screenshot: {
+                              render: () => payment.screenshot ? (
+                                <a 
+                                  href={payment.screenshot} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  style={{ color: "#000", textDecoration: "underline", fontWeight: "500" }}
+                                >
+                                  📷 View
+                                </a>
+                              ) : "N/A"
+                            },
+                            Status: {
+                              render: () => (
+                                <span className={statusClass[payment.status] || "badge badge-unpaid"}>
+                                  {payment.status}
+                                </span>
+                              )
+                            },
+                            Actions: {
+                              render: () => (
+                                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                  {payment.status === "Pending" && (
+                                    <>
+                                      <button
+                                        className="primary-btn"
+                                        style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                                        onClick={() => {
+                                          if (paymentIdString) handleApprovePayment(paymentIdString);
+                                        }}
+                                      >
+                                        ✓ Approve
+                                      </button>
+                                      <button
+                                        className="ghost-btn"
+                                        style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
+                                        onClick={() => {
+                                          if (paymentIdString) handleRejectPayment(paymentIdString);
+                                        }}
+                                      >
+                                        ✗ Reject
+                                      </button>
+                                    </>
+                                  )}
+                                  {payment.status === "Rejected" && payment.rejectionReason && (
+                                    <span style={{ fontSize: "0.75rem", color: "#666", fontStyle: "italic" }}>
+                                      Reason: {payment.rejectionReason}
+                                    </span>
+                                  )}
+                                  {payment.status === "Completed" && (
+                                    <span style={{ fontSize: "0.75rem", color: "#4caf50" }}>
+                                      ✓ Approved by {payment.approvedBy || "Admin"}
+                                    </span>
+                                  )}
+                                </div>
+                              )
+                            },
+                          };
+                        })}
+                    />
+                  </div>
+                </div>
+              </article>
+            )}
+
+            {/* DONATIONS */}
+            {activeSection === "donations" && (
+              <article className="screen-card" id="donations" style={{ minHeight: "400px" }}>
+                <header className="screen-card__header">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
+                    <div>
+                      <h3>Donations</h3>
+                      <p>Manage donation records from members and non-members.</p>
+                    </div>
+                    <button
+                      className="primary-btn"
+                      onClick={() => setShowDonationForm(true)}
+                    >
+                      + Add Donation
+                    </button>
+                  </div>
+                </header>
+
+                {/* Add Donation Form */}
+                {showDonationForm && (
+                  <div className="card" style={{ marginBottom: "24px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                      <h4>Add Donation</h4>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => {
+                          setShowDonationForm(false);
+                          setDonationForm({
+                            donorName: "",
+                            isMember: false,
+                            memberId: "",
+                            amount: "",
+                            notes: "",
+                          });
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        try {
+                          if (!donationForm.donorName || !donationForm.amount) {
+                            showToast("Please fill all required fields", "error");
+                            return;
+                          }
+                          await addDonation(donationForm);
+                          showToast("Donation added successfully!");
+                          setShowDonationForm(false);
+                          setDonationForm({
+                            donorName: "",
+                            isMember: false,
+                            memberId: "",
+                            amount: "",
+                            notes: "",
+                          });
+                          await fetchDonations();
+                        } catch (error) {
+                          showToast(error.message || "Failed to add donation", "error");
+                        }
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
+                        <label>
+                          Donor Name *
+                          <input
+                            type="text"
+                            value={donationForm.donorName}
+                            onChange={(e) => setDonationForm({ ...donationForm, donorName: e.target.value })}
+                            required
+                            placeholder="Enter donor name"
+                          />
+                        </label>
+                        <label>
+                          Amount *
+                          <input
+                            type="text"
+                            value={donationForm.amount}
+                            onChange={(e) => setDonationForm({ ...donationForm, amount: e.target.value })}
+                            placeholder="$100"
+                            required
+                          />
+                        </label>
+                      </div>
+                      <div style={{ marginBottom: "16px" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={donationForm.isMember}
+                            onChange={(e) => setDonationForm({ ...donationForm, isMember: e.target.checked, memberId: "" })}
+                          />
+                          Is this donor a member?
+                        </label>
+                      </div>
+                      {donationForm.isMember && (
+                        <div style={{ marginBottom: "16px" }}>
+                          <label>
+                            Select Member
+                            <select
+                              value={donationForm.memberId}
+                              onChange={(e) => setDonationForm({ ...donationForm, memberId: e.target.value })}
+                            >
+                              <option value="">Select a member</option>
+                              {members.map((member) => (
+                                <option key={member.id} value={member.id}>
+                                  {member.name} ({member.id})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      )}
+                      <label>
+                        Notes (Optional)
+                        <textarea
+                          value={donationForm.notes}
+                          onChange={(e) => setDonationForm({ ...donationForm, notes: e.target.value })}
+                          rows={3}
+                          placeholder="Additional notes about this donation..."
+                        />
+                      </label>
+                      <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
+                        <button type="submit" className="primary-btn">
+                          Save Donation
+                        </button>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => {
+                            setShowDonationForm(false);
+                            setDonationForm({
+                              donorName: "",
+                              isMember: false,
+                              memberId: "",
+                              amount: "",
+                              notes: "",
+                            });
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* Donations Table */}
+                <div className="card">
+                  {!donations || (Array.isArray(donations) && donations.length === 0) ? (
+                    <div style={{ 
+                      textAlign: "center", 
+                      padding: "60px 20px",
+                      color: "#666"
+                    }}>
+                      <div style={{ fontSize: "48px", marginBottom: "16px" }}>💝</div>
+                      <p style={{ margin: 0, fontSize: "1.125rem", fontWeight: "500" }}>No donations yet</p>
+                      <p style={{ margin: "8px 0 0 0", fontSize: "0.9375rem", color: "#999" }}>
+                        Click "Add Donation" to record your first donation
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="table-wrapper">
+                      <Table
+                        columns={["Date", "Donor Name", "Type", "Amount", "Notes", "Actions"]}
+                        rows={(Array.isArray(donations) ? donations : []).map((donation) => {
+                          if (!donation) return null;
+                          const donationDate = donation.date || 
+                            (donation.createdAt ? new Date(donation.createdAt).toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            }) : "N/A");
+                          
+                          return {
+                            Date: donationDate,
+                            "Donor Name": donation.donorName || "Unknown",
+                            Type: donation.isMember ? (
+                              <span className="badge badge-active">Member</span>
+                            ) : (
+                              <span className="badge badge-inactive">Non-Member</span>
+                            ),
+                            Amount: donation.amount || "$0",
+                            Notes: donation.notes || "-",
+                            Actions: {
+                              render: () => (
+                                <button
+                                  className="ghost-btn"
+                                  style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
+                                  onClick={async () => {
+                                    if (window.confirm("Are you sure you want to delete this donation?")) {
+                                      try {
+                                        const donationId = donation._id || donation.id;
+                                        await deleteDonation(donationId);
+                                        showToast("Donation deleted successfully!");
+                                        await fetchDonations();
+                                      } catch (error) {
+                                        showToast(error.message || "Failed to delete donation", "error");
+                                      }
+                                    }
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              )
+                            },
+                          };
+                        }).filter(row => row !== null)}
+                      />
+                    </div>
+                  )}
+                </div>
+              </article>
+            )}
+
             {/* REPORTS */}
             {activeSection === "reports" && (
               <article className="screen-card" id="reports">
@@ -3761,6 +4363,30 @@ Subscription Manager HK`;
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  {/* Filters */}
+                  <div style={{ display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap", alignItems: "center" }}>
+                    <select
+                      value={reportFilter}
+                      onChange={(e) => setReportFilter(e.target.value)}
+                      style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #e0e0e0", fontSize: "0.875rem", background: "#fff", cursor: "pointer" }}
+                    >
+                      <option value="all">All (Payments + Donations)</option>
+                      <option value="payments">Payments Only</option>
+                      <option value="donations">Donations Only</option>
+                    </select>
+                    {reportFilter === "donations" && (
+                      <select
+                        value={donorTypeFilter}
+                        onChange={(e) => setDonorTypeFilter(e.target.value)}
+                        style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #e0e0e0", fontSize: "0.875rem", background: "#fff", cursor: "pointer" }}
+                      >
+                        <option value="all">All Donors</option>
+                        <option value="member">Members Only</option>
+                        <option value="non-member">Non-Members Only</option>
+                      </select>
+                    )}
                   </div>
 
                   <div className="kpi-grid" style={{ marginTop: "20px" }}>
@@ -3828,6 +4454,75 @@ Subscription Manager HK`;
                           </li>
                         ))}
                       </ul>
+                    </div>
+                  </div>
+
+                  {/* Transactions Table */}
+                  <div style={{ marginTop: "24px" }}>
+                    <h4 style={{ marginBottom: "16px" }}>Transactions</h4>
+                    <div className="card">
+                      <div className="table-wrapper">
+                        <Table
+                          columns={["Date", "Type", "Source", "Amount", "Details"]}
+                          rows={(() => {
+                            // Combine payments and donations
+                            const allTransactions = [
+                              ...(reportStats.paymentsInRange || []).map(p => ({
+                                ...p,
+                                type: 'Payment',
+                                source: p.member || 'Unknown',
+                                amount: p.amount,
+                                details: `${p.method || 'N/A'} - ${p.period || 'N/A'}`,
+                                date: p.date || (p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric'
+                                }) : "N/A"),
+                                createdAt: p.createdAt || new Date(p.date || 0),
+                              })),
+                              ...(reportStats.donationsInRange || []).map(d => ({
+                                ...d,
+                                type: 'Donation',
+                                source: d.donorName,
+                                amount: d.amount,
+                                details: d.isMember ? 'Member Donation' : 'Non-Member Donation',
+                                date: d.date || (d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric'
+                                }) : "N/A"),
+                                createdAt: d.createdAt || new Date(d.date || 0),
+                                isMember: d.isMember,
+                              }))
+                            ].sort((a, b) => {
+                              const dateA = a.createdAt ? new Date(a.createdAt) : new Date(a.date || 0);
+                              const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.date || 0);
+                              return dateB - dateA;
+                            });
+
+                            // Apply filters
+                            return allTransactions.filter(t => {
+                              if (reportFilter === "payments" && t.type !== "Payment") return false;
+                              if (reportFilter === "donations" && t.type !== "Donation") return false;
+                              if (t.type === "Donation") {
+                                if (donorTypeFilter === "member" && !t.isMember) return false;
+                                if (donorTypeFilter === "non-member" && t.isMember) return false;
+                              }
+                              return true;
+                            });
+                          })().map((transaction) => ({
+                            Date: transaction.date,
+                            Type: transaction.type === "Payment" ? (
+                              <span className="badge badge-paid">Payment</span>
+                            ) : (
+                              <span className="badge badge-active">Donation</span>
+                            ),
+                            Source: transaction.source,
+                            Amount: transaction.amount,
+                            Details: transaction.details,
+                          }))}
+                        />
+                      </div>
                     </div>
                   </div>
 

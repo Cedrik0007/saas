@@ -11,10 +11,13 @@ export function MemberPage() {
     members,  // Get members from MongoDB
     admins,  // Get admins for payment selection
     invoices,
+    payments,
     paymentHistory,
     addPayment,
     updateInvoice,
     updateMember,
+    fetchInvoices,
+    fetchPayments,
   } = useApp();
 
   const sections = [
@@ -76,6 +79,14 @@ export function MemberPage() {
     }
   }, [currentMember, members]);
 
+  // Refresh invoices and payments when viewing invoices section to ensure status is up to date
+  useEffect(() => {
+    if (activeSection === "invoices" || activeSection === "history") {
+      fetchInvoices();
+      fetchPayments();
+    }
+  }, [activeSection, fetchInvoices, fetchPayments]);
+
   const navigate = useNavigate();
 
   const handleNavClick = (id) => {
@@ -92,13 +103,42 @@ export function MemberPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // Get effective invoice status based on payment status
+  const getEffectiveInvoiceStatus = (invoice) => {
+    // Check if there's a payment for this invoice
+    const relatedPayment = (payments || paymentHistory || []).find(
+      (p) => p.invoiceId === invoice.id
+    );
+
+    if (relatedPayment) {
+      // If payment is pending, invoice should show "Pending Verification"
+      if (relatedPayment.status === "Pending") {
+        return "Pending Verification";
+      }
+      // If payment is completed (approved), invoice should show "Paid"
+      if (relatedPayment.status === "Completed") {
+        return "Paid";
+      }
+      // If payment is rejected, invoice should show "Unpaid"
+      if (relatedPayment.status === "Rejected") {
+        return "Unpaid";
+      }
+    }
+
+    // If no payment or payment status doesn't match, return invoice's current status
+    return invoice.status;
+  };
+
   // Get unpaid invoices for current member only
   const getUnpaidInvoices = () => {
     if (!currentMember) return [];
-    return invoices.filter((inv) => 
-      (inv.status === "Unpaid" || inv.status === "Overdue") &&
-      (inv.memberId === currentMember.id || inv.memberEmail === currentMember.email || inv.memberName === currentMember.name)
-    );
+    return invoices.filter((inv) => {
+      const effectiveStatus = getEffectiveInvoiceStatus(inv);
+      return (
+        (effectiveStatus === "Unpaid" || effectiveStatus === "Overdue") &&
+        (inv.memberId === currentMember.id || inv.memberEmail === currentMember.email || inv.memberName === currentMember.name)
+      );
+    });
   };
 
   // Get upcoming payments
@@ -187,25 +227,25 @@ export function MemberPage() {
       for (const invoiceId of selectedInvoices) {
         const invoice = invoices.find((inv) => inv.id === invoiceId);
         if (invoice) {
-          // Update invoice status to Paid with screenshot
+          // Update invoice status to Pending Verification (NOT Paid)
           await updateInvoice(invoiceId, {
-            status: "Paid",
+            status: "Pending Verification",
             method: "Screenshot",
-            reference: `SCREENSHOT_${Date.now()}`,
+            reference: `PENDING_${Date.now()}`,
             screenshot: screenshotUrl,
           });
 
-          // Add payment record
+          // Add payment record with Pending status
           await addPayment({
             invoiceId: invoiceId,
             amount: invoice.amount,
             method: "Screenshot",
-            reference: `SCREENSHOT_${Date.now()}`,
+            reference: `PENDING_${Date.now()}`,
             member: currentMember?.name || "Member",
             memberId: currentMember?.id,
             memberEmail: currentMember?.email,
             period: invoice.period,
-            status: "Paid",
+            status: "Pending",
             screenshot: screenshotUrl,
           });
         }
@@ -215,7 +255,7 @@ export function MemberPage() {
       setPaymentProof(null);
       setSelectedInvoices([]);
       setShowPaymentSuccess(true);
-      showToast(`Payment submitted successfully! ${selectedInvoices.length} invoice(s) marked as paid.`);
+      showToast(`Payment proof submitted successfully! ${selectedInvoices.length} invoice(s) pending admin approval.`);
     } catch (error) {
       console.error("Error submitting payment:", error);
       // Show the actual error message
@@ -371,14 +411,15 @@ export function MemberPage() {
     const currentYear = new Date().getFullYear();
     
     // Calculate paid this year from payment history (more accurate)
+    // Include both "Paid" and "Completed" statuses (Completed = approved by admin)
     const memberPayments = currentMember 
       ? paymentHistory.filter((item) => 
           (item.memberId === currentMember.id || 
            item.memberEmail === currentMember.email || 
            item.member === currentMember.name) &&
-          item.status === "Paid"
+          (item.status === "Paid" || item.status === "Completed")
         )
-      : paymentHistory.filter(item => item.status === "Paid");
+      : paymentHistory.filter(item => item.status === "Paid" || item.status === "Completed");
     
     // Filter payments from current year
     const paymentsThisYear = memberPayments.filter((payment) => {
@@ -844,11 +885,11 @@ export function MemberPage() {
                                   }}>
                                     {invoice.amount}
                                   </span>
-                                  <span className={statusClass[invoice.status]} style={{ 
+                                  <span className={statusClass[getEffectiveInvoiceStatus(invoice)]} style={{ 
                                     fontSize: "0.75rem",
                                     padding: "4px 8px"
                                   }}>
-                                    {invoice.status}
+                                    {getEffectiveInvoiceStatus(invoice)}
                                   </span>
                                 </div>
                               </label>
@@ -1024,40 +1065,43 @@ export function MemberPage() {
                       inv.memberId === currentMember.id || 
                       inv.memberEmail === currentMember.email || 
                       inv.memberName === currentMember.name
-                    ) : invoices).map((invoice) => ({
-                      "Invoice No": invoice.id,
-                      Period: invoice.period,
-                      Amount: invoice.amount,
-                      Status: {
-                        render: () => (
-                          <span className={statusClass[invoice.status]}>{invoice.status}</span>
-                        ),
-                      },
-                      "Due Date": invoice.due,
-                      Action: {
-                        render: () =>
-                          invoice.status === "Paid" || invoice.status === "Pending Verification" ? (
-                            <button 
-                              className="ghost-btn" 
-                              style={{ padding: "6px 12px" }}
-                              onClick={() => setViewingInvoice(invoice)}
-                            >
-                              View
-                            </button>
-                          ) : (
-                            <button
-                              className="primary-btn"
-                              style={{ padding: "6px 12px" }}
-                              onClick={() => {
-                                setSelectedInvoices([invoice.id]);
-                                handleNavClick("pay");
-                              }}
-                            >
-                              Pay Now
-                            </button>
+                    ) : invoices).map((invoice) => {
+                      const effectiveStatus = getEffectiveInvoiceStatus(invoice);
+                      return {
+                        "Invoice No": invoice.id,
+                        Period: invoice.period,
+                        Amount: invoice.amount,
+                        Status: {
+                          render: () => (
+                            <span className={statusClass[effectiveStatus]}>{effectiveStatus}</span>
                           ),
-                      },
-                    }))}
+                        },
+                        "Due Date": invoice.due,
+                        Action: {
+                          render: () =>
+                            effectiveStatus === "Paid" || effectiveStatus === "Pending Verification" ? (
+                              <button 
+                                className="ghost-btn" 
+                                style={{ padding: "6px 12px" }}
+                                onClick={() => setViewingInvoice(invoice)}
+                              >
+                                View
+                              </button>
+                            ) : (
+                              <button
+                                className="primary-btn"
+                                style={{ padding: "6px 12px" }}
+                                onClick={() => {
+                                  setSelectedInvoices([invoice.id]);
+                                  handleNavClick("pay");
+                                }}
+                              >
+                                Pay Now
+                              </button>
+                            ),
+                        },
+                      };
+                    })}
                   />
                 </div>
               </article>
@@ -1146,11 +1190,31 @@ export function MemberPage() {
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
                         <span style={{ color: "#666", fontSize: "0.875rem" }}>Status:</span>
-                        <span className={statusClass[viewingInvoice.status]}>{viewingInvoice.status}</span>
+                        <span className={statusClass[getEffectiveInvoiceStatus(viewingInvoice)]}>{getEffectiveInvoiceStatus(viewingInvoice)}</span>
                       </div>
                     </div>
 
-                    {viewingInvoice.status === "Paid" && (
+                    {getEffectiveInvoiceStatus(viewingInvoice) === "Pending Verification" && (
+                      <div style={{ padding: "16px", background: "#fff3cd", borderRadius: "8px", border: "1px solid #ffc107", marginBottom: "16px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                          <span style={{ fontSize: "1.25rem" }}>⏳</span>
+                          <h4 style={{ margin: 0, fontSize: "1rem", fontWeight: "600", color: "#856404" }}>Payment Pending Approval</h4>
+                        </div>
+                        <p style={{ margin: 0, fontSize: "0.875rem", color: "#856404" }}>
+                          Your payment has been submitted and is awaiting admin approval. You will be notified once it's reviewed.
+                        </p>
+                        {viewingInvoice.method && (
+                          <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid #ffc107" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ color: "#856404", fontSize: "0.875rem" }}>Payment Method:</span>
+                              <strong style={{ color: "#856404" }}>{viewingInvoice.method}</strong>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {getEffectiveInvoiceStatus(viewingInvoice) === "Paid" && (
                       <div style={{ padding: "16px", background: "#f0f8ff", borderRadius: "8px", border: "1px solid #1677FF" }}>
                         <h4 style={{ margin: "0 0 12px 0", fontSize: "1rem", fontWeight: "600" }}>Payment Information</h4>
                         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -1323,8 +1387,8 @@ export function MemberPage() {
                                   {item.amount || "$0"}
                                 </div>
                               </div>
-                              <span className="badge badge-paid" style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
-                                Paid
+                              <span className={statusClass[item.status] || "badge badge-unpaid"} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
+                                {item.status || "Pending"}
                               </span>
                             </div>
                             
@@ -1358,6 +1422,34 @@ export function MemberPage() {
                                 </div>
                               )}
                             </div>
+                            
+                            {item.status === "Pending" && (
+                              <div style={{ 
+                                marginTop: "12px", 
+                                padding: "12px", 
+                                background: "#fff3cd", 
+                                borderRadius: "8px",
+                                border: "1px solid #ffc107",
+                                fontSize: "0.875rem",
+                                color: "#856404"
+                              }}>
+                                ⏳ Your payment is pending admin approval. You will be notified once it's reviewed.
+                              </div>
+                            )}
+                            
+                            {item.status === "Rejected" && item.rejectionReason && (
+                              <div style={{ 
+                                marginTop: "12px", 
+                                padding: "12px", 
+                                background: "#f8d7da", 
+                                borderRadius: "8px",
+                                border: "1px solid #f5c6cb",
+                                fontSize: "0.875rem",
+                                color: "#721c24"
+                              }}>
+                                ❌ Payment rejected: {item.rejectionReason}
+                              </div>
+                            )}
                             
                             {item.screenshot && (
                               <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #f0f0f0" }}>
