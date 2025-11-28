@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
@@ -85,7 +85,8 @@ export function MemberPage() {
       fetchInvoices();
       fetchPayments();
     }
-  }, [activeSection, fetchInvoices, fetchPayments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection]); // Only depend on activeSection to prevent unnecessary re-fetches
 
   const navigate = useNavigate();
 
@@ -329,27 +330,27 @@ export function MemberPage() {
       for (const invoiceId of selectedInvoices) {
         const invoice = invoices.find((inv) => inv.id === invoiceId);
         if (invoice) {
-          // Update invoice status to Paid with admin info and optional screenshot
+          // Update invoice status to Pending Verification (requires admin approval)
           await updateInvoice(invoiceId, {
-            status: "Paid",
+            status: "Pending Verification",
             method: "Cash to Admin",
-            reference: `CASH_${Date.now()}`,
+            reference: `CASH_PENDING_${Date.now()}`,
             paidToAdmin: admin.id,
             paidToAdminName: admin.name,
             screenshot: screenshotUrl,
           });
 
-          // Add payment record
+          // Add payment record with Pending status (requires admin approval)
           await addPayment({
             invoiceId: invoiceId,
             amount: invoice.amount,
             method: "Cash to Admin",
-            reference: `CASH_${Date.now()}`,
+            reference: `CASH_PENDING_${Date.now()}`,
             member: currentMember?.name || "Member",
             memberId: currentMember?.id,
             memberEmail: currentMember?.email,
             period: invoice.period,
-            status: "Paid",
+            status: "Pending",
             paidToAdmin: admin.id,
             paidToAdminName: admin.name,
             screenshot: screenshotUrl,
@@ -362,7 +363,7 @@ export function MemberPage() {
       setSelectedAdminId("");
       setPaymentProof(null);
       setShowPaymentSuccess(true);
-      showToast(`Payment submitted successfully! ${selectedInvoices.length} invoice(s) marked as paid.`);
+      showToast(`Payment submitted successfully! ${selectedInvoices.length} invoice(s) pending admin approval.`);
     } catch (error) {
       console.error("Error submitting payment:", error);
       // Show the actual error message
@@ -668,7 +669,14 @@ export function MemberPage() {
                             <div className="activity-details">
                               <strong>Payment Made</strong>
                               <span>
-                                {item.date} • {item.amount} via {item.method}
+                                {item.date} • {item.amount} via {(() => {
+                                  // Show "Cash" for cash payments, "Online Payment" for online payments
+                                  if (item.paidToAdmin || item.paidToAdminName || item.method === "Cash to Admin") {
+                                    return "Cash";
+                                  }
+                                  const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
+                                  return onlineMethods.includes(item.method) ? "Online Payment" : (item.method || "N/A");
+                                })()}
                                 {item.paidToAdminName && ` • Paid to ${item.paidToAdminName}`}
                                 {item.reference && ` • Ref: ${item.reference}`}
                               </span>
@@ -988,7 +996,7 @@ export function MemberPage() {
                         {selectedPaymentMethod === "Cash Payment" && (
                           <form className="method-panel" onSubmit={handleAdminPayment}>
                             <p style={{ marginBottom: "16px", color: "#666" }}>
-                              Select the admin you paid to. You can optionally upload a payment screenshot as proof. All selected invoices will be marked as paid.
+                              Select the admin you paid to. You can optionally upload a payment screenshot as proof. All selected invoices will be pending admin approval.
                             </p>
 
                             <label>
@@ -1059,50 +1067,73 @@ export function MemberPage() {
                   <p>View all your invoices and payment status.</p>
                 </header>
                 <div className="card">
-                  <Table
-                    columns={["Invoice No", "Period", "Amount", "Status", "Due Date", "Action"]}
-                    rows={(currentMember ? invoices.filter((inv) => 
-                      inv.memberId === currentMember.id || 
-                      inv.memberEmail === currentMember.email || 
-                      inv.memberName === currentMember.name
-                    ) : invoices).map((invoice) => {
-                      const effectiveStatus = getEffectiveInvoiceStatus(invoice);
-                      return {
-                        "Invoice No": invoice.id,
-                        Period: invoice.period,
-                        Amount: invoice.amount,
-                        Status: {
-                          render: () => (
-                            <span className={statusClass[effectiveStatus]}>{effectiveStatus}</span>
-                          ),
-                        },
-                        "Due Date": invoice.due,
-                        Action: {
-                          render: () =>
-                            effectiveStatus === "Paid" || effectiveStatus === "Pending Verification" ? (
-                              <button 
-                                className="ghost-btn" 
-                                style={{ padding: "6px 12px" }}
-                                onClick={() => setViewingInvoice(invoice)}
-                              >
-                                View
-                              </button>
-                            ) : (
-                              <button
-                                className="primary-btn"
-                                style={{ padding: "6px 12px" }}
-                                onClick={() => {
-                                  setSelectedInvoices([invoice.id]);
-                                  handleNavClick("pay");
-                                }}
-                              >
-                                Pay Now
-                              </button>
-                            ),
-                        },
-                      };
-                    })}
-                  />
+                  {(() => {
+                    if (!invoices || !Array.isArray(invoices)) {
+                      return <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>Loading invoices...</div>;
+                    }
+                    
+                    const memberInvoices = currentMember 
+                      ? invoices.filter((inv) => 
+                          inv && (
+                            inv.memberId === currentMember.id || 
+                            inv.memberEmail === currentMember.email || 
+                            inv.memberName === currentMember.name
+                          )
+                        )
+                      : invoices;
+                    
+                    if (memberInvoices.length === 0) {
+                      return (
+                        <div style={{ padding: "40px", textAlign: "center", color: "#666" }}>
+                          <p>No invoices found.</p>
+                        </div>
+                      );
+                    }
+                    
+                    return (
+                      <Table
+                        columns={["Invoice No", "Period", "Amount", "Status", "Due Date", "Action"]}
+                        rows={memberInvoices.map((invoice) => {
+                          if (!invoice) return null;
+                          const effectiveStatus = getEffectiveInvoiceStatus(invoice);
+                          return {
+                            "Invoice No": invoice.id || "N/A",
+                            Period: invoice.period || "N/A",
+                            Amount: invoice.amount || "$0",
+                            Status: {
+                              render: () => (
+                                <span className={statusClass[effectiveStatus] || "badge badge-unpaid"}>{effectiveStatus}</span>
+                              ),
+                            },
+                            "Due Date": invoice.due || "N/A",
+                            Action: {
+                              render: () =>
+                                effectiveStatus === "Paid" || effectiveStatus === "Pending Verification" ? (
+                                  <button 
+                                    className="ghost-btn" 
+                                    style={{ padding: "6px 12px" }}
+                                    onClick={() => setViewingInvoice(invoice)}
+                                  >
+                                    View
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="primary-btn"
+                                    style={{ padding: "6px 12px" }}
+                                    onClick={() => {
+                                      setSelectedInvoices([invoice.id]);
+                                      handleNavClick("pay");
+                                    }}
+                                  >
+                                    Pay Now
+                                  </button>
+                                ),
+                            },
+                          };
+                        }).filter(row => row !== null)}
+                      />
+                    );
+                  })()}
                 </div>
               </article>
             )}
@@ -1220,7 +1251,14 @@ export function MemberPage() {
                         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                           <div style={{ display: "flex", justifyContent: "space-between" }}>
                             <span style={{ color: "#666", fontSize: "0.875rem" }}>Payment Method:</span>
-                            <strong>{viewingInvoice.method || "N/A"}</strong>
+                            <strong>{(() => {
+                              // Show "Cash" for cash payments, "Online Payment" for online payments
+                              if (viewingInvoice.paidToAdmin || viewingInvoice.paidToAdminName || viewingInvoice.method === "Cash to Admin") {
+                                return "Cash";
+                              }
+                              const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
+                              return onlineMethods.includes(viewingInvoice.method) ? "Online Payment" : (viewingInvoice.method || "N/A");
+                            })()}</strong>
                           </div>
                           {viewingInvoice.reference && viewingInvoice.reference !== "-" && (
                             <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1401,7 +1439,14 @@ export function MemberPage() {
                             }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                 <span style={{ fontSize: "0.875rem", color: "#666" }}>Method:</span>
-                                <strong style={{ fontSize: "0.875rem" }}>{item.method || "N/A"}</strong>
+                                <strong style={{ fontSize: "0.875rem" }}>{(() => {
+                                  // Show "Cash" for cash payments, "Online Payment" for online payments
+                                  if (item.paidToAdmin || item.paidToAdminName || item.method === "Cash to Admin") {
+                                    return "Cash";
+                                  }
+                                  const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
+                                  return onlineMethods.includes(item.method) ? "Online Payment" : (item.method || "N/A");
+                                })()}</strong>
                               </div>
                               {item.reference && item.reference !== "-" && (
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1777,77 +1822,117 @@ export function MemberPage() {
                       flexDirection: "column",
                       gap: "16px"
                     }}>
-                      <label style={{
+                      <div style={{
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
                         padding: "16px",
                         border: "1px solid #e0e0e0",
                         borderRadius: "8px",
-                        cursor: "pointer",
                         transition: "all 0.2s",
-                        background: profileForm.emailReminders ? "#f8f8f8" : "#fff"
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.borderColor = "#ccc"}
-                      onMouseLeave={(e) => e.currentTarget.style.borderColor = "#e0e0e0"}
-                      >
+                        background: "#f8f8f8",
+                        opacity: "0.8"
+                      }}>
                         <div>
-                          <div style={{ fontWeight: "500", marginBottom: "4px" }}>
+                          <div style={{ fontWeight: "500", marginBottom: "4px", display: "flex", alignItems: "center", gap: "8px" }}>
                             Email Reminders
+                            <span style={{ 
+                              fontSize: "0.75rem", 
+                              color: "#666", 
+                              fontWeight: "normal",
+                              fontStyle: "italic"
+                            }}>
+                              (Required)
+                            </span>
                           </div>
                           <div style={{ fontSize: "0.875rem", color: "#666" }}>
                             Receive payment reminders and updates via email
                           </div>
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={profileForm.emailReminders}
-                          onChange={(e) =>
-                            setProfileForm({ ...profileForm, emailReminders: e.target.checked })
-                          }
+                        <div
                           style={{
-                            width: "20px",
-                            height: "20px",
-                            cursor: "pointer"
+                            position: "relative",
+                            width: "50px",
+                            height: "28px",
+                            borderRadius: "14px",
+                            backgroundColor: "#000",
+                            cursor: "not-allowed",
+                            transition: "background-color 0.3s ease",
+                            flexShrink: 0,
+                            opacity: "1"
                           }}
-                        />
-                      </label>
+                        >
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: "2px",
+                              left: "24px",
+                              width: "24px",
+                              height: "24px",
+                              borderRadius: "50%",
+                              backgroundColor: "#fff",
+                              transition: "left 0.3s ease",
+                              boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+                            }}
+                          />
+                        </div>
+                      </div>
 
-                      <label style={{
+                      <div style={{
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
                         padding: "16px",
                         border: "1px solid #e0e0e0",
                         borderRadius: "8px",
-                        cursor: "pointer",
                         transition: "all 0.2s",
-                        background: profileForm.whatsappReminders ? "#f8f8f8" : "#fff"
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.borderColor = "#ccc"}
-                      onMouseLeave={(e) => e.currentTarget.style.borderColor = "#e0e0e0"}
-                      >
+                        background: "#f8f8f8",
+                        opacity: "0.8"
+                      }}>
                         <div>
-                          <div style={{ fontWeight: "500", marginBottom: "4px" }}>
+                          <div style={{ fontWeight: "500", marginBottom: "4px", display: "flex", alignItems: "center", gap: "8px" }}>
                             WhatsApp Reminders
+                            <span style={{ 
+                              fontSize: "0.75rem", 
+                              color: "#666", 
+                              fontWeight: "normal",
+                              fontStyle: "italic"
+                            }}>
+                              (Required)
+                            </span>
                           </div>
                           <div style={{ fontSize: "0.875rem", color: "#666" }}>
                             Receive payment reminders via WhatsApp
                           </div>
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={profileForm.whatsappReminders}
-                          onChange={(e) =>
-                            setProfileForm({ ...profileForm, whatsappReminders: e.target.checked })
-                          }
+                        <div
                           style={{
-                            width: "20px",
-                            height: "20px",
-                            cursor: "pointer"
+                            position: "relative",
+                            width: "50px",
+                            height: "28px",
+                            borderRadius: "14px",
+                            backgroundColor: "#000",
+                            cursor: "not-allowed",
+                            transition: "background-color 0.3s ease",
+                            flexShrink: 0,
+                            opacity: "1"
                           }}
-                        />
-                      </label>
+                        >
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: "2px",
+                              left: "24px",
+                              width: "24px",
+                              height: "24px",
+                              borderRadius: "50%",
+                              backgroundColor: "#fff",
+                              transition: "left 0.3s ease",
+                              boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+                            }}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
 

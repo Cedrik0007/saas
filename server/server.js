@@ -43,12 +43,16 @@ let invoiceCronJob = null;
 
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://0741sanjai_db_user:L11x9pdm3tHuOJE9@members.mmnf0pe.mongodb.net/subscriptionmanager";
 
-// Connection options for serverless environments (Vercel)
+// Optimized connection options for better performance
 const mongooseOptions = {
-  serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+  serverSelectionTimeoutMS: 10000, // Increased timeout for better reliability
   socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
-  connectTimeoutMS: 10000, // Connection timeout
-  maxPoolSize: 1, // Limit connection pool for serverless
+  connectTimeoutMS: 15000, // Increased connection timeout
+  maxPoolSize: 10, // Increased pool size for better concurrency
+  minPoolSize: 2, // Maintain minimum connections
+  maxIdleTimeMS: 30000, // Close idle connections after 30s
+  retryWrites: true, // Enable retry for write operations
+  retryReads: true, // Enable retry for read operations
 };
 
 // Disable mongoose buffering globally (do this before connect)
@@ -73,10 +77,24 @@ async function connectDB() {
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-      console.log("MongoDB connected");
+      console.log("✓ MongoDB connected successfully");
+      
+      // Set up connection event listeners for better monitoring
+      mongoose.connection.on('connected', () => {
+        console.log('✓ Mongoose connected to MongoDB');
+      });
+      
+      mongoose.connection.on('error', (err) => {
+        console.error('✗ Mongoose connection error:', err);
+      });
+      
+      mongoose.connection.on('disconnected', () => {
+        console.warn('⚠ Mongoose disconnected from MongoDB');
+      });
+      
       return mongoose;
     }).catch((err) => {
-      console.error("MongoDB connection error:", err);
+      console.error("✗ MongoDB connection error:", err);
       cached.promise = null;
       throw err;
     });
@@ -92,11 +110,34 @@ async function connectDB() {
   return cached.conn;
 }
 
-// Connect to MongoDB
-connectDB().catch((err) => console.log("MongoDB connection error:", err));
+// Connect to MongoDB on server start (pre-connect for faster responses)
+connectDB()
+  .then(() => {
+    console.log("✓ MongoDB pre-connected successfully");
+  })
+  .catch((err) => {
+    console.error("MongoDB pre-connection error:", err);
+    // Don't exit - allow lazy connection on first request
+  });
 
-// Helper function to ensure DB connection before operations
+// Optimized helper function to ensure DB connection before operations
 const ensureConnection = async () => {
+  // If already connected, return immediately
+  if (mongoose.connection.readyState === 1) {
+    return;
+  }
+  
+  // If connecting, wait for it
+  if (mongoose.connection.readyState === 2) {
+    await new Promise((resolve, reject) => {
+      mongoose.connection.once('connected', resolve);
+      mongoose.connection.once('error', reject);
+      setTimeout(() => reject(new Error('Connection timeout')), 10000);
+    });
+    return;
+  }
+  
+  // Otherwise, connect
   await connectDB();
   if (mongoose.connection.readyState !== 1) {
     throw new Error("Database not connected");
@@ -255,6 +296,137 @@ function initializeEmailTransporter() {
 
 // Initialize email transporter
 initializeEmailTransporter();
+
+// Function to send account approval email
+async function sendAccountApprovalEmail(member) {
+  if (!transporter) {
+    console.warn(`⚠️ Email not configured. Skipping approval email to ${member.email}`);
+    return false;
+  }
+
+  try {
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: member.email,
+      subject: "Account Approved - Subscription Manager HK",
+      html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+    Account Approved
+  </h2>
+  <p>Dear ${member.name},</p>
+  <p>Great news! Your account has been approved and is now active.</p>
+  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>Member ID:</strong> ${member.id}</p>
+    <p><strong>Email:</strong> ${member.email}</p>
+    <p><strong>Status:</strong> <span style="color: #4caf50; font-weight: bold;">Active</span></p>
+  </div>
+  <p>You can now access the member portal to view your invoices, make payments, and manage your account.</p>
+  <p style="text-align: center; margin: 30px 0;">
+    <a href="${process.env.MEMBER_PORTAL_URL || 'http://localhost:5173/member'}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+      Access Member Portal
+    </a>
+  </p>
+  <p>Welcome to Subscription Manager HK!</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+</div>`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✓ Account approval email sent to ${member.email}`);
+    return true;
+  } catch (error) {
+    console.error(`Error sending approval email to ${member.email}:`, error);
+    return false;
+  }
+}
+
+// Function to send payment approval email
+async function sendPaymentApprovalEmail(member, payment, invoice) {
+  if (!transporter) {
+    console.warn(`⚠️ Email not configured. Skipping payment approval email to ${member.email}`);
+    return false;
+  }
+
+  try {
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: member.email || member.memberEmail,
+      subject: "Payment Approved - Subscription Manager HK",
+      html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+    Payment Approved
+  </h2>
+  <p>Dear ${member.name || member.member || 'Member'},</p>
+  <p>Your payment has been approved and processed successfully.</p>
+  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>Invoice ID:</strong> ${invoice?.id || payment.invoiceId || 'N/A'}</p>
+    <p><strong>Period:</strong> ${invoice?.period || payment.period || 'N/A'}</p>
+    <p><strong>Amount:</strong> <span style="color: #4caf50; font-size: 18px; font-weight: bold;">${payment.amount || invoice?.amount || '$0'}</span></p>
+    <p><strong>Payment Method:</strong> ${payment.method || 'N/A'}</p>
+    <p><strong>Status:</strong> <span style="color: #4caf50; font-weight: bold;">Approved</span></p>
+  </div>
+  <p>Your invoice has been marked as paid. Thank you for your payment!</p>
+  <p style="text-align: center; margin: 30px 0;">
+    <a href="${process.env.MEMBER_PORTAL_URL || 'http://localhost:5173/member'}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+      View Invoice
+    </a>
+  </p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+</div>`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✓ Payment approval email sent to ${member.email || member.memberEmail}`);
+    return true;
+  } catch (error) {
+    console.error(`Error sending payment approval email:`, error);
+    return false;
+  }
+}
+
+// Function to send payment rejection email
+async function sendPaymentRejectionEmail(member, payment, invoice, reason) {
+  if (!transporter) {
+    console.warn(`⚠️ Email not configured. Skipping payment rejection email to ${member.email}`);
+    return false;
+  }
+
+  try {
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: member.email || member.memberEmail,
+      subject: "Payment Rejected - Subscription Manager HK",
+      html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+    Payment Rejected
+  </h2>
+  <p>Dear ${member.name || member.member || 'Member'},</p>
+  <p>Unfortunately, your payment submission could not be approved at this time.</p>
+  <div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #ffc107;">
+    <p><strong>Invoice ID:</strong> ${invoice?.id || payment.invoiceId || 'N/A'}</p>
+    <p><strong>Period:</strong> ${invoice?.period || payment.period || 'N/A'}</p>
+    <p><strong>Amount:</strong> ${payment.amount || invoice?.amount || '$0'}</p>
+    <p><strong>Payment Method:</strong> ${payment.method || 'N/A'}</p>
+    ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ''}
+  </div>
+  <p>Please review your payment details and resubmit if necessary. If you have any questions, please contact our support team.</p>
+  <p style="text-align: center; margin: 30px 0;">
+    <a href="${process.env.MEMBER_PORTAL_URL || 'http://localhost:5173/member'}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+      Resubmit Payment
+    </a>
+  </p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+</div>`,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✓ Payment rejection email sent to ${member.email || member.memberEmail}`);
+    return true;
+  } catch (error) {
+    console.error(`Error sending payment rejection email:`, error);
+    return false;
+  }
+}
 
 // Function to send reminder email
 async function sendReminderEmail(member, unpaidInvoices, totalDue) {
@@ -633,7 +805,20 @@ async function generateSubscriptionInvoices() {
         }).sort({ createdAt: -1 });
         
         if (!lastPayment) {
-          // No payment found, check if they have any invoice
+          // No payment found, check if they have any unpaid invoice first
+          const unpaidInvoice = await InvoiceModel.findOne({ 
+            memberId: member.id,
+            status: { $in: ["Unpaid", "Pending Verification", "Overdue"] }
+          }).sort({ createdAt: -1 });
+          
+          if (unpaidInvoice) {
+            // Has unpaid invoice - don't create another one
+            console.log(`⏭️ Skipping ${member.name} - already has unpaid invoice (${unpaidInvoice.id})`);
+            invoicesSkipped++;
+            continue;
+          }
+          
+          // No unpaid invoice, check if they have any invoice
           const lastInvoice = await InvoiceModel.findOne({ 
             memberId: member.id 
           }).sort({ createdAt: -1 });
@@ -816,15 +1001,10 @@ app.use(express.json());
 // GET all members (from MongoDB)
 app.get("/api/members", async (req, res) => {
   try {
-    // Ensure connection is ready
-    await connectDB();
+    // Use optimized ensureConnection
+    await ensureConnection();
     
-    // Check if mongoose is connected
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(503).json({ error: "Database not connected" });
-    }
-    
-    const members = await UserModel.find({}).sort({ createdAt: -1 });
+    const members = await UserModel.find({}).sort({ createdAt: -1 }).lean();
     res.json(members);
   } catch (error) {
     console.error("Error fetching members:", error);
@@ -1132,44 +1312,56 @@ app.post("/api/members", async (req, res) => {
     
     const savedMember = await newMember.save();
     
-    // Create initial invoice based on subscription type
-    const subscriptionType = req.body.subscriptionType || 'Monthly';
-    let invoiceAmount = '$50';
-    let invoicePeriod = 'Monthly Subscription';
-    let dueDate = new Date();
-    
-    if (subscriptionType === 'Yearly') {
-      invoiceAmount = '$500';
-      invoicePeriod = 'Yearly Subscription';
-      dueDate.setFullYear(dueDate.getFullYear() + 1);
-    } else {
-      // Monthly
-      dueDate.setMonth(dueDate.getMonth() + 1);
-    }
-    
-    // Format due date as "DD MMM YYYY"
-    const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    }).replace(',', '');
-    
-    // Create invoice
-    const invoiceData = {
-      id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+    // Check if invoice already exists for this member (prevent duplicates)
+    const existingInvoice = await InvoiceModel.findOne({ 
       memberId: savedMember.id,
-      memberName: savedMember.name,
-      memberEmail: savedMember.email,
-      period: invoicePeriod,
-      amount: invoiceAmount,
-      status: "Unpaid",
-      due: dueDateFormatted,
-      method: "",
-      reference: "",
-    };
+      status: { $in: ["Unpaid", "Pending Verification"] }
+    });
     
-    const newInvoice = new InvoiceModel(invoiceData);
-    await newInvoice.save();
+    // Only create invoice if one doesn't already exist
+    if (!existingInvoice) {
+      // Create initial invoice based on subscription type
+      const subscriptionType = req.body.subscriptionType || 'Monthly';
+      let invoiceAmount = '$50';
+      let invoicePeriod = 'Monthly Subscription';
+      let dueDate = new Date();
+      
+      if (subscriptionType === 'Yearly') {
+        invoiceAmount = '$500';
+        invoicePeriod = 'Yearly Subscription';
+        dueDate.setFullYear(dueDate.getFullYear() + 1);
+      } else {
+        // Monthly
+        dueDate.setMonth(dueDate.getMonth() + 1);
+      }
+      
+      // Format due date as "DD MMM YYYY"
+      const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      }).replace(',', '');
+      
+      // Create invoice
+      const invoiceData = {
+        id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+        memberId: savedMember.id,
+        memberName: savedMember.name,
+        memberEmail: savedMember.email,
+        period: invoicePeriod,
+        amount: invoiceAmount,
+        status: "Unpaid",
+        due: dueDateFormatted,
+        method: "",
+        reference: "",
+      };
+      
+      const newInvoice = new InvoiceModel(invoiceData);
+      await newInvoice.save();
+      console.log(`✓ Invoice created for new member ${savedMember.name} (${savedMember.id}): ${invoiceData.id}`);
+    } else {
+      console.log(`⚠ Invoice already exists for member ${savedMember.name} (${savedMember.id}), skipping duplicate creation`);
+    }
     
     // Update member balance
     await calculateAndUpdateMemberBalance(savedMember.id);
@@ -1180,6 +1372,30 @@ app.post("/api/members", async (req, res) => {
     if (error.code === 11000) {
       return res.status(400).json({ message: "Email or ID already exists" });
     }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT approve member account
+app.put("/api/members/:id/approve", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    const member = await UserModel.findOne({ id: req.params.id });
+    if (!member) {
+      return res.status(404).json({ message: "Member not found" });
+    }
+
+    // Update member status to Active
+    member.status = "Active";
+    await member.save();
+
+    // Send approval email
+    await sendAccountApprovalEmail(member);
+
+    res.json({ success: true, member });
+  } catch (error) {
+    console.error("Error approving member:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1471,22 +1687,51 @@ app.put("/api/payments/:id/approve", async (req, res) => {
     payment.approvedAt = new Date();
     await payment.save();
 
+    // Get related invoice and member for email
+    let invoice = null;
+    let member = null;
+    
+    if (payment.invoiceId) {
+      invoice = await InvoiceModel.findOne({ id: payment.invoiceId });
+    }
+    
+    if (payment.memberId) {
+      member = await UserModel.findOne({ id: payment.memberId });
+    }
+    
+    if (!member && payment.memberEmail) {
+      member = await UserModel.findOne({ email: payment.memberEmail.toLowerCase() });
+    }
+
     // Update related invoice to Paid
     if (payment.invoiceId) {
+      const invoiceUpdate = {
+        status: "Paid",
+        method: payment.method,
+        reference: payment.reference,
+        screenshot: payment.screenshot
+      };
+      
+      // Preserve paidToAdmin fields for cash payments
+      if (payment.paidToAdmin) {
+        invoiceUpdate.paidToAdmin = payment.paidToAdmin;
+      }
+      if (payment.paidToAdminName) {
+        invoiceUpdate.paidToAdminName = payment.paidToAdminName;
+      }
+      
       await InvoiceModel.findOneAndUpdate(
         { id: payment.invoiceId },
-        { 
-          $set: { 
-            status: "Paid",
-            method: payment.method,
-            reference: payment.reference,
-            screenshot: payment.screenshot
-          }
-        }
+        { $set: invoiceUpdate }
       );
       
       // Update member balance
       await calculateAndUpdateMemberBalance(payment.memberId);
+    }
+
+    // Send approval email
+    if (member) {
+      await sendPaymentApprovalEmail(member, payment, invoice);
     }
 
     res.json({ success: true, payment });
@@ -1517,6 +1762,22 @@ app.put("/api/payments/:id/reject", async (req, res) => {
     payment.rejectedAt = new Date();
     await payment.save();
 
+    // Get related invoice and member for email
+    let invoice = null;
+    let member = null;
+    
+    if (payment.invoiceId) {
+      invoice = await InvoiceModel.findOne({ id: payment.invoiceId });
+    }
+    
+    if (payment.memberId) {
+      member = await UserModel.findOne({ id: payment.memberId });
+    }
+    
+    if (!member && payment.memberEmail) {
+      member = await UserModel.findOne({ email: payment.memberEmail.toLowerCase() });
+    }
+
     // Update related invoice back to Unpaid
     if (payment.invoiceId) {
       await InvoiceModel.findOneAndUpdate(
@@ -1533,6 +1794,11 @@ app.put("/api/payments/:id/reject", async (req, res) => {
       
       // Update member balance
       await calculateAndUpdateMemberBalance(payment.memberId);
+    }
+
+    // Send rejection email
+    if (member) {
+      await sendPaymentRejectionEmail(member, payment, invoice, payment.rejectionReason);
     }
 
     res.json({ success: true, payment });

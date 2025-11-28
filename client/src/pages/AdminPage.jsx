@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
@@ -29,6 +29,7 @@ export function AdminPage() {
     fetchAdmins,
     fetchInvoices,
     fetchPayments,
+    fetchMembers,
     selectedMember,
     setSelectedMember,
     addMember,
@@ -78,12 +79,15 @@ export function AdminPage() {
     name: "",
     email: "",
     phone: "",
+    password: "",
     status: "Active",
     balance: "$0",
     nextDue: "",
     lastPayment: "",
     subscriptionType: "Monthly",
   });
+  
+  const [showMemberPassword, setShowMemberPassword] = useState(false);
 
   const [adminsForm, setAdminsForm] = useState({
     name: "",
@@ -175,6 +179,12 @@ export function AdminPage() {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
   const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
   const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
+  const [memberSearchTerm, setMemberSearchTerm] = useState(""); // Search filter for members
+  const [invoiceMemberSearch, setInvoiceMemberSearch] = useState(""); // Search filter for invoice member select
+  const [donationMemberSearch, setDonationMemberSearch] = useState(""); // Search filter for donation member select
+  const [showMemberDropdown, setShowMemberDropdown] = useState(false); // Show/hide member dropdown
+  const [showDonationMemberDropdown, setShowDonationMemberDropdown] = useState(false); // Show/hide donation member dropdown
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
 
   const navigate = useNavigate();
 
@@ -279,18 +289,36 @@ export function AdminPage() {
       return sum;
     }, 0);
     
-    // Calculate Total Outstanding - from unpaid/overdue invoices
-    const unpaidInvoices = invoices.filter(inv => 
-      inv.status === "Unpaid" || inv.status === "Overdue"
-    );
+    // Calculate Total Outstanding - only from unpaid/overdue invoices that belong to members
+    const memberIds = new Set(members.map(m => m.id));
+    const memberEmails = new Set(members.map(m => m.email?.toLowerCase()).filter(Boolean));
+    const memberNames = new Set(members.map(m => m.name?.toLowerCase()).filter(Boolean));
+    
+    const unpaidInvoices = invoices.filter(inv => {
+      // Only include invoices that belong to actual members
+      const isMemberInvoice = 
+        (inv.memberId && memberIds.has(inv.memberId)) ||
+        (inv.memberEmail && memberEmails.has(inv.memberEmail.toLowerCase())) ||
+        (inv.memberName && memberNames.has(inv.memberName.toLowerCase()));
+      
+      return isMemberInvoice && (inv.status === "Unpaid" || inv.status === "Overdue");
+    });
+    
     const totalOutstanding = unpaidInvoices.reduce((sum, inv) => {
       const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
       return sum + amount;
     }, 0);
     
     // Calculate Overdue Members - members with overdue invoices
-    const overdueInvoices = invoices.filter(inv => inv.status === "Overdue");
-    const overdueMemberIds = new Set(overdueInvoices.map(inv => inv.memberId));
+    const overdueInvoices = invoices.filter(inv => {
+      const isMemberInvoice = 
+        (inv.memberId && memberIds.has(inv.memberId)) ||
+        (inv.memberEmail && memberEmails.has(inv.memberEmail?.toLowerCase())) ||
+        (inv.memberName && memberNames.has(inv.memberName?.toLowerCase()));
+      
+      return isMemberInvoice && inv.status === "Overdue";
+    });
+    const overdueMemberIds = new Set(overdueInvoices.map(inv => inv.memberId).filter(Boolean));
     const overdueMembersCount = overdueMemberIds.size;
     
     // Calculate expected annual (all members * expected per member)
@@ -308,6 +336,29 @@ export function AdminPage() {
   };
 
   // Get recent payments from paymentHistory
+  // Helper function to format payment method display
+  const getPaymentMethodDisplay = (payment) => {
+    // If paidToAdmin exists, it's a cash payment
+    if (payment.paidToAdmin || payment.paidToAdminName) {
+      return "Cash";
+    }
+    
+    // If method is "Cash to Admin", show as "Cash"
+    if (payment.method === "Cash to Admin") {
+      return "Cash";
+    }
+    
+    // For online payment methods (Screenshot, Bank Transfer, FPS, PayMe, Alipay, Credit Card, etc.)
+    // Show as "Online Payment"
+    const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
+    if (onlineMethods.includes(payment.method)) {
+      return "Online Payment";
+    }
+    
+    // Return method as-is if it doesn't match above
+    return payment.method || "N/A";
+  };
+
   const getRecentPayments = () => {
     return paymentHistory
       .filter(payment => payment.status === "Paid" || payment.status === "Completed" || payment.status === "Pending Verification" || payment.status === "Pending")
@@ -321,7 +372,7 @@ export function AdminPage() {
         Member: payment.member || "Unknown",
         Period: payment.period || "N/A",
         Amount: payment.amount || "$0",
-        Method: payment.method || "N/A",
+        Method: getPaymentMethodDisplay(payment),
         Status: payment.status || "Pending",
         Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString() : "N/A"),
       }));
@@ -413,7 +464,7 @@ export function AdminPage() {
     // Calculate payment method breakdown
     const methodCounts = {};
     paymentsInRange.forEach(payment => {
-      const method = payment.method || payment.paymentMethod || 'Unknown';
+      const method = getPaymentMethodDisplay(payment);
       methodCounts[method] = (methodCounts[method] || 0) + 1;
     });
 
@@ -485,7 +536,7 @@ export function AdminPage() {
           const member = payment.member || "Unknown";
           const period = payment.period || "N/A";
           const amount = payment.amount || "$0";
-          const method = payment.method || "N/A";
+          const method = getPaymentMethodDisplay(payment);
           const status = payment.status || "N/A";
           const reference = payment.reference || "N/A";
           csvContent += `"${date}","${member}","${period}","${amount}","${method}","${status}","${reference}"\n`;
@@ -609,7 +660,7 @@ export function AdminPage() {
           doc.text(payment.date || "N/A", margin, yPos);
           doc.text((payment.member || "Unknown").substring(0, 15), margin + 40, yPos);
           doc.text(payment.amount || "$0", margin + 90, yPos);
-          doc.text((payment.method || "N/A").substring(0, 15), margin + 130, yPos);
+          doc.text(getPaymentMethodDisplay(payment).substring(0, 15), margin + 130, yPos);
           yPos += lineHeight;
         });
         
@@ -1057,6 +1108,18 @@ Subscription Manager HK`;
     }
   }, [activeSection, fetchDonations]);
 
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    if (isMobileMenuOpen) {
+      document.body.classList.add('menu-open');
+    } else {
+      document.body.classList.remove('menu-open');
+    }
+    return () => {
+      document.body.classList.remove('menu-open');
+    };
+  }, [isMobileMenuOpen]);
+
   useEffect(() => {
     fetchEmailSettings().catch(err => {
       console.error('Failed to fetch email settings:', err);
@@ -1073,6 +1136,8 @@ Subscription Manager HK`;
     setShowMemberForm(false);
     setShowInvoiceForm(false);
     setShowDonationForm(false);
+    // Close mobile menu when navigating
+    setIsMobileMenuOpen(false);
   };
 
   const handleLogout = () => {
@@ -1114,6 +1179,7 @@ Subscription Manager HK`;
     setEditingMember(member);
     setMemberForm({
       ...member,
+      password: "", // Don't pre-fill password for security
       subscriptionType: member.subscriptionType || "Monthly",
     });
     setShowMemberForm(true);
@@ -1122,12 +1188,18 @@ Subscription Manager HK`;
   const handleUpdateMember = async (e) => {
     e.preventDefault();
     try {
-      await updateMember(editingMember.id, memberForm);
+      // Only include password in update if it's provided
+      const updateData = { ...memberForm };
+      if (!updateData.password || updateData.password.trim() === "") {
+        delete updateData.password; // Don't update password if empty
+      }
+      await updateMember(editingMember.id, updateData);
       setEditingMember(null);
       setMemberForm({
         name: "",
         email: "",
         phone: "",
+        password: "",
         status: "Active",
         balance: "$0",
         nextDue: "",
@@ -1440,17 +1512,38 @@ Subscription Manager HK`;
   // Approve pending member
   const handleApproveMember = async (memberId) => {
     try {
-      await updateMember(memberId, { status: "Active" });
-      showToast("Member approved successfully! They can now login.");
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/members/${memberId}/approve`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to approve member');
+      }
+      
+      // Refresh members list
+      await fetchMembers();
+      
+      showToast("Member approved successfully! Approval email sent.");
     } catch (error) {
       console.error('Error approving member:', error);
-      showToast("Failed to approve member", "error");
+      showToast(error.message || "Failed to approve member", "error");
     }
   };
 
   return (
     <>
-      <SiteHeader showCTA={false} showLogout={true} onLogout={handleLogout} />
+      <SiteHeader 
+        showCTA={false} 
+        showLogout={true} 
+        onLogout={handleLogout}
+        showMobileMenu={true}
+        isMobileMenuOpen={isMobileMenuOpen}
+        onMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        isSticky={true}
+      />
       
       {/* Toast Notification */}
       {toast && (
@@ -1473,23 +1566,21 @@ Subscription Manager HK`;
         </div>
       )}
 
-      <main className="admin-main">
-        {/* Mobile Horizontal Navigation */}
-        <div className="mobile-nav-tabs">
-          {sections.map((section) => (
-            <button
-              key={section.id}
-              className={`mobile-nav-tab ${activeSection === section.id ? "active" : ""}`}
-              onClick={() => handleNavClick(section.id)}
-            >
-              {section.label}
-            </button>
-          ))}
-        </div>
+      <main className="admin-main admin-main--sticky-header">
+        {/* Mobile Menu Overlay */}
+        {isMobileMenuOpen && (
+          <div 
+            className="mobile-menu-overlay"
+            onClick={() => setIsMobileMenuOpen(false)}
+          ></div>
+        )}
 
         <div className="admin-layout">
-          {/* Desktop Sidebar */}
-          <aside className="admin-menu">
+          {/* Desktop Sidebar / Mobile Menu */}
+          <aside 
+            className={`admin-menu ${isMobileMenuOpen ? "mobile-open" : ""}`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <p className="eyebrow light">Admin Portal</p>
             <h3>Finance Operations</h3>
             <nav>
@@ -1500,6 +1591,7 @@ Subscription Manager HK`;
                   onClick={() => {
                     console.log('Clicking section:', section.id, section.label);
                     handleNavClick(section.id);
+                    setIsMobileMenuOpen(false); // Close menu on section click
                   }}
                 >
                   {section.label}
@@ -1634,6 +1726,19 @@ Subscription Manager HK`;
                       <h3>Members List</h3>
                       <p>Manage all members and their subscriptions.</p>
                     </div>
+                    {(members || []).filter(m => m.status === 'Pending').length > 0 && (
+                      <div style={{
+                        padding: "10px 16px",
+                        background: "#fff3cd",
+                        borderRadius: "8px",
+                        fontSize: "0.875rem",
+                        fontWeight: "600",
+                        color: "#856404",
+                        border: "1px solid #ffc107"
+                      }}>
+                        ⏳ Pending Approval: {(members || []).filter(m => m.status === 'Pending').length}
+                      </div>
+                    )}
                     <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                       {/* <button
                         className="ghost-btn"
@@ -1701,6 +1806,38 @@ Subscription Manager HK`;
                           value={memberForm.phone}
                           onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })}
                         />
+                      </label>
+                      <label>
+                        Password {editingMember ? "(leave blank to keep current)" : "*"}
+                        <div style={{ position: "relative" }}>
+                          <input
+                            type={showMemberPassword ? "text" : "password"}
+                            required={!editingMember}
+                            value={memberForm.password}
+                            onChange={(e) => setMemberForm({ ...memberForm, password: e.target.value })}
+                            placeholder={editingMember ? "Enter new password or leave blank" : "Enter password for member"}
+                            style={{ paddingRight: "40px" }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowMemberPassword(!showMemberPassword)}
+                            style={{
+                              position: "absolute",
+                              right: "8px",
+                              top: "50%",
+                              transform: "translateY(-50%)",
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              padding: "4px 8px",
+                              color: "#666",
+                              fontSize: "0.875rem"
+                            }}
+                            title={showMemberPassword ? "Hide password" : "Show password"}
+                          >
+                            {showMemberPassword ? "👁️" : "👁️‍🗨️"}
+                          </button>
+                        </div>
                       </label>
                       <label>
                         Status
@@ -1841,6 +1978,58 @@ Subscription Manager HK`;
                   </div>
                 )}
 
+                {/* Search Filter */}
+                <div className="card" style={{ marginBottom: "20px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", flex: "1 1 300px", minWidth: "250px" }}>
+                      <span style={{ fontSize: "0.875rem", fontWeight: "500", color: "#666" }}>🔍 Search Members:</span>
+                      <input
+                        type="text"
+                        placeholder="Search by member name..."
+                        value={memberSearchTerm}
+                        onChange={(e) => setMemberSearchTerm(e.target.value)}
+                        style={{
+                          flex: "1",
+                          padding: "10px 16px",
+                          border: "1px solid #e0e0e0",
+                          borderRadius: "8px",
+                          fontSize: "0.875rem",
+                          outline: "none",
+                          transition: "border-color 0.2s"
+                        }}
+                        onFocus={(e) => e.target.style.borderColor = "#000"}
+                        onBlur={(e) => e.target.style.borderColor = "#e0e0e0"}
+                      />
+                    </label>
+                    {memberSearchTerm && (
+                      <button
+                        type="button"
+                        onClick={() => setMemberSearchTerm("")}
+                        style={{
+                          padding: "10px 16px",
+                          background: "#f5f5f5",
+                          border: "1px solid #e0e0e0",
+                          borderRadius: "8px",
+                          cursor: "pointer",
+                          fontSize: "0.875rem",
+                          color: "#666"
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                    <div style={{ fontSize: "0.875rem", color: "#666" }}>
+                      {(() => {
+                        const filtered = members.filter(m => 
+                          !memberSearchTerm || 
+                          m.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
+                        );
+                        return `${filtered.length} of ${members.length} members`;
+                      })()}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="card">
                   <div className="table-wrapper">
                     <Table
@@ -1853,7 +2042,12 @@ Subscription Manager HK`;
                         "Balance",
                         "Actions",
                       ]}
-                      rows={members.map((member) => ({
+                      rows={members
+                        .filter(member => 
+                          !memberSearchTerm || 
+                          member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
+                        )
+                        .map((member) => ({
                         ID: member.id,
                         Name: member.name,
                         Email: member.email,
@@ -2237,7 +2431,7 @@ Subscription Manager HK`;
                                 }}>
                                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                     <span style={{ fontSize: "0.875rem", color: "#666" }}>Method:</span>
-                                    <strong style={{ fontSize: "0.875rem" }}>{item.method || "N/A"}</strong>
+                                    <strong style={{ fontSize: "0.875rem" }}>{getPaymentMethodDisplay(item)}</strong>
                                   </div>
                                   {item.reference && item.reference !== "N/A" && item.reference !== "-" && (
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2370,21 +2564,190 @@ Subscription Manager HK`;
                 <form className="card form-grid" onSubmit={handleAddInvoice}>
                   <label>
                     Member *
-                    <select
-                      required
-                      value={invoiceForm.memberId}
-                      onChange={(e) =>
-                        setInvoiceForm({ ...invoiceForm, memberId: e.target.value })
-                      }
-                      style={{ color: "#000" }}
-                    >
-                      <option value="">Select Member</option>
-                      {members.map((member) => (
-                        <option key={member.id} value={member.id}>
-                          {member.name} ({member.id})
-                        </option>
-                      ))}
-                    </select>
+                    <div style={{ position: "relative" }} data-member-dropdown>
+                      <div
+                        onClick={() => setShowMemberDropdown(!showMemberDropdown)}
+                        style={{
+                          padding: "10px 16px",
+                          border: "1px solid #e0e0e0",
+                          borderRadius: "8px",
+                          background: "#fff",
+                          cursor: "pointer",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          color: invoiceForm.memberId ? "#000" : "#999",
+                          minHeight: "42px"
+                        }}
+                      >
+                        <span>
+                          {invoiceForm.memberId
+                            ? (() => {
+                                const selected = members.find(m => m.id === invoiceForm.memberId);
+                                return selected ? `${selected.name} (${selected.id})` : "Select Member";
+                              })()
+                            : "Select Member"}
+                        </span>
+                        <span style={{ fontSize: "0.75rem" }}>{showMemberDropdown ? "▲" : "▼"}</span>
+                      </div>
+                      
+                      {showMemberDropdown && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: "100%",
+                            left: 0,
+                            right: 0,
+                            background: "#fff",
+                            border: "1px solid #e0e0e0",
+                            borderRadius: "8px",
+                            marginTop: "4px",
+                            maxHeight: "300px",
+                            overflow: "hidden",
+                            zIndex: 1000,
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
+                          }}
+                        >
+                          {/* Search Input */}
+                          <div style={{ 
+                            padding: "12px", 
+                            borderBottom: "1px solid #e0e0e0",
+                            background: "#f9fafb"
+                          }}>
+                            <div style={{ position: "relative" }}>
+                              <input
+                                type="text"
+                                placeholder="🔍 Search member by name or ID..."
+                                value={invoiceMemberSearch}
+                                onChange={(e) => setInvoiceMemberSearch(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                                autoFocus
+                                style={{
+                                  width: "100%",
+                                  padding: "10px 36px 10px 12px",
+                                  border: "1px solid #e0e0e0",
+                                  borderRadius: "6px",
+                                  fontSize: "0.875rem",
+                                  outline: "none",
+                                  background: "#fff",
+                                  transition: "border-color 0.2s"
+                                }}
+                                onFocus={(e) => {
+                                  e.target.style.borderColor = "#000";
+                                  e.target.style.boxShadow = "0 0 0 2px rgba(0,0,0,0.05)";
+                                }}
+                                onBlur={(e) => {
+                                  e.target.style.borderColor = "#e0e0e0";
+                                  e.target.style.boxShadow = "none";
+                                }}
+                              />
+                              {invoiceMemberSearch && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInvoiceMemberSearch("");
+                                  }}
+                                  style={{
+                                    position: "absolute",
+                                    right: "8px",
+                                    top: "50%",
+                                    transform: "translateY(-50%)",
+                                    background: "none",
+                                    border: "none",
+                                    cursor: "pointer",
+                                    padding: "4px",
+                                    color: "#666",
+                                    fontSize: "0.875rem",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center"
+                                  }}
+                                  title="Clear search"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                            {invoiceMemberSearch && (
+                              <div style={{ 
+                                marginTop: "8px", 
+                                fontSize: "0.75rem", 
+                                color: "#666" 
+                              }}>
+                                {members.filter(member =>
+                                  !invoiceMemberSearch ||
+                                  member.name?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
+                                  member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase())
+                                ).length} member{members.filter(member =>
+                                  !invoiceMemberSearch ||
+                                  member.name?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
+                                  member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase())
+                                ).length !== 1 ? 's' : ''} found
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Member List */}
+                          <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+                            {members
+                              .filter(member =>
+                                !invoiceMemberSearch ||
+                                member.name?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
+                                member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase())
+                              )
+                              .map((member) => (
+                                <div
+                                  key={member.id}
+                                  onClick={() => {
+                                    setInvoiceForm({ ...invoiceForm, memberId: member.id });
+                                    setShowMemberDropdown(false);
+                                    setInvoiceMemberSearch("");
+                                  }}
+                                  style={{
+                                    padding: "12px 16px",
+                                    cursor: "pointer",
+                                    borderBottom: "1px solid #f0f0f0",
+                                    background: invoiceForm.memberId === member.id ? "#f5f5f5" : "#fff",
+                                    transition: "background 0.2s"
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (invoiceForm.memberId !== member.id) {
+                                      e.target.style.background = "#f9f9f9";
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (invoiceForm.memberId !== member.id) {
+                                      e.target.style.background = "#fff";
+                                    }
+                                  }}
+                                >
+                                  <div style={{ fontWeight: "500", color: "#000" }}>{member.name}</div>
+                                  <div style={{ fontSize: "0.75rem", color: "#666", marginTop: "2px" }}>
+                                    {member.id} {member.email ? `• ${member.email}` : ""}
+                                  </div>
+                                </div>
+                              ))}
+                            
+                            {members.filter(member =>
+                              !invoiceMemberSearch ||
+                              member.name?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
+                              member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase())
+                            ).length === 0 && (
+                              <div style={{ padding: "16px", textAlign: "center", color: "#999", fontSize: "0.875rem" }}>
+                                No members found
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {!invoiceForm.memberId && (
+                      <span style={{ fontSize: "0.75rem", color: "#d32f2f", marginTop: "4px", display: "block" }}>
+                        Please select a member
+                      </span>
+                    )}
                   </label>
 
                   <label>
@@ -2794,7 +3157,7 @@ Subscription Manager HK`;
                         disabled={sendingWhatsAppToAll}
                         style={{
                           padding: "12px 24px",
-                          display:"none",
+                        
                           borderRadius: "8px",
                           fontWeight: "600",
                           backgroundColor: "#25D366",
@@ -3424,7 +3787,7 @@ Subscription Manager HK`;
                 </header>
                 <div style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
                   gap: "24px",
                   marginTop: "32px"
                 }}>
@@ -4024,7 +4387,7 @@ Subscription Manager HK`;
                             Member: payment.member || "Unknown",
                             "Invoice ID": payment.invoiceId || "N/A",
                             Amount: payment.amount || "$0",
-                            Method: payment.method || "Screenshot",
+                            Method: getPaymentMethodDisplay(payment),
                             Screenshot: {
                               render: () => payment.screenshot ? (
                                 <a 
@@ -4054,7 +4417,7 @@ Subscription Manager HK`;
                                         style={{ padding: "6px 12px", fontSize: "0.85rem" }}
                                         onClick={() => {
                                           if (paymentIdString) handleApprovePayment(paymentIdString);
-                                        }}
+                                      }}
                                       >
                                         ✓ Approve
                                       </button>
@@ -4147,6 +4510,8 @@ Subscription Manager HK`;
                             amount: "",
                             notes: "",
                           });
+                          setDonationMemberSearch("");
+                          setShowDonationMemberDropdown(false);
                           await fetchDonations();
                         } catch (error) {
                           showToast(error.message || "Failed to add donation", "error");
@@ -4161,8 +4526,18 @@ Subscription Manager HK`;
                             value={donationForm.donorName}
                             onChange={(e) => setDonationForm({ ...donationForm, donorName: e.target.value })}
                             required
-                            placeholder="Enter donor name"
+                            placeholder={donationForm.isMember ? "Will be filled automatically when member is selected" : "Enter donor name"}
+                            disabled={donationForm.isMember && donationForm.memberId ? true : false}
+                            style={{
+                              background: donationForm.isMember && donationForm.memberId ? "#f5f5f5" : "#fff",
+                              cursor: donationForm.isMember && donationForm.memberId ? "not-allowed" : "text"
+                            }}
                           />
+                          {donationForm.isMember && donationForm.memberId && (
+                            <span style={{ fontSize: "0.75rem", color: "#666", marginTop: "4px", display: "block" }}>
+                              Donor name is automatically set from selected member
+                            </span>
+                          )}
                         </label>
                         <label>
                           Amount *
@@ -4175,31 +4550,287 @@ Subscription Manager HK`;
                           />
                         </label>
                       </div>
-                      <div style={{ marginBottom: "16px" }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                          <input
-                            type="checkbox"
-                            checked={donationForm.isMember}
-                            onChange={(e) => setDonationForm({ ...donationForm, isMember: e.target.checked, memberId: "" })}
-                          />
-                          Is this donor a member?
+                      <div style={{ marginBottom: "20px" }}>
+                        <label style={{ 
+                          display: "block", 
+                          fontSize: "0.875rem", 
+                          fontWeight: "600", 
+                          color: "#333", 
+                          marginBottom: "12px" 
+                        }}>
+                          Donor Type
                         </label>
+                        <div style={{ 
+                          display: "flex", 
+                          gap: "12px",
+                          flexWrap: "wrap"
+                        }}>
+                          <button
+                            type="button"
+                            onClick={() => setDonationForm({ ...donationForm, isMember: true, memberId: "", donorName: donationForm.donorName })}
+                            style={{
+                              flex: "1",
+                              minWidth: "150px",
+                              padding: "14px 20px",
+                              borderRadius: "8px",
+                              border: donationForm.isMember ? "2px solid #000" : "2px solid #e0e0e0",
+                              background: donationForm.isMember ? "#000" : "#fff",
+                              color: donationForm.isMember ? "#fff" : "#333",
+                              fontWeight: "600",
+                              fontSize: "0.9375rem",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "8px"
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!donationForm.isMember) {
+                                e.currentTarget.style.borderColor = "#000";
+                                e.currentTarget.style.background = "#f8f8f8";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!donationForm.isMember) {
+                                e.currentTarget.style.borderColor = "#e0e0e0";
+                                e.currentTarget.style.background = "#fff";
+                              }
+                            }}
+                          >
+                            <span>👤</span>
+                            <span>Member</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDonationForm({ ...donationForm, isMember: false, memberId: "", donorName: donationForm.donorName })}
+                            style={{
+                              flex: "1",
+                              minWidth: "150px",
+                              padding: "14px 20px",
+                              borderRadius: "8px",
+                              border: !donationForm.isMember ? "2px solid #000" : "2px solid #e0e0e0",
+                              background: !donationForm.isMember ? "#000" : "#fff",
+                              color: !donationForm.isMember ? "#fff" : "#333",
+                              fontWeight: "600",
+                              fontSize: "0.9375rem",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "8px"
+                            }}
+                            onMouseEnter={(e) => {
+                              if (donationForm.isMember) {
+                                e.currentTarget.style.borderColor = "#000";
+                                e.currentTarget.style.background = "#f8f8f8";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (donationForm.isMember) {
+                                e.currentTarget.style.borderColor = "#e0e0e0";
+                                e.currentTarget.style.background = "#fff";
+                              }
+                            }}
+                          >
+                            <span>🌐</span>
+                            <span>Non-Member</span>
+                          </button>
+                        </div>
                       </div>
                       {donationForm.isMember && (
                         <div style={{ marginBottom: "16px" }}>
                           <label>
-                            Select Member
-                            <select
-                              value={donationForm.memberId}
-                              onChange={(e) => setDonationForm({ ...donationForm, memberId: e.target.value })}
-                            >
-                              <option value="">Select a member</option>
-                              {members.map((member) => (
-                                <option key={member.id} value={member.id}>
-                                  {member.name} ({member.id})
-                                </option>
-                              ))}
-                            </select>
+                            Select Member *
+                            <div style={{ position: "relative" }} data-donation-member-dropdown>
+                              <div
+                                onClick={() => setShowDonationMemberDropdown(!showDonationMemberDropdown)}
+                                style={{
+                                  padding: "10px 16px",
+                                  border: "1px solid #e0e0e0",
+                                  borderRadius: "8px",
+                                  background: "#fff",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  color: donationForm.memberId ? "#000" : "#999",
+                                  minHeight: "42px"
+                                }}
+                              >
+                                <span>
+                                  {donationForm.memberId
+                                    ? (() => {
+                                        const selected = members.find(m => m.id === donationForm.memberId);
+                                        return selected ? `${selected.name} (${selected.id})` : "Select Member";
+                                      })()
+                                    : "Select Member"}
+                                </span>
+                                <span style={{ fontSize: "0.75rem" }}>{showDonationMemberDropdown ? "▲" : "▼"}</span>
+                              </div>
+                              
+                              {showDonationMemberDropdown && (
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: "100%",
+                                    left: 0,
+                                    right: 0,
+                                    background: "#fff",
+                                    border: "1px solid #e0e0e0",
+                                    borderRadius: "8px",
+                                    marginTop: "4px",
+                                    maxHeight: "300px",
+                                    overflow: "hidden",
+                                    zIndex: 1000,
+                                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
+                                  }}
+                                >
+                                  {/* Search Input */}
+                                  <div style={{ 
+                                    padding: "12px", 
+                                    borderBottom: "1px solid #e0e0e0",
+                                    background: "#f9fafb"
+                                  }}>
+                                    <div style={{ position: "relative" }}>
+                                      <input
+                                        type="text"
+                                        placeholder="🔍 Search member by name or ID..."
+                                        value={donationMemberSearch}
+                                        onChange={(e) => setDonationMemberSearch(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onKeyDown={(e) => e.stopPropagation()}
+                                        autoFocus
+                                        style={{
+                                          width: "100%",
+                                          padding: "10px 36px 10px 12px",
+                                          border: "1px solid #e0e0e0",
+                                          borderRadius: "6px",
+                                          fontSize: "0.875rem",
+                                          outline: "none",
+                                          background: "#fff",
+                                          transition: "border-color 0.2s"
+                                        }}
+                                        onFocus={(e) => {
+                                          e.target.style.borderColor = "#000";
+                                          e.target.style.boxShadow = "0 0 0 2px rgba(0,0,0,0.05)";
+                                        }}
+                                        onBlur={(e) => {
+                                          e.target.style.borderColor = "#e0e0e0";
+                                          e.target.style.boxShadow = "none";
+                                        }}
+                                      />
+                                      {donationMemberSearch && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setDonationMemberSearch("");
+                                          }}
+                                          style={{
+                                            position: "absolute",
+                                            right: "8px",
+                                            top: "50%",
+                                            transform: "translateY(-50%)",
+                                            background: "none",
+                                            border: "none",
+                                            cursor: "pointer",
+                                            padding: "4px",
+                                            color: "#666",
+                                            fontSize: "0.875rem",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center"
+                                          }}
+                                          title="Clear search"
+                                        >
+                                          ✕
+                                        </button>
+                                      )}
+                                    </div>
+                                    {donationMemberSearch && (
+                                      <div style={{ 
+                                        marginTop: "8px", 
+                                        fontSize: "0.75rem", 
+                                        color: "#666" 
+                                      }}>
+                                        {members.filter(member =>
+                                          !donationMemberSearch ||
+                                          member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                          member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                        ).length} member{members.filter(member =>
+                                          !donationMemberSearch ||
+                                          member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                          member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                        ).length !== 1 ? 's' : ''} found
+                                      </div>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Member List */}
+                                  <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+                                    {members
+                                      .filter(member =>
+                                        !donationMemberSearch ||
+                                        member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                        member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                      )
+                                      .map((member) => (
+                                        <div
+                                          key={member.id}
+                                          onClick={() => {
+                                            setDonationForm({ 
+                                              ...donationForm, 
+                                              memberId: member.id,
+                                              donorName: member.name || ""
+                                            });
+                                            setShowDonationMemberDropdown(false);
+                                            setDonationMemberSearch("");
+                                          }}
+                                          style={{
+                                            padding: "12px 16px",
+                                            cursor: "pointer",
+                                            borderBottom: "1px solid #f0f0f0",
+                                            background: donationForm.memberId === member.id ? "#f5f5f5" : "#fff",
+                                            transition: "background 0.2s"
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            if (donationForm.memberId !== member.id) {
+                                              e.target.style.background = "#f9f9f9";
+                                            }
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            if (donationForm.memberId !== member.id) {
+                                              e.target.style.background = "#fff";
+                                            }
+                                          }}
+                                        >
+                                          <div style={{ fontWeight: "500", color: "#000" }}>{member.name}</div>
+                                          <div style={{ fontSize: "0.75rem", color: "#666", marginTop: "2px" }}>
+                                            {member.id} {member.email ? `• ${member.email}` : ""}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    
+                                    {members.filter(member =>
+                                      !donationMemberSearch ||
+                                      member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                      member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                    ).length === 0 && (
+                                      <div style={{ padding: "16px", textAlign: "center", color: "#999", fontSize: "0.875rem" }}>
+                                        No members found
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            {!donationForm.memberId && (
+                              <span style={{ fontSize: "0.75rem", color: "#d32f2f", marginTop: "4px", display: "block" }}>
+                                Please select a member
+                              </span>
+                            )}
                           </label>
                         </div>
                       )}
@@ -4228,6 +4859,8 @@ Subscription Manager HK`;
                               amount: "",
                               notes: "",
                             });
+                            setDonationMemberSearch("");
+                            setShowDonationMemberDropdown(false);
                           }}
                         >
                           Cancel
@@ -4472,7 +5105,7 @@ Subscription Manager HK`;
                                 type: 'Payment',
                                 source: p.member || 'Unknown',
                                 amount: p.amount,
-                                details: `${p.method || 'N/A'} - ${p.period || 'N/A'}`,
+                                details: `${getPaymentMethodDisplay(p)} - ${p.period || 'N/A'}`,
                                 date: p.date || (p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB', {
                                   day: '2-digit',
                                   month: 'short',
@@ -4561,72 +5194,98 @@ Subscription Manager HK`;
                   <h3>Admin Settings</h3>
                   <p>Organization profile and admin accounts.</p>
                 </header>
-                <div className="card settings-grid">
-                  <div>
-                    <h4>Organization Info</h4>
+                <div className="settings-container">
+                  <div className="settings-card">
+                    <div className="settings-card__header">
+                      <h4 className="settings-card__title">Organization Info</h4>
+                      <p className="settings-card__subtitle">Update your organization's contact information</p>
+                    </div>
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
                         updateOrganizationInfo(orgForm);
                         showToast("Organization info updated!");
                       }}
+                      className="settings-form"
                     >
-                      <label>
-                        Name
-                        <input
-                          value={orgForm.name}
-                          onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
-                          style={{ color: "#000" }}
-                        />
-                      </label>
-                      <label>
-                        Contact Email
-                        <input
-                          type="email"
-                          value={orgForm.email}
-                          onChange={(e) => setOrgForm({ ...orgForm, email: e.target.value })}
-                          style={{ color: "#000" }}
-                        />
-                      </label>
-                      <label>
-                        Contact Number
-                        <input
-                          value={orgForm.phone}
-                          onChange={(e) => setOrgForm({ ...orgForm, phone: e.target.value })}
-                          style={{ color: "#000" }}
-                        />
-                      </label>
-                      <label>
-                        Address
-                        <input
-                          value={orgForm.address}
-                          onChange={(e) => setOrgForm({ ...orgForm, address: e.target.value })}
-                          style={{ color: "#000" }}
-                        />
-                      </label>
-                      <button className="primary-btn" type="submit" style={{ marginTop: "12px" }}>
+                      <div className="settings-form__group">
+                        <label className="settings-form__label">
+                          Name
+                          <input
+                            type="text"
+                            className="settings-form__input"
+                            value={orgForm.name}
+                            onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
+                            placeholder="Organization name"
+                          />
+                        </label>
+                      </div>
+                      <div className="settings-form__group">
+                        <label className="settings-form__label">
+                          Contact Email
+                          <input
+                            type="email"
+                            className="settings-form__input"
+                            value={orgForm.email}
+                            onChange={(e) => setOrgForm({ ...orgForm, email: e.target.value })}
+                            placeholder="contact@organization.com"
+                          />
+                        </label>
+                      </div>
+                      <div className="settings-form__group">
+                        <label className="settings-form__label">
+                          Contact Number
+                          <input
+                            type="tel"
+                            className="settings-form__input"
+                            value={orgForm.phone}
+                            onChange={(e) => setOrgForm({ ...orgForm, phone: e.target.value })}
+                            placeholder="+1 (555) 123-4567"
+                          />
+                        </label>
+                      </div>
+                      <div className="settings-form__group">
+                        <label className="settings-form__label">
+                          Address
+                          <input
+                            type="text"
+                            className="settings-form__input"
+                            value={orgForm.address}
+                            onChange={(e) => setOrgForm({ ...orgForm, address: e.target.value })}
+                            placeholder="123 Main St, City, State ZIP"
+                          />
+                        </label>
+                      </div>
+                      <button className="settings-form__submit primary-btn" type="submit">
                         Save Changes
                       </button>
                     </form>
                   </div>
 
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                      <h4>User Management</h4>
-                      <button
-                        className="secondary-btn"
-                        onClick={() => {
-                          setShowAdminForm(true);
-                          setAdminForm({ name: "", role: "Viewer", status: "Active" });
-                        }}
-                      >
-                        + Add Admin
-                      </button>
+                  <div className="settings-card">
+                    <div className="settings-card__header">
+                      <div className="settings-card__header-content">
+                        <div>
+                          <h4 className="settings-card__title">User Management</h4>
+                          <p className="settings-card__subtitle">Manage admin users and their permissions</p>
+                        </div>
+                        <button
+                          className="settings-card__add-btn secondary-btn"
+                          onClick={() => {
+                            setShowAdminForm(true);
+                            setAdminForm({ name: "", role: "Viewer", status: "Active" });
+                          }}
+                        >
+                          + Add Admin
+                        </button>
+                      </div>
                     </div>
 
                     {showAdminForm && (
-                      <div className="card" style={{ marginBottom: "16px", background: "var(--gray-50)", padding: "16px" }}>
-                        <h4 style={{ fontSize: "1rem", marginBottom: "12px" }}>Add New Admin</h4>
+                      <div className="settings-admin-form">
+                        <div className="settings-admin-form__header">
+                          <h4 className="settings-admin-form__title">Add New Admin</h4>
+                        </div>
                         <form
                           onSubmit={async (e) => {
                             e.preventDefault();
@@ -4643,56 +5302,66 @@ Subscription Manager HK`;
                               showToast(error.message || "Failed to add admin user", "error");
                             }
                           }}
-                          style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+                          className="settings-form"
                         >
-                          
-                          <label>
-                            Name
-                            <input
-                              required
-                              value={adminForm.name}
-                              onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
-                              placeholder="Enter Your Name"
-                            />
-                          </label>
-
-                          <label>
-                            Email
-                            <input
-                              required
-                              value={adminForm.email}
-                              onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
-                              placeholder="Enter your Email"
-                            />
-                          </label>
-
-                          <label>
-                            Password
-                            <input
-                              required
-                              value={adminForm.password}
-                              onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
-                              placeholder="Enter Your Password"
-                            />
-                          </label>
-                           
-                          <label>
-                            Role
-                            <select
-                              value={adminForm.role}
-                              onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
-                            >
-                              <option>Owner</option>
-                              <option>Finance Admin</option>
-                              <option>Viewer</option>
-                            </select>
-                          </label>
-
-                          <div style={{ display: "flex", gap: "8px" }}>
-                            <button type="button" className="ghost-btn" onClick={() => setShowAdminForm(false)}>
+                          <div className="settings-form__group">
+                            <label className="settings-form__label">
+                              Name
+                              <input
+                                type="text"
+                                className="settings-form__input"
+                                required
+                                value={adminForm.name}
+                                onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
+                                placeholder="Enter Your Name"
+                              />
+                            </label>
+                          </div>
+                          <div className="settings-form__group">
+                            <label className="settings-form__label">
+                              Email
+                              <input
+                                type="email"
+                                className="settings-form__input"
+                                required
+                                value={adminForm.email}
+                                onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+                                placeholder="Enter your Email"
+                              />
+                            </label>
+                          </div>
+                          <div className="settings-form__group">
+                            <label className="settings-form__label">
+                              Password
+                              <input
+                                type="password"
+                                className="settings-form__input"
+                                required
+                                value={adminForm.password}
+                                onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
+                                placeholder="Enter Your Password"
+                              />
+                            </label>
+                          </div>
+                          <div className="settings-form__group">
+                            <label className="settings-form__label">
+                              Role
+                              <select
+                                className="settings-form__select"
+                                value={adminForm.role}
+                                onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
+                              >
+                                <option>Owner</option>
+                                <option>Finance Admin</option>
+                                <option>Viewer</option>
+                              </select>
+                            </label>
+                          </div>
+                          <div className="settings-form__actions">
+                            <button type="button" className="ghost-btn settings-form__cancel" onClick={() => setShowAdminForm(false)}>
                               Cancel
                             </button>
-                            <button type="submit" className="primary-btn">
+                            <button type="submit" className="primary-btn settings-form__submit-btn">
                               Add Admin
                             </button>
                           </div>
@@ -4700,99 +5369,75 @@ Subscription Manager HK`;
                       </div>
                     )}
 
-                    <Table
-                      columns={["User", "Role", "Status", "Actions"]}
-                      rows={admins.map((user) => ({
-                        User: user.name,
-                        Role: user.role || 'Viewer',
-                        Status: {
-                          render: () => (
-                            <span className={(user.status || 'Active') === "Active" ? "badge badge-active" : "badge badge-inactive"}>
-                              {user.status || 'Active'}
-                            </span>
-                          ),
-                        },
-                        Actions: {
-                          render: () => (
-                            <div style={{ display: "flex", gap: "8px" }}>
-                              {(user.status || 'Active') === "Active" ? (
-                                <button
-                                  className="ghost-btn"
-                                  style={{ padding: "4px 10px", fontSize: "0.85rem" }}
-                                  onClick={async () => {
-                                    try {
-                                      await updateAdminUser(user.id, { status: "Inactive" });
-                                      showToast(`${user.name} deactivated`);
-                                    } catch (error) {
-                                      showToast(error.message || "Failed to update admin", "error");
-                                    }
-                                  }}
-                                >
-                                  Deactivate
-                                </button>
-                              ) : (
-                                <button
-                                  className="secondary-btn"
-                                  style={{ padding: "4px 10px", fontSize: "0.85rem" }}
-                                  onClick={async () => {
-                                    try {
-                                      await updateAdminUser(user.id, { status: "Active" });
-                                      showToast(`${user.name} activated`);
-                                    } catch (error) {
-                                      showToast(error.message || "Failed to update admin", "error");
-                                    }
-                                  }}
-                                >
-                                  Activate
-                                </button>
-                              )}
-                              {(user.role || 'Viewer') !== "Owner" && (
-                                <button
-                                  className="ghost-btn"
-                                  style={{ padding: "4px 10px", fontSize: "0.85rem", color: "#000" }}
-                                  onClick={async () => {
-                                    if (window.confirm(`Remove ${user.name} from admin users?`)) {
+                    <div className="settings-table-wrapper">
+                      <Table
+                        columns={["User", "Role", "Status", "Actions"]}
+                        rows={admins.map((user) => ({
+                          User: user.name,
+                          Role: user.role || 'Viewer',
+                          Status: {
+                            render: () => (
+                              <span className={(user.status || 'Active') === "Active" ? "badge badge-active" : "badge badge-inactive"}>
+                                {user.status || 'Active'}
+                              </span>
+                            ),
+                          },
+                          Actions: {
+                            render: () => (
+                              <div className="settings-table__actions">
+                                {(user.status || 'Active') === "Active" ? (
+                                  <button
+                                    className="ghost-btn settings-table__action-btn"
+                                    onClick={async () => {
                                       try {
-                                        await deleteAdminUser(user.id);
-                                        showToast(`${user.name} removed`);
+                                        await updateAdminUser(user.id, { status: "Inactive" });
+                                        showToast(`${user.name} deactivated`);
                                       } catch (error) {
-                                        showToast(error.message || "Failed to delete admin", "error");
+                                        showToast(error.message || "Failed to update admin", "error");
                                       }
-                                    }
-                                  }}
-                                >
-                                  Remove
-                                </button>
-                              )}
-                            </div>
-                          ),
-                        },
-                      }))}
-                    />
+                                    }}
+                                  >
+                                    Deactivate
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="secondary-btn settings-table__action-btn"
+                                    onClick={async () => {
+                                      try {
+                                        await updateAdminUser(user.id, { status: "Active" });
+                                        showToast(`${user.name} activated`);
+                                      } catch (error) {
+                                        showToast(error.message || "Failed to update admin", "error");
+                                      }
+                                    }}
+                                  >
+                                    Activate
+                                  </button>
+                                )}
+                                {(user.role || 'Viewer') !== "Owner" && (
+                                  <button
+                                    className="ghost-btn settings-table__action-btn settings-table__action-btn--danger"
+                                    onClick={async () => {
+                                      if (window.confirm(`Remove ${user.name} from admin users?`)) {
+                                        try {
+                                          await deleteAdminUser(user.id);
+                                          showToast(`${user.name} removed`);
+                                        } catch (error) {
+                                          showToast(error.message || "Failed to delete admin", "error");
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                            ),
+                          },
+                        }))}
+                      />
+                    </div>
                   </div>
-
-                  {/* <div>
-                    <h4>Notification Preferences</h4>
-                    <label className="checkbox">
-                      <input type="checkbox" defaultChecked />
-                      Weekly finance summary
-                    </label>
-                    <label className="checkbox">
-                      <input type="checkbox" defaultChecked />
-                      Payment failure alerts
-                    </label>
-                    <label className="checkbox">
-                      <input type="checkbox" />
-                      Reminder escalation emails
-                    </label>
-                    <button
-                      className="primary-btn"
-                      onClick={() => showToast("Notification preferences saved!")}
-                      style={{ marginTop: "12px" }}
-                    >
-                      Save Preferences
-                    </button>
-                  </div> */}
                 </div>
               </article>
             )}

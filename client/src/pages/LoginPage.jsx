@@ -194,7 +194,7 @@ export function LoginPage() {
 
             <div className="login-hints">
               <p>
-                <strong>Admin:</strong> admin1234@gmail.com / admin1234
+                <strong>Admin:</strong> admin2002@gmail.com / #Admin2204
               </p>
               <p>
                 <strong>Member:</strong> member1234@gmail.com / member1234
