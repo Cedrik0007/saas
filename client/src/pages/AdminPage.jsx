@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
@@ -121,7 +121,7 @@ export function AdminPage() {
   const [emailTemplate, setEmailTemplate] = useState({
     subject: "Payment Reminder - Outstanding Balance",
     htmlTemplate: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+  <h2 style="color: #1a1a1a; border-bottom: 2px solid #5a31ea; padding-bottom: 10px;">
     Payment Reminder - Outstanding Balance
   </h2>
   <p>Dear {{member_name}},</p>
@@ -380,7 +380,10 @@ export function AdminPage() {
 
   const monthlyCollectionsData = calculateMonthlyCollections();
   const recentPaymentsData = getRecentPayments();
-  const dashboardMetrics = calculateDashboardMetrics();
+  // Make dashboard metrics reactive to changes in invoices, payments, and members
+  const dashboardMetrics = useMemo(() => {
+    return calculateDashboardMetrics();
+  }, [invoices, paymentHistory, members]);
 
   // Calculate report stats based on date range from real database data
   const calculateReportStats = () => {
@@ -772,7 +775,7 @@ export function AdminPage() {
         const data = await response.json();
         if (data && (data.subject || data.htmlTemplate)) {
           const defaultTemplate = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
+  <h2 style="color: #1a1a1a; border-bottom: none; padding-bottom: 10px;">
     Payment Reminder - Outstanding Balance
   </h2>
   <p>Dear {{member_name}},</p>
@@ -903,6 +906,28 @@ export function AdminPage() {
     }
   };
 
+  // Helper function to calculate member balance based on unpaid invoices
+  const calculateMemberBalance = (memberId) => {
+    const memberInvoices = invoices.filter(inv => 
+      inv.memberId === memberId ||
+      (inv.memberEmail && members.find(m => m.id === memberId)?.email?.toLowerCase() === inv.memberEmail.toLowerCase()) ||
+      (inv.memberName && members.find(m => m.id === memberId)?.name?.toLowerCase() === inv.memberName.toLowerCase())
+    );
+    
+    // Use effective invoice status (considering completed payments)
+    const unpaidInvoices = memberInvoices.filter(inv => {
+      const effectiveStatus = getEffectiveInvoiceStatus(inv);
+      return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
+    });
+    
+    const totalOutstanding = unpaidInvoices.reduce((sum, inv) => {
+      const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
+      return sum + amount;
+    }, 0);
+    
+    return totalOutstanding;
+  };
+
   // Payment Approval Functions
   const handleApprovePayment = async (paymentId) => {
     try {
@@ -922,6 +947,20 @@ export function AdminPage() {
       
       await fetchPayments(); // Refresh payments
       await fetchInvoices(); // Refresh invoices
+      
+      // Update member balance after payment approval
+      const payment = paymentHistory.find(p => p.id === paymentId) || payments.find(p => p.id === paymentId);
+      if (payment && payment.memberId) {
+        const newBalance = calculateMemberBalance(payment.memberId);
+        const balanceText = newBalance > 0 ? `$${newBalance.toFixed(2)} Outstanding` : "$0";
+        
+        try {
+          await updateMember(payment.memberId, { balance: balanceText });
+        } catch (error) {
+          console.error('Error updating member balance:', error);
+        }
+      }
+      
       showToast("Payment approved successfully!");
     } catch (error) {
       console.error('Error approving payment:', error);
@@ -1289,6 +1328,23 @@ Subscription Manager HK`;
         paidToAdminName: currentAdmin?.name,
       });
       
+      // Update member balance after marking as paid
+      if (invoice.memberId) {
+        // Wait a bit for the payment to be added to state
+        setTimeout(async () => {
+          await fetchPayments();
+          await fetchInvoices();
+          const newBalance = calculateMemberBalance(invoice.memberId);
+          const balanceText = newBalance > 0 ? `$${newBalance.toFixed(2)} Outstanding` : "$0";
+          
+          try {
+            await updateMember(invoice.memberId, { balance: balanceText });
+          } catch (error) {
+            console.error('Error updating member balance:', error);
+          }
+        }, 500);
+      }
+      
       showToast(`Invoice marked as paid (${paymentMethod})!`);
     }
   };
@@ -1505,6 +1561,22 @@ Subscription Manager HK`;
   };
 
   // Get member's invoices
+  // Helper function to get effective invoice status (considering completed payments)
+  const getEffectiveInvoiceStatus = (invoice) => {
+    // Check if there's a completed payment for this invoice
+    const relatedPayment = (paymentHistory || []).find(
+      (p) => p.invoiceId === invoice.id && (p.status === "Completed" || p.status === "Paid")
+    );
+    
+    // If there's a completed payment, invoice is effectively paid
+    if (relatedPayment) {
+      return "Paid";
+    }
+    
+    // Otherwise use the invoice's own status
+    return invoice.status;
+  };
+
   const getMemberInvoices = (memberId) => {
     return invoices.filter((inv) => inv.memberId === memberId);
   };
@@ -1553,12 +1625,12 @@ Subscription Manager HK`;
             top: "20px",
             right: "20px",
             zIndex: 1000,
-            background: toast.type === "success" ? "#000000" : "#666666",
+            background: toast.type === "success" ? "linear-gradient(135deg, #10b981 0%, #34d399 100%)" : "linear-gradient(135deg, #ef4444 0%, #f87171 100%)",
             color: "white",
             padding: "16px 24px",
             borderRadius: "8px",
-            boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-            border: "1px solid " + (toast.type === "success" ? "#000000" : "#999999"),
+            boxShadow: toast.type === "success" ? "0 4px 12px rgba(16, 185, 129, 0.4)" : "0 4px 12px rgba(239, 68, 68, 0.4)",
+            border: "none",
             animation: "slideIn 0.3s ease",
           }}
         >
@@ -1605,28 +1677,28 @@ Subscription Manager HK`;
             {activeSection === "dashboard" && (
               <article className="screen-card" id="dashboard">
                 <header className="screen-card__header">
-                  <h3>Dashboard</h3>
+                  <h3><i className="fas fa-chart-line" style={{ marginRight: "10px" }}></i>Dashboard</h3>
                   <p>Key KPIs, monthly collections, recent payments.</p>
                 </header>
                 <div className="card dashboard-card">
                   <div className="kpi-grid">
                     <div className="card kpi">
-                      <p>Total Members</p>
+                      <p><i className="fas fa-users" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Total Members</p>
                       <h4>{members.length}</h4>
                       <small>Active members</small>
                     </div>
                     <div className="card kpi">
-                      <p>Total Collected</p>
+                      <p><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#10b981" }}></i>Total Collected</p>
                       <h4>${dashboardMetrics.collectedMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                       <small>${dashboardMetrics.collectedYear.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} YTD</small>
                     </div>
                     <div className="card kpi">
-                      <p>Total Outstanding</p>
+                      <p><i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#f59e0b" }}></i>Total Outstanding</p>
                       <h4>${dashboardMetrics.outstanding.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                       <small>Expected ${dashboardMetrics.expectedAnnual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</small>
                     </div>
                     <div className="card kpi">
-                      <p>Overdue Members</p>
+                      <p><i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: "#ef4444" }}></i>Overdue Members</p>
                       <h4>{dashboardMetrics.overdueMembers}</h4>
                       <small>Requires attention</small>
                     </div>
@@ -1635,7 +1707,7 @@ Subscription Manager HK`;
                   <div className="card chart-card">
                     <div className="card-header">
                       <div>
-                        <h4>Monthly Collections · Last 12 Months</h4>
+                        <h4><i className="fas fa-chart-bar" style={{ marginRight: "8px" }}></i>Monthly Collections · Last 12 Months</h4>
                         <p>Expected contribution is $800 per member per year</p>
                       </div>
                     </div>
@@ -1694,7 +1766,7 @@ Subscription Manager HK`;
 
                   <div className="card table-card">
                     <div className="card-header">
-                      <h4>Recent Payments</h4>
+                      <h4><i className="fas fa-clock" style={{ marginRight: "8px" }}></i>Recent Payments</h4>
                       <button className="text-btn" onClick={() => handleNavClick("members")}>
                         View all
                       </button>
@@ -1997,7 +2069,7 @@ Subscription Manager HK`;
                           outline: "none",
                           transition: "border-color 0.2s"
                         }}
-                        onFocus={(e) => e.target.style.borderColor = "#000"}
+                        onFocus={(e) => e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1), 0 4px 12px rgba(90, 49, 234, 0.12)"}
                         onBlur={(e) => e.target.style.borderColor = "#e0e0e0"}
                       />
                     </label>
@@ -2160,9 +2232,10 @@ Subscription Manager HK`;
                       <h4>
                         {(() => {
                           const memberInvoices = getMemberInvoices(selectedMember.id);
-                          const unpaidInvoices = memberInvoices.filter(inv => 
-                            inv.status === "Unpaid" || inv.status === "Overdue"
-                          );
+                          const unpaidInvoices = memberInvoices.filter(inv => {
+                            const effectiveStatus = getEffectiveInvoiceStatus(inv);
+                            return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
+                          });
                           const outstandingTotal = unpaidInvoices.reduce((sum, inv) => {
                             const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
                             return sum + amount;
@@ -2213,9 +2286,10 @@ Subscription Manager HK`;
                           <h4>Invoices</h4>
                           {(() => {
                             const memberInvoices = getMemberInvoices(selectedMember.id);
-                            const unpaidInvoices = memberInvoices.filter(inv => 
-                              inv.status === "Unpaid" || inv.status === "Overdue"
-                            );
+                            const unpaidInvoices = memberInvoices.filter(inv => {
+                              const effectiveStatus = getEffectiveInvoiceStatus(inv);
+                              return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
+                            });
                             const outstandingTotal = unpaidInvoices.reduce((sum, inv) => {
                               const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
                               return sum + amount;
@@ -2228,7 +2302,7 @@ Subscription Manager HK`;
                                 color: "#666",
                                 fontWeight: "500"
                               }}>
-                                Total Outstanding: <strong style={{ color: "#000" }}>${outstandingTotal.toFixed(2)}</strong>
+                                Total Outstanding: <strong style={{ color: "#1a1a1a" }}>${outstandingTotal.toFixed(2)}</strong>
                                 {unpaidInvoices.length > 0 && (
                                   <span style={{ marginLeft: "8px", color: "#666" }}>
                                     ({unpaidInvoices.length} unpaid invoice{unpaidInvoices.length > 1 ? 's' : ''})
@@ -2289,16 +2363,23 @@ Subscription Manager HK`;
                                 }}
                                 style={{
                                   padding: "4px 10px",
-                                  background: "#000",
-                                  color: "#fff",
+                                  background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                  color: "#ffffff",
                                   border: "none",
                                   borderRadius: "6px",
                                   fontSize: "0.85rem",
                                   cursor: "pointer",
-                                  transition: "all 0.2s ease"
+                                  transition: "all 0.2s ease",
+                                  boxShadow: "0 2px 4px rgba(90, 49, 234, 0.3)"
                                 }}
-                                onMouseEnter={(e) => e.target.style.background = "#333"}
-                                onMouseLeave={(e) => e.target.style.background = "#000"}
+                                onMouseEnter={(e) => {
+                                  e.target.style.background = "linear-gradient(135deg, #4a28d0 0%, #6b3fff 100%)";
+                                  e.target.style.boxShadow = "0 4px 8px rgba(90, 49, 234, 0.4)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                                  e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.3)";
+                                }}
                               >
                                 📷 View
                               </button>
@@ -2382,19 +2463,17 @@ Subscription Manager HK`;
                                 key={idx}
                                 style={{
                                   background: "#fff",
-                                  border: "1px solid #e0e0e0",
+                                  border: "none",
                                   borderRadius: "12px",
                                   padding: "20px",
                                   transition: "all 0.3s ease",
-                                  boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+                                  boxShadow: "0 2px 8px rgba(90, 49, 234, 0.08)"
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.1)";
-                                  e.currentTarget.style.borderColor = "#000";
+                                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.15)";
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.05)";
-                                  e.currentTarget.style.borderColor = "#e0e0e0";
+                                  e.currentTarget.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.08)";
                                 }}
                               >
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
@@ -2478,8 +2557,8 @@ Subscription Manager HK`;
                                       style={{
                                         width: "100%",
                                         padding: "10px 16px",
-                                        background: "#000",
-                                        color: "#fff",
+                                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                        color: "#ffffff",
                                         border: "none",
                                         borderRadius: "8px",
                                         fontSize: "0.875rem",
@@ -2489,13 +2568,20 @@ Subscription Manager HK`;
                                         display: "flex",
                                         alignItems: "center",
                                         justifyContent: "center",
-                                        gap: "8px"
+                                        gap: "8px",
+                                        boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)"
                                       }}
-                                      onMouseEnter={(e) => e.target.style.background = "#333"}
-                                      onMouseLeave={(e) => e.target.style.background = "#000"}
+                                      onMouseEnter={(e) => {
+                                        e.target.style.background = "linear-gradient(135deg, #4a28d0 0%, #6b3fff 100%)";
+                                        e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.4)";
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                                        e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
+                                      }}
                                     >
-                                      <span>📷</span>
-                                      <span>View Screenshot</span>
+                                      <span style={{ color: "#ffffff" }}>📷</span>
+                                      <span style={{ color: "#ffffff" }}>View Screenshot</span>
                                     </button>
                                   </div>
                                 )}
@@ -2558,26 +2644,34 @@ Subscription Manager HK`;
             {activeSection === "invoice-builder" && (
               <article className="screen-card" id="invoice-builder">
                 <header className="screen-card__header">
-                  <h3>Invoice Creation</h3>
+                  <h3><i className="fas fa-file-invoice" style={{ marginRight: "10px" }}></i>Invoice Builder</h3>
                   <p>Create invoices for monthly or Eid contributions.</p>
                 </header>
-                <form className="card form-grid" onSubmit={handleAddInvoice}>
-                  <label>
-                    Member *
+                <form className="card form-grid" onSubmit={handleAddInvoice} style={{ padding: "40px", background: "linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
+                  <label style={{ marginBottom: "24px" }}>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member *</span>
                     <div style={{ position: "relative" }} data-member-dropdown>
                       <div
                         onClick={() => setShowMemberDropdown(!showMemberDropdown)}
                         style={{
-                          padding: "10px 16px",
-                          border: "1px solid #e0e0e0",
-                          borderRadius: "8px",
-                          background: "#fff",
+                          padding: "14px 16px",
+                          border: "none",
+                          borderRadius: "10px",
+                          background: "#f8f9ff",
                           cursor: "pointer",
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
-                          color: invoiceForm.memberId ? "#000" : "#999",
-                          minHeight: "42px"
+                          color: invoiceForm.memberId ? "#1a1a1a" : "#9ca3af",
+                          minHeight: "48px",
+                          boxShadow: "0 2px 4px rgba(90, 49, 234, 0.08)",
+                          transition: "all 0.2s ease"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = "0 4px 8px rgba(90, 49, 234, 0.12)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.08)";
                         }}
                       >
                         <span>
@@ -2588,7 +2682,7 @@ Subscription Manager HK`;
                               })()
                             : "Select Member"}
                         </span>
-                        <span style={{ fontSize: "0.75rem" }}>{showMemberDropdown ? "▲" : "▼"}</span>
+                        <i className={`fas ${showMemberDropdown ? "fa-chevron-up" : "fa-chevron-down"}`} style={{ fontSize: "0.75rem", color: "#5a31ea" }}></i>
                       </div>
                       
                       {showMemberDropdown && (
@@ -2599,20 +2693,21 @@ Subscription Manager HK`;
                             left: 0,
                             right: 0,
                             background: "#fff",
-                            border: "1px solid #e0e0e0",
-                            borderRadius: "8px",
-                            marginTop: "4px",
+                            border: "none",
+                            borderRadius: "10px",
+                            marginTop: "8px",
                             maxHeight: "300px",
                             overflow: "hidden",
                             zIndex: 1000,
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
+                            boxShadow: "0 8px 24px rgba(90, 49, 234, 0.15)"
                           }}
                         >
                           {/* Search Input */}
                           <div style={{ 
                             padding: "12px", 
-                            borderBottom: "1px solid #e0e0e0",
-                            background: "#f9fafb"
+                            borderBottom: "none",
+                            background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
+                            boxShadow: "0 2px 4px rgba(90, 49, 234, 0.05)"
                           }}>
                             <div style={{ position: "relative" }}>
                               <input
@@ -2625,21 +2720,21 @@ Subscription Manager HK`;
                                 autoFocus
                                 style={{
                                   width: "100%",
-                                  padding: "10px 36px 10px 12px",
-                                  border: "1px solid #e0e0e0",
-                                  borderRadius: "6px",
+                                  padding: "12px 36px 12px 16px",
+                                  border: "none",
+                                  borderRadius: "8px",
                                   fontSize: "0.875rem",
                                   outline: "none",
-                                  background: "#fff",
-                                  transition: "border-color 0.2s"
+                                  background: "#ffffff",
+                                  transition: "all 0.2s",
+                                  boxShadow: "0 2px 4px rgba(90, 49, 234, 0.08)",
+                                  color: "#1a1a1a"
                                 }}
                                 onFocus={(e) => {
-                                  e.target.style.borderColor = "#000";
-                                  e.target.style.boxShadow = "0 0 0 2px rgba(0,0,0,0.05)";
+                                  e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1), 0 4px 12px rgba(90, 49, 234, 0.12)";
                                 }}
                                 onBlur={(e) => {
-                                  e.target.style.borderColor = "#e0e0e0";
-                                  e.target.style.boxShadow = "none";
+                                  e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.08)";
                                 }}
                               />
                               {invoiceMemberSearch && (
@@ -2706,24 +2801,25 @@ Subscription Manager HK`;
                                     setInvoiceMemberSearch("");
                                   }}
                                   style={{
-                                    padding: "12px 16px",
+                                    padding: "14px 16px",
                                     cursor: "pointer",
-                                    borderBottom: "1px solid #f0f0f0",
-                                    background: invoiceForm.memberId === member.id ? "#f5f5f5" : "#fff",
-                                    transition: "background 0.2s"
+                                    borderBottom: "none",
+                                    background: invoiceForm.memberId === member.id ? "linear-gradient(135deg, #f0f4ff 0%, #e8f0ff 100%)" : "#fff",
+                                    transition: "all 0.2s",
+                                    boxShadow: invoiceForm.memberId === member.id ? "0 2px 4px rgba(90, 49, 234, 0.1)" : "none"
                                   }}
                                   onMouseEnter={(e) => {
                                     if (invoiceForm.memberId !== member.id) {
-                                      e.target.style.background = "#f9f9f9";
+                                      e.currentTarget.style.background = "#f8f9ff";
                                     }
                                   }}
                                   onMouseLeave={(e) => {
                                     if (invoiceForm.memberId !== member.id) {
-                                      e.target.style.background = "#fff";
+                                      e.currentTarget.style.background = "#fff";
                                     }
                                   }}
                                 >
-                                  <div style={{ fontWeight: "500", color: "#000" }}>{member.name}</div>
+                                  <div style={{ fontWeight: "500", color: "#1a1a1a" }}>{member.name}</div>
                                   <div style={{ fontSize: "0.75rem", color: "#666", marginTop: "2px" }}>
                                     {member.id} {member.email ? `• ${member.email}` : ""}
                                   </div>
@@ -2750,8 +2846,8 @@ Subscription Manager HK`;
                     )}
                   </label>
 
-                  <label>
-                    Invoice Type *
+                  <label style={{ marginBottom: "24px" }}>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-tag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice Type *</span>
                     <select
                       required
                       value={invoiceForm.invoiceType}
@@ -2760,7 +2856,19 @@ Subscription Manager HK`;
                         const amount = type === "Monthly" ? "50" : "100";
                         setInvoiceForm({ ...invoiceForm, invoiceType: type, amount: amount });
                       }}
-                      style={{ color: "#000" }}
+                      style={{ 
+                        color: "#1a1a1a",
+                        background: "#ffffff",
+                        boxShadow: "0 2px 4px rgba(90, 49, 234, 0.08)",
+                        transition: "all 0.2s"
+                      }}
+                      className="mono-input"
+                      onFocus={(e) => {
+                        e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1), 0 4px 12px rgba(90, 49, 234, 0.12)";
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.08)";
+                      }}
                     >
                       <option value="">Select Invoice Type</option>
                       <option value="Monthly">Monthly - $50</option>
@@ -2768,53 +2876,57 @@ Subscription Manager HK`;
                     </select>
                   </label>
 
-                  <label>
-                    Period *
+                  <label style={{ marginBottom: "24px" }}>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Period *</span>
                     <input
                       type="text"
                       required
                       placeholder="e.g. Nov 2025"
                       value={invoiceForm.period}
                       onChange={(e) => setInvoiceForm({ ...invoiceForm, period: e.target.value })}
-                      style={{ color: "#000" }}
+                      className="mono-input"
+                      style={{ color: "#1a1a1a" }}
                     />
                   </label>
 
-                  <label>
-                    Amount ($) *
+                  <label style={{ marginBottom: "24px" }}>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount ($) *</span>
                     <input
                       type="number"
                       required
                       value={invoiceForm.amount}
                       onChange={(e) => setInvoiceForm({ ...invoiceForm, amount: e.target.value })}
-                      style={{ color: "#000" }}
+                      className="mono-input"
+                      style={{ color: "#1a1a1a" }}
                     />
                   </label>
 
-                  <label>
-                    Due Date *
+                  <label style={{ marginBottom: "24px" }}>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar-check" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Due Date *</span>
                     <input
                       type="date"
                       required
                       value={invoiceForm.due}
                       onChange={(e) => setInvoiceForm({ ...invoiceForm, due: e.target.value })}
-                      style={{ color: "#000" }}
+                      className="mono-input"
+                      style={{ color: "#1a1a1a" }}
                     />
                   </label>
 
-                  <label className="notes">
-                    Notes
+                  <label className="notes" style={{ marginBottom: "24px" }}>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-sticky-note" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Notes</span>
                     <textarea
                       placeholder="Add context for this invoice"
                       value={invoiceForm.notes}
                       onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
-                      style={{ color: "#000" }}
+                      className="mono-input"
+                      style={{ color: "#1a1a1a", minHeight: "100px" }}
                     ></textarea>
                   </label>
 
-                  <div className="form-actions">
-                    <button type="submit" className="primary-btn">
-                      Create Invoice
+                  <div className="form-actions" style={{ marginTop: "8px", gap: "12px" }}>
+                    <button type="submit" className="primary-btn" style={{ padding: "14px 28px", fontSize: "1rem", fontWeight: "600" }}>
+                      <i className="fas fa-file-invoice" style={{ marginRight: "8px" }}></i>Create Invoice
                     </button>
                     <button
                       type="button"
@@ -2973,7 +3085,8 @@ Subscription Manager HK`;
                   background: "#ffffff",
                   borderRadius: "12px",
                   padding: "clamp(24px, 4vw, 32px)",
-                  border: "2px solid #000000",
+                  border: "none",
+                  boxShadow: "0 2px 8px rgba(90, 49, 234, 0.1)",
                   marginTop: "24px",
                   boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
                 }}>
@@ -3060,8 +3173,9 @@ Subscription Manager HK`;
                           width: "clamp(60px, 8vw, 72px)",
                           height: "clamp(34px, 5vw, 40px)",
                           borderRadius: "999px",
-                          border: "2px solid #000000",
-                          background: automationEnabled ? "#000000" : "#ffffff",
+                          border: "none",
+                          background: automationEnabled ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" : "#f0f0f0",
+                          boxShadow: automationEnabled ? "0 2px 8px rgba(90, 49, 234, 0.3)" : "0 2px 4px rgba(0,0,0,0.05)",
                           cursor: "pointer",
                           transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                           outline: "none",
@@ -3085,7 +3199,7 @@ Subscription Manager HK`;
                           width: "clamp(26px, 4vw, 30px)",
                           height: "clamp(26px, 4vw, 30px)",
                           borderRadius: "50%",
-                          background: automationEnabled ? "#ffffff" : "#000000",
+                          background: automationEnabled ? "#ffffff" : "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
                           transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                           left: automationEnabled ? "auto" : "4px",
                           right: automationEnabled ? "4px" : "auto",
@@ -3102,9 +3216,9 @@ Subscription Manager HK`;
                   background: "#ffffff",
                   borderRadius: "12px",
                   padding: "clamp(24px, 4vw, 32px)",
-                  border: "2px solid #000000",
+                  border: "none",
                   marginTop: "24px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
+                  boxShadow: "0 4px 12px rgba(90, 49, 234, 0.12)"
                 }}>
                   <div style={{
                     display: "flex",
@@ -3327,10 +3441,10 @@ Subscription Manager HK`;
                   </h4>
                   <div style={{
                     background: "#fff",
-                    border: "2px solid #000000",
+                    border: "none",
                     borderRadius: "12px",
                     padding: "32px",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
+                    boxShadow: "0 4px 12px rgba(90, 49, 234, 0.12)"
                   }}>
                     <div style={{ marginBottom: "24px" }}>
                       <label style={{
@@ -3390,7 +3504,7 @@ Subscription Manager HK`;
                           transition: "all 0.2s ease"
                         }}
                         onFocus={(e) => {
-                          e.target.style.borderColor = "#000";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1), 0 4px 12px rgba(90, 49, 234, 0.12)";
                           e.target.style.boxShadow = "0 0 0 3px rgba(0,0,0,0.05)";
                         }}
                         onBlur={(e) => {
@@ -3453,10 +3567,10 @@ Subscription Manager HK`;
                   </h4>
                   <div style={{
                     background: "#fff",
-                    border: "2px solid #000000",
+                    border: "none",
                     borderRadius: "12px",
                     padding: "32px",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
+                    boxShadow: "0 4px 12px rgba(90, 49, 234, 0.12)"
                   }}>
                     <div style={{
                       display: "grid",
@@ -3861,7 +3975,7 @@ Subscription Manager HK`;
                           key={method.name}
                           style={{
                             background: "#fff",
-                            border: `1.5px solid ${method.visible ? "#000" : "#e5e5e5"}`,
+                            border: "none",
                             borderRadius: "20px",
                             padding: "28px",
                             transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
@@ -4059,7 +4173,8 @@ Subscription Manager HK`;
                                     style={{
                                       padding: "10px 20px",
                                       background: "#fff",
-                                      border: "2px solid #000",
+                                      border: "none",
+                                      boxShadow: "0 2px 8px rgba(90, 49, 234, 0.1)",
                                       borderRadius: "8px",
                                       fontSize: "0.875rem",
                                       fontWeight: "600",
@@ -4198,7 +4313,7 @@ Subscription Manager HK`;
                                       borderRadius: "10px",
                                       fontSize: "0.9375rem",
                                       color: "#333",
-                                      borderLeft: "4px solid #000",
+                                      borderLeft: "4px solid #5a31ea",
                                       fontWeight: "500",
                                       boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
                                       transition: "all 0.2s ease"
@@ -4573,9 +4688,10 @@ Subscription Manager HK`;
                               minWidth: "150px",
                               padding: "14px 20px",
                               borderRadius: "8px",
-                              border: donationForm.isMember ? "2px solid #000" : "2px solid #e0e0e0",
-                              background: donationForm.isMember ? "#000" : "#fff",
-                              color: donationForm.isMember ? "#fff" : "#333",
+                              border: "none",
+                              background: donationForm.isMember ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" : "#f8f9ff",
+                              color: donationForm.isMember ? "#ffffff" : "#1a1a1a",
+                              boxShadow: donationForm.isMember ? "0 4px 12px rgba(90, 49, 234, 0.3)" : "0 2px 4px rgba(90, 49, 234, 0.08)",
                               fontWeight: "600",
                               fontSize: "0.9375rem",
                               cursor: "pointer",
@@ -4587,7 +4703,7 @@ Subscription Manager HK`;
                             }}
                             onMouseEnter={(e) => {
                               if (!donationForm.isMember) {
-                                e.currentTarget.style.borderColor = "#000";
+                                e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.15)";
                                 e.currentTarget.style.background = "#f8f8f8";
                               }
                             }}
@@ -4609,9 +4725,10 @@ Subscription Manager HK`;
                               minWidth: "150px",
                               padding: "14px 20px",
                               borderRadius: "8px",
-                              border: !donationForm.isMember ? "2px solid #000" : "2px solid #e0e0e0",
-                              background: !donationForm.isMember ? "#000" : "#fff",
-                              color: !donationForm.isMember ? "#fff" : "#333",
+                              border: "none",
+                              background: !donationForm.isMember ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" : "#f8f9ff",
+                              color: !donationForm.isMember ? "#ffffff" : "#1a1a1a",
+                              boxShadow: !donationForm.isMember ? "0 4px 12px rgba(90, 49, 234, 0.3)" : "0 2px 4px rgba(90, 49, 234, 0.08)",
                               fontWeight: "600",
                               fontSize: "0.9375rem",
                               cursor: "pointer",
@@ -4623,7 +4740,7 @@ Subscription Manager HK`;
                             }}
                             onMouseEnter={(e) => {
                               if (donationForm.isMember) {
-                                e.currentTarget.style.borderColor = "#000";
+                                e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.15)";
                                 e.currentTarget.style.background = "#f8f8f8";
                               }
                             }}
@@ -4713,7 +4830,7 @@ Subscription Manager HK`;
                                           transition: "border-color 0.2s"
                                         }}
                                         onFocus={(e) => {
-                                          e.target.style.borderColor = "#000";
+                                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1), 0 4px 12px rgba(90, 49, 234, 0.12)";
                                           e.target.style.boxShadow = "0 0 0 2px rgba(0,0,0,0.05)";
                                         }}
                                         onBlur={(e) => {
@@ -4998,29 +5115,7 @@ Subscription Manager HK`;
                     </div>
                   </div>
 
-                  {/* Filters */}
-                  <div style={{ display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap", alignItems: "center" }}>
-                    <select
-                      value={reportFilter}
-                      onChange={(e) => setReportFilter(e.target.value)}
-                      style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #e0e0e0", fontSize: "0.875rem", background: "#fff", cursor: "pointer" }}
-                    >
-                      <option value="all">All (Payments + Donations)</option>
-                      <option value="payments">Payments Only</option>
-                      <option value="donations">Donations Only</option>
-                    </select>
-                    {reportFilter === "donations" && (
-                      <select
-                        value={donorTypeFilter}
-                        onChange={(e) => setDonorTypeFilter(e.target.value)}
-                        style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #e0e0e0", fontSize: "0.875rem", background: "#fff", cursor: "pointer" }}
-                      >
-                        <option value="all">All Donors</option>
-                        <option value="member">Members Only</option>
-                        <option value="non-member">Non-Members Only</option>
-                      </select>
-                    )}
-                  </div>
+                 
 
                   <div className="kpi-grid" style={{ marginTop: "20px" }}>
                     <div className="card kpi">
@@ -5088,6 +5183,30 @@ Subscription Manager HK`;
                         ))}
                       </ul>
                     </div>
+                  </div>
+
+                   {/* Filters */}
+                  <div style={{ display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap", alignItems: "center" }}>
+                    <select
+                      value={reportFilter}
+                      onChange={(e) => setReportFilter(e.target.value)}
+                      style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #e0e0e0", fontSize: "0.875rem", background: "#fff", cursor: "pointer" }}
+                    >
+                      <option value="all">All (Payments + Donations)</option>
+                      <option value="payments">Payments Only</option>
+                      <option value="donations">Donations Only</option>
+                    </select>
+                    {reportFilter === "donations" && (
+                      <select
+                        value={donorTypeFilter}
+                        onChange={(e) => setDonorTypeFilter(e.target.value)}
+                        style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #e0e0e0", fontSize: "0.875rem", background: "#fff", cursor: "pointer" }}
+                      >
+                        <option value="all">All Donors</option>
+                        <option value="member">Members Only</option>
+                        <option value="non-member">Non-Members Only</option>
+                      </select>
+                    )}
                   </div>
 
                   {/* Transactions Table */}

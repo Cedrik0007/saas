@@ -39,6 +39,7 @@ export function MemberPage() {
   const [toast, setToast] = useState(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isAlertDismissed, setIsAlertDismissed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
 
   // Get current member from MongoDB based on email in sessionStorage (case-insensitive)
   const memberEmail = sessionStorage.getItem('memberEmail');
@@ -88,6 +89,27 @@ export function MemberPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection]); // Only depend on activeSection to prevent unnecessary re-fetches
 
+  // Close mobile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (isMobileMenuOpen && !event.target.closest('.admin-menu') && !event.target.closest('.mobile-menu-toggle')) {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    if (isMobileMenuOpen) {
+      document.addEventListener('click', handleClickOutside);
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+      document.body.style.overflow = '';
+    };
+  }, [isMobileMenuOpen]);
+
   const navigate = useNavigate();
 
   const handleNavClick = (id) => {
@@ -135,9 +157,14 @@ export function MemberPage() {
     if (!currentMember) return [];
     return invoices.filter((inv) => {
       const effectiveStatus = getEffectiveInvoiceStatus(inv);
+      const isMemberInvoice = 
+        inv.memberId === currentMember.id || 
+        inv.memberEmail === currentMember.email || 
+        inv.memberName === currentMember.name;
+      
       return (
-        (effectiveStatus === "Unpaid" || effectiveStatus === "Overdue") &&
-        (inv.memberId === currentMember.id || inv.memberEmail === currentMember.email || inv.memberName === currentMember.name)
+        isMemberInvoice &&
+        (effectiveStatus === "Unpaid" || effectiveStatus === "Overdue")
       );
     });
   };
@@ -405,7 +432,8 @@ export function MemberPage() {
   const calculateStats = () => {
     const unpaidInvoices = getUnpaidInvoices();
     const outstanding = unpaidInvoices.reduce((total, inv) => {
-      return total + parseFloat(inv.amount.replace("$", ""));
+      const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
+      return total + amount;
     }, 0);
 
     // Get current year
@@ -475,7 +503,15 @@ export function MemberPage() {
 
   return (
     <>
-      <SiteHeader showCTA={false} showLogout={true} onLogout={handleLogout} />
+      <SiteHeader 
+        showCTA={false} 
+        showLogout={true} 
+        onLogout={handleLogout}
+        showMobileMenu={true}
+        isMobileMenuOpen={isMobileMenuOpen}
+        onMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        isSticky={true}
+      />
 
       {/* Toast Notification */}
       {toast && (
@@ -485,12 +521,12 @@ export function MemberPage() {
             top: "20px",
             right: "20px",
             zIndex: 1000,
-            background: toast.type === "success" ? "#000000" : "#666666",
+            background: toast.type === "success" ? "linear-gradient(135deg, #10b981 0%, #34d399 100%)" : "linear-gradient(135deg, #ef4444 0%, #f87171 100%)",
             color: "white",
             padding: "16px 24px",
             borderRadius: "8px",
-            boxShadow: "0 4px 6px rgba(0,0,0,0.2)",
-            border: "1px solid " + (toast.type === "success" ? "#000000" : "#999999"),
+            boxShadow: toast.type === "success" ? "0 4px 12px rgba(16, 185, 129, 0.4)" : "0 4px 12px rgba(239, 68, 68, 0.4)",
+            border: "2px solid " + (toast.type === "success" ? "#10b981" : "#ef4444"),
             animation: "slideIn 0.3s ease",
           }}
         >
@@ -498,32 +534,32 @@ export function MemberPage() {
         </div>
       )}
 
-      <main className="member-main">
-        {/* Mobile Horizontal Navigation */}
-        <div className="mobile-nav-tabs">
-          {sections.map((section) => (
-            <button
-              key={section.id}
-              className={`mobile-nav-tab ${activeSection === section.id ? "active" : ""}`}
-              onClick={() => handleNavClick(section.id)}
-            >
-              {section.label}
-            </button>
-          ))}
-        </div>
+      <main className="admin-main admin-main--sticky-header">
+        {/* Mobile Menu Overlay */}
+        {isMobileMenuOpen && (
+          <div 
+            className="mobile-menu-overlay"
+            onClick={() => setIsMobileMenuOpen(false)}
+          ></div>
+        )}
 
-        <div className="member-layout">
-          {/* Desktop Sidebar */}
-          <aside className="member-menu">
+        <div className="admin-layout">
+          {/* Desktop Sidebar / Mobile Menu */}
+          <aside 
+            className={`admin-menu ${isMobileMenuOpen ? "mobile-open" : ""}`}
+            onClick={(e) => e.stopPropagation()}
+          >
             <p className="eyebrow light">Member Portal</p>
             <h3>{currentMember?.name || "Member"}</h3>
-            {/* <p>Balance: {currentMember?.balance || "$0"} | Next Due: {currentMember?.nextDue || "N/A"}</p> */}
             <nav>
               {sections.map((section) => (
                 <button
                   key={section.id}
                   className={`admin-tab ${activeSection === section.id ? "active" : ""}`}
-                  onClick={() => handleNavClick(section.id)}
+                  onClick={() => {
+                    handleNavClick(section.id);
+                    setIsMobileMenuOpen(false); // Close menu on section click
+                  }}
                 >
                   {section.label}
                 </button>
@@ -531,90 +567,81 @@ export function MemberPage() {
             </nav>
           </aside>
 
-          <div className="member-body">
+          <div className="admin-body">
             {/* DASHBOARD */}
             {activeSection === "dashboard" && (
               <article className="screen-card" id="dashboard">
-                <header className="member-dashboard-header">
+                <header className="screen-card__header">
                   <div>
-                    <h2>Welcome back, {currentMember?.name?.split(' ')[0] || "Member"}</h2>
-                    <p className="dashboard-subtitle">Here's an overview of your membership account</p>
+                    <h3><i className="fas fa-chart-line" style={{ marginRight: "10px" }}></i>Dashboard</h3>
+                    <p>Welcome back, {currentMember?.name?.split(' ')[0] || "Member"}. Here's an overview of your membership account.</p>
                   </div>
-                  <button className="primary-btn" onClick={() => handleNavClick("pay")}>
-                    Pay Now
-                  </button>
+                  {/* <button className="primary-btn" onClick={() => handleNavClick("pay")}>
+                    <i className="fas fa-credit-card" style={{ marginRight: "8px" }}></i>Pay Now
+                  </button> */}
                 </header>
 
-                {/* Alert Banner */}
-                {stats.outstanding > 0 && !isAlertDismissed && (
-                  <div className="alert-banner alert-warning">
-                    <div className="alert-content">
-                      <strong>Payment Due Soon</strong>
-                      <p>
-                        You have an outstanding balance of ${stats.outstanding.toFixed(2)}. Please pay to avoid late
-                        fees.
-                      </p>
+                <div className="card dashboard-card">
+                  {/* Alert Banner */}
+                  {stats.outstanding > 0 && !isAlertDismissed && (
+                    <div className="alert-banner alert-warning" style={{ marginBottom: "24px" }}>
+                      <div className="alert-content">
+                        <strong>Payment Due Soon</strong>
+                        <p>
+                          You have an outstanding balance of ${stats.outstanding.toFixed(2)}. Please pay to avoid late
+                          fees.
+                        </p>
+                      </div>
+                      <button 
+                        className="alert-dismiss" 
+                        onClick={() => setIsAlertDismissed(true)}
+                        style={{ cursor: "pointer" }}
+                      >
+                        ×
+                      </button>
                     </div>
-                    <button 
-                      className="alert-dismiss" 
-                      onClick={() => setIsAlertDismissed(true)}
-                      style={{ cursor: "pointer" }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
+                  )}
 
-                {/* Stats Cards */}
-                <div className="member-stats-grid">
-                  <div className="stat-card stat-primary">
-                    <div className="stat-details">
-                      <span className="stat-label">Outstanding Balance</span>
-                      <h3 className="stat-value">${stats.outstanding}</h3>
-                      <span className="stat-change negative">
-                        {getUnpaidInvoices().length} invoice(s) pending
-                      </span>
+                  {/* Stats Cards */}
+                  <div className="kpi-grid">
+                    <div className="card kpi">
+                      <p><i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: "#ef4444" }}></i>Outstanding Balance</p>
+                      <h4>${stats.outstanding.toFixed(2)}</h4>
+                      <small>{getUnpaidInvoices().length} invoice(s) pending</small>
                     </div>
-                  </div>
 
-                  <div className="stat-card stat-success">
-                    <div className="stat-details">
-                      <span className="stat-label">Next Due Date</span>
-                      <h3 className="stat-value">{stats.nextDue}</h3>
-                      <span className="stat-change">{stats.nextDueAmount}</span>
+                    <div className="card kpi">
+                      <p><i className="fas fa-calendar-alt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Next Due Date</p>
+                      <h4>{stats.nextDue}</h4>
+                      <small>{stats.nextDueAmount}</small>
                     </div>
-                  </div>
 
-                  <div className="stat-card stat-info">
-                    <div className="stat-details">
-                      <span className="stat-label">Paid This Year</span>
-                      <h3 className="stat-value">${parseFloat(stats.paidThisYear).toFixed(2)}</h3>
-                      <span className="stat-change positive">On track</span>
+                    <div className="card kpi">
+                      <p><i className="fas fa-check-circle" style={{ marginRight: "8px", color: "#10b981" }}></i>Paid This Year</p>
+                      <h4>${parseFloat(stats.paidThisYear).toFixed(2)}</h4>
+                      <small>On track</small>
                     </div>
-                  </div>
 
-                  <div className="stat-card stat-neutral">
-                    <div className="stat-details">
-                      <span className="stat-label">Membership Plan</span>
-                      <h3 className="stat-value">Active</h3>
-                      <span className="stat-change">$50/mo + 2×$100 Eid</span>
+                    <div className="card kpi">
+                      <p><i className="fas fa-user-check" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Membership Plan</p>
+                      <h4>Active</h4>
+                      <small>$50/mo + 2×$100 Eid</small>
                     </div>
                   </div>
-                </div>
 
-                {/* Main Content Grid */}
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-                  gap: "20px",
-                  marginTop: "24px"
-                }}>
-                  {/* Upcoming Payments */}
-                  <div className="dashboard-card">
-                    <div className="card-header-flex">
-                      <h4>Upcoming Payments</h4>
-                      <span className="badge-count">{getUpcomingPayments().length}</span>
-                    </div>
+                  {/* Main Content Grid */}
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                    gap: "20px",
+                    marginTop: "24px"
+                  }}>
+                    {/* Upcoming Payments */}
+                    <div className="card">
+                      <div className="card-header-flex">
+                        <h4><i className="fas fa-clock" style={{ marginRight: "8px" }}></i>Upcoming Payments</h4>
+                        <span className="badge-count">{getUpcomingPayments().length}</span>
+                      </div>
                     <div className="payment-list">
                       {getUpcomingPayments().slice(0, 3).map((item) => (
                         <div key={item.id} className="payment-item">
@@ -634,11 +661,11 @@ export function MemberPage() {
                     </button>
                   </div>
 
-                  {/* Recent Activity */}
-                  <div className="dashboard-card">
-                    <div className="card-header-flex">
-                      <h4>Recent Activity</h4>
-                    </div>
+                    {/* Recent Activity */}
+                    <div className="card">
+                      <div className="card-header-flex">
+                        <h4><i className="fas fa-history" style={{ marginRight: "8px" }}></i>Recent Activity</h4>
+                      </div>
                     <div className="activity-list">
                       {(() => {
                         const memberPayments = currentMember 
@@ -702,36 +729,41 @@ export function MemberPage() {
                     })()}
                   </div>
 
-                  {/* Quick Actions */}
-                  <div className="dashboard-card quick-actions-card">
-                    <h4>Quick Actions</h4>
-                    <div className="quick-actions-grid">
-                      <button
-                        className="quick-action-btn"
-                        onClick={() => handleNavClick("pay")}
-                      >
-                        <span className="action-label">Pay Now</span>
-                      </button>
-                      <button
-                        className="quick-action-btn"
-                        onClick={() => handleNavClick("invoices")}
-                      >
-                        <span className="action-label">View Invoices</span>
-                      </button>
-                      <button
-                        className="quick-action-btn"
-                        onClick={() => handleNavClick("history")}
-                      >
-                        <span className="action-label">Payment History</span>
-                      </button>
-                      <button
-                        className="quick-action-btn"
-                        onClick={() => handleNavClick("profile")}
-                      >
-                        <span className="action-label">Settings</span>
-                      </button>
+                    {/* Quick Actions */}
+                    <div className="card quick-actions-card">
+                      <h4><i className="fas fa-bolt" style={{ marginRight: "8px" }}></i>Quick Actions</h4>
+                      <div className="quick-actions-grid">
+                        <button
+                          className="quick-action-btn"
+                          onClick={() => handleNavClick("pay")}
+                        >
+                          <i className="fas fa-credit-card" style={{ marginRight: "8px" }}></i>
+                          <span className="action-label">Pay Now</span>
+                        </button>
+                        <button
+                          className="quick-action-btn"
+                          onClick={() => handleNavClick("invoices")}
+                        >
+                          <i className="fas fa-file-invoice" style={{ marginRight: "8px" }}></i>
+                          <span className="action-label">View Invoices</span>
+                        </button>
+                        <button
+                          className="quick-action-btn"
+                          onClick={() => handleNavClick("history")}
+                        >
+                          <i className="fas fa-list-alt" style={{ marginRight: "8px" }}></i>
+                          <span className="action-label">Payment History</span>
+                        </button>
+                        <button
+                          className="quick-action-btn"
+                          onClick={() => handleNavClick("profile")}
+                        >
+                          <i className="fas fa-cog" style={{ marginRight: "8px" }}></i>
+                          <span className="action-label">Settings</span>
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                </div>
                 </div>
               </article>
             )}
@@ -740,7 +772,7 @@ export function MemberPage() {
             {activeSection === "pay" && (
               <article className="screen-card" id="pay">
                 <header className="screen-card__header">
-                  <h3>Pay Now</h3>
+                  <h3><i className="fas fa-credit-card" style={{ marginRight: "10px" }}></i>Pay Now</h3>
                   <p>Select invoices and choose your payment method.</p>
                 </header>
 
@@ -824,7 +856,7 @@ export function MemberPage() {
                                   display: "flex",
                                   flexDirection: "column",
                                   padding: "16px",
-                                  border: `2px solid ${isSelected ? "var(--primary, #000)" : "#e0e0e0"}`,
+                                  border: `2px solid ${isSelected ? "#5a31ea" : "#e0e0e0"}`,
                                   borderRadius: "8px",
                                   cursor: "pointer",
                                   transition: "all 0.2s ease",
@@ -865,7 +897,7 @@ export function MemberPage() {
                                       fontWeight: "600", 
                                       fontSize: "0.95rem",
                                       marginBottom: "4px",
-                                      color: "#000"
+                                      color: "#5a31ea"
                                     }}>
                                       {invoice.period}
                                     </div>
@@ -889,7 +921,7 @@ export function MemberPage() {
                                   <span style={{ 
                                     fontSize: "1.1rem", 
                                     fontWeight: "600",
-                                    color: "#000"
+                                    color: "#1a1a1a"
                                   }}>
                                     {invoice.amount}
                                   </span>
@@ -931,7 +963,7 @@ export function MemberPage() {
                               <div style={{ 
                                 fontSize: "1.5rem", 
                                 fontWeight: "600",
-                                color: "#000"
+                                color: "#5a31ea"
                               }}>
                                 Total: ${calculateTotal().toFixed(2)}
                               </div>
@@ -1063,7 +1095,7 @@ export function MemberPage() {
             {activeSection === "invoices" && (
               <article className="screen-card" id="invoices">
                 <header className="screen-card__header">
-                  <h3>My Invoices</h3>
+                  <h3><i className="fas fa-file-invoice-dollar" style={{ marginRight: "10px" }}></i>My Invoices</h3>
                   <p>View all your invoices and payment status.</p>
                 </header>
                 <div className="card">
@@ -1296,19 +1328,26 @@ export function MemberPage() {
                           style={{
                             width: "100%",
                             padding: "12px",
-                            background: "#000",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: "8px",
-                            fontSize: "0.9375rem",
-                            fontWeight: "600",
-                            cursor: "pointer",
-                            transition: "all 0.2s ease"
+                          background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "8px",
+                          fontSize: "0.9375rem",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                          boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)"
+                        }}
+                          onMouseEnter={(e) => {
+                            e.target.style.background = "linear-gradient(135deg, #4a28d0 0%, #6b3fff 100%)";
+                            e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.4)";
                           }}
-                          onMouseEnter={(e) => e.target.style.background = "#333"}
-                          onMouseLeave={(e) => e.target.style.background = "#000"}
+                          onMouseLeave={(e) => {
+                            e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                            e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
+                          }}
                         >
-                          📷 View Full Screenshot
+                          <span style={{ color: "#ffffff" }}>📷 View Full Screenshot</span>
                         </button>
                         <img 
                           src={viewingInvoice.screenshot} 
@@ -1331,17 +1370,24 @@ export function MemberPage() {
                       onClick={() => setViewingInvoice(null)}
                       style={{
                         padding: "10px 20px",
-                        background: "#000",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "8px",
-                        fontSize: "0.9375rem",
-                        fontWeight: "600",
-                        cursor: "pointer",
-                        transition: "all 0.2s ease"
-                      }}
-                      onMouseEnter={(e) => e.target.style.background = "#333"}
-                      onMouseLeave={(e) => e.target.style.background = "#000"}
+                          background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "8px",
+                          fontSize: "0.9375rem",
+                          fontWeight: "600",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                          boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)"
+                        }}
+                          onMouseEnter={(e) => {
+                            e.target.style.background = "linear-gradient(135deg, #4a28d0 0%, #6b3fff 100%)";
+                            e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.4)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                            e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
+                          }}
                     >
                       Close
                     </button>
@@ -1354,7 +1400,7 @@ export function MemberPage() {
             {activeSection === "history" && (
               <article className="screen-card" id="history">
                 <header className="screen-card__header">
-                  <h3>Payment History</h3>
+                  <h3><i className="fas fa-history" style={{ marginRight: "10px" }}></i>Payment History</h3>
                   <p>Complete record of all your payments.</p>
                 </header>
                 <div style={{ marginTop: "24px" }}>
@@ -1398,7 +1444,7 @@ export function MemberPage() {
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.1)";
-                              e.currentTarget.style.borderColor = "#000";
+                              e.currentTarget.style.borderColor = "#5a31ea";
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.05)";
@@ -1419,7 +1465,7 @@ export function MemberPage() {
                                 <div style={{ 
                                   fontSize: "1.5rem", 
                                   fontWeight: "700", 
-                                  color: "#000",
+                                  color: "#5a31ea",
                                   marginBottom: "4px"
                                 }}>
                                   {item.amount || "$0"}
@@ -1515,8 +1561,8 @@ export function MemberPage() {
                                   style={{
                                     width: "100%",
                                     padding: "10px 16px",
-                                    background: "#000",
-                                    color: "#fff",
+                                    background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                    color: "#ffffff",
                                     border: "none",
                                     borderRadius: "8px",
                                     fontSize: "0.875rem",
@@ -1526,13 +1572,20 @@ export function MemberPage() {
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
-                                    gap: "8px"
+                                    gap: "8px",
+                                    boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)"
                                   }}
-                                  onMouseEnter={(e) => e.target.style.background = "#333"}
-                                  onMouseLeave={(e) => e.target.style.background = "#000"}
+                                  onMouseEnter={(e) => {
+                                    e.target.style.background = "linear-gradient(135deg, #4a28d0 0%, #6b3fff 100%)";
+                                    e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.4)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                                    e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
+                                  }}
                                 >
-                                  <span>📷</span>
-                                  <span>View Screenshot</span>
+                                  <span style={{ color: "#ffffff" }}>📷</span>
+                                  <span style={{ color: "#ffffff" }}>View Screenshot</span>
                                 </button>
                               </div>
                             )}
@@ -1556,7 +1609,7 @@ export function MemberPage() {
                   gap: "16px"
                 }}>
                   <div>
-                    <h3>Profile Settings</h3>
+                    <h3><i className="fas fa-user-cog" style={{ marginRight: "10px" }}></i>Profile Settings</h3>
                     <p>Manage your account information and preferences.</p>
                   </div>
                   {!isEditingProfile && (
@@ -1593,7 +1646,7 @@ export function MemberPage() {
                         width: "80px",
                         height: "80px",
                         borderRadius: "50%",
-                        background: "linear-gradient(135deg, #000 0%, #333 100%)",
+                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -1674,7 +1727,7 @@ export function MemberPage() {
                               fontSize: "1rem",
                               transition: "border-color 0.2s",
                             }}
-                            onFocus={(e) => e.target.style.borderColor = "#000"}
+                            onFocus={(e) => e.target.style.borderColor = "#5a31ea"}
                             onBlur={(e) => e.target.style.borderColor = "#ddd"}
                           />
                         </label>
@@ -1703,7 +1756,7 @@ export function MemberPage() {
                               fontSize: "1rem",
                               transition: "border-color 0.2s",
                             }}
-                            onFocus={(e) => e.target.style.borderColor = "#000"}
+                            onFocus={(e) => e.target.style.borderColor = "#5a31ea"}
                             onBlur={(e) => e.target.style.borderColor = "#ddd"}
                           />
                         </label>
@@ -1733,7 +1786,7 @@ export function MemberPage() {
                               fontSize: "1rem",
                               transition: "border-color 0.2s",
                             }}
-                            onFocus={(e) => e.target.style.borderColor = "#000"}
+                            onFocus={(e) => e.target.style.borderColor = "#5a31ea"}
                             onBlur={(e) => e.target.style.borderColor = "#ddd"}
                           />
                         </label>
@@ -1855,7 +1908,7 @@ export function MemberPage() {
                             width: "50px",
                             height: "28px",
                             borderRadius: "14px",
-                            backgroundColor: "#000",
+                            backgroundColor: "#5a31ea",
                             cursor: "not-allowed",
                             transition: "background-color 0.3s ease",
                             flexShrink: 0,
@@ -1911,7 +1964,7 @@ export function MemberPage() {
                             width: "50px",
                             height: "28px",
                             borderRadius: "14px",
-                            backgroundColor: "#000",
+                            backgroundColor: "#5a31ea",
                             cursor: "not-allowed",
                             transition: "background-color 0.3s ease",
                             flexShrink: 0,

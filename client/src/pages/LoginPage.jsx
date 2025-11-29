@@ -131,30 +131,32 @@ export function LoginPage() {
           </aside>
 
           <div className="login-form-card">
-            <h1>Sign in</h1>
-            <p style={{ marginBottom: "24px", color: "var(--gray-600)" }}>
-              New user? <Link to="/signup" style={{ color: "var(--primary)", textDecoration: "underline" }}>Sign up here</Link>
-            </p>
+            <div className="login-form-card__header">
+              <h1><i className="fas fa-sign-in-alt" style={{ marginRight: "12px", color: "#5a31ea" }}></i>Sign in</h1>
+              <p>
+                New user? <Link to="/signup" style={{ color: "#5a31ea", textDecoration: "none", fontWeight: "500" }}>Sign up here</Link>
+              </p>
+            </div>
 
             <label className="mono-label">
-              Email
+              <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email</span>
               <input
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                placeholder="Enter Your Email"
+                placeholder="Enter your email address"
                 className="mono-input"
               />
             </label>
 
             <label className="mono-label">
-              Password
+              <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password</span>
               <div style={{ position: "relative" }}>
                 <input
                   type={showPassword ? "text" : "password"}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="Enter Your Password"
+                  placeholder="Enter your password"
                   className="mono-input"
                   style={{ paddingRight: "45px" }}
                 />
@@ -193,6 +195,9 @@ export function LoginPage() {
             </label>
 
             <div className="login-hints">
+              <p style={{ marginTop: 0, fontWeight: "600", color: "#1a1a1a", marginBottom: "12px" }}>
+                <i className="fas fa-info-circle" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Demo Credentials
+              </p>
               <p>
                 <strong>Admin:</strong> admin2002@gmail.com / #Admin2204
               </p>
@@ -224,18 +229,12 @@ export function LoginPage() {
               </button>
             </div>
 
-            <div style={{ textAlign: "center", marginTop: "20px" }}>
-              <p style={{ color: "var(--gray-600)", fontSize: "0.9rem" }}>
-                New user? <Link to="/signup" style={{ color: "var(--primary)", textDecoration: "underline", fontWeight: "500" }}>Create an account</Link>
-              </p>
-            </div>
 
             {authMessage && (
               <div className={`alert ${authMessage.type === "success" ? "alert-success" : "alert-error"}`}>
+                <i className={`fas ${authMessage.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`} style={{ marginRight: "8px" }}></i>
                 {authMessage.text}
-                
               </div>
-              
             )}
           </div>
         </div>

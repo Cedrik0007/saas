@@ -107,50 +107,52 @@ export function SignupPage() {
           </aside>
 
           <div className="login-form-card">
-            <h1>Create Account</h1>
-            <p style={{ marginBottom: "24px", color: "var(--gray-600)" }}>
-              Already have an account? <Link to="/login" style={{ color: "var(--primary)", textDecoration: "underline" }}>Sign in</Link>
-            </p>
+            <div className="login-form-card__header">
+              <h1><i className="fas fa-user-plus" style={{ marginRight: "12px", color: "#5a31ea" }}></i>Create Account</h1>
+              <p>
+                Already have an account? <Link to="/login" style={{ color: "#5a31ea", textDecoration: "none", fontWeight: "500" }}>Sign in</Link>
+              </p>
+            </div>
 
             <form onSubmit={handleSubmit}>
               <label className="mono-label">
-                Full Name *
+                <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Full Name *</span>
                 <input
                   type="text"
                   required
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Enter Your Full Name"
+                  placeholder="Enter your full name"
                   className="mono-input"
                 />
               </label>
 
               <label className="mono-label">
-                Email *
+                <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email *</span>
                 <input
                   type="email"
                   required
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  placeholder="Enter Your Email"
+                  placeholder="Enter your email address"
                   className="mono-input"
                 />
               </label>
 
               <label className="mono-label">
-                Phone Number *
+                <span><i className="fas fa-phone" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Phone Number *</span>
                 <input
                   type="tel"
                   required
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  placeholder="Enter Your Phone Number"
+                  placeholder="Enter your phone number"
                   className="mono-input"
                 />
               </label>
 
               <label className="mono-label">
-                Subscription Type *
+                <span><i className="fas fa-calendar-alt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Subscription Type *</span>
                 <div style={{ 
                   display: "grid", 
                   gridTemplateColumns: "1fr 1fr", 
@@ -162,18 +164,18 @@ export function SignupPage() {
                     onClick={() => setForm({ ...form, subscriptionType: "Monthly" })}
                     style={{
                       padding: "16px",
-                      border: form.subscriptionType === "Monthly" 
-                        ? "2px solid var(--primary)" 
-                        : "2px solid #e0e0e0",
-                      borderRadius: "8px",
+                      border: "none",
+                      borderRadius: "10px",
                       background: form.subscriptionType === "Monthly" 
-                        ? "var(--primary)" 
-                        : "white",
-                      color: form.subscriptionType === "Monthly" ? "white" : "var(--gray-700)",
+                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" 
+                        : "#f8f9ff",
+                      color: form.subscriptionType === "Monthly" ? "white" : "#1a1a1a",
                       cursor: "pointer",
                       fontSize: "1rem",
-                      fontWeight: form.subscriptionType === "Monthly" ? "600" : "400",
-                      transition: "all 0.2s",
+                      fontWeight: "600",
+                      boxShadow: form.subscriptionType === "Monthly" 
+                        ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
+                        : "0 2px 4px rgba(90, 49, 234, 0.08)",
                     }}
                   >
                     <div style={{ fontWeight: "600", marginBottom: "4px" }}>Monthly</div>
@@ -184,18 +186,18 @@ export function SignupPage() {
                     onClick={() => setForm({ ...form, subscriptionType: "Yearly" })}
                     style={{
                       padding: "16px",
-                      border: form.subscriptionType === "Yearly" 
-                        ? "2px solid var(--primary)" 
-                        : "2px solid #e0e0e0",
-                      borderRadius: "8px",
+                      border: "none",
+                      borderRadius: "10px",
                       background: form.subscriptionType === "Yearly" 
-                        ? "var(--primary)" 
-                        : "white",
-                      color: form.subscriptionType === "Yearly" ? "white" : "var(--gray-700)",
+                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" 
+                        : "#f8f9ff",
+                      color: form.subscriptionType === "Yearly" ? "white" : "#1a1a1a",
                       cursor: "pointer",
                       fontSize: "1rem",
-                      fontWeight: form.subscriptionType === "Yearly" ? "600" : "400",
-                      transition: "all 0.2s",
+                      fontWeight: "600",
+                      boxShadow: form.subscriptionType === "Yearly" 
+                        ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
+                        : "0 2px 4px rgba(90, 49, 234, 0.08)",
                     }}
                   >
                     <div style={{ fontWeight: "600", marginBottom: "4px" }}>Yearly</div>
@@ -205,14 +207,14 @@ export function SignupPage() {
               </label>
 
               <label className="mono-label">
-                Password *
+                <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password *</span>
                 <div style={{ position: "relative" }}>
                   <input
                     type={showPassword ? "text" : "password"}
                     required
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    placeholder="Create a Password (min. 6 characters)"
+                    placeholder="Create a password (min. 6 characters)"
                     className="mono-input"
                     minLength={6}
                     style={{ paddingRight: "45px" }}
@@ -252,14 +254,14 @@ export function SignupPage() {
               </label>
 
               <label className="mono-label">
-                Confirm Password *
+                <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Confirm Password *</span>
                 <div style={{ position: "relative" }}>
                   <input
                     type={showConfirmPassword ? "text" : "password"}
                     required
                     value={form.confirmPassword}
                     onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-                    placeholder="Confirm Your Password"
+                    placeholder="Confirm your password"
                     className="mono-input"
                     minLength={6}
                     style={{ paddingRight: "45px" }}
@@ -300,12 +302,14 @@ export function SignupPage() {
 
               {error && (
                 <div className="alert alert-error" style={{ marginTop: "16px" }}>
+                  <i className="fas fa-exclamation-circle" style={{ marginRight: "8px" }}></i>
                   {error}
                 </div>
               )}
 
               {success && (
                 <div className="alert alert-success" style={{ marginTop: "16px" }}>
+                  <i className="fas fa-check-circle" style={{ marginRight: "8px" }}></i>
                   {success}
                 </div>
               )}
