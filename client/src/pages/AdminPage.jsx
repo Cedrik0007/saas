@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
+import { Pagination } from "../components/Pagination.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import jsPDF from "jspdf";
 import {
@@ -186,6 +187,34 @@ export function AdminPage() {
   const [showMemberDropdown, setShowMemberDropdown] = useState(false); // Show/hide member dropdown
   const [showDonationMemberDropdown, setShowDonationMemberDropdown] = useState(false); // Show/hide donation member dropdown
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
+  
+  // Payment form state
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [editingPayment, setEditingPayment] = useState(null);
+  const [paymentForm, setPaymentForm] = useState({
+    memberId: "",
+    member: "",
+    invoiceId: "",
+    amount: "",
+    method: "",
+    reference: "",
+    date: new Date().toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    }),
+    status: "Pending",
+    screenshot: "",
+    notes: "",
+  });
+  
+  // Pagination states
+  const [membersPage, setMembersPage] = useState(1);
+  const [membersPageSize, setMembersPageSize] = useState(10);
+  const [paymentsPage, setPaymentsPage] = useState(1);
+  const [paymentsPageSize, setPaymentsPageSize] = useState(10);
+  const [donationsPage, setDonationsPage] = useState(1);
+  const [donationsPageSize, setDonationsPageSize] = useState(10);
 
   const navigate = useNavigate();
 
@@ -241,6 +270,11 @@ export function AdminPage() {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
+    
+    // Create Sets for member lookup
+    const memberIds = new Set(members.map(m => m.id).filter(Boolean));
+    const memberEmails = new Set(members.map(m => m.email?.toLowerCase()).filter(Boolean));
+    const memberNames = new Set(members.map(m => m.name?.toLowerCase()).filter(Boolean));
     
     // Calculate Total Collected - from paymentHistory (only completed/paid)
     const allPayments = paymentHistory || [];
@@ -989,6 +1023,142 @@ export function AdminPage() {
     }
   };
 
+  // Payment CRUD handlers
+  const handleAddPayment = async (e) => {
+    e.preventDefault();
+    try {
+      if (!paymentForm.memberId || !paymentForm.amount) {
+        showToast("Please fill all required fields", "error");
+        return;
+      }
+
+      await addPayment(paymentForm);
+      showToast("Payment added successfully!");
+      setShowPaymentForm(false);
+      setPaymentForm({
+        memberId: "",
+        member: "",
+        invoiceId: "",
+        amount: "",
+        method: "",
+        reference: "",
+        date: new Date().toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric"
+        }),
+        status: "Pending",
+        screenshot: "",
+        notes: "",
+      });
+      await fetchPayments();
+    } catch (error) {
+      console.error('Error adding payment:', error);
+      showToast(error.message || "Failed to add payment", "error");
+    }
+  };
+
+  const handleEditPayment = (payment) => {
+    setEditingPayment(payment);
+    setPaymentForm({
+      memberId: payment.memberId || "",
+      member: payment.member || "",
+      invoiceId: payment.invoiceId || "",
+      amount: payment.amount || "",
+      method: payment.method || "",
+      reference: payment.reference || "",
+      date: payment.date || payment.createdAt ? new Date(payment.createdAt).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric"
+      }) : new Date().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric"
+      }),
+      status: payment.status || "Pending",
+      screenshot: payment.screenshot || "",
+      notes: payment.notes || "",
+    });
+    setShowPaymentForm(true);
+  };
+
+  const handleUpdatePayment = async (e) => {
+    e.preventDefault();
+    try {
+      if (!paymentForm.memberId || !paymentForm.amount) {
+        showToast("Please fill all required fields", "error");
+        return;
+      }
+
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const paymentId = editingPayment._id || editingPayment.id;
+      
+      const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentForm),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to update payment');
+      }
+
+      showToast("Payment updated successfully!");
+      setShowPaymentForm(false);
+      setEditingPayment(null);
+      setPaymentForm({
+        memberId: "",
+        member: "",
+        invoiceId: "",
+        amount: "",
+        method: "",
+        reference: "",
+        date: new Date().toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric"
+        }),
+        status: "Pending",
+        screenshot: "",
+        notes: "",
+      });
+      await fetchPayments();
+      await fetchInvoices();
+    } catch (error) {
+      console.error('Error updating payment:', error);
+      showToast(error.message || "Failed to update payment", "error");
+    }
+  };
+
+  const handleDeletePayment = async (paymentId) => {
+    if (!window.confirm("Are you sure you want to delete this payment? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      
+      const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to delete payment');
+      }
+
+      showToast("Payment deleted successfully!");
+      await fetchPayments();
+      await fetchInvoices();
+    } catch (error) {
+      console.error('Error deleting payment:', error);
+      showToast(error.message || "Failed to delete payment", "error");
+    }
+  };
+
   // Send reminder to all outstanding members
   const handleSendToAllOutstanding = async () => {
     if (!emailSettings.emailUser || !emailSettings.emailPassword) {
@@ -1145,6 +1315,60 @@ Subscription Manager HK`;
       fetchDonations();
     }
   }, [activeSection, fetchDonations]);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setMembersPage(1);
+  }, [memberSearchTerm]);
+
+  useEffect(() => {
+    setPaymentsPage(1);
+  }, [paymentStatusFilter]);
+
+  // Reset pagination when switching sections
+  useEffect(() => {
+    if (activeSection === "members") {
+      setMembersPage(1);
+    } else if (activeSection === "payment-approvals") {
+      setPaymentsPage(1);
+    } else if (activeSection === "donations") {
+      setDonationsPage(1);
+    }
+  }, [activeSection]);
+
+  // Handle pagination bounds checking for members
+  useEffect(() => {
+    const filteredMembers = members.filter(member => 
+      !memberSearchTerm || 
+      member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
+    );
+    const totalPages = Math.ceil(filteredMembers.length / membersPageSize);
+    if (membersPage > totalPages && totalPages > 0) {
+      setMembersPage(1);
+    }
+  }, [members, memberSearchTerm, membersPageSize, membersPage]);
+
+  // Handle pagination bounds checking for payments
+  useEffect(() => {
+    const filteredPayments = (payments || []).filter(payment => {
+      if (paymentStatusFilter === "All") return true;
+      return payment.status === paymentStatusFilter;
+    });
+    const totalPages = Math.ceil(filteredPayments.length / paymentsPageSize);
+    if (paymentsPage > totalPages && totalPages > 0) {
+      setPaymentsPage(1);
+    }
+  }, [payments, paymentStatusFilter, paymentsPageSize, paymentsPage]);
+
+  // Handle pagination bounds checking for donations
+  useEffect(() => {
+    const donationsArray = Array.isArray(donations) ? donations : [];
+    const filteredDonations = donationsArray.filter(donation => donation !== null);
+    const totalPages = Math.ceil(filteredDonations.length / donationsPageSize);
+    if (donationsPage > totalPages && totalPages > 0) {
+      setDonationsPage(1);
+    }
+  }, [donations, donationsPageSize, donationsPage]);
 
   // Lock body scroll when mobile menu is open
   useEffect(() => {
@@ -1603,6 +1827,16 @@ Subscription Manager HK`;
       showToast(error.message || "Failed to approve member", "error");
     }
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="server-loading">
+        <div className="server-loading-spinner"></div>
+        <p className="server-loading-text">Loading admin data...</p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -2103,72 +2337,96 @@ Subscription Manager HK`;
 
                 <div className="card">
                   <div className="table-wrapper">
-                    <Table
-                      columns={[
-                        "ID",
-                        "Name",
-                        "Email",
-                        "WhatsApp",
-                        "Status",
-                        "Balance",
-                        "Actions",
-                      ]}
-                      rows={members
-                        .filter(member => 
-                          !memberSearchTerm || 
-                          member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
-                        )
-                        .map((member) => ({
-                        ID: member.id,
-                        Name: member.name,
-                        Email: member.email,
-                        WhatsApp: member.phone,
-                        Status: {
-                          render: () => (
-                            <span className={statusClass[member.status]}>
-                              {member.status}
-                            </span>
-                          ),
-                        },
-                        Balance: member.balance,
-                        Actions: {
-                          render: () => (
-                            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                              {member.status === 'Pending' && (
-                                <button
-                                  className="primary-btn"
-                                  style={{ padding: "6px 12px", fontSize: "0.85rem" }}
-                                  onClick={() => handleApproveMember(member.id)}
-                                >
-                                  ✓ Approve
-                                </button>
-                              )}
-                              <button
-                                className="ghost-btn"
-                                style={{ padding: "6px 12px", fontSize: "0.85rem" }}
-                                onClick={() => handleViewMemberDetail(member)}
-                              >
-                                View
-                              </button>
-                              <button
-                                className="secondary-btn"
-                                style={{ padding: "6px 12px", fontSize: "0.85rem" }}
-                                onClick={() => handleEditMember(member)}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                className="ghost-btn"
-                                style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
-                                onClick={() => handleDeleteMember(member.id)}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          ),
-                        },
-                      }))}
-                    />
+                    {(() => {
+                      // Filter members based on search term
+                      const filteredMembers = members.filter(member => 
+                        !memberSearchTerm || 
+                        member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
+                      );
+                      
+                      // Calculate pagination
+                      const totalPages = Math.ceil(filteredMembers.length / membersPageSize) || 1;
+                      const currentPage = Math.min(membersPage, totalPages);
+                      const startIndex = (currentPage - 1) * membersPageSize;
+                      const endIndex = startIndex + membersPageSize;
+                      const paginatedMembers = filteredMembers.slice(startIndex, endIndex);
+                      
+                      return (
+                        <>
+                          <Table
+                            columns={[
+                              "ID",
+                              "Name",
+                              "Email",
+                              "WhatsApp",
+                              "Status",
+                              "Balance",
+                              "Actions",
+                            ]}
+                            rows={paginatedMembers.map((member) => ({
+                              ID: member.id,
+                              Name: member.name,
+                              Email: member.email,
+                              WhatsApp: member.phone,
+                              Status: {
+                                render: () => (
+                                  <span className={statusClass[member.status]}>
+                                    {member.status}
+                                  </span>
+                                ),
+                              },
+                              Balance: member.balance,
+                              Actions: {
+                                render: () => (
+                                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                    {member.status === 'Pending' && (
+                                      <button
+                                        className="primary-btn"
+                                        style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                                        onClick={() => handleApproveMember(member.id)}
+                                      >
+                                        ✓ Approve
+                                      </button>
+                                    )}
+                                    <button
+                                      className="ghost-btn"
+                                      style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                                      onClick={() => handleViewMemberDetail(member)}
+                                    >
+                                      View
+                                    </button>
+                                    <button
+                                      className="secondary-btn"
+                                      style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                                      onClick={() => handleEditMember(member)}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      className="ghost-btn"
+                                      style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
+                                      onClick={() => handleDeleteMember(member.id)}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                ),
+                              },
+                            }))}
+                          />
+                          {totalPages > 0 && filteredMembers.length > 0 && (
+                            <Pagination
+                              currentPage={currentPage}
+                              totalPages={totalPages}
+                              onPageChange={setMembersPage}
+                              pageSize={membersPageSize}
+                              onPageSizeChange={setMembersPageSize}
+                              totalItems={filteredMembers.length}
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </article>
@@ -4430,6 +4688,31 @@ Subscription Manager HK`;
                       <p>Review and approve member payment submissions.</p>
                     </div>
                     <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                      <button
+                        className="primary-btn"
+                        onClick={() => {
+                          setShowPaymentForm(true);
+                          setEditingPayment(null);
+                          setPaymentForm({
+                            memberId: "",
+                            member: "",
+                            invoiceId: "",
+                            amount: "",
+                            method: "",
+                            reference: "",
+                            date: new Date().toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric"
+                            }),
+                            status: "Pending",
+                            screenshot: "",
+                            notes: "",
+                          });
+                        }}
+                      >
+                        + Add Payment
+                      </button>
                       <select
                         value={paymentStatusFilter}
                         onChange={(e) => setPaymentStatusFilter(e.target.value)}
@@ -4462,20 +4745,179 @@ Subscription Manager HK`;
                   </div>
                 </header>
 
+                {/* Payment Form */}
+                {showPaymentForm && (
+                  <div className="card" style={{ marginBottom: "20px", background: "#f9fafb" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                      <h4>{editingPayment ? "Edit Payment" : "Add New Payment"}</h4>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => {
+                          setShowPaymentForm(false);
+                          setEditingPayment(null);
+                          setPaymentForm({
+                            memberId: "",
+                            member: "",
+                            invoiceId: "",
+                            amount: "",
+                            method: "",
+                            reference: "",
+                            date: new Date().toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric"
+                            }),
+                            status: "Pending",
+                            screenshot: "",
+                            notes: "",
+                          });
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <form className="form-grid" onSubmit={editingPayment ? handleUpdatePayment : handleAddPayment}>
+                      <label>
+                        Member *
+                        <select
+                          value={paymentForm.memberId}
+                          onChange={(e) => {
+                            const selectedMember = members.find(m => m.id === e.target.value);
+                            setPaymentForm({
+                              ...paymentForm,
+                              memberId: e.target.value,
+                              member: selectedMember ? selectedMember.name : "",
+                            });
+                          }}
+                          required
+                        >
+                          <option value="">Select Member</option>
+                          {members.map(member => (
+                            <option key={member.id} value={member.id}>
+                              {member.name} ({member.id})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Invoice ID
+                        <input
+                          type="text"
+                          value={paymentForm.invoiceId}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, invoiceId: e.target.value })}
+                          placeholder="INV-2025-001"
+                        />
+                      </label>
+                      <label>
+                        Amount *
+                        <input
+                          type="text"
+                          value={paymentForm.amount}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                          placeholder="$50"
+                          required
+                        />
+                      </label>
+                      <label>
+                        Payment Method *
+                        <select
+                          value={paymentForm.method}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })}
+                          required
+                        >
+                          <option value="">Select Method</option>
+                          <option value="Bank Transfer">Bank Transfer</option>
+                          <option value="FPS">FPS</option>
+                          <option value="PayMe">PayMe</option>
+                          <option value="Alipay">Alipay</option>
+                          <option value="Credit Card">Credit Card</option>
+                          <option value="Cash">Cash</option>
+                        </select>
+                      </label>
+                      <label>
+                        Reference Number
+                        <input
+                          type="text"
+                          value={paymentForm.reference}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
+                          placeholder="Transaction reference"
+                        />
+                      </label>
+                      <label>
+                        Date
+                        <input
+                          type="text"
+                          value={paymentForm.date}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                          placeholder="01 Jan 2025"
+                        />
+                      </label>
+                      <label>
+                        Status *
+                        <select
+                          value={paymentForm.status}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, status: e.target.value })}
+                          required
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="Completed">Completed</option>
+                          <option value="Rejected">Rejected</option>
+                        </select>
+                      </label>
+                      <label>
+                        Screenshot URL
+                        <input
+                          type="text"
+                          value={paymentForm.screenshot}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, screenshot: e.target.value })}
+                          placeholder="https://..."
+                        />
+                      </label>
+                      <label style={{ gridColumn: "1 / -1" }}>
+                        Notes
+                        <textarea
+                          value={paymentForm.notes}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                          rows={3}
+                          placeholder="Additional notes..."
+                        />
+                      </label>
+                      <div className="form-actions" style={{ gridColumn: "1 / -1" }}>
+                        <button type="button" className="ghost-btn" onClick={() => {
+                          setShowPaymentForm(false);
+                          setEditingPayment(null);
+                          setPaymentForm({
+                            memberId: "",
+                            member: "",
+                            invoiceId: "",
+                            amount: "",
+                            method: "",
+                            reference: "",
+                            date: new Date().toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric"
+                            }),
+                            status: "Pending",
+                            screenshot: "",
+                            notes: "",
+                          });
+                        }}>
+                          Cancel
+                        </button>
+                        <button type="submit" className="primary-btn">
+                          {editingPayment ? "Update" : "Add"} Payment
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
                 <div className="card">
                   <div className="table-wrapper">
-                    <Table
-                      columns={[
-                        "Date",
-                        "Member",
-                        "Invoice ID",
-                        "Amount",
-                        "Method",
-                        "Screenshot",
-                        "Status",
-                        "Actions",
-                      ]}
-                      rows={(payments || [])
+                    {(() => {
+                      // Filter and sort payments
+                      const filteredPayments = (payments || [])
                         .filter(payment => {
                           if (paymentStatusFilter === "All") return true;
                           return payment.status === paymentStatusFilter;
@@ -4487,81 +4929,133 @@ Subscription Manager HK`;
                           const dateA = a.createdAt ? new Date(a.createdAt) : new Date(a.date || 0);
                           const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.date || 0);
                           return dateB - dateA;
-                        })
-                        .map((payment) => {
-                          const paymentId = payment._id || payment.id;
-                          const paymentIdString = paymentId?.toString ? paymentId.toString() : paymentId;
-                          
-                          return {
-                            Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric'
-                            }) : "N/A"),
-                            Member: payment.member || "Unknown",
-                            "Invoice ID": payment.invoiceId || "N/A",
-                            Amount: payment.amount || "$0",
-                            Method: getPaymentMethodDisplay(payment),
-                            Screenshot: {
-                              render: () => payment.screenshot ? (
-                                <a 
-                                  href={payment.screenshot} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  style={{ color: "#000", textDecoration: "underline", fontWeight: "500" }}
-                                >
-                                  📷 View
-                                </a>
-                              ) : "N/A"
-                            },
-                            Status: {
-                              render: () => (
-                                <span className={statusClass[payment.status] || "badge badge-unpaid"}>
-                                  {payment.status}
-                                </span>
-                              )
-                            },
-                            Actions: {
-                              render: () => (
-                                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                                  {payment.status === "Pending" && (
-                                    <>
+                        });
+                      
+                      // Calculate pagination
+                      const totalPages = Math.ceil(filteredPayments.length / paymentsPageSize) || 1;
+                      const currentPage = Math.min(paymentsPage, totalPages);
+                      const startIndex = (currentPage - 1) * paymentsPageSize;
+                      const endIndex = startIndex + paymentsPageSize;
+                      const paginatedPayments = filteredPayments.slice(startIndex, endIndex);
+                      
+                      return (
+                        <>
+                          <Table
+                            columns={[
+                              "Date",
+                              "Member",
+                              "Invoice ID",
+                              "Amount",
+                              "Method",
+                              "Screenshot",
+                              "Status",
+                              "Actions",
+                            ]}
+                            rows={paginatedPayments.map((payment) => {
+                              const paymentId = payment._id || payment.id;
+                              const paymentIdString = paymentId?.toString ? paymentId.toString() : paymentId;
+                              
+                              return {
+                                Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric'
+                                }) : "N/A"),
+                                Member: payment.member || "Unknown",
+                                "Invoice ID": payment.invoiceId || "N/A",
+                                Amount: payment.amount || "$0",
+                                Method: getPaymentMethodDisplay(payment),
+                                Screenshot: {
+                                  render: () => payment.screenshot ? (
+                                    <a 
+                                      href={payment.screenshot} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      style={{ color: "#000", textDecoration: "underline", fontWeight: "500" }}
+                                    >
+                                      📷 View
+                                    </a>
+                                  ) : "N/A"
+                                },
+                                Status: {
+                                  render: () => (
+                                    <span className={statusClass[payment.status] || "badge badge-unpaid"}>
+                                      {payment.status}
+                                    </span>
+                                  )
+                                },
+                                Actions: {
+                                  render: () => (
+                                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                      {payment.status === "Pending" && (
+                                        <>
+                                          <button
+                                            className="primary-btn"
+                                            style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                                            onClick={() => {
+                                              if (paymentIdString) handleApprovePayment(paymentIdString);
+                                            }}
+                                          >
+                                            ✓ Approve
+                                          </button>
+                                          <button
+                                            className="ghost-btn"
+                                            style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
+                                            onClick={() => {
+                                              if (paymentIdString) handleRejectPayment(paymentIdString);
+                                            }}
+                                          >
+                                            ✗ Reject
+                                          </button>
+                                        </>
+                                      )}
+                                      {payment.status === "Rejected" && payment.rejectionReason && (
+                                        <span style={{ fontSize: "0.75rem", color: "#666", fontStyle: "italic" }}>
+                                          Reason: {payment.rejectionReason}
+                                        </span>
+                                      )}
+                                      {payment.status === "Completed" && (
+                                        <span style={{ fontSize: "0.75rem", color: "#4caf50" }}>
+                                          ✓ Approved by {payment.approvedBy || "Admin"}
+                                        </span>
+                                      )}
                                       <button
-                                        className="primary-btn"
+                                        className="secondary-btn"
                                         style={{ padding: "6px 12px", fontSize: "0.85rem" }}
-                                        onClick={() => {
-                                          if (paymentIdString) handleApprovePayment(paymentIdString);
-                                      }}
+                                        onClick={() => handleEditPayment(payment)}
+                                        title="Edit Payment"
                                       >
-                                        ✓ Approve
+                                        ✏️ Edit
                                       </button>
                                       <button
                                         className="ghost-btn"
                                         style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
                                         onClick={() => {
-                                          if (paymentIdString) handleRejectPayment(paymentIdString);
+                                          if (paymentIdString) handleDeletePayment(paymentIdString);
                                         }}
+                                        title="Delete Payment"
                                       >
-                                        ✗ Reject
+                                        🗑️ Delete
                                       </button>
-                                    </>
-                                  )}
-                                  {payment.status === "Rejected" && payment.rejectionReason && (
-                                    <span style={{ fontSize: "0.75rem", color: "#666", fontStyle: "italic" }}>
-                                      Reason: {payment.rejectionReason}
-                                    </span>
-                                  )}
-                                  {payment.status === "Completed" && (
-                                    <span style={{ fontSize: "0.75rem", color: "#4caf50" }}>
-                                      ✓ Approved by {payment.approvedBy || "Admin"}
-                                    </span>
-                                  )}
-                                </div>
-                              )
-                            },
-                          };
-                        })}
-                    />
+                                    </div>
+                                  )
+                                },
+                              };
+                            })}
+                          />
+                          {totalPages > 0 && filteredPayments.length > 0 && (
+                            <Pagination
+                              currentPage={currentPage}
+                              totalPages={totalPages}
+                              onPageChange={setPaymentsPage}
+                              pageSize={paymentsPageSize}
+                              onPageSizeChange={setPaymentsPageSize}
+                              totalItems={filteredPayments.length}
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </article>
@@ -5002,52 +5496,79 @@ Subscription Manager HK`;
                     </div>
                   ) : (
                     <div className="table-wrapper">
-                      <Table
-                        columns={["Date", "Donor Name", "Type", "Amount", "Notes", "Actions"]}
-                        rows={(Array.isArray(donations) ? donations : []).map((donation) => {
-                          if (!donation) return null;
-                          const donationDate = donation.date || 
-                            (donation.createdAt ? new Date(donation.createdAt).toLocaleDateString('en-GB', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric'
-                            }) : "N/A");
-                          
-                          return {
-                            Date: donationDate,
-                            "Donor Name": donation.donorName || "Unknown",
-                            Type: donation.isMember ? (
-                              <span className="badge badge-active">Member</span>
-                            ) : (
-                              <span className="badge badge-inactive">Non-Member</span>
-                            ),
-                            Amount: donation.amount || "$0",
-                            Notes: donation.notes || "-",
-                            Actions: {
-                              render: () => (
-                                <button
-                                  className="ghost-btn"
-                                  style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
-                                  onClick={async () => {
-                                    if (window.confirm("Are you sure you want to delete this donation?")) {
-                                      try {
-                                        const donationId = donation._id || donation.id;
-                                        await deleteDonation(donationId);
-                                        showToast("Donation deleted successfully!");
-                                        await fetchDonations();
-                                      } catch (error) {
-                                        showToast(error.message || "Failed to delete donation", "error");
-                                      }
-                                    }
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              )
-                            },
-                          };
-                        }).filter(row => row !== null)}
-                      />
+                      {(() => {
+                        // Filter donations
+                        const donationsArray = Array.isArray(donations) ? donations : [];
+                        const filteredDonations = donationsArray.filter(donation => donation !== null);
+                        
+                        // Calculate pagination
+                        const totalPages = Math.ceil(filteredDonations.length / donationsPageSize) || 1;
+                        const currentPage = Math.min(donationsPage, totalPages);
+                        const startIndex = (currentPage - 1) * donationsPageSize;
+                        const endIndex = startIndex + donationsPageSize;
+                        const paginatedDonations = filteredDonations.slice(startIndex, endIndex);
+                        
+                        return (
+                          <>
+                            <Table
+                              columns={["Date", "Donor Name", "Type", "Amount", "Notes", "Actions"]}
+                              rows={paginatedDonations.map((donation) => {
+                                if (!donation) return null;
+                                const donationDate = donation.date || 
+                                  (donation.createdAt ? new Date(donation.createdAt).toLocaleDateString('en-GB', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric'
+                                  }) : "N/A");
+                                
+                                return {
+                                  Date: donationDate,
+                                  "Donor Name": donation.donorName || "Unknown",
+                                  Type: donation.isMember ? (
+                                    <span className="badge badge-active">Member</span>
+                                  ) : (
+                                    <span className="badge badge-inactive">Non-Member</span>
+                                  ),
+                                  Amount: donation.amount || "$0",
+                                  Notes: donation.notes || "-",
+                                  Actions: {
+                                    render: () => (
+                                      <button
+                                        className="ghost-btn"
+                                        style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
+                                        onClick={async () => {
+                                          if (window.confirm("Are you sure you want to delete this donation?")) {
+                                            try {
+                                              const donationId = donation._id || donation.id;
+                                              await deleteDonation(donationId);
+                                              showToast("Donation deleted successfully!");
+                                              await fetchDonations();
+                                            } catch (error) {
+                                              showToast(error.message || "Failed to delete donation", "error");
+                                            }
+                                          }
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+                                    )
+                                  },
+                                };
+                              }).filter(row => row !== null)}
+                            />
+                            {totalPages > 0 && filteredDonations.length > 0 && (
+                              <Pagination
+                                currentPage={currentPage}
+                                totalPages={totalPages}
+                                onPageChange={setDonationsPage}
+                                pageSize={donationsPageSize}
+                                onPageSizeChange={setDonationsPageSize}
+                                totalItems={filteredDonations.length}
+                              />
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

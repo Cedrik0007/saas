@@ -1808,6 +1808,79 @@ app.put("/api/payments/:id/reject", async (req, res) => {
   }
 });
 
+// PUT update payment
+app.put("/api/payments/:id", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    // Try to find by _id first, then by id field
+    let payment = await PaymentModel.findById(req.params.id);
+    if (!payment) {
+      payment = await PaymentModel.findOne({ id: req.params.id });
+    }
+    if (!payment) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    // Update payment fields
+    const updateData = { ...req.body };
+    delete updateData._id; // Don't allow _id updates
+    delete updateData.id; // Don't allow id updates
+    
+    Object.assign(payment, updateData);
+    await payment.save();
+
+    res.json({ success: true, payment });
+  } catch (error) {
+    console.error("Error updating payment:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE payment
+app.delete("/api/payments/:id", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    // Try to find by _id first, then by id field
+    let payment = await PaymentModel.findById(req.params.id);
+    if (!payment) {
+      payment = await PaymentModel.findOne({ id: req.params.id });
+    }
+    if (!payment) {
+      return res.status(404).json({ message: "Payment not found" });
+    }
+
+    // If payment was approved and has an invoice, revert invoice status
+    if (payment.status === "Completed" && payment.invoiceId) {
+      await InvoiceModel.findOneAndUpdate(
+        { id: payment.invoiceId },
+        { 
+          $set: { 
+            status: "Unpaid",
+            method: "",
+            reference: "",
+            screenshot: ""
+          }
+        }
+      );
+      
+      // Update member balance
+      if (payment.memberId) {
+        await calculateAndUpdateMemberBalance(payment.memberId);
+      }
+    }
+
+    // Delete the payment
+    await PaymentModel.findByIdAndDelete(payment._id);
+
+    res.json({ success: true, message: "Payment deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting payment:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ========== DONATION ENDPOINTS ==========
 
 // GET all donations
