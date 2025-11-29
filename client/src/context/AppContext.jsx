@@ -78,24 +78,52 @@ export function AppProvider({ children }) {
   const [selectedMember, setSelectedMember] = useState(null);
 
   // Fetch data from server on mount
+  // Retry helper function
+  const retryFetch = async (fetchFn, maxRetries = 3, delay = 2000) => {
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        await fetchFn();
+        return; // Success, exit
+      } catch (error) {
+        if (i === maxRetries - 1) {
+          console.error(`Failed after ${maxRetries} attempts:`, error);
+          throw error;
+        }
+        console.log(`Retry ${i + 1}/${maxRetries} in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  };
+
   useEffect(() => {
-    fetchMembers();
-    fetchAdmins();
-    fetchInvoices();
-    fetchPayments();
-    fetchDonations();
-    fetchPaymentMethods();
+    const fetchAllData = async () => {
+      setLoading(true);
+      try {
+        // Fetch all data in parallel - each function handles its own errors
+        // and sets empty arrays on failure, so we don't need to catch here
+        await Promise.allSettled([
+          fetchMembers(),
+          fetchAdmins(),
+          fetchInvoices(),
+          fetchPayments(),
+          fetchDonations(),
+          fetchPaymentMethods(),
+        ]);
+      } catch (error) {
+        console.error('Error fetching initial data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchAllData();
   }, []);
 
   // Fetch members from server
   const fetchMembers = async () => {
     try {
-      setLoading(true);
-      // const response = await fetch('/api/members');
-      // const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members`);
-      // const response = await fetch(`/api/members`);
       const apiUrl = import.meta.env.VITE_API_URL || '';
-    const response = await fetch(`${apiUrl}/api/members`);
+      const response = await fetch(`${apiUrl}/api/members`);
 
       if (!response.ok) throw new Error('Failed to fetch members');
       const data = await response.json();
@@ -103,19 +131,17 @@ export function AppProvider({ children }) {
       console.log('✓ Loaded', data.length, 'members from server');
     } catch (error) {
       console.error('Error fetching members:', error);
-      console.warn('⚠️ Using fallback data from data.js');
-      setMembers(initialMembers);
-    } finally {
-      setLoading(false);
+      // Set empty array instead of dummy data - will retry automatically
+      setMembers([]);
+      throw error; // Re-throw to allow retry mechanism
     }
   };
 
    // Fetch Admins from server
    const fetchAdmins = async () => {
     try {
-      setLoading(true);
-      const apiUr = import.meta.env.VITE_API_URL || '';
-    const response = await fetch(`${apiUr}/api/admins`);
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/admins`);
 
       if (!response.ok) throw new Error('Failed to fetch admins');
       const data = await response.json();
@@ -123,10 +149,9 @@ export function AppProvider({ children }) {
       console.log('✓ Loaded', data.length, 'Admins from server');
     } catch (error) {
       console.error('Error fetching Admins:', error);
-      console.warn('⚠️ Using fallback data from data.js');
-      setAdmins(initialAdmins);
-    } finally {
-      setLoading(false);
+      // Set empty array instead of dummy data - will retry automatically
+      setAdmins([]);
+      throw error; // Re-throw to allow retry mechanism
     }
   };
 
@@ -141,8 +166,9 @@ export function AppProvider({ children }) {
       console.log('✓ Loaded', data.length, 'invoices from MongoDB');
     } catch (error) {
       console.error('Error fetching invoices:', error);
-      console.warn('⚠️ Using fallback data from data.js');
-      setInvoices(initialInvoices);
+      // Set empty array instead of dummy data - will retry automatically
+      setInvoices([]);
+      throw error; // Re-throw to allow retry mechanism
     }
   };
 
@@ -160,8 +186,11 @@ export function AppProvider({ children }) {
       console.log('✓ Loaded', data.length, 'payments from MongoDB');
     } catch (error) {
       console.error('Error fetching payments:', error);
-      console.warn('⚠️ Using fallback data from data.js');
-      setPayments(initialPaymentHistory);
+      // Set empty arrays instead of dummy data - will retry automatically
+      setPayments([]);
+      setPaymentHistory([]);
+      setRecentPayments([]);
+      throw error; // Re-throw to allow retry mechanism
     }
   };
 
@@ -220,8 +249,9 @@ export function AppProvider({ children }) {
       }
     } catch (error) {
       console.error('Error fetching payment methods:', error);
-      console.warn('⚠️ Using fallback data from data.js');
-      setPaymentMethods(initialPaymentMethods);
+      // Set empty array instead of dummy data - will retry automatically
+      setPaymentMethods([]);
+      throw error; // Re-throw to allow retry mechanism
     }
   };
 
@@ -671,6 +701,7 @@ export function AppProvider({ children }) {
     fetchInvoices,
     fetchPayments,
     fetchDonations,
+    fetchPaymentMethods,
     recentPayments,
     paymentHistory,
     communicationLog,

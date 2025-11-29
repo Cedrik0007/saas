@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
+import { useApp } from "../context/AppContext.jsx";
 
 export function SignupPage() {
+  const { members, fetchMembers } = useApp();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -13,20 +15,74 @@ export function SignupPage() {
     subscriptionType: "Monthly",
   });
   const [error, setError] = useState(null);
+  const [emailError, setEmailError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const navigate = useNavigate();
 
+  // Fetch members on component mount to check for existing emails
+  useEffect(() => {
+    fetchMembers();
+  }, [fetchMembers]);
+
+  // Check if email already exists
+  const checkEmailExists = (email) => {
+    if (!email) {
+      setEmailError(null);
+      return false;
+    }
+
+    const emailLower = email.trim().toLowerCase();
+    const emailExists = members.some(
+      (member) => member.email && member.email.toLowerCase() === emailLower
+    );
+
+    if (emailExists) {
+      setEmailError("This email has already been registered. Please use a different email or try logging in.");
+      return true;
+    } else {
+      setEmailError(null);
+      return false;
+    }
+  };
+
+  // Handle email input change
+  const handleEmailChange = (e) => {
+    const emailValue = e.target.value;
+    setForm({ ...form, email: emailValue });
+    
+    // Clear email error when user starts typing
+    if (emailError) {
+      setEmailError(null);
+    }
+  };
+
+  // Handle email blur - check when user leaves the field
+  const handleEmailBlur = (e) => {
+    const emailValue = e.target.value.trim();
+    if (emailValue) {
+      checkEmailExists(emailValue);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+    setEmailError(null);
 
     // Validation
     if (!form.name || !form.email || !form.phone || !form.password || !form.subscriptionType) {
       setError("Please fill in all required fields");
+      return;
+    }
+
+    // Check if email already exists before submitting
+    const emailExists = checkEmailExists(form.email);
+    if (emailExists) {
+      setError("This email has already been registered. Please use a different email or try logging in.");
       return;
     }
 
@@ -65,7 +121,15 @@ export function SignupPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || data.error || 'Failed to create account');
+        // Check if error is related to duplicate email
+        const errorMessage = data.message || data.error || 'Failed to create account';
+        if (errorMessage.toLowerCase().includes('email') || 
+            errorMessage.toLowerCase().includes('already exists') ||
+            errorMessage.toLowerCase().includes('duplicate')) {
+          setEmailError("This email has already been registered. Please use a different email or try logging in.");
+          throw new Error("This email has already been registered. Please use a different email or try logging in.");
+        }
+        throw new Error(errorMessage);
       }
 
       setSuccess("Account created successfully! Your account is pending approval. You will be able to login once an admin approves your account.");
@@ -133,10 +197,28 @@ export function SignupPage() {
                   type="email"
                   required
                   value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  onChange={handleEmailChange}
+                  onBlur={handleEmailBlur}
                   placeholder="Enter your email address"
                   className="mono-input"
+                  style={{
+                    border: emailError ? "2px solid #ef4444" : "none",
+                    boxShadow: emailError ? "0 0 0 3px rgba(239, 68, 68, 0.1), 0 4px 12px rgba(239, 68, 68, 0.12)" : undefined
+                  }}
                 />
+                {emailError && (
+                  <div style={{
+                    fontSize: "0.875rem",
+                    color: "#ef4444",
+                    marginTop: "4px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px"
+                  }}>
+                    <i className="fas fa-exclamation-circle"></i>
+                    {emailError}
+                  </div>
+                )}
               </label>
 
               <label className="mono-label">

@@ -52,6 +52,7 @@ export function AdminPage() {
     fetchDonations,
     addDonation,
     deleteDonation,
+    loading,
   } = useApp();
 
   const sections = [
@@ -289,24 +290,18 @@ export function AdminPage() {
       return sum;
     }, 0);
     
-    // Calculate Total Outstanding - only from unpaid/overdue invoices that belong to members
-    const memberIds = new Set(members.map(m => m.id));
-    const memberEmails = new Set(members.map(m => m.email?.toLowerCase()).filter(Boolean));
-    const memberNames = new Set(members.map(m => m.name?.toLowerCase()).filter(Boolean));
-    
-    const unpaidInvoices = invoices.filter(inv => {
-      // Only include invoices that belong to actual members
-      const isMemberInvoice = 
-        (inv.memberId && memberIds.has(inv.memberId)) ||
-        (inv.memberEmail && memberEmails.has(inv.memberEmail.toLowerCase())) ||
-        (inv.memberName && memberNames.has(inv.memberName.toLowerCase()));
+    // Calculate Total Outstanding - from members' balance field (not from invoices)
+    // Parse member balance which might be in formats like: "$250 Outstanding", "$250", "$0", "$250 Overdue"
+    const totalOutstanding = members.reduce((sum, member) => {
+      if (!member.balance) return sum;
       
-      return isMemberInvoice && (inv.status === "Unpaid" || inv.status === "Overdue");
-    });
-    
-    const totalOutstanding = unpaidInvoices.reduce((sum, inv) => {
-      const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
-      return sum + amount;
+      // Extract numeric value from balance string
+      // Handles formats like: "$250 Outstanding", "$250", "$0", "$250 Overdue"
+      const balanceStr = member.balance.toString();
+      const numericValue = parseFloat(balanceStr.replace(/[^0-9.]/g, '') || 0);
+      
+      // Only count if balance is greater than 0
+      return sum + (numericValue > 0 ? numericValue : 0);
     }, 0);
     
     // Calculate Overdue Members - members with overdue invoices
@@ -1034,11 +1029,15 @@ export function AdminPage() {
   // Send WhatsApp reminder to all outstanding members
   const handleSendWhatsAppToAllOutstanding = async () => {
     const outstandingMembers = members.filter(member => {
-      const memberInvoices = invoices.filter(inv => 
-        inv.memberId === member.id && 
-        (inv.status === "Unpaid" || inv.status === "Overdue")
-      );
-      return memberInvoices.length > 0 && member.phone;
+      // Check member balance field instead of invoices
+      if (!member.balance || !member.phone) return false;
+      
+      // Parse balance - handles formats like: "$250 Outstanding", "$250", "$0", "$250 Overdue"
+      const balanceStr = member.balance.toString();
+      const numericValue = parseFloat(balanceStr.replace(/[^0-9.]/g, '') || 0);
+      
+      // Member is outstanding if balance > 0
+      return numericValue > 0;
     });
 
     if (outstandingMembers.length === 0) {

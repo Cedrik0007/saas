@@ -18,6 +18,8 @@ export function MemberPage() {
     updateMember,
     fetchInvoices,
     fetchPayments,
+    fetchMembers, // Add fetchMembers to fetch members if needed
+    loading,
   } = useApp();
 
   const sections = [
@@ -40,12 +42,22 @@ export function MemberPage() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isAlertDismissed, setIsAlertDismissed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
+  const [showPasswordProfile, setShowPasswordProfile] = useState(false);
+  
+  // Pagination state for payment history
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  // Get current member from MongoDB based on email in sessionStorage (case-insensitive)
+  // Get current member from MongoDB based on email or ID in sessionStorage (case-insensitive)
   const memberEmail = sessionStorage.getItem('memberEmail');
-  const currentMember = memberEmail 
-    ? members.find(m => m.email && m.email.toLowerCase() === memberEmail.toLowerCase())
-    : null;
+  const memberId = sessionStorage.getItem('memberId');
+  
+  // Try to find by ID first (more reliable), then by email
+  const currentMember = memberId
+    ? members.find(m => m.id === memberId)
+    : (memberEmail 
+        ? members.find(m => m.email && m.email.toLowerCase() === memberEmail.toLowerCase())
+        : null);
 
   // Profile form - use MongoDB data
   const [profileForm, setProfileForm] = useState(() => {
@@ -54,6 +66,7 @@ export function MemberPage() {
         name: currentMember.name || "",
         email: currentMember.email || "",
         phone: currentMember.phone || "",
+        password: "", // Password field for updates
         emailReminders: true,
         whatsappReminders: true,
       };
@@ -62,6 +75,7 @@ export function MemberPage() {
       name: "",
       email: "",
       phone: "",
+      password: "",
       emailReminders: true,
       whatsappReminders: true,
     };
@@ -74,11 +88,29 @@ export function MemberPage() {
         name: currentMember.name || "",
         email: currentMember.email || "",
         phone: currentMember.phone || "",
+        password: "", // Reset password field when member data changes
         emailReminders: true,
         whatsappReminders: true,
       });
     }
   }, [currentMember, members]);
+
+  // Fetch members if we have memberEmail/memberId but no currentMember found and members array is empty
+  useEffect(() => {
+    // If we have memberEmail or memberId but no currentMember found, and members array is empty/loading
+    // This means members haven't been fetched yet, so fetch them
+    if ((memberEmail || memberId) && !currentMember && !loading && members.length === 0) {
+      fetchMembers();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberEmail, memberId, currentMember, loading, members.length]);
+
+  // Reset to page 1 when items per page changes or when switching to history section
+  useEffect(() => {
+    if (activeSection === "history") {
+      setCurrentPage(1);
+    }
+  }, [itemsPerPage, activeSection]);
 
   // Refresh invoices and payments when viewing invoices section to ensure status is up to date
   useEffect(() => {
@@ -410,15 +442,30 @@ export function MemberPage() {
     }
 
     try {
-      // Update member in MongoDB
-      await updateMember(currentMember.id, {
+      // Prepare update data
+      const updateData = {
         name: profileForm.name,
         email: profileForm.email,
         phone: profileForm.phone,
-      });
+      };
+
+      // Only include password if it's provided (not empty)
+      if (profileForm.password && profileForm.password.trim() !== "") {
+        if (profileForm.password.length < 6) {
+          showToast("Password must be at least 6 characters long", "error");
+          return;
+        }
+        updateData.password = profileForm.password;
+      }
+
+      // Update member in MongoDB
+      await updateMember(currentMember.id, updateData);
       
       showToast("Profile updated successfully!");
       setIsEditingProfile(false);
+      
+      // Clear password field after successful update
+      setProfileForm({ ...profileForm, password: "" });
       
       // Refresh members to get updated data
       // The useEffect will update profileForm when currentMember changes
@@ -500,6 +547,78 @@ export function MemberPage() {
   };
 
   const stats = calculateStats();
+
+  // Show loading state while data is being fetched (AFTER all hooks)
+  // Also wait for currentMember to be found if memberEmail/memberId exists
+  if (loading || ((memberEmail || memberId) && !currentMember && members.length === 0)) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        flexDirection: 'column',
+        gap: '16px',
+        background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)'
+      }}>
+        <div style={{
+          width: '48px',
+          height: '48px',
+          border: '4px solid #f0f0f0',
+          borderTop: '4px solid #5a31ea',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+        <p style={{ color: '#1a1a1a', fontSize: '1rem', fontWeight: '500' }}>
+          {loading ? 'Loading data from server...' : 'Loading member information...'}
+        </p>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  // Check if memberEmail/memberId exists but currentMember is not found after loading
+  if ((memberEmail || memberId) && !loading && members.length > 0 && !currentMember) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        flexDirection: 'column',
+        gap: '16px',
+        background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)',
+        padding: '20px'
+      }}>
+        <div style={{
+          fontSize: '3rem',
+          color: '#ef4444',
+          marginBottom: '16px'
+        }}>⚠️</div>
+        <p style={{ color: '#1a1a1a', fontSize: '1.125rem', fontWeight: '600', marginBottom: '8px' }}>
+          Member Not Found
+        </p>
+        <p style={{ color: '#666', fontSize: '0.875rem', textAlign: 'center', marginBottom: '24px' }}>
+          We couldn't find your member account. Please contact support or try logging in again.
+        </p>
+        <button 
+          onClick={() => {
+            sessionStorage.clear();
+            navigate('/login');
+          }}
+          className="primary-btn"
+          style={{ padding: '12px 24px' }}
+        >
+          Return to Login
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -1411,6 +1530,15 @@ export function MemberPage() {
                       item.member === currentMember.name
                     ) : paymentHistory;
                     
+                    // Calculate pagination
+                    const totalPages = Math.ceil(filteredPayments.length / itemsPerPage);
+                    const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages || 1);
+                    
+                    // Calculate pagination indices
+                    const indexOfLastItem = safeCurrentPage * itemsPerPage;
+                    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+                    const currentPayments = filteredPayments.slice(indexOfFirstItem, indexOfLastItem);
+                    
                     if (filteredPayments.length === 0) {
                       return (
                         <div style={{ 
@@ -1426,12 +1554,82 @@ export function MemberPage() {
                     }
                     
                     return (
-                      <div style={{ 
-                        display: "grid", 
-                        gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", 
-                        gap: "20px" 
-                      }}>
-                        {filteredPayments.map((item, idx) => (
+                      <>
+                        {/* Pagination Controls - Top */}
+                        <div style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "24px",
+                          flexWrap: "wrap",
+                          gap: "16px"
+                        }}>
+                          <div style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "12px"
+                          }}>
+                            <label style={{
+                              fontSize: "0.875rem",
+                              fontWeight: "500",
+                              color: "#1a1a1a",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px"
+                            }}>
+                              <i className="fas fa-list" style={{ color: "#5a31ea" }}></i>
+                              Show:
+                            </label>
+                            <select
+                              value={itemsPerPage}
+                              onChange={(e) => {
+                                setItemsPerPage(Number(e.target.value));
+                                setCurrentPage(1); // Reset to first page when changing items per page
+                              }}
+                              style={{
+                                padding: "8px 12px",
+                                border: "none",
+                                borderRadius: "8px",
+                                background: "#f8f9ff",
+                                color: "#1a1a1a",
+                                fontSize: "0.875rem",
+                                fontWeight: "500",
+                                cursor: "pointer",
+                                boxShadow: "0 2px 4px rgba(90, 49, 234, 0.08)",
+                                outline: "none"
+                              }}
+                            >
+                              <option value={2}>2</option>
+                              <option value={5}>5</option>
+                              <option value={10}>10</option>
+                              <option value={20}>20</option>
+                              <option value={50}>50</option>
+                              <option value={100}>100</option>
+                            </select>
+                            <span style={{
+                              fontSize: "0.875rem",
+                              color: "#666"
+                            }}>
+                              per page
+                            </span>
+                          </div>
+                          
+                          <div style={{
+                            fontSize: "0.875rem",
+                            color: "#666"
+                          }}>
+                            Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredPayments.length)} of {filteredPayments.length} payments
+                          </div>
+                        </div>
+
+                        {/* Payment Cards Grid */}
+                        <div style={{ 
+                          display: "grid", 
+                          gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", 
+                          gap: "20px",
+                          marginBottom: "24px"
+                        }}>
+                          {currentPayments.map((item, idx) => (
                           <div 
                             key={idx}
                             style={{
@@ -1591,7 +1789,159 @@ export function MemberPage() {
                             )}
                           </div>
                         ))}
-                      </div>
+                        </div>
+
+                        {/* Pagination Controls - Bottom */}
+                        {totalPages > 1 && (
+                          <div style={{
+                            display: "flex",
+                            justifyContent: "center",
+                            alignItems: "center",
+                            gap: "8px",
+                            marginTop: "32px",
+                            flexWrap: "wrap"
+                          }}>
+                            <button
+                              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                              disabled={safeCurrentPage === 1}
+                              style={{
+                                padding: "10px 16px",
+                                border: "none",
+                                borderRadius: "8px",
+                                background: safeCurrentPage === 1 
+                                  ? "#f0f0f0" 
+                                  : "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                color: safeCurrentPage === 1 ? "#999" : "#ffffff",
+                                fontSize: "0.875rem",
+                                fontWeight: "600",
+                                cursor: safeCurrentPage === 1 ? "not-allowed" : "pointer",
+                                boxShadow: safeCurrentPage === 1 ? "none" : "0 2px 8px rgba(90, 49, 234, 0.2)",
+                                transition: "all 0.2s ease",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px"
+                              }}
+                              onMouseEnter={(e) => {
+                                if (safeCurrentPage !== 1) {
+                                  e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.3)";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (safeCurrentPage !== 1) {
+                                  e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.2)";
+                                }
+                              }}
+                            >
+                              <i className="fas fa-chevron-left"></i>
+                              Previous
+                            </button>
+
+                            {/* Page Numbers */}
+                            <div style={{
+                              display: "flex",
+                              gap: "4px",
+                              alignItems: "center"
+                            }}>
+                              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                                // Show first page, last page, current page, and pages around current
+                                const showPage = 
+                                  pageNum === 1 ||
+                                  pageNum === totalPages ||
+                                  (pageNum >= safeCurrentPage - 1 && pageNum <= safeCurrentPage + 1);
+                                
+                                if (!showPage) {
+                                  // Show ellipsis
+                                  if (pageNum === safeCurrentPage - 2 || pageNum === safeCurrentPage + 2) {
+                                    return (
+                                      <span key={pageNum} style={{
+                                        padding: "10px 8px",
+                                        color: "#666",
+                                        fontSize: "0.875rem"
+                                      }}>
+                                        ...
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                }
+
+                                return (
+                                  <button
+                                    key={pageNum}
+                                    onClick={() => setCurrentPage(pageNum)}
+                                    style={{
+                                      padding: "10px 16px",
+                                      border: "none",
+                                      borderRadius: "8px",
+                                      background: safeCurrentPage === pageNum
+                                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                        : "#f8f9ff",
+                                      color: safeCurrentPage === pageNum ? "#ffffff" : "#1a1a1a",
+                                      fontSize: "0.875rem",
+                                      fontWeight: safeCurrentPage === pageNum ? "600" : "500",
+                                      cursor: "pointer",
+                                      boxShadow: safeCurrentPage === pageNum
+                                        ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                        : "0 2px 4px rgba(90, 49, 234, 0.08)",
+                                      transition: "all 0.2s ease",
+                                      minWidth: "40px"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (safeCurrentPage !== pageNum) {
+                                        e.target.style.background = "#ffffff";
+                                        e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.15)";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (safeCurrentPage !== pageNum) {
+                                        e.target.style.background = "#f8f9ff";
+                                        e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.08)";
+                                      }
+                                    }}
+                                  >
+                                    {pageNum}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <button
+                              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                              disabled={safeCurrentPage === totalPages}
+                              style={{
+                                padding: "10px 16px",
+                                border: "none",
+                                borderRadius: "8px",
+                                background: safeCurrentPage === totalPages
+                                  ? "#f0f0f0"
+                                  : "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                color: safeCurrentPage === totalPages ? "#999" : "#ffffff",
+                                fontSize: "0.875rem",
+                                fontWeight: "600",
+                                cursor: safeCurrentPage === totalPages ? "not-allowed" : "pointer",
+                                boxShadow: safeCurrentPage === totalPages ? "none" : "0 2px 8px rgba(90, 49, 234, 0.2)",
+                                transition: "all 0.2s ease",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px"
+                              }}
+                              onMouseEnter={(e) => {
+                                if (safeCurrentPage !== totalPages) {
+                                  e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.3)";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (safeCurrentPage !== totalPages) {
+                                  e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.2)";
+                                }
+                              }}
+                            >
+                              Next
+                              <i className="fas fa-chevron-right"></i>
+                            </button>
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
                 </div>
@@ -1789,6 +2139,75 @@ export function MemberPage() {
                             onFocus={(e) => e.target.style.borderColor = "#5a31ea"}
                             onBlur={(e) => e.target.style.borderColor = "#ddd"}
                           />
+                        </label>
+
+                        <label style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px"
+                        }}>
+                          <span style={{
+                            fontSize: "0.875rem",
+                            fontWeight: "500",
+                            color: "#333",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px"
+                          }}>
+                            <i className="fas fa-lock" style={{ color: "#5a31ea", fontSize: "0.875rem" }}></i>
+                            New Password (leave blank to keep current)
+                          </span>
+                          <div style={{ position: "relative" }}>
+                            <input
+                              type={showPasswordProfile ? "text" : "password"}
+                              value={profileForm.password}
+                              onChange={(e) => setProfileForm({ ...profileForm, password: e.target.value })}
+                              placeholder="Enter new password (min. 6 characters)"
+                              minLength={6}
+                              style={{
+                                padding: "12px 45px 12px 16px",
+                                border: "1px solid #ddd",
+                                borderRadius: "8px",
+                                fontSize: "1rem",
+                                width: "100%",
+                                transition: "border-color 0.2s",
+                              }}
+                              onFocus={(e) => e.target.style.borderColor = "#5a31ea"}
+                              onBlur={(e) => e.target.style.borderColor = "#ddd"}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPasswordProfile(!showPasswordProfile)}
+                              style={{
+                                position: "absolute",
+                                right: "12px",
+                                top: "50%",
+                                transform: "translateY(-50%)",
+                                background: "none",
+                                border: "none",
+                                cursor: "pointer",
+                                padding: "4px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#666",
+                              }}
+                              aria-label={showPasswordProfile ? "Hide password" : "Show password"}
+                            >
+                              {showPasswordProfile ? (
+                                <i className="fas fa-eye-slash" style={{ fontSize: "0.875rem" }}></i>
+                              ) : (
+                                <i className="fas fa-eye" style={{ fontSize: "0.875rem" }}></i>
+                              )}
+                            </button>
+                          </div>
+                          <small style={{
+                            fontSize: "0.75rem",
+                            color: "#666",
+                            marginTop: "-4px"
+                          }}>
+                            Leave blank if you don't want to change your password
+                          </small>
                         </label>
                       </div>
                     ) : (
