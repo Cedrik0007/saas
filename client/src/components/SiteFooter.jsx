@@ -6,8 +6,8 @@ export function SiteFooter() {
         Hong Kong.
       </p>
       <p>
-        $50 per month · 2× Eid payments of $100 · $800 expected per member each
-        year.
+        {/* $50 per month · 2× Eid payments of $100 · $800 expected per member each
+        year. */}
       </p>
     </footer>
   );
