@@ -76,6 +76,7 @@ export function AppProvider({ children }) {
   // adminUsers removed - now using admins from MongoDB API
 
   const [selectedMember, setSelectedMember] = useState(null);
+  const apiBaseUrl = import.meta.env.VITE_API_URL || "";
 
   // Fetch data from server on mount
   // Retry helper function
@@ -122,8 +123,7 @@ export function AppProvider({ children }) {
   // Fetch members from server
   const fetchMembers = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/members`);
+      const response = await fetch(`${apiBaseUrl}/api/members`);
 
       if (!response.ok) throw new Error('Failed to fetch members');
       const data = await response.json();
@@ -140,8 +140,7 @@ export function AppProvider({ children }) {
    // Fetch Admins from server
    const fetchAdmins = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/admins`);
+      const response = await fetch(`${apiBaseUrl}/api/admins`);
 
       if (!response.ok) throw new Error('Failed to fetch admins');
       const data = await response.json();
@@ -158,8 +157,7 @@ export function AppProvider({ children }) {
   // Fetch invoices from server
   const fetchInvoices = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/invoices`);
+      const response = await fetch(`${apiBaseUrl}/api/invoices`);
       if (!response.ok) throw new Error('Failed to fetch invoices');
       const data = await response.json();
       setInvoices(data);
@@ -175,8 +173,7 @@ export function AppProvider({ children }) {
   // Fetch payments from server
   const fetchPayments = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/payments`);
+      const response = await fetch(`${apiBaseUrl}/api/payments`);
       if (!response.ok) throw new Error('Failed to fetch payments');
       const data = await response.json();
       setPayments(data);
@@ -197,8 +194,7 @@ export function AppProvider({ children }) {
   // Fetch donations from server
   const fetchDonations = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/donations`);
+      const response = await fetch(`${apiBaseUrl}/api/donations`);
       if (!response.ok) throw new Error('Failed to fetch donations');
       const data = await response.json();
       setDonations(data);
@@ -212,8 +208,7 @@ export function AppProvider({ children }) {
   // Fetch payment methods from server
   const fetchPaymentMethods = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/payment-methods`);
+      const response = await fetch(`${apiBaseUrl}/api/payment-methods`);
       if (!response.ok) throw new Error('Failed to fetch payment methods');
       const data = await response.json();
       
@@ -231,7 +226,7 @@ export function AppProvider({ children }) {
         // Save defaults to database
         for (const method of defaultMethods) {
           try {
-            await fetch(`${apiUrl}/api/payment-methods`, {
+            await fetch(`${apiBaseUrl}/api/payment-methods`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(method),
@@ -256,10 +251,6 @@ export function AppProvider({ children }) {
   };
 
   // Persist other data to localStorage
-  useEffect(() => {
-    localStorage.setItem("recentPayments", JSON.stringify(recentPayments));
-  }, [recentPayments]);
-
   useEffect(() => {
     localStorage.setItem("recentPayments", JSON.stringify(recentPayments));
   }, [recentPayments]);
@@ -299,8 +290,7 @@ export function AppProvider({ children }) {
   // CRUD Operations for Members (Server-based)
   const addMember = async (member) => {
     try {
-      // const response = await fetch('/api/members', {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members`, {
+      const response = await fetch(`${apiBaseUrl}/api/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(member),
@@ -319,8 +309,7 @@ export function AppProvider({ children }) {
 
   const updateMember = async (id, updatedData) => {
     try {
-      // const response = await fetch(`/api/members/${id}`, {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members/${id}`, {
+        const response = await fetch(`${apiBaseUrl}/api/members/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedData),
@@ -337,8 +326,7 @@ export function AppProvider({ children }) {
 
   const deleteMember = async (id) => {
     try {
-      // const response = await fetch(`/api/members/${id}`, { method: 'DELETE' });
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/members/${id}`, { method: 'DELETE' });
+      const response = await fetch(`${apiBaseUrl}/api/members/${id}`, { method: 'DELETE' });
 
       if (!response.ok) throw new Error('Failed to delete member');
       setMembers(members.filter((m) => m.id !== id));
@@ -354,8 +342,7 @@ export function AppProvider({ children }) {
   // CRUD Operations for Invoices (Server-based)
   const addInvoice = async (invoice) => {
     try {
-      // const response = await fetch('/api/invoices', {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/invoices`, {
+        const response = await fetch(`${apiBaseUrl}/api/invoices`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(invoice),
@@ -373,8 +360,7 @@ export function AppProvider({ children }) {
 
   const updateInvoice = async (id, updatedData) => {
     try {
-      // const response = await fetch(`/api/invoices/${id}`, {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/invoices/${id}`, {
+        const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedData),
@@ -404,8 +390,7 @@ export function AppProvider({ children }) {
 
   const deleteInvoice = async (id) => {
     try {
-      // const response = await fetch(`/api/invoices/${id}`, { method: 'DELETE' });
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/invoices/${id}`, { method: 'DELETE' });
+      const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error('Failed to delete invoice');
       setInvoices(invoices.filter((inv) => inv.id !== id));
       console.log('✓ Invoice deleted from server:', id);
@@ -428,8 +413,7 @@ export function AppProvider({ children }) {
       };
       
       // Save payment to MongoDB
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/payments`, {
+      const response = await fetch(`${apiBaseUrl}/api/payments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(paymentData),
@@ -504,8 +488,7 @@ export function AppProvider({ children }) {
   // Payment Methods Operations
   const updatePaymentMethod = async (name, updatedData) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/payment-methods/${name}`, {
+      const response = await fetch(`${apiBaseUrl}/api/payment-methods/${name}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedData),
@@ -543,7 +526,7 @@ export function AppProvider({ children }) {
   const resetAllData = () => {
     localStorage.clear();
     setMembers(initialMembers);
-    serAdmins(initialAdmins);
+    setAdmins(initialAdmins);
     setInvoices(initialInvoices);
     setRecentPayments(initialRecentPayments);
     setPaymentHistory(initialPaymentHistory);
@@ -576,8 +559,7 @@ export function AppProvider({ children }) {
   // Admin CRUD Operations - Using MongoDB API
   const addAdminUser = async (user) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/admins`, {
+      const response = await fetch(`${apiBaseUrl}/api/admins`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -605,8 +587,7 @@ export function AppProvider({ children }) {
 
   const updateAdminUser = async (id, updates) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/admins/${id}`, {
+      const response = await fetch(`${apiBaseUrl}/api/admins/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
@@ -628,8 +609,7 @@ export function AppProvider({ children }) {
 
   const deleteAdminUser = async (id) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/admins/${id}`, {
+      const response = await fetch(`${apiBaseUrl}/api/admins/${id}`, {
         method: 'DELETE'
       });
       
@@ -648,8 +628,7 @@ export function AppProvider({ children }) {
   // Donation Operations
   const addDonation = async (donation) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/donations`, {
+      const response = await fetch(`${apiBaseUrl}/api/donations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(donation),
@@ -672,8 +651,7 @@ export function AppProvider({ children }) {
 
   const deleteDonation = async (id) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const response = await fetch(`${apiUrl}/api/donations/${id}`, {
+      const response = await fetch(`${apiBaseUrl}/api/donations/${id}`, {
         method: 'DELETE',
       });
       

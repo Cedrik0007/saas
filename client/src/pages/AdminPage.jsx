@@ -1308,13 +1308,16 @@ Subscription Manager HK`;
 
   // Email sending is now handled via nodemailer API endpoint
 
-  // Fetch email settings and templates on mount
-  // Fetch donations when component mounts or when donations section is active
+  // Fetch donations when donations section becomes active
   useEffect(() => {
     if (activeSection === "donations") {
       fetchDonations();
     }
-  }, [activeSection, fetchDonations]);
+    // We intentionally only depend on activeSection here.
+    // fetchDonations comes from context and its identity can change on re-renders,
+    // which would cause this effect to run repeatedly and refetch endlessly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection]);
 
   // Reset pagination when filters change
   useEffect(() => {
