@@ -45,7 +45,7 @@ const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://0741sanjai_db_user
 
 // Optimized connection options for better performance
 const mongooseOptions = {
-  serverSelectionTimeoutMS: 10000, // Increased timeout for better reliability
+  serverSelectionTimeoutMS: 30000, // Increased timeout for better reliability
   socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
   connectTimeoutMS: 15000, // Increased connection timeout
   maxPoolSize: 10, // Increased pool size for better concurrency
