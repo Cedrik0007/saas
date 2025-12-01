@@ -188,6 +188,9 @@ export function AdminPage() {
   const [showDonationMemberDropdown, setShowDonationMemberDropdown] = useState(false); // Show/hide donation member dropdown
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
   
+  // Shared API base URL (same pattern as ServerPage and AppContext)
+  const apiUrl = import.meta.env.VITE_API_URL || "";
+
   // Payment form state
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [editingPayment, setEditingPayment] = useState(null);
@@ -737,7 +740,6 @@ export function AdminPage() {
   // Fetch email settings from server
   const fetchEmailSettings = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/email-settings`);
       if (response.ok) {
         const data = await response.json();
@@ -775,7 +777,6 @@ export function AdminPage() {
   // Save email settings
   const handleSaveEmailSettings = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/email-settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -798,7 +799,6 @@ export function AdminPage() {
   // Fetch email template from server
   const fetchEmailTemplate = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/email-template`);
       if (response.ok) {
         const data = await response.json();
@@ -847,7 +847,6 @@ export function AdminPage() {
   // Save email template
   const handleSaveEmailTemplate = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/email-template`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -875,7 +874,6 @@ export function AdminPage() {
 
     setTestingEmail(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/email-settings/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -910,7 +908,6 @@ export function AdminPage() {
 
     setSendingEmails(prev => ({ ...prev, [memberId]: true }));
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/reminders/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -960,7 +957,6 @@ export function AdminPage() {
   // Payment Approval Functions
   const handleApprovePayment = async (paymentId) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
       
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}/approve`, {
@@ -1000,7 +996,6 @@ export function AdminPage() {
   const handleRejectPayment = async (paymentId) => {
     try {
       const reason = window.prompt("Enter rejection reason (optional):") || "";
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
       
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}/reject`, {
@@ -1091,7 +1086,6 @@ export function AdminPage() {
         return;
       }
 
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const paymentId = editingPayment._id || editingPayment.id;
       
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
@@ -1138,8 +1132,6 @@ export function AdminPage() {
     }
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -1172,7 +1164,6 @@ export function AdminPage() {
 
     setSendingToAll(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/reminders/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1724,8 +1715,6 @@ Subscription Manager HK`;
 
     try {
       showToast("Sending reminder email...");
-
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/invoices/send-reminder`, {
         method: "POST",
         headers: {
@@ -1810,7 +1799,6 @@ Subscription Manager HK`;
   // Approve pending member
   const handleApproveMember = async (memberId) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/members/${memberId}/approve`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -3255,8 +3243,6 @@ Subscription Manager HK`;
 
                         try {
                           showToast("Sending reminder email...");
-
-                          const apiUrl = import.meta.env.VITE_API_URL || '';
                           const response = await fetch(`${apiUrl}/api/invoices/send-reminder`, {
                             method: "POST",
                             headers: {
@@ -3407,7 +3393,6 @@ Subscription Manager HK`;
                           
                           // Save to database
                           try {
-                            const apiUrl = import.meta.env.VITE_API_URL || '';
                             await fetch(`${apiUrl}/api/email-settings`, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
@@ -4185,7 +4170,6 @@ Subscription Manager HK`;
 
                         setUploadingQR((prev) => ({ ...prev, [methodName]: true }));
                         try {
-                          const apiUrl = import.meta.env.VITE_API_URL || "";
                           const formData = new FormData();
                           formData.append("screenshot", file);
                           formData.append("uploadType", "qr-code"); // Specify this is a QR code upload
