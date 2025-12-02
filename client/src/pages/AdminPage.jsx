@@ -188,9 +188,6 @@ export function AdminPage() {
   const [showDonationMemberDropdown, setShowDonationMemberDropdown] = useState(false); // Show/hide donation member dropdown
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
   
-  // Shared API base URL (same pattern as ServerPage and AppContext)
-  const apiUrl = import.meta.env.VITE_API_URL || "";
-
   // Payment form state
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [editingPayment, setEditingPayment] = useState(null);
@@ -740,6 +737,7 @@ export function AdminPage() {
   // Fetch email settings from server
   const fetchEmailSettings = async () => {
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/email-settings`);
       if (response.ok) {
         const data = await response.json();
@@ -777,6 +775,7 @@ export function AdminPage() {
   // Save email settings
   const handleSaveEmailSettings = async () => {
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/email-settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -799,7 +798,8 @@ export function AdminPage() {
   // Fetch email template from server
   const fetchEmailTemplate = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/email-template`);
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/email-settings/template`);
       if (response.ok) {
         const data = await response.json();
         if (data && (data.subject || data.htmlTemplate)) {
@@ -847,7 +847,8 @@ export function AdminPage() {
   // Save email template
   const handleSaveEmailTemplate = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/email-template`, {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/email-settings/template`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(emailTemplate),
@@ -874,6 +875,7 @@ export function AdminPage() {
 
     setTestingEmail(true);
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/email-settings/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -908,6 +910,7 @@ export function AdminPage() {
 
     setSendingEmails(prev => ({ ...prev, [memberId]: true }));
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/reminders/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -957,6 +960,7 @@ export function AdminPage() {
   // Payment Approval Functions
   const handleApprovePayment = async (paymentId) => {
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
       
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}/approve`, {
@@ -996,6 +1000,7 @@ export function AdminPage() {
   const handleRejectPayment = async (paymentId) => {
     try {
       const reason = window.prompt("Enter rejection reason (optional):") || "";
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
       
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}/reject`, {
@@ -1086,6 +1091,7 @@ export function AdminPage() {
         return;
       }
 
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const paymentId = editingPayment._id || editingPayment.id;
       
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
@@ -1132,6 +1138,8 @@ export function AdminPage() {
     }
 
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -1164,6 +1172,7 @@ export function AdminPage() {
 
     setSendingToAll(true);
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/reminders/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1513,56 +1522,98 @@ Subscription Manager HK`;
     showToast("Invoice created successfully!");
   };
 
-  const handleMarkAsPaid = async (invoiceId, method = "Manual") => {
-    const invoice = invoices.find((inv) => inv.id === invoiceId);
-    if (invoice) {
+  const handleMarkAsPaid = async (invoiceId, method = "Cash") => {
+    try {
+      const invoice = invoices.find((inv) => inv.id === invoiceId);
+      if (!invoice) {
+        showToast("Invoice not found", "error");
+        return;
+      }
+
+      // Don't allow marking already paid invoices
+      if (invoice.status === "Paid") {
+        showToast("Invoice is already marked as paid", "error");
+        return;
+      }
+
       const adminEmail = sessionStorage.getItem('adminEmail');
       const currentAdmin = admins.find(a => a.email === adminEmail);
+      const adminId = sessionStorage.getItem('adminId') || currentAdmin?.id || 'Admin';
+      const adminName = sessionStorage.getItem('adminName') || currentAdmin?.name || 'Admin';
       
-      const paymentMethod = method === "Cash" ? "Cash" : "Manual";
-      const reference = method === "Cash" ? `CASH_${Date.now()}` : `MAN${Date.now()}`;
-      
+      // Map UI method to stored payment method + reference prefix
+      let paymentMethod = "Cash to Admin";
+      let referencePrefix = "CASH";
+      if (method === "Online") {
+        paymentMethod = "Online Payment";
+        referencePrefix = "ONL";
+      }
+      const reference = `${referencePrefix}_${Date.now()}`;
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+
+      // Step 1: Create payment record with "Completed" status (matches backend approval flow)
+      const paymentResponse = await fetch(`${apiUrl}/api/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoiceId: invoiceId,
+          amount: invoice.amount,
+          method: paymentMethod,
+          reference: reference,
+          member: invoice.memberName || "Member",
+          memberId: invoice.memberId,
+          memberEmail: invoice.memberEmail,
+          period: invoice.period,
+          status: "Completed", // Use "Completed" to match backend payment approval status
+          date: new Date().toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          }),
+          paidToAdmin: adminId,
+          paidToAdminName: adminName,
+          approvedBy: adminName,
+          approvedAt: new Date().toISOString(),
+        }),
+      });
+
+      if (!paymentResponse.ok) {
+        const errorData = await paymentResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create payment record');
+      }
+
+      const newPayment = await paymentResponse.json();
+
+      // Step 2: Update invoice to Paid status (this will trigger balance recalculation on backend)
       await updateInvoice(invoiceId, {
         status: "Paid",
         method: paymentMethod,
         reference: reference,
-        paidToAdmin: currentAdmin?.id,
-        paidToAdminName: currentAdmin?.name,
+        paidToAdmin: adminId,
+        paidToAdminName: adminName,
       });
-      
-      // Add payment record
-      await addPayment({
-        invoiceId: invoiceId,
-        amount: invoice.amount,
-        method: paymentMethod,
-        reference: reference,
-        member: invoice.memberName || "Member",
-        memberId: invoice.memberId,
-        memberEmail: invoice.memberEmail,
-        period: invoice.period,
-        status: "Paid",
-        paidToAdmin: currentAdmin?.id,
-        paidToAdminName: currentAdmin?.name,
-      });
-      
-      // Update member balance after marking as paid
+
+      // Step 3: Refresh all data to get updated balances
+      await Promise.all([
+        fetchInvoices(),
+        fetchPayments(),
+        fetchMembers(), // Refresh members to get updated balance
+      ]);
+
+      // Step 4: Get updated member data to verify balance was updated
       if (invoice.memberId) {
-        // Wait a bit for the payment to be added to state
-        setTimeout(async () => {
-          await fetchPayments();
-          await fetchInvoices();
-          const newBalance = calculateMemberBalance(invoice.memberId);
-          const balanceText = newBalance > 0 ? `$${newBalance.toFixed(2)} Outstanding` : "$0";
-          
-          try {
-            await updateMember(invoice.memberId, { balance: balanceText });
-          } catch (error) {
-            console.error('Error updating member balance:', error);
-          }
-        }, 500);
+        const updatedMember = members.find(m => m.id === invoice.memberId);
+        if (updatedMember) {
+          showToast(`Invoice marked as paid (${paymentMethod})! Balance updated.`, "success");
+        } else {
+          showToast(`Invoice marked as paid (${paymentMethod})!`, "success");
+        }
+      } else {
+        showToast(`Invoice marked as paid (${paymentMethod})!`, "success");
       }
-      
-      showToast(`Invoice marked as paid (${paymentMethod})!`);
+    } catch (error) {
+      console.error('Error marking invoice as paid:', error);
+      showToast(error.message || "Failed to mark invoice as paid", "error");
     }
   };
 
@@ -1715,6 +1766,8 @@ Subscription Manager HK`;
 
     try {
       showToast("Sending reminder email...");
+
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/invoices/send-reminder`, {
         method: "POST",
         headers: {
@@ -1799,6 +1852,7 @@ Subscription Manager HK`;
   // Approve pending member
   const handleApproveMember = async (memberId) => {
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${apiUrl}/api/members/${memberId}/approve`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -2647,14 +2701,18 @@ Subscription Manager HK`;
                                         }
                                       }}
                                     >
-                                      Mark Paid (Cash)
+                                      Paid (Cash)
                                     </button>
                                     <button
                                       className="secondary-btn"
                                       style={{ padding: "4px 10px", fontSize: "0.85rem" }}
-                                      onClick={() => handleMarkAsPaid(invoice.id)}
+                                      onClick={() => {
+                                        if (window.confirm(`Mark invoice ${invoice.id} as paid (Online)?`)) {
+                                          handleMarkAsPaid(invoice.id, "Online");
+                                        }
+                                      }}
                                     >
-                                      Mark Paid
+                                      Paid (Online)
                                     </button>
                                   </>
                                 )}
@@ -3243,6 +3301,8 @@ Subscription Manager HK`;
 
                         try {
                           showToast("Sending reminder email...");
+
+                          const apiUrl = import.meta.env.VITE_API_URL || '';
                           const response = await fetch(`${apiUrl}/api/invoices/send-reminder`, {
                             method: "POST",
                             headers: {
@@ -3393,6 +3453,7 @@ Subscription Manager HK`;
                           
                           // Save to database
                           try {
+                            const apiUrl = import.meta.env.VITE_API_URL || '';
                             await fetch(`${apiUrl}/api/email-settings`, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
@@ -4170,6 +4231,7 @@ Subscription Manager HK`;
 
                         setUploadingQR((prev) => ({ ...prev, [methodName]: true }));
                         try {
+                          const apiUrl = import.meta.env.VITE_API_URL || "";
                           const formData = new FormData();
                           formData.append("screenshot", file);
                           formData.append("uploadType", "qr-code"); // Specify this is a QR code upload

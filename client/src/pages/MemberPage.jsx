@@ -44,9 +44,6 @@ export function MemberPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
   const [showPasswordProfile, setShowPasswordProfile] = useState(false);
   
-  // Shared API base URL (same pattern as ServerPage and AdminPage)
-  const apiUrl = import.meta.env.VITE_API_URL || "";
-
   // Pagination state for payment history
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -253,6 +250,8 @@ export function MemberPage() {
 
     setUploading(true);
     try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      
       // Upload screenshot to Cloudinary
       const formData = new FormData();
       formData.append("screenshot", paymentProof);
@@ -353,6 +352,8 @@ export function MemberPage() {
       
       // Upload screenshot if provided
       if (paymentProof) {
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+        
         const formData = new FormData();
         formData.append("screenshot", paymentProof);
 

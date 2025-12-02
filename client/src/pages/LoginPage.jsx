@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { loginPresets } from "../data";
+import { GoogleLogin } from "@react-oauth/google";
 
 export function LoginPage() {
   const [authMessage, setAuthMessage] = useState(null);
@@ -207,6 +208,7 @@ export function LoginPage() {
             </div>
 
             <div className="login-buttons">
+              {/* Admin login (email/password) */}
               <button
                 type="button"
                 className="btn-admin"
@@ -215,10 +217,8 @@ export function LoginPage() {
               >
                 {loadingRole === "admin" ? "Authorising…" : "Login as Admin"}
               </button>
-              
 
-              
-
+              {/* Member login (email/password) */}
               <button
                 type="button"
                 className="btn-member"
@@ -227,6 +227,86 @@ export function LoginPage() {
               >
                 {loadingRole === "member" ? "Authorising…" : "Login as Member"}
               </button>
+            </div>
+
+            {/* Google sign-in option for members */}
+            <div style={{ marginTop: "16px", textAlign: "center", width: "100%" }}>
+              <div style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                justifyContent: "center", 
+                marginBottom: "12px",
+                gap: "8px"
+              }}>
+                <div style={{ flex: 1, height: "1px", background: "#e0e0e0" }}></div>
+                <p style={{ fontSize: "0.85rem", color: "#666", margin: 0, padding: "0 12px" }}>
+                  Or
+                </p>
+                <div style={{ flex: 1, height: "1px", background: "#e0e0e0" }}></div>
+              </div>
+              <p style={{ fontSize: "0.85rem", color: "#666", marginBottom: "8px" }}>
+                Sign in as <strong>Member</strong> with Google
+              </p>
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <GoogleLogin
+                  onSuccess={async (credentialResponse) => {
+                    try {
+                      const apiUrl = import.meta.env.VITE_API_URL || "";
+                      const res = await fetch(`${apiUrl}/api/login/google-member`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ credential: credentialResponse.credential }),
+                      });
+
+                      const data = await res.json();
+                      if (!res.ok || !data.success) {
+                        setAuthMessage({
+                          type: "error",
+                          text: data.message || "Google member login failed",
+                        });
+                        return;
+                      }
+
+                      // Store auth token and member info (same as existing member login)
+                      sessionStorage.setItem("authToken", data.token);
+                      sessionStorage.setItem("memberEmail", data.email);
+                      sessionStorage.setItem("memberName", data.name);
+                      sessionStorage.setItem("memberId", data.memberId);
+
+                      setAuthMessage({
+                        type: "success",
+                        text: `Welcome ${data.name}! Redirecting to member portal...`,
+                      });
+
+                      setTimeout(() => {
+                        navigate("/member", {
+                          replace: true,
+                          state: {
+                            role: "Member",
+                            token: data.token,
+                            email: data.email,
+                            name: data.name,
+                            memberId: data.memberId,
+                            phone: data.phone,
+                          },
+                        });
+                      }, 500);
+                    } catch (error) {
+                      console.error("Google member login error:", error);
+                      setAuthMessage({
+                        type: "error",
+                        text: "Network error during Google login",
+                      });
+                    }
+                  }}
+                  onError={() => {
+                    setAuthMessage({
+                      type: "error",
+                      text: "Google member login failed",
+                    });
+                  }}
+                />
+              </div>
             </div>
 
 

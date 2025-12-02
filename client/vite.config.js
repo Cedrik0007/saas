@@ -14,7 +14,7 @@ export default defineConfig({
     proxy: {
       "/api": {
         target: process.env.NODE_ENV === 'production' 
-          ? "https://subs-manager-backend-ag8gejsit-shans-projects-f903a935.vercel.app"
+          ? "https://saas-cj3b.onrender.com"
           : "http://localhost:4000",
         changeOrigin: true,
       },
