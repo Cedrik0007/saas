@@ -75,6 +75,8 @@ export function AdminPage() {
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [toast, setToast] = useState(null);
+  const [lastCreatedInvoice, setLastCreatedInvoice] = useState(null);
+  const [showInvoiceSuccessCard, setShowInvoiceSuccessCard] = useState(false);
   
   // Form states
   const [memberForm, setMemberForm] = useState({
@@ -1510,6 +1512,11 @@ Subscription Manager HK`;
     };
 
     addInvoice(newInvoice);
+    
+    // Store the created invoice and show success card
+    setLastCreatedInvoice({ ...newInvoice, member });
+    setShowInvoiceSuccessCard(true);
+    
     setInvoiceForm({
       memberId: "",
       period: "",
@@ -2953,6 +2960,122 @@ Subscription Manager HK`;
                   <h3><i className="fas fa-file-invoice" style={{ marginRight: "10px" }}></i>Invoice Builder</h3>
                   <p>Create invoices for monthly or Eid contributions.</p>
                 </header>
+                
+                {/* Invoice Success Card */}
+                {showInvoiceSuccessCard && lastCreatedInvoice && (
+                  <div style={{
+                    marginBottom: "24px",
+                    padding: "24px",
+                    background: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)",
+                    borderRadius: "12px",
+                    border: "2px solid #5a31ea",
+                    boxShadow: "0 4px 12px rgba(90, 49, 234, 0.15)"
+                  }}>
+                    <div style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: "16px"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{
+                          width: "48px",
+                          height: "48px",
+                          borderRadius: "50%",
+                          background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "24px",
+                          color: "#fff"
+                        }}>
+                          ✓
+                        </div>
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: "1.25rem", fontWeight: "700", color: "#1a1a1a" }}>
+                            Invoice Has Been Created
+                          </h4>
+                          <p style={{ margin: "4px 0 0 0", fontSize: "0.875rem", color: "#666" }}>
+                            Invoice for {lastCreatedInvoice.memberName} - {lastCreatedInvoice.period} ({lastCreatedInvoice.amount})
+                          </p>
+                        </div>
+                      </div>
+                      {/* <button
+                        className="ghost-btn"
+                        onClick={() => {
+                          setShowInvoiceSuccessCard(false);
+                          setLastCreatedInvoice(null);
+                        }}
+                        style={{ padding: "8px 12px" }}
+                      >
+                        ×
+                      </button> */}
+                    </div>
+                    
+                    <div style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                      gap: "12px",
+                      marginTop: "16px"
+                    }}>
+                      <button
+                        className="primary-btn"
+                        onClick={() => {
+                          if (lastCreatedInvoice.member) {
+                            handleViewMemberDetail(lastCreatedInvoice.member);
+                            setActiveSection("member-detail");
+                            setShowInvoiceSuccessCard(false);
+                          }
+                        }}
+                        style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
+                      >
+                        <i className="fas fa-user" style={{ marginRight: "8px" }}></i>
+                        Member Detail
+                      </button>
+                      
+                      {/* <button
+                        className="secondary-btn"
+                        onClick={() => {
+                          if (lastCreatedInvoice.member) {
+                            handleViewMemberDetail(lastCreatedInvoice.member);
+                            setActiveSection("member-detail");
+                            setActiveTab("Invoices");
+                            setShowInvoiceSuccessCard(false);
+                          }
+                        }}
+                        style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
+                      >
+                        <i className="fas fa-file-invoice" style={{ marginRight: "8px" }}></i>
+                        View Invoice
+                      </button> */}
+                      
+                      <button
+                        className="secondary-btn"
+                        onClick={async () => {
+                          if (lastCreatedInvoice.member) {
+                            await handleSendReminder(lastCreatedInvoice.member);
+                          }
+                        }}
+                        style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
+                      >
+                        <i className="fas fa-envelope" style={{ marginRight: "8px" }}></i>
+                        Send Reminder
+                      </button>
+                      
+                      <button
+                        className="ghost-btn"
+                        onClick={() => {
+                          setShowInvoiceSuccessCard(false);
+                          setLastCreatedInvoice(null);
+                        }}
+                        style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
                 <form className="card form-grid" onSubmit={handleAddInvoice} style={{ padding: "40px", background: "linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
                   <label style={{ marginBottom: "24px" }}>
                     <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member *</span>
@@ -3146,7 +3269,7 @@ Subscription Manager HK`;
                       )}
                     </div>
                     {!invoiceForm.memberId && (
-                      <span style={{ fontSize: "0.75rem", color: "#d32f2f", marginTop: "4px", display: "block" }}>
+                      <span style={{ fontSize: "0.75rem", color: "#d32f2f", marginTop: "4px", display: "none" }}>
                         Please select a member
                       </span>
                     )}
@@ -3265,6 +3388,10 @@ Subscription Manager HK`;
                         // Add invoice to state
                         addInvoice(newInvoice);
                         
+                        // Store the created invoice and show success card
+                        setLastCreatedInvoice({ ...newInvoice, member });
+                        setShowInvoiceSuccessCard(true);
+                        
                         // Get existing unpaid invoices for this member
                         const existingUnpaidInvoices = invoices.filter(
                           (inv) =>
@@ -3351,6 +3478,10 @@ Subscription Manager HK`;
                           showToast(
                             `✓ Invoice created and reminder sent to ${member.name} for $${totalDue.toFixed(2)}!`
                           );
+                          
+                          // Show success card with the created invoice
+                          setLastCreatedInvoice({ ...newInvoice, member });
+                          setShowInvoiceSuccessCard(true);
                         } catch (error) {
                           console.error("✗ Email send error:", error);
 
@@ -3366,6 +3497,10 @@ Subscription Manager HK`;
                             error.message || "Invoice created but failed to send email. Please check email configuration.",
                             "error"
                           );
+                          
+                          // Show success card even if email failed
+                          setLastCreatedInvoice({ ...newInvoice, member });
+                          setShowInvoiceSuccessCard(true);
                         }
                       }}
                     >
@@ -5486,7 +5621,7 @@ Subscription Manager HK`;
                               )}
                             </div>
                             {!donationForm.memberId && (
-                              <span style={{ fontSize: "0.75rem", color: "#d32f2f", marginTop: "4px", display: "block" }}>
+                              <span style={{ fontSize: "0.75rem", color: "#d32f2f", marginTop: "4px", display: "none" }}>
                                 Please select a member
                               </span>
                             )}
