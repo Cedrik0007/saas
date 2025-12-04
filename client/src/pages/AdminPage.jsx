@@ -3012,7 +3012,7 @@ Subscription Manager HK`;
                       </button> */}
                     </div>
                     
-                    <div style={{
+                    <div className="success-card-actions" style={{
                       display: "grid",
                       gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
                       gap: "12px",
@@ -3111,7 +3111,13 @@ Subscription Manager HK`;
                               })()
                             : "Select Member"}
                         </span>
-                        <i className={`fas ${showMemberDropdown ? "fa-chevron-up" : "fa-chevron-down"}`} style={{ fontSize: "0.75rem", color: "#5a31ea" }}></i>
+                        <span style={{ 
+                          fontSize: "0.75rem", 
+                          color: "#5a31ea",
+                          transition: "transform 0.2s ease",
+                          transform: showMemberDropdown ? "rotate(180deg)" : "rotate(0deg)",
+                          display: "inline-block"
+                        }}>▼</span>
                       </div>
                       
                       {showMemberDropdown && (
@@ -4516,7 +4522,7 @@ Subscription Manager HK`;
                               boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
                               position: "relative"
                             }}>
-                              {method.name === "Alipay" ? "支" 
+                              {method.name === "Alipay" ? "A" 
                                 : method.name === "PayMe" ? "P"
                                 : method.name === "FPS" ? "F"
                                 : "B"}
@@ -5461,7 +5467,13 @@ Subscription Manager HK`;
                                       })()
                                     : "Select Member"}
                                 </span>
-                                <span style={{ fontSize: "0.75rem" }}>{showDonationMemberDropdown ? "▲" : "▼"}</span>
+                                <span style={{ 
+                                  fontSize: "0.75rem",
+                                  color: "#5a31ea",
+                                  transition: "transform 0.2s ease",
+                                  transform: showDonationMemberDropdown ? "rotate(180deg)" : "rotate(0deg)",
+                                  display: "inline-block"
+                                }}>▼</span>
                               </div>
                               
                               {showDonationMemberDropdown && (

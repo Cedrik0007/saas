@@ -29,17 +29,29 @@ router.post("/login/google-member", async (req, res) => {
       return res.status(400).json({ success: false, message: "Email not available from Google" });
     }
 
-    // Find or create member (Google login is ONLY for members)
-    let member = await UserModel.findOne({ email });
+    // Find existing member (Google login is ONLY for existing members)
+    const member = await UserModel.findOne({ email });
 
     if (!member) {
-      member = await UserModel.create({
-        id: `HK${Math.floor(1000 + Math.random() * 9000)}`,
-        name,
-        email,
-        status: "Active",
-        balance: "$0",
-        subscriptionType: "Monthly",
+      return res.status(401).json({
+        success: false,
+        message: "Member not found. Please sign up first or contact administrator.",
+      });
+    }
+
+    // Check if member is approved (status must be 'Active')
+    if (member.status === "Pending") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is pending approval. Please wait for admin approval before logging in.",
+      });
+    }
+
+    // Check if member is active (not suspended/inactive)
+    if (member.status && member.status !== "Active" && member.status !== "Pending") {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is not active. Please contact administrator.",
       });
     }
 

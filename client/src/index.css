@@ -66,6 +66,8 @@ h1, h2, h3, h4, h5, h6 {
   position: static;
   box-sizing: border-box;
   box-shadow: 0 2px 8px rgba(90, 49, 234, 0.1);
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .site-header--sticky {
@@ -91,6 +93,52 @@ h1, h2, h3, h4, h5, h6 {
   gap: 12px;
   flex: 1;
   min-width: 0;
+}
+
+.mobile-menu-toggle {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  z-index: 1001;
+}
+
+.hamburger {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 24px;
+  height: 18px;
+}
+
+.hamburger span {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: #5a31ea;
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+@media (max-width: 768px) {
+  .mobile-menu-toggle {
+    display: block !important;
+    order: -1;
+    margin-right: 8px;
+  }
+}
+
+.hamburger.active span:nth-child(1) {
+  transform: rotate(45deg) translate(6px, 6px);
+}
+
+.hamburger.active span:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger.active span:nth-child(3) {
+  transform: rotate(-45deg) translate(6px, -6px);
 }
 
 .logo-mark {
@@ -648,7 +696,8 @@ main {
   }
 
   .admin-main {
-    padding: 20px 12px 20px;
+    padding: 0;
+    background: #f5f5f5;
   }
 
   .admin-layout {
@@ -730,6 +779,7 @@ main {
     width: 100%;
     max-width: 100%;
     padding: 0;
+    overflow-x: hidden;
   }
 
   /* Hide mobile nav tabs on mobile, use hamburger menu instead */
@@ -739,70 +789,477 @@ main {
 
   /* Responsive adjustments */
   .screen-card {
-    padding: 12px;
-    margin-bottom: 16px;
+    padding: 16px 14px;
+    margin: 0;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
     overflow-x: hidden;
+    background: #ffffff;
+    border-radius: 0;
+    box-shadow: none;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left !important;
+  }
+
+  .screen-card:last-child {
+    border-bottom: none;
+  }
+
+  /* Force all headings in screen-cards to be left-aligned */
+  .screen-card h3,
+  .screen-card h4,
+  .screen-card h5,
+  .screen-card h6,
+  .screen-card p {
+    text-align: left !important;
   }
 
   .screen-card__header {
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: 4px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #f0f0f0;
+    text-align: left !important;
+  }
+
+  /* Force left alignment for all content in screen-card__header */
+  .screen-card__header * {
+    text-align: left !important;
+  }
+
+  /* Exception for buttons and icons */
+  .screen-card__header button,
+  .screen-card__header i {
+    text-align: center;
   }
 
   .screen-card__header h3 {
-    font-size: 1.125rem;
+    font-size: 1.05rem;
     margin: 0;
+    font-weight: 700;
+    color: #1a1a1a;
+    text-align: left !important;
   }
 
   .screen-card__header p {
-    font-size: 0.8125rem;
-    margin: 0;
+    font-size: 0.8rem;
+    margin: 4px 0 0 0;
+    color: #666;
+    text-align: left !important;
   }
 
   .card {
-    padding: 12px;
-    margin-bottom: 12px;
+    padding: 14px;
+    margin: 0 0 12px 0;
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid #f0f0f0;
   }
 
   .kpi-grid {
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 10px;
+  }
+
+  /* Member payment history - simple vertical cards on mobile */
+  .tab-panel--payment-history {
+    padding: 0;
+  }
+
+  .payment-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .payment-history-card {
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 12px 14px;
+    border: 1px solid #e5e7eb;
+  }
+
+  .payment-history-card__main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .payment-history-card__amount {
+    margin: 0;
+    font-weight: 600;
+    font-size: 1rem;
+    color: #111827;
+  }
+
+  .payment-history-card__date {
+    margin: 2px 0 0 0;
+    font-size: 0.75rem;
+    color: #6b7280;
+  }
+
+  .payment-history-card__status-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+
+  .payment-history-card__status-pill.is-success {
+    background: rgba(16, 185, 129, 0.1);
+    color: #047857;
+  }
+
+  .payment-history-card__status-pill.is-warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: #92400e;
+  }
+
+  .payment-history-card__status-pill.is-danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: #b91c1c;
+  }
+
+  .payment-history-card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: #4b5563;
+  }
+
+  .payment-history-card__meta .label {
+    font-weight: 500;
+    margin-right: 4px;
+  }
+
+  .payment-history-card__meta .value.code {
+    font-family: monospace;
+  }
+
+  .payment-history-card__notes {
+    margin-top: 6px;
+    padding: 6px 8px;
+    background: #f9fafb;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    color: #4b5563;
+  }
+
+  .payment-history-card__notes .label {
+    font-weight: 500;
+    margin-right: 4px;
+  }
+
+  /* Outstanding members list - stacked, compact cards */
+  .outstanding-members-card {
+    padding: 14px 12px !important;
+    border-radius: 10px !important;
+    gap: 10px !important;
+  }
+
+  .outstanding-members-card__main {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .outstanding-members-card__name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #000;
+  }
+
+  .outstanding-members-card__email {
+    font-size: 0.8rem;
+    color: #6b7280;
+  }
+
+  .outstanding-members-card__summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    font-size: 0.75rem;
+    margin-top: 4px;
+  }
+
+  .outstanding-members-card__summary span {
+    white-space: nowrap;
+  }
+
+  .outstanding-members-card__actions {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .outstanding-members-card__actions button {
+    flex: 1 1 120px;
+    min-width: 0;
+    padding: 8px 10px !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* Dashboard cards - keep only essentials on mobile */
+  #dashboard .dashboard-card {
+    box-shadow: none;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+  }
+
+  #dashboard .dashboard-card .card.kpi {
+    padding: 12px 14px;
+    margin: 0;
+  }
+
+  /* Hide small helper text in KPI cards for a cleaner look */
+  #dashboard .dashboard-card .card.kpi small {
+    display: none;
+  }
+
+  /* Optional: hide large chart section on small screens to keep things simple */
+  #dashboard .chart-card {
+    display: none;
   }
 
   .form-grid {
     grid-template-columns: 1fr;
   }
 
-  .table-wrapper {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+  /* Mobile table cards - Accordion style */
+  .mobile-table-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    overflow: visible;
   }
 
-  /* Responsive buttons */
+  .mobile-table-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .mobile-table-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    cursor: pointer;
+    user-select: none;
+    background: #f8f9ff;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .mobile-table-card-header:hover {
+    background: #f0f0f5;
+  }
+
+  .mobile-table-card-title {
+    font-weight: 600;
+    font-size: 0.9375rem;
+    color: #1a1a1a;
+    flex: 1;
+  }
+
+  .mobile-table-card-toggle {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #5a31ea;
+    font-size: 0.75rem;
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .mobile-table-card.expanded .mobile-table-card-toggle {
+    transform: rotate(180deg);
+  }
+
+  .mobile-table-card-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+
+  .mobile-table-card.expanded .mobile-table-card-content {
+    max-height: 2000px;
+  }
+
+  .mobile-table-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px 16px;
+    border-bottom: 1px solid #f0f0f0;
+    gap: 6px;
+  }
+
+  .mobile-table-row:last-child {
+    border-bottom: none;
+  }
+
+  .mobile-table-label {
+    font-weight: 600;
+    color: #666;
+    font-size: 0.8125rem;
+    margin-bottom: 4px;
+    text-align: left;
+    width: 100%;
+  }
+
+  .mobile-table-value {
+    width: 100%;
+    text-align: left;
+    font-size: 0.875rem;
+    color: #1a1a1a;
+    word-break: break-word;
+  }
+
+  .mobile-table-value button {
+    width: auto;
+    margin: 4px 8px 4px 0;
+    display: inline-block;
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    min-height: 32px;
+  }
+
+  /* Action button groups in mobile cards */
+  .mobile-table-value > div[style*="display: flex"],
+  .mobile-table-value .form-actions {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+  }
+
+  /* Hide desktop table on mobile */
+  .table-wrapper table {
+    display: none;
+  }
+
+  .table-wrapper {
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Header responsive */
+  .site-header {
+    padding: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .brand {
+    flex: 1 1 auto;
+    min-width: 200px;
+  }
+
+  .logo-mark {
+    width: 36px;
+    height: 36px;
+    font-size: 0.875rem;
+  }
+
+  .logo-title {
+    font-size: 0.9375rem;
+  }
+
+  .logo-subtitle {
+    font-size: 0.75rem;
+    display: none;
+  }
+
+  .mobile-menu-toggle {
+    display: flex !important;
+    order: -1;
+    margin-right: 8px;
+  }
+
+  .site-header .primary-btn,
+  .site-header .ghost-btn,
+  .site-header button {
+    padding: 8px 14px !important;
+    font-size: 0.8125rem !important;
+    min-height: 36px !important;
+  }
+
+  .site-header .brand {
+    order: 1;
+  }
+
+  .site-header .ghost-btn {
+    order: 2;
+  }
+
+  /* ALL buttons - smaller and compact for mobile */
+  button,
   .primary-btn,
   .secondary-btn,
-  .ghost-btn {
-    padding: 8px 14px;
-    font-size: 0.8125rem;
-    min-height: 36px;
+  .ghost-btn,
+  .text-btn,
+  input[type="button"],
+  input[type="submit"],
+  .btn-admin,
+  .btn-member,
+  .login-buttons button {
+    padding: 8px 14px !important;
+    font-size: 0.8125rem !important;
+    min-height: 36px !important;
+    border-radius: 8px !important;
+    font-weight: 600;
+    width: auto;
+    display: inline-block;
+    touch-action: manipulation;
+    white-space: nowrap;
   }
 
-  /* Button groups */
+  /* Full width buttons only in forms and headers */
+  .form-actions button,
+  .screen-card__header button,
+  .card button[type="submit"],
+  form button[type="submit"] {
+    width: 100% !important;
+  }
+
+  /* Button groups - horizontal wrap */
   .form-actions {
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
     gap: 8px;
+    justify-content: flex-start;
   }
 
   .form-actions button {
-    width: 100%;
+    flex: 0 1 auto;
+    min-width: 100px;
   }
 
   /* Responsive tables */
@@ -818,10 +1275,24 @@ main {
   input,
   select,
   textarea {
-    font-size: 0.875rem;
-    padding: 10px 12px;
+    font-size: 1rem;
+    padding: 14px 16px;
     width: 100%;
     box-sizing: border-box;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    min-height: 48px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #ffffff;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: #5a31ea;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(90, 49, 234, 0.1);
   }
 
   /* Form labels */
@@ -831,25 +1302,27 @@ main {
 
   /* Form grids */
   .form-grid {
-    gap: 12px;
+    gap: 20px;
   }
 
-  /* Responsive buttons in tables */
-  .table-wrapper button {
-    padding: 6px 10px;
-    font-size: 0.75rem;
-    white-space: nowrap;
+  /* Invoice form and other forms */
+  .form-grid[style*="padding: 40px"] {
+    padding: 20px !important;
   }
 
-  /* Table responsive */
-  .table-wrapper {
-    margin: 0 -12px;
-    padding: 0 12px;
+  /* Responsive buttons in tables - small on mobile */
+  .table-wrapper button,
+  table button {
+    padding: 6px 12px !important;
+    font-size: 0.75rem !important;
+    white-space: normal;
+    width: auto !important;
+    margin: 2px 4px 2px 0 !important;
+    min-height: 32px !important;
+    display: inline-block;
   }
 
-  table {
-    min-width: 600px;
-  }
+  /* Table responsive - handled by mobile-table-cards component */
 
   /* Action buttons in tables */
   .table-wrapper .form-actions,
@@ -871,30 +1344,53 @@ main {
     gap: 12px;
   }
 
-  /* KPI cards */
+  /* KPI cards - left aligned */
   .kpi-grid {
     gap: 12px;
   }
 
   .kpi {
     padding: 16px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid #f0f0f0;
+    text-align: left;
   }
 
   .kpi h4 {
     font-size: 1.5rem;
+    margin: 8px 0;
+    font-weight: 700;
+    text-align: left;
   }
 
   .kpi p {
     font-size: 0.8125rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+    text-align: left;
   }
 
   .kpi small {
     font-size: 0.75rem;
+    color: #666;
+    text-align: left;
+    display: block;
   }
 
   /* Chart cards */
   .chart-card {
-    padding: 12px;
+    padding: 16px;
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .chart {
+    min-height: 200px;
+    width: 100%;
+    overflow: hidden;
   }
 
   /* Dropdowns */
@@ -911,13 +1407,44 @@ main {
   }
 
   /* Header actions */
+  .screen-card__header > div {
+    width: 100%;
+    flex-direction: column;
+    gap: 12px;
+  }
+
   .screen-card__header > div:last-child {
     width: 100%;
+    margin-top: 12px;
   }
 
   .screen-card__header button {
     width: 100%;
-    margin-top: 8px;
+    margin: 0;
+  }
+
+  /* Button groups - horizontal wrap for mobile */
+  div[style*="display: flex"]:has(button) {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    justify-content: flex-start !important;
+  }
+
+  /* Form actions and header buttons stay full width */
+  .form-actions:not(.mobile-table-value .form-actions),
+  .screen-card__header > div:last-child {
+    flex-direction: column !important;
+  }
+
+  .form-actions:not(.mobile-table-value .form-actions) button,
+  form .form-actions button {
+    width: 100% !important;
+  }
+
+  /* Grid layouts - single column */
+  div[style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
   }
 
   /* Search filters */
@@ -926,9 +1453,246 @@ main {
   }
 
   /* Donation form buttons */
-  div[style*="display: grid"][style*="gridTemplateColumns: 1fr 1fr"] {
+  div[style*="display: grid"][style*="gridTemplateColumns: 1fr 1fr"],
+  div[style*="gridTemplateColumns: repeat(auto-fit"] {
     grid-template-columns: 1fr !important;
     gap: 12px;
+  }
+
+  /* Payment cards grid */
+  div[style*="gridTemplateColumns: repeat(auto-fill, minmax(350px"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Success card buttons - small and left-aligned */
+  .success-card-actions {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .success-card-actions button {
+    width: 100% !important;
+    padding: 8px 14px !important;
+    font-size: 0.8125rem !important;
+    min-height: 36px !important;
+    display: block;
+    text-align: left !important;
+  }
+
+  div[style*="Invoice Has Been Created"] {
+    margin: 0 -16px 20px -16px !important;
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+  }
+
+  /* Textarea - left aligned */
+  textarea {
+    min-height: 100px;
+    resize: vertical;
+    text-align: left;
+  }
+
+  /* Select dropdown */
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%235a31ea' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    padding-right: 40px;
+  }
+
+  /* Labels - left aligned */
+  label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #1a1a1a;
+    text-align: left;
+    display: block;
+  }
+
+  /* Badges */
+  .badge,
+  span[class*="badge"] {
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+    border-radius: 20px;
+    display: inline-block;
+  }
+
+  /* Remove all horizontal overflow */
+  * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  /* Left align ALL text content and headings */
+  * {
+    text-align: left !important;
+  }
+
+  /* Exceptions - keep centered only for specific cases */
+  .mobile-table-card-toggle,
+  .hamburger,
+  .logo-mark,
+  .mobile-menu-toggle,
+  button,
+  .screen-card__header button,
+  .screen-card__header i[class*="fa"] {
+    text-align: center !important;
+  }
+
+  /* But text inside buttons should be left if it's a heading */
+  button h3,
+  button h4,
+  button p {
+    text-align: left !important;
+  }
+
+  /* All headings left-aligned - with higher specificity */
+  h1, h2, h3, h4, h5, h6,
+  .screen-card__header h3,
+  .screen-card__header div h3,
+  .screen-card__header div[style] h3,
+  .card-header h4,
+  .card h4,
+  .kpi h4,
+  .dashboard-card h4,
+  .member-detail h4,
+  article h3,
+  article h4,
+  #members h3,
+  #dashboard h3,
+  #invoice-builder h3,
+  #member-detail h3 {
+    text-align: left !important;
+  }
+
+  /* All paragraphs and text */
+  p, span, div, label, input, select, textarea,
+  .screen-card__header p,
+  .card-header p,
+  .kpi p,
+  .kpi small {
+    text-align: left !important;
+  }
+
+  /* Screen card headers - force left alignment */
+  .screen-card__header,
+  .screen-card__header > div,
+  .screen-card__header > div > div,
+  .screen-card__header h3,
+  .screen-card__header p,
+  .card-header,
+  .card-header h4,
+  .card-header p,
+  .dashboard-card,
+  .dashboard-card h4 {
+    text-align: left !important;
+  }
+
+  /* Override inline styles for headings */
+  .screen-card__header h3[style],
+  .screen-card__header div[style] h3,
+  .screen-card__header div[style] p {
+    text-align: left !important;
+  }
+
+  /* Flex containers in headers - don't affect text alignment */
+  .screen-card__header div[style*="display: flex"],
+  .screen-card__header div[style*="justifyContent"] {
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+  }
+
+  .screen-card__header div[style*="display: flex"] > div {
+    text-align: left !important;
+    align-items: flex-start !important;
+  }
+
+  .screen-card__header div[style*="display: flex"] > div:first-child {
+    text-align: left !important;
+  }
+
+  .screen-card__header div[style*="display: flex"] > div h3,
+  .screen-card__header div[style*="display: flex"] > div p,
+  .screen-card__header div[style*="justifyContent"] h3,
+  .screen-card__header div[style*="justifyContent"] p {
+    text-align: left !important;
+  }
+
+  /* KPI cards */
+  .kpi {
+    text-align: left !important;
+  }
+
+  /* All h4 headings */
+  h4,
+  .card h4,
+  .kpi h4,
+  .dashboard-card h4,
+  .member-detail h4 {
+    text-align: left !important;
+  }
+
+  /* Table action buttons - small and left-aligned */
+  table tbody tr td button,
+  .table-wrapper button,
+  .mobile-table-value button {
+    padding: 6px 12px !important;
+    font-size: 0.75rem !important;
+    min-height: 32px !important;
+    width: auto !important;
+    margin: 2px 4px 2px 0 !important;
+    display: inline-block;
+    text-align: left !important;
+  }
+
+  /* Action button groups in tables */
+  .table-wrapper div[style*="display: flex"],
+  .mobile-table-value div[style*="display: flex"] {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+  }
+
+  /* Member detail tabs */
+  .member-detail .tabs {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+  }
+
+  .member-detail .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .member-detail .tab {
+    white-space: nowrap;
+    padding: 12px 20px;
+    font-size: 0.875rem;
+    min-width: auto;
+  }
+
+  /* Toast notifications */
+  div[style*="position: fixed"][style*="top: 20px"] {
+    left: 16px !important;
+    right: 16px !important;
+    width: auto !important;
+    max-width: calc(100% - 32px);
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 0.9375rem;
   }
 }
 

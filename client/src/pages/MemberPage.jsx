@@ -1622,173 +1622,134 @@ export function MemberPage() {
                           </div>
                         </div>
 
-                        {/* Payment Cards Grid */}
-                        <div style={{ 
-                          display: "grid", 
-                          gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", 
-                          gap: "20px",
-                          marginBottom: "24px"
-                        }}>
-                          {currentPayments.map((item, idx) => (
-                          <div 
-                            key={idx}
-                            style={{
-                              background: "#fff",
-                              border: "1px solid #e0e0e0",
-                              borderRadius: "12px",
-                              padding: "20px",
-                              transition: "all 0.3s ease",
-                              boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.1)";
-                              e.currentTarget.style.borderColor = "#5a31ea";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.05)";
-                              e.currentTarget.style.borderColor = "#e0e0e0";
-                            }}
-                          >
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                              <div>
-                                <div style={{ 
-                                  fontSize: "0.75rem", 
-                                  color: "#666", 
-                                  textTransform: "uppercase", 
-                                  letterSpacing: "0.5px",
-                                  marginBottom: "4px"
-                                }}>
-                                  {item.date || "N/A"}
+                        {/* Payment Cards List (desktop grid, simple stacked cards on mobile) */}
+                        <div className="payment-history-list" style={{ marginBottom: "24px" }}>
+                          {currentPayments.map((item, idx) => {
+                            const methodLabel = (() => {
+                              // Show "Cash" for cash payments, "Online Payment" for online payments
+                              if (item.paidToAdmin || item.paidToAdminName || item.method === "Cash to Admin") {
+                                return "Cash";
+                              }
+                              const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
+                              return onlineMethods.includes(item.method) ? "Online Payment" : (item.method || "N/A");
+                            })();
+
+                            return (
+                              <div 
+                                key={idx}
+                                className="payment-history-card"
+                              >
+                                <div className="payment-history-card__main">
+                                  <div>
+                                    <p className="payment-history-card__amount">
+                                      {item.amount || "$0"}
+                                    </p>
+                                    <p className="payment-history-card__date">
+                                      {item.date || "N/A"}
+                                    </p>
+                                  </div>
+                                  <div className="payment-history-card__status">
+                                    <span className={statusClass[item.status] || "payment-history-card__status-pill"}>
+                                      {item.status || "Pending"}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div style={{ 
-                                  fontSize: "1.5rem", 
-                                  fontWeight: "700", 
-                                  color: "#5a31ea",
-                                  marginBottom: "4px"
-                                }}>
-                                  {item.amount || "$0"}
+
+                                <div className="payment-history-card__meta">
+                                  <div>
+                                    <span className="label">Method</span>
+                                    <span className="value">{methodLabel}</span>
+                                  </div>
+                                  {item.reference && item.reference !== "-" && (
+                                    <div>
+                                      <span className="label">Reference</span>
+                                      <span className="value code">{item.reference}</span>
+                                    </div>
+                                  )}
+                                  {item.paidToAdminName && (
+                                    <div>
+                                      <span className="label">Paid to</span>
+                                      <span className="value">{item.paidToAdminName}</span>
+                                    </div>
+                                  )}
+                                  {item.period && (
+                                    <div>
+                                      <span className="label">Period</span>
+                                      <span className="value">{item.period}</span>
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                              <span className={statusClass[item.status] || "badge badge-unpaid"} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
-                                {item.status || "Pending"}
-                              </span>
-                            </div>
-                            
-                            <div style={{ 
-                              display: "flex", 
-                              flexDirection: "column", 
-                              gap: "8px",
-                              paddingTop: "16px",
-                              borderTop: "1px solid #f0f0f0"
-                            }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <span style={{ fontSize: "0.875rem", color: "#666" }}>Method:</span>
-                                <strong style={{ fontSize: "0.875rem" }}>{(() => {
-                                  // Show "Cash" for cash payments, "Online Payment" for online payments
-                                  if (item.paidToAdmin || item.paidToAdminName || item.method === "Cash to Admin") {
-                                    return "Cash";
-                                  }
-                                  const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
-                                  return onlineMethods.includes(item.method) ? "Online Payment" : (item.method || "N/A");
-                                })()}</strong>
-                              </div>
-                              {item.reference && item.reference !== "-" && (
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <span style={{ fontSize: "0.875rem", color: "#666" }}>Reference:</span>
-                                  <strong style={{ fontSize: "0.875rem", fontFamily: "monospace" }}>{item.reference}</strong>
-                                </div>
-                              )}
-                              {item.paidToAdminName && (
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <span style={{ fontSize: "0.875rem", color: "#666" }}>Paid to:</span>
-                                  <strong style={{ fontSize: "0.875rem" }}>{item.paidToAdminName}</strong>
-                                </div>
-                              )}
-                              {item.period && (
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <span style={{ fontSize: "0.875rem", color: "#666" }}>Period:</span>
-                                  <strong style={{ fontSize: "0.875rem" }}>{item.period}</strong>
-                                </div>
-                              )}
-                            </div>
-                            
-                            {item.status === "Pending" && (
-                              <div style={{ 
-                                marginTop: "12px", 
-                                padding: "12px", 
-                                background: "#fff3cd", 
-                                borderRadius: "8px",
-                                border: "1px solid #ffc107",
-                                fontSize: "0.875rem",
-                                color: "#856404"
-                              }}>
-                                ⏳ Your payment is pending admin approval. You will be notified once it's reviewed.
-                              </div>
-                            )}
-                            
-                            {item.status === "Rejected" && item.rejectionReason && (
-                              <div style={{ 
-                                marginTop: "12px", 
-                                padding: "12px", 
-                                background: "#f8d7da", 
-                                borderRadius: "8px",
-                                border: "1px solid #f5c6cb",
-                                fontSize: "0.875rem",
-                                color: "#721c24"
-                              }}>
-                                ❌ Payment rejected: {item.rejectionReason}
-                              </div>
-                            )}
-                            
-                            {item.screenshot && (
-                              <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #f0f0f0" }}>
-                                <button
-                                  onClick={() => {
-                                    const newWindow = window.open();
-                                    if (newWindow) {
-                                      newWindow.document.write(`
-                                        <html>
-                                          <head><title>Payment Screenshot</title></head>
-                                          <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                                            <img src="${item.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
-                                          </body>
-                                        </html>
-                                      `);
-                                    }
-                                  }}
-                                  style={{
-                                    width: "100%",
-                                    padding: "10px 16px",
-                                    background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
-                                    color: "#ffffff",
-                                    border: "none",
+
+                                {item.status === "Pending" && (
+                                  <div style={{ 
+                                    marginTop: "8px", 
+                                    padding: "8px", 
+                                    background: "#fff3cd", 
                                     borderRadius: "8px",
-                                    fontSize: "0.875rem",
-                                    fontWeight: "600",
-                                    cursor: "pointer",
-                                    transition: "all 0.2s ease",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    gap: "8px",
-                                    boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)"
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    e.target.style.background = "linear-gradient(135deg, #4a28d0 0%, #6b3fff 100%)";
-                                    e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.4)";
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
-                                    e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
-                                  }}
-                                >
-                                  <span style={{ color: "#ffffff" }}>📷</span>
-                                  <span style={{ color: "#ffffff" }}>View Screenshot</span>
-                                </button>
+                                    border: "1px solid #ffc107",
+                                    fontSize: "0.8rem",
+                                    color: "#856404"
+                                  }}>
+                                    ⏳ Your payment is pending admin approval. You will be notified once it's reviewed.
+                                  </div>
+                                )}
+                                
+                                {item.status === "Rejected" && item.rejectionReason && (
+                                  <div style={{ 
+                                    marginTop: "8px", 
+                                    padding: "8px", 
+                                    background: "#f8d7da", 
+                                    borderRadius: "8px",
+                                    border: "1px solid #f5c6cb",
+                                    fontSize: "0.8rem",
+                                    color: "#721c24"
+                                  }}>
+                                    ❌ Payment rejected: {item.rejectionReason}
+                                  </div>
+                                )}
+                                
+                                {item.screenshot && (
+                                  <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #f0f0f0" }}>
+                                    <button
+                                      onClick={() => {
+                                        const newWindow = window.open();
+                                        if (newWindow) {
+                                          newWindow.document.write(`
+                                            <html>
+                                              <head><title>Payment Screenshot</title></head>
+                                              <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                                <img src="${item.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
+                                              </body>
+                                            </html>
+                                          `);
+                                        }
+                                      }}
+                                      style={{
+                                        width: "100%",
+                                        padding: "8px 12px",
+                                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                        color: "#ffffff",
+                                        border: "none",
+                                        borderRadius: "8px",
+                                        fontSize: "0.8rem",
+                                        fontWeight: "600",
+                                        cursor: "pointer",
+                                        transition: "all 0.2s ease",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        gap: "6px",
+                                        boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                      }}
+                                    >
+                                      <span style={{ color: "#ffffff" }}>📷</span>
+                                      <span style={{ color: "#ffffff" }}>View Screenshot</span>
+                                    </button>
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ))}
+                            );
+                          })}
                         </div>
 
                         {/* Pagination Controls - Bottom */}
