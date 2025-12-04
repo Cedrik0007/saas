@@ -183,6 +183,7 @@ export function AdminPage() {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
   const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
   const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
+  const [expandedPaymentIndex, setExpandedPaymentIndex] = useState(null); // Accordion for member payment history (mobile)
   const [memberSearchTerm, setMemberSearchTerm] = useState(""); // Search filter for members
   const [invoiceMemberSearch, setInvoiceMemberSearch] = useState(""); // Search filter for invoice member select
   const [donationMemberSearch, setDonationMemberSearch] = useState(""); // Search filter for donation member select
@@ -2739,167 +2740,335 @@ Subscription Manager HK`;
                   )}
 
                   {activeTab === "Payment History" && (
-                    <div className="tab-panel">
+                    <div className="tab-panel tab-panel--payment-history">
                       {(() => {
                         // Filter payment history for selected member
-                        const memberPayments = paymentHistory.filter((payment) => 
-                          payment.memberId === selectedMember.id || 
-                          payment.memberEmail === selectedMember.email || 
-                          payment.member === selectedMember.name
-                        ).sort((a, b) => {
-                          // Sort by date, newest first
-                          const dateA = new Date(a.date || 0);
-                          const dateB = new Date(b.date || 0);
-                          return dateB - dateA;
-                        });
+                        const memberPayments = paymentHistory
+                          .filter((payment) =>
+                            payment.memberId === selectedMember.id ||
+                            payment.memberEmail === selectedMember.email ||
+                            payment.member === selectedMember.name
+                          )
+                          .sort((a, b) => {
+                            // Sort by date, newest first
+                            const dateA = new Date(a.date || 0);
+                            const dateB = new Date(b.date || 0);
+                            return dateB - dateA;
+                          });
 
                         if (memberPayments.length === 0) {
                           return (
-                            <div style={{ 
-                              textAlign: "center", 
-                              padding: "40px 20px",
-                              color: "#666"
-                            }}>
-                              <p style={{ margin: 0, fontSize: "1rem" }}>No payment history available for this member.</p>
+                            <div
+                              style={{
+                                textAlign: "center",
+                                padding: "40px 20px",
+                                color: "#666",
+                              }}
+                            >
+                              <p style={{ margin: 0, fontSize: "1rem" }}>
+                                No payment history available for this member.
+                              </p>
                             </div>
                           );
                         }
 
                         return (
-                          <div style={{ 
-                            display: "grid", 
-                            gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", 
-                            gap: "20px" 
-                          }}>
-                            {memberPayments.map((item, idx) => (
-                              <div 
-                                key={idx}
-                                style={{
-                                  background: "#fff",
-                                  border: "none",
-                                  borderRadius: "12px",
-                                  padding: "20px",
-                                  transition: "all 0.3s ease",
-                                  boxShadow: "0 2px 8px rgba(90, 49, 234, 0.08)"
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.15)";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.08)";
-                                }}
-                              >
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                                  <div>
-                                    <div style={{ 
-                                      fontSize: "0.75rem", 
-                                      color: "#666", 
-                                      textTransform: "uppercase", 
-                                      letterSpacing: "0.5px",
-                                      marginBottom: "4px"
-                                    }}>
-                                      {item.date || "N/A"}
+                          <div
+                            className="payment-history-list"
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns:
+                                "repeat(auto-fill, minmax(350px, 1fr))",
+                              gap: "20px",
+                            }}
+                          >
+                            {memberPayments.map((item, idx) => {
+                              const isExpanded = expandedPaymentIndex === idx;
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`payment-history-card ${
+                                    isExpanded ? "expanded" : ""
+                                  }`}
+                                  style={{
+                                    background: "#fff",
+                                    border: "none",
+                                    borderRadius: "12px",
+                                    padding: "20px",
+                                    transition: "all 0.3s ease",
+                                    boxShadow:
+                                      "0 2px 8px rgba(90, 49, 234, 0.08)",
+                                  }}
+                                >
+                                  {/* Accordion header */}
+                                  <button
+                                    type="button"
+                                    className="payment-history-card__main"
+                                    onClick={() =>
+                                      setExpandedPaymentIndex(
+                                        isExpanded ? null : idx
+                                      )
+                                    }
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "flex-start",
+                                      width: "100%",
+                                      background: "none",
+                                      border: "none",
+                                      padding: 0,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    <div>
+                                      <div
+                                        style={{
+                                          fontSize: "0.75rem",
+                                          color: "#666",
+                                          textTransform: "uppercase",
+                                          letterSpacing: "0.5px",
+                                          marginBottom: "4px",
+                                        }}
+                                      >
+                                        {item.date || "N/A"}
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: "1.5rem",
+                                          fontWeight: "700",
+                                          color: "#000",
+                                          marginBottom: "4px",
+                                        }}
+                                      >
+                                        {item.amount || "$0"}
+                                      </div>
                                     </div>
-                                    <div style={{ 
-                                      fontSize: "1.5rem", 
-                                      fontWeight: "700", 
-                                      color: "#000",
-                                      marginBottom: "4px"
-                                    }}>
-                                      {item.amount || "$0"}
-                                    </div>
-                                  </div>
-                                  <span className={`badge ${item.status === "Paid" ? "badge-paid" : item.status === "Pending Verification" ? "badge-pending" : "badge-unpaid"}`} style={{ fontSize: "0.75rem", padding: "4px 10px" }}>
-                                    {item.status || "Paid"}
-                                  </span>
-                                </div>
-                                
-                                <div style={{ 
-                                  display: "flex", 
-                                  flexDirection: "column", 
-                                  gap: "8px",
-                                  paddingTop: "16px",
-                                  borderTop: "1px solid #f0f0f0"
-                                }}>
-                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                    <span style={{ fontSize: "0.875rem", color: "#666" }}>Method:</span>
-                                    <strong style={{ fontSize: "0.875rem" }}>{getPaymentMethodDisplay(item)}</strong>
-                                  </div>
-                                  {item.reference && item.reference !== "N/A" && item.reference !== "-" && (
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Reference:</span>
-                                      <strong style={{ fontSize: "0.875rem", fontFamily: "monospace" }}>{item.reference}</strong>
-                                    </div>
-                                  )}
-                                  {item.paidToAdminName && (
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Paid to:</span>
-                                      <strong style={{ fontSize: "0.875rem" }}>{item.paidToAdminName}</strong>
-                                    </div>
-                                  )}
-                                  {item.period && (
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Period:</span>
-                                      <strong style={{ fontSize: "0.875rem" }}>{item.period}</strong>
-                                    </div>
-                                  )}
-                                  {item.member && (
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Member:</span>
-                                      <strong style={{ fontSize: "0.875rem" }}>{item.member}</strong>
-                                    </div>
-                                  )}
-                                </div>
-                                
-                                {item.screenshot && (
-                                  <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #f0f0f0" }}>
-                                    <button
-                                      onClick={() => {
-                                        const newWindow = window.open();
-                                        if (newWindow) {
-                                          newWindow.document.write(`
-                                            <html>
-                                              <head><title>Payment Screenshot</title></head>
-                                              <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                                                <img src="${item.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
-                                              </body>
-                                            </html>
-                                          `);
-                                        }
-                                      }}
+                                    <div
                                       style={{
-                                        width: "100%",
-                                        padding: "10px 16px",
-                                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
-                                        color: "#ffffff",
-                                        border: "none",
-                                        borderRadius: "8px",
-                                        fontSize: "0.875rem",
-                                        fontWeight: "600",
-                                        cursor: "pointer",
-                                        transition: "all 0.2s ease",
                                         display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        gap: "8px",
-                                        boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)"
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        e.target.style.background = "linear-gradient(135deg, #4a28d0 0%, #6b3fff 100%)";
-                                        e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.4)";
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
-                                        e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
+                                        flexDirection: "column",
+                                        alignItems: "flex-end",
+                                        gap: 4,
                                       }}
                                     >
-                                      <span style={{ color: "#ffffff" }}>📷</span>
-                                      <span style={{ color: "#ffffff" }}>View Screenshot</span>
-                                    </button>
+                                      <span
+                                        className={`badge ${
+                                          item.status === "Paid"
+                                            ? "badge-paid"
+                                            : item.status ===
+                                              "Pending Verification"
+                                            ? "badge-pending"
+                                            : "badge-unpaid"
+                                        }`}
+                                        style={{
+                                          fontSize: "0.75rem",
+                                          padding: "4px 10px",
+                                        }}
+                                      >
+                                        {item.status || "Paid"}
+                                      </span>
+                                      <i
+                                        className={`fa-solid fa-angle-down ${isExpanded ? "expanded" : ""}`}
+                                        style={{
+                                          fontSize: "1rem",
+                                          color: "#666",
+                                          marginTop: 4,
+                                          transition: "transform 0.3s ease",
+                                          transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                                        }}
+                                      ></i>
+                                    </div>
+                                  </button>
+
+                                  {/* Accordion content */}
+                                  <div
+                                    className={`payment-history-card__details ${
+                                      isExpanded ? "expanded" : "collapsed"
+                                    }`}
+                                    style={{
+                                      marginTop: "12px",
+                                      borderTop: "1px solid #f0f0f0",
+                                      paddingTop: "12px",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: "8px",
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          justifyContent: "space-between",
+                                          alignItems: "center",
+                                        }}
+                                      >
+                                        <span
+                                          style={{
+                                            fontSize: "0.875rem",
+                                            color: "#666",
+                                          }}
+                                        >
+                                          Method:
+                                        </span>
+                                        <strong
+                                          style={{ fontSize: "0.875rem" }}
+                                        >
+                                          {getPaymentMethodDisplay(item)}
+                                        </strong>
+                                      </div>
+                                      {item.reference &&
+                                        item.reference !== "N/A" &&
+                                        item.reference !== "-" && (
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              justifyContent: "space-between",
+                                              alignItems: "center",
+                                            }}
+                                          >
+                                            <span
+                                              style={{
+                                                fontSize: "0.875rem",
+                                                color: "#666",
+                                              }}
+                                            >
+                                              Reference:
+                                            </span>
+                                            <strong
+                                              style={{
+                                                fontSize: "0.875rem",
+                                                fontFamily: "monospace",
+                                              }}
+                                            >
+                                              {item.reference}
+                                            </strong>
+                                          </div>
+                                        )}
+                                      {item.paidToAdminName && (
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            alignItems: "center",
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              fontSize: "0.875rem",
+                                              color: "#666",
+                                            }}
+                                          >
+                                            Paid to:
+                                          </span>
+                                          <strong
+                                            style={{ fontSize: "0.875rem" }}
+                                          >
+                                            {item.paidToAdminName}
+                                          </strong>
+                                        </div>
+                                      )}
+                                      {item.period && (
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            alignItems: "center",
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              fontSize: "0.875rem",
+                                              color: "#666",
+                                            }}
+                                          >
+                                            Period:
+                                          </span>
+                                          <strong
+                                            style={{ fontSize: "0.875rem" }}
+                                          >
+                                            {item.period}
+                                          </strong>
+                                        </div>
+                                      )}
+                                      {item.member && (
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            alignItems: "center",
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              fontSize: "0.875rem",
+                                              color: "#666",
+                                            }}
+                                          >
+                                            Member:
+                                          </span>
+                                          <strong
+                                            style={{ fontSize: "0.875rem" }}
+                                          >
+                                            {item.member}
+                                          </strong>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {item.screenshot && (
+                                      <div
+                                        style={{
+                                          marginTop: "16px",
+                                          paddingTop: "16px",
+                                          borderTop: "1px solid #f0f0f0",
+                                        }}
+                                      >
+                                        <button
+                                          onClick={() => {
+                                            const newWindow = window.open();
+                                            if (newWindow) {
+                                              newWindow.document.write(`
+                                                <html>
+                                                  <head><title>Payment Screenshot</title></head>
+                                                  <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                                    <img src="${item.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
+                                                  </body>
+                                                </html>
+                                              `);
+                                            }
+                                          }}
+                                          style={{
+                                            width: "100%",
+                                            padding: "10px 16px",
+                                            background:
+                                              "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                            color: "#ffffff",
+                                            border: "none",
+                                            borderRadius: "8px",
+                                            fontSize: "0.875rem",
+                                            fontWeight: "600",
+                                            cursor: "pointer",
+                                            transition: "all 0.2s ease",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: "8px",
+                                            boxShadow:
+                                              "0 2px 8px rgba(90, 49, 234, 0.3)",
+                                          }}
+                                        >
+                                          <span>📷</span>
+                                          <span>View Screenshot</span>
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            ))}
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })()}

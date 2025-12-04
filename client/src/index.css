@@ -931,6 +931,11 @@ main {
     color: #b91c1c;
   }
 
+  /* Admin member payment history accordion details - mobile only (default: visible) */
+  .payment-history-card__details {
+    display: block;
+  }
+
   .payment-history-card__meta {
     display: flex;
     flex-wrap: wrap;
@@ -961,6 +966,15 @@ main {
   .payment-history-card__notes .label {
     font-weight: 500;
     margin-right: 4px;
+  }
+
+  /* Admin member payment history accordion details - collapse on mobile */
+  .payment-history-card__details.collapsed {
+    display: none;
+  }
+
+  .payment-history-card__details.expanded {
+    display: block;
   }
 
   /* Outstanding members list - stacked, compact cards */
