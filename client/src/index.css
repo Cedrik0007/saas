@@ -1055,11 +1055,11 @@ main {
     grid-template-columns: 1fr;
   }
 
-  /* Mobile table cards - Accordion style */
+  /* Mobile table cards - Enhanced Accordion style */
   .mobile-table-cards {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
     width: 100%;
     overflow: visible;
   }
@@ -1067,61 +1067,141 @@ main {
   .mobile-table-card {
     background: #ffffff;
     border: 1px solid #e5e7eb;
+    border-left: 3px solid #e5e7eb;
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     width: 100%;
     box-sizing: border-box;
     overflow: hidden;
     transition: all 0.3s ease;
+    position: relative;
+  }
+
+  /* Status-based left border colors */
+  .mobile-table-card.mobile-card-border-success {
+    border-left-color: #10b981;
+  }
+
+  .mobile-table-card.mobile-card-border-warning {
+    border-left-color: #f59e0b;
+  }
+
+  .mobile-table-card.mobile-card-border-danger {
+    border-left-color: #ef4444;
+  }
+
+  .mobile-table-card.mobile-card-border-default {
+    border-left-color: #e5e7eb;
   }
 
   .mobile-table-card-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
     padding: 16px;
     cursor: pointer;
     user-select: none;
     background: #f8f9ff;
     border-bottom: 1px solid #e5e7eb;
+    transition: background 0.2s ease;
   }
 
   .mobile-table-card-header:hover {
     background: #f0f0f5;
   }
 
+  .mobile-table-card-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    width: 100%;
+    gap: 12px;
+  }
+
+  .mobile-table-card-title-section {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
   .mobile-table-card-title {
     font-weight: 600;
-    font-size: 0.9375rem;
+    font-size: 1rem;
     color: #1a1a1a;
-    flex: 1;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .mobile-table-card-metric {
+    font-size: 0.875rem;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 500;
+  }
+
+  .mobile-table-card-header-right {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .mobile-table-card-status {
+    display: flex;
+    align-items: center;
+  }
+
+  .mobile-table-card-status .badge {
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    white-space: nowrap;
   }
 
   .mobile-table-card-toggle {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #5a31ea;
-    font-size: 0.75rem;
+    font-size: 0.875rem;
     transition: transform 0.2s ease;
     flex-shrink: 0;
-    line-height: 1;
+    margin-top: 2px;
   }
 
   .mobile-table-card.expanded .mobile-table-card-toggle {
     transform: rotate(180deg);
   }
 
+  .mobile-table-card-quick-action {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    gap: 8px;
+  }
+
+  .mobile-table-card-quick-action button {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 0.8125rem;
+    min-height: 36px;
+  }
+
   .mobile-table-card-content {
     max-height: 0;
     overflow: hidden;
     transition: max-height 0.3s ease;
+    background: #ffffff;
   }
 
   .mobile-table-card.expanded .mobile-table-card-content {
     max-height: 2000px;
+    padding: 0;
   }
 
   .mobile-table-row {
@@ -1131,10 +1211,21 @@ main {
     padding: 12px 16px;
     border-bottom: 1px solid #f0f0f0;
     gap: 6px;
+    transition: background 0.2s ease;
+  }
+
+  .mobile-table-row:hover {
+    background: #fafafa;
   }
 
   .mobile-table-row:last-child {
     border-bottom: none;
+  }
+
+  .mobile-table-row-actions {
+    background: #f8f9ff;
+    border-top: 1px solid #e5e7eb;
+    margin-top: 4px;
   }
 
   .mobile-table-label {
@@ -1144,6 +1235,8 @@ main {
     margin-bottom: 4px;
     text-align: left;
     width: 100%;
+    display: flex;
+    align-items: center;
   }
 
   .mobile-table-value {
@@ -1152,6 +1245,7 @@ main {
     font-size: 0.875rem;
     color: #1a1a1a;
     word-break: break-word;
+    line-height: 1.5;
   }
 
   .mobile-table-value button {

@@ -2812,7 +2812,7 @@ Subscription Manager HK`;
                                     style={{
                                       display: "flex",
                                       justifyContent: "space-between",
-                                      alignItems: "flex-start",
+                                      alignItems: "center",
                                       width: "100%",
                                       background: "none",
                                       border: "none",
@@ -2823,56 +2823,25 @@ Subscription Manager HK`;
                                     <div>
                                       <div
                                         style={{
-                                          fontSize: "0.75rem",
-                                          color: "#666",
-                                          textTransform: "uppercase",
-                                          letterSpacing: "0.5px",
-                                          marginBottom: "4px",
-                                        }}
-                                      >
-                                        {item.date || "N/A"}
-                                      </div>
-                                      <div
-                                        style={{
-                                          fontSize: "1.5rem",
-                                          fontWeight: "700",
+                                          fontSize: "1rem",
+                                          fontWeight: "600",
                                           color: "#000",
-                                          marginBottom: "4px",
                                         }}
                                       >
-                                        {item.amount || "$0"}
+                                        {item.member || item.memberName || item.memberId || "N/A"}
                                       </div>
                                     </div>
                                     <div
                                       style={{
                                         display: "flex",
-                                        flexDirection: "column",
-                                        alignItems: "flex-end",
-                                        gap: 4,
+                                        alignItems: "center",
                                       }}
                                     >
-                                      <span
-                                        className={`badge ${
-                                          item.status === "Paid"
-                                            ? "badge-paid"
-                                            : item.status ===
-                                              "Pending Verification"
-                                            ? "badge-pending"
-                                            : "badge-unpaid"
-                                        }`}
-                                        style={{
-                                          fontSize: "0.75rem",
-                                          padding: "4px 10px",
-                                        }}
-                                      >
-                                        {item.status || "Paid"}
-                                      </span>
                                       <i
                                         className={`fa-solid fa-angle-down ${isExpanded ? "expanded" : ""}`}
                                         style={{
                                           fontSize: "1rem",
                                           color: "#666",
-                                          marginTop: 4,
                                           transition: "transform 0.3s ease",
                                           transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
                                         }}
@@ -2898,6 +2867,89 @@ Subscription Manager HK`;
                                         gap: "8px",
                                       }}
                                     >
+                                      {item.date && (
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            alignItems: "center",
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              fontSize: "0.875rem",
+                                              color: "#666",
+                                            }}
+                                          >
+                                            Date:
+                                          </span>
+                                          <strong
+                                            style={{ fontSize: "0.875rem" }}
+                                          >
+                                            {item.date}
+                                          </strong>
+                                        </div>
+                                      )}
+                                      {item.amount && (
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            alignItems: "center",
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              fontSize: "0.875rem",
+                                              color: "#666",
+                                            }}
+                                          >
+                                            Amount:
+                                          </span>
+                                          <strong
+                                            style={{
+                                              fontSize: "0.875rem",
+                                              fontWeight: "700",
+                                            }}
+                                          >
+                                            {item.amount}
+                                          </strong>
+                                        </div>
+                                      )}
+                                      {item.status && (
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            justifyContent: "space-between",
+                                            alignItems: "center",
+                                          }}
+                                        >
+                                          <span
+                                            style={{
+                                              fontSize: "0.875rem",
+                                              color: "#666",
+                                            }}
+                                          >
+                                            Status:
+                                          </span>
+                                          <span
+                                            className={`badge ${
+                                              item.status === "Paid"
+                                                ? "badge-paid"
+                                                : item.status ===
+                                                  "Pending Verification"
+                                                ? "badge-pending"
+                                                : "badge-unpaid"
+                                            }`}
+                                            style={{
+                                              fontSize: "0.75rem",
+                                              padding: "4px 10px",
+                                            }}
+                                          >
+                                            {item.status}
+                                          </span>
+                                        </div>
+                                      )}
                                       <div
                                         style={{
                                           display: "flex",
