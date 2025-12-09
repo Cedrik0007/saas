@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 export function Table({ columns, rows }) {
   const [isMobile, setIsMobile] = useState(false);
-  const [expandedCards, setExpandedCards] = useState(new Set());
+  const [selectedCardIndex, setSelectedCardIndex] = useState(null); // For modal popup
 
   useEffect(() => {
     const checkMobile = () => {
@@ -14,17 +14,24 @@ export function Table({ columns, rows }) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const toggleCard = (index) => {
-    setExpandedCards(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(index)) {
-        newSet.delete(index);
-      } else {
-        newSet.add(index);
+  // Close modal when clicking outside or pressing escape
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && selectedCardIndex !== null) {
+        setSelectedCardIndex(null);
       }
-      return newSet;
-    });
-  };
+    };
+    if (selectedCardIndex !== null) {
+      document.addEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'hidden'; // Prevent background scroll
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = '';
+    };
+  }, [selectedCardIndex]);
 
   // Get name from row (prioritize name columns)
   const getName = (row, columns) => {
@@ -102,138 +109,184 @@ export function Table({ columns, rows }) {
     return columns.includes("Actions") && row["Actions"] !== null && row["Actions"] !== undefined;
   };
 
-  // Mobile card layout with accordion
-  if (isMobile) {
-    return (
-      <div className="mobile-table-cards">
-        {rows.map((row, rowIndex) => {
-          const isExpanded = expandedCards.has(rowIndex);
-          const name = getName(row, columns) || "View Details";
-          const statusInfo = getStatusInfo(row, columns);
-          const keyMetric = getKeyMetric(row, columns);
-          const rowHasActions = hasActions(row, columns);
-          
+  // Helper function to render modal content
+  const renderModalContent = (row, rowIndex, columns, onCloseModal) => {
+    const name = getName(row, columns);
+    const keyMetric = getKeyMetric(row, columns);
+    
+    return columns.map((col) => {
+      const nameColumns = ["Name", "Member", "User", "Donor Name", "Source"];
+      const isNameColumn = nameColumns.includes(col);
+      if (isNameColumn && name) {
+        return null;
+      }
+      
+      const value = row[col];
+      let displayValue;
+      
+      if (typeof value === "object" && value !== null && value.render) {
+        displayValue = value.render();
+      } else {
+        const isStatus = typeof value === "string" && statusClass[value] && col === "Status";
+        displayValue = isStatus ? (
+          <span className={statusClass[value]}>{value}</span>
+        ) : (
+          value
+        );
+      }
+
+      if (!displayValue && displayValue !== 0 && displayValue !== "$0") return null;
+      
+      if (keyMetric && col === keyMetric.label) return null;
+
+      if (col === "Actions") {
+        const actions = row[col];
+        if (typeof actions === "object" && actions !== null && actions.render) {
           return (
             <div 
-              key={`mobile-row-${rowIndex}`} 
-              className={`mobile-table-card ${isExpanded ? 'expanded' : ''} ${statusInfo.borderClass}`}
+              key={`${col}-${rowIndex}`} 
+              className="mobile-card-modal-row mobile-card-modal-row-actions"
+              onClick={(e) => {
+                // If a button was clicked, close the modal after a short delay
+                if (e.target.tagName === "BUTTON" || e.target.closest("button")) {
+                  setTimeout(() => {
+                    onCloseModal();
+                  }, 150);
+                }
+              }}
             >
+              <div className="mobile-card-modal-label">{col}</div>
+              <div className="mobile-card-modal-value">{actions.render()}</div>
+            </div>
+          );
+        }
+      }
+
+      const getFieldIcon = (fieldName) => {
+        const iconMap = {
+          "Email": "fa-envelope",
+          "WhatsApp": "fa-phone",
+          "Phone": "fa-phone",
+          "Balance": "fa-wallet",
+          "Amount": "fa-dollar-sign",
+          "Date": "fa-calendar",
+          "Due Date": "fa-calendar-alt",
+          "Period": "fa-calendar-week",
+          "Method": "fa-credit-card",
+          "Reference": "fa-hashtag",
+          "Status": "fa-info-circle",
+          "Type": "fa-tag",
+          "Details": "fa-file-alt",
+          "ID": "fa-id-card",
+          "Invoice #": "fa-file-invoice",
+        };
+        return iconMap[fieldName] || null;
+      };
+
+      const fieldIcon = getFieldIcon(col);
+
+      return (
+        <div key={`${col}-${rowIndex}`} className="mobile-card-modal-row">
+          <div className="mobile-card-modal-label">
+            {fieldIcon && <i className={`fas ${fieldIcon}`} style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>}
+            {col}
+          </div>
+          <div className="mobile-card-modal-value">{displayValue}</div>
+        </div>
+      );
+    });
+  };
+
+  // Mobile card layout with modal popup
+  if (isMobile) {
+    const selectedRow = selectedCardIndex !== null ? rows[selectedCardIndex] : null;
+    
+    return (
+      <>
+        <div className="mobile-table-cards">
+          {rows.map((row, rowIndex) => {
+            const name = getName(row, columns) || "View Details";
+            const statusInfo = getStatusInfo(row, columns);
+            const keyMetric = getKeyMetric(row, columns);
+            
+            return (
               <div 
-                className="mobile-table-card-header"
-                onClick={() => toggleCard(rowIndex)}
+                key={`mobile-row-${rowIndex}`} 
+                className={`mobile-table-card ${statusInfo.borderClass}`}
+                onClick={() => setSelectedCardIndex(rowIndex)}
               >
-                <div className="mobile-table-card-header-content">
-                  <div className="mobile-table-card-title-section">
-                    <div className="mobile-table-card-title">{name}</div>
-                    {keyMetric && (
-                      <div className="mobile-table-card-metric">
-                        {keyMetric.label === "Balance" && <i className="fas fa-wallet" style={{ fontSize: "0.75rem", marginRight: "4px", color: "#666" }}></i>}
-                        {keyMetric.label === "Amount" && <i className="fas fa-dollar-sign" style={{ fontSize: "0.75rem", marginRight: "4px", color: "#666" }}></i>}
-                        <span>{keyMetric.value}</span>
+                <div className="mobile-table-card-header">
+                  <div className="mobile-table-card-header-content">
+                    <div className="mobile-table-card-title-section">
+                      <div className="mobile-table-card-title">{name}</div>
+                      {keyMetric && (
+                        <div className="mobile-table-card-metric">
+                          {keyMetric.label === "Balance" && <i className="fas fa-wallet" style={{ fontSize: "0.75rem", marginRight: "4px", color: "#666" }}></i>}
+                          {keyMetric.label === "Amount" && <i className="fas fa-dollar-sign" style={{ fontSize: "0.75rem", marginRight: "4px", color: "#666" }}></i>}
+                          <span>{keyMetric.value}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="mobile-table-card-header-right">
+                      {statusInfo.status && (
+                        <div className="mobile-table-card-status">
+                          {typeof statusInfo.statusValue === "object" && statusInfo.statusValue !== null && statusInfo.statusValue.render ? (
+                            statusInfo.statusValue.render()
+                          ) : (
+                            <span className={statusClass[statusInfo.status] || "badge"}>{statusInfo.status}</span>
+                          )}
+                        </div>
+                      )}
+                      <div className="mobile-table-card-arrow">
+                        <i className="fa-solid fa-chevron-right" />
                       </div>
-                    )}
-                  </div>
-                  <div className="mobile-table-card-header-right">
-                    {statusInfo.status && (
-                      <div className="mobile-table-card-status">
-                        {typeof statusInfo.statusValue === "object" && statusInfo.statusValue !== null && statusInfo.statusValue.render ? (
-                          statusInfo.statusValue.render()
-                        ) : (
-                          <span className={statusClass[statusInfo.status] || "badge"}>{statusInfo.status}</span>
-                        )}
-                      </div>
-                    )}
-                    <div
-                      className="mobile-table-card-toggle"
-                    >
-                      <i className="fa-solid fa-angle-down" />
                     </div>
                   </div>
                 </div>
               </div>
-              <div className="mobile-table-card-content">
-                {columns.map((col) => {
-                  // Skip name column if it's the only thing (already in header)
-                  // But show it if there are other details to display
-                  const nameColumns = ["Name", "Member", "User", "Donor Name", "Source"];
-                  const isNameColumn = nameColumns.includes(col);
-                  if (isNameColumn && name) {
-                    // Skip name column since it's already prominently displayed in header
-                    return null;
-                  }
-                  
-                  const value = row[col];
-                  let displayValue;
-                  
-                  if (typeof value === "object" && value !== null && value.render) {
-                    displayValue = value.render();
-                  } else {
-                    const isStatus = typeof value === "string" && statusClass[value] && col === "Status";
-                    displayValue = isStatus ? (
-                      <span className={statusClass[value]}>{value}</span>
-                    ) : (
-                      value
-                    );
-                  }
+            );
+          })}
+        </div>
 
-                  // Skip empty values
-                  if (!displayValue && displayValue !== 0 && displayValue !== "$0") return null;
-                  
-                  // Skip if it's the key metric already shown in header
-                  if (keyMetric && col === keyMetric.label) return null;
-                  
-                  // Handle Actions column specially
-                  if (col === "Actions") {
-                    const actions = row[col];
-                    if (typeof actions === "object" && actions !== null && actions.render) {
-                      return (
-                        <div key={`${col}-${rowIndex}`} className="mobile-table-row mobile-table-row-actions">
-                          <div className="mobile-table-label">{col}</div>
-                          <div className="mobile-table-value">{actions.render()}</div>
-                        </div>
-                      );
-                    }
-                  }
-
-                  // Get icon for field type
-                  const getFieldIcon = (fieldName) => {
-                    const iconMap = {
-                      "Email": "fa-envelope",
-                      "WhatsApp": "fa-phone",
-                      "Phone": "fa-phone",
-                      "Balance": "fa-wallet",
-                      "Amount": "fa-dollar-sign",
-                      "Date": "fa-calendar",
-                      "Due Date": "fa-calendar-alt",
-                      "Period": "fa-calendar-week",
-                      "Method": "fa-credit-card",
-                      "Reference": "fa-hashtag",
-                      "Status": "fa-info-circle",
-                      "Type": "fa-tag",
-                      "Details": "fa-file-alt",
-                      "ID": "fa-id-card",
-                      "Invoice #": "fa-file-invoice",
-                    };
-                    return iconMap[fieldName] || null;
-                  };
-
-                  const fieldIcon = getFieldIcon(col);
-
-                  return (
-                    <div key={`${col}-${rowIndex}`} className="mobile-table-row">
-                      <div className="mobile-table-label">
-                        {fieldIcon && <i className={`fas ${fieldIcon}`} style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>}
-                        {col}
-                      </div>
-                      <div className="mobile-table-value">{displayValue}</div>
+        {/* Modal Popup for Card Details */}
+        {selectedCardIndex !== null && selectedRow && (
+          <div 
+            className="mobile-card-modal-overlay"
+            onClick={() => setSelectedCardIndex(null)}
+          >
+            <div 
+              className="mobile-card-modal"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mobile-card-modal-header">
+                <div className="mobile-card-modal-title-section">
+                  <div className="mobile-card-modal-title">
+                    {getName(selectedRow, columns) || "Details"}
+                  </div>
+                  {getKeyMetric(selectedRow, columns) && (
+                    <div className="mobile-card-modal-metric">
+                      {getKeyMetric(selectedRow, columns).label === "Balance" && <i className="fas fa-wallet" style={{ fontSize: "0.75rem", marginRight: "4px", color: "#666" }}></i>}
+                      {getKeyMetric(selectedRow, columns).label === "Amount" && <i className="fas fa-dollar-sign" style={{ fontSize: "0.75rem", marginRight: "4px", color: "#666" }}></i>}
+                      <span>{getKeyMetric(selectedRow, columns).value}</span>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+                <button
+                  className="mobile-card-modal-close"
+                  onClick={() => setSelectedCardIndex(null)}
+                  aria-label="Close"
+                >
+                  <i className="fa-solid fa-times" />
+                </button>
+              </div>
+              
+              <div className="mobile-card-modal-content">
+                {renderModalContent(selectedRow, selectedCardIndex, columns, () => setSelectedCardIndex(null))}
               </div>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        )}
+      </>
     );
   }
 

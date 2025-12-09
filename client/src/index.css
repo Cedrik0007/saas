@@ -1160,7 +1160,7 @@ main {
     white-space: nowrap;
   }
 
-  .mobile-table-card-toggle {
+  .mobile-table-card-arrow {
     width: 24px;
     height: 24px;
     display: flex;
@@ -1168,13 +1168,12 @@ main {
     justify-content: center;
     color: #5a31ea;
     font-size: 0.875rem;
-    transition: transform 0.2s ease;
     flex-shrink: 0;
     margin-top: 2px;
   }
 
-  .mobile-table-card.expanded .mobile-table-card-toggle {
-    transform: rotate(180deg);
+  .mobile-table-card-toggle {
+    display: none;
   }
 
   .mobile-table-card-quick-action {
@@ -1193,15 +1192,7 @@ main {
   }
 
   .mobile-table-card-content {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease;
-    background: #ffffff;
-  }
-
-  .mobile-table-card.expanded .mobile-table-card-content {
-    max-height: 2000px;
-    padding: 0;
+    display: none;
   }
 
   .mobile-table-row {
@@ -1265,6 +1256,183 @@ main {
     gap: 6px !important;
     justify-content: flex-start !important;
     align-items: flex-start !important;
+  }
+
+  /* Mobile Card Modal Popup - Centered */
+  .mobile-card-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+    padding: 16px;
+    margin: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    min-height: 100vh;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .mobile-card-modal {
+    background: #ffffff;
+    width: 100%;
+    max-width: 500px;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    animation: scaleIn 0.3s ease;
+    overflow: visible;
+    position: relative;
+    margin: auto;
+    max-height: calc(100vh - 32px);
+    min-height: auto;
+  }
+
+  @keyframes scaleIn {
+    from {
+      transform: scale(0.9);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  .mobile-card-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f8f9ff;
+    border-radius: 16px 16px 0 0;
+    flex-shrink: 0;
+  }
+
+  .mobile-card-modal-title-section {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mobile-card-modal-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #1a1a1a;
+    line-height: 1.3;
+    margin-bottom: 4px;
+  }
+
+  .mobile-card-modal-metric {
+    font-size: 0.8125rem;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 500;
+  }
+
+  .mobile-card-modal-close {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: #ffffff;
+    color: #666;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 1.125rem;
+    flex-shrink: 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+    margin-left: 12px;
+  }
+
+  .mobile-card-modal-close:hover {
+    background: #f0f0f0;
+    color: #1a1a1a;
+  }
+
+  .mobile-card-modal-close:active {
+    transform: scale(0.95);
+  }
+
+  .mobile-card-modal-content {
+    overflow: visible;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    border-radius: 0 0 16px 16px;
+  }
+
+  .mobile-card-modal-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 10px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .mobile-card-modal-row:last-child {
+    border-bottom: none;
+    border-radius: 0 0 16px 16px;
+  }
+
+  .mobile-card-modal-row-actions {
+    background: #f8f9ff;
+    border-top: 1px solid #e5e7eb;
+    margin-top: 4px;
+    padding: 12px 20px;
+  }
+
+  .mobile-card-modal-label {
+    font-weight: 600;
+    color: #666;
+    font-size: 0.75rem;
+    margin-bottom: 2px;
+    text-align: left;
+    width: 100%;
+    display: flex;
+    align-items: center;
+  }
+
+  .mobile-card-modal-value {
+    width: 100%;
+    text-align: left;
+    font-size: 0.8125rem;
+    color: #1a1a1a;
+    word-break: break-word;
+    line-height: 1.4;
+  }
+
+  .mobile-card-modal-value button {
+    width: auto;
+    margin: 4px 8px 4px 0;
+    display: inline-block;
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    min-height: 32px;
   }
 
   /* Hide desktop table on mobile */
