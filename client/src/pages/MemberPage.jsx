@@ -250,7 +250,9 @@ export function MemberPage() {
 
     setUploading(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       
       // Upload screenshot to Cloudinary
       const formData = new FormData();
@@ -352,7 +354,9 @@ export function MemberPage() {
       
       // Upload screenshot if provided
       if (paymentProof) {
-        const apiUrl = import.meta.env.VITE_API_URL || '';
+        // In development, use empty string to use Vite proxy (localhost:4000)
+        // In production, use VITE_API_URL if set
+        const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
         
         const formData = new FormData();
         formData.append("screenshot", paymentProof);
@@ -744,7 +748,7 @@ export function MemberPage() {
                     <div className="card kpi">
                       <p><i className="fas fa-user-check" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Membership Plan</p>
                       <h4>Active</h4>
-                      <small>$50/mo + 2×$100 Eid</small>
+                      <small>Lifetime: $250/year or Yearly + Janaza Fund: $500/year</small>
                     </div>
                   </div>
 

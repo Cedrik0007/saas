@@ -72,7 +72,7 @@ router.post("/", async (req, res) => {
       balance: req.body.balance || '$0',
       nextDue: req.body.nextDue || '',
       lastPayment: req.body.lastPayment || '',
-      subscriptionType: req.body.subscriptionType || 'Monthly',
+      subscriptionType: req.body.subscriptionType || 'Lifetime',
     });
     
     const savedMember = await newMember.save();
@@ -86,19 +86,17 @@ router.post("/", async (req, res) => {
     // Only create invoice if one doesn't already exist
     if (!existingInvoice) {
       // Create initial invoice based on subscription type
-      const subscriptionType = req.body.subscriptionType || 'Monthly';
-      let invoiceAmount = '$50';
-      let invoicePeriod = 'Monthly Subscription';
+      const subscriptionType = req.body.subscriptionType || 'Lifetime';
+      let invoiceAmount = '$250';
+      let invoicePeriod = 'Lifetime Subscription';
       let dueDate = new Date();
       
-      if (subscriptionType === 'Yearly') {
+      if (subscriptionType === 'Yearly + Janaza Fund') {
         invoiceAmount = '$500';
-        invoicePeriod = 'Yearly Subscription';
-        dueDate.setFullYear(dueDate.getFullYear() + 1);
-      } else {
-        // Monthly
-        dueDate.setMonth(dueDate.getMonth() + 1);
+        invoicePeriod = 'Yearly Subscription + Janaza Fund';
       }
+      // Both types are yearly, set due date to 1 year from now
+      dueDate.setFullYear(dueDate.getFullYear() + 1);
       
       // Format due date as "DD MMM YYYY"
       const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {

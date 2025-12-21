@@ -7,16 +7,12 @@ import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 // Helper function to create a subscription invoice
 async function createSubscriptionInvoice(member, subscriptionType, customPeriod = null) {
   try {
-    const invoiceAmount = subscriptionType === 'Yearly' ? '$500' : '$50';
-    const invoicePeriod = customPeriod || (subscriptionType === 'Yearly' ? 'Yearly Subscription' : 'Monthly Subscription');
+    const invoiceAmount = subscriptionType === 'Yearly + Janaza Fund' ? '$500' : '$250';
+    const invoicePeriod = customPeriod || (subscriptionType === 'Yearly + Janaza Fund' ? 'Yearly Subscription + Janaza Fund' : 'Lifetime Subscription');
     
-    // Calculate due date (1 month for monthly, 1 year for yearly)
+    // Calculate due date (1 year for both types)
     const dueDate = new Date();
-    if (subscriptionType === 'Yearly') {
-      dueDate.setFullYear(dueDate.getFullYear() + 1);
-    } else {
-      dueDate.setMonth(dueDate.getMonth() + 1);
-    }
+    dueDate.setFullYear(dueDate.getFullYear() + 1);
     
     // Format due date
     const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
@@ -68,7 +64,7 @@ export async function generateSubscriptionInvoices() {
     
     for (const member of activeMembers) {
       try {
-        const subscriptionType = member.subscriptionType || 'Monthly';
+        const subscriptionType = member.subscriptionType || 'Lifetime';
         
         // Find the last paid payment for this member
         const lastPayment = await PaymentModel.findOne({
@@ -107,9 +103,7 @@ export async function generateSubscriptionInvoices() {
             const now = new Date();
             const timeDiff = now - invoiceDate;
             
-            const periodMs = subscriptionType === 'Yearly' 
-              ? 365 * 24 * 60 * 60 * 1000 
-              : 30 * 24 * 60 * 60 * 1000;
+            const periodMs = 365 * 24 * 60 * 60 * 1000; // Both types are yearly
             
             if (timeDiff >= periodMs) {
               console.log(`📝 Creating invoice for ${member.name} based on old invoice date...`);
@@ -129,16 +123,14 @@ export async function generateSubscriptionInvoices() {
         
         let shouldCreate = false;
         let periodName = '';
-        const periodMs = subscriptionType === 'Yearly' 
-          ? 365 * 24 * 60 * 60 * 1000 
-          : 30 * 24 * 60 * 60 * 1000;
+        const periodMs = 365 * 24 * 60 * 60 * 1000; // Both types are yearly
         
         if (timeSincePayment >= periodMs) {
           shouldCreate = true;
           const monthYear = now.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
-          periodName = subscriptionType === 'Yearly' 
-            ? `${monthYear} Yearly Subscription`
-            : `${monthYear} Monthly Subscription`;
+          periodName = subscriptionType === 'Yearly + Janaza Fund' 
+            ? `${monthYear} Yearly Subscription + Janaza Fund`
+            : `${monthYear} Lifetime Subscription`;
         }
         
         // Check if there's already an unpaid invoice for current period
@@ -161,7 +153,7 @@ export async function generateSubscriptionInvoices() {
           invoicesCreated++;
         } else {
           const daysSincePayment = Math.floor(timeSincePayment / (24 * 60 * 60 * 1000));
-          const daysNeeded = subscriptionType === 'Yearly' ? 365 : 30;
+          const daysNeeded = 365; // Both types are yearly
           console.log(`⏭️ Skipping ${member.name} - last payment was ${daysSincePayment} days ago (needs ${daysNeeded} days)`);
           invoicesSkipped++;
         }

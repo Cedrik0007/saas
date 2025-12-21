@@ -88,7 +88,7 @@ export function AdminPage() {
     balance: "$0",
     nextDue: "",
     lastPayment: "",
-    subscriptionType: "Monthly",
+    subscriptionType: "Lifetime",
   });
   
   const [showMemberPassword, setShowMemberPassword] = useState(false);
@@ -102,8 +102,8 @@ export function AdminPage() {
   const [invoiceForm, setInvoiceForm] = useState({
     memberId: "",
     period: "",
-    amount: "50",
-    invoiceType: "Monthly",
+    amount: "250",
+    invoiceType: "Lifetime",
     due: "",
     notes: "",
   });
@@ -459,36 +459,36 @@ export function AdminPage() {
     const collected = paymentsTotal + donationsTotal;
 
     // Calculate expected revenue based on members and their subscription types
-    // Monthly: $50/month, Yearly: $500/year
+    // Lifetime: $250/year, Yearly + Janaza Fund: $500/year
     const activeMembers = members.filter(m => m.status === 'Active');
     let expected = 0;
     
     activeMembers.forEach(member => {
-      const subscriptionType = member.subscriptionType || 'Monthly';
+      const subscriptionType = member.subscriptionType || 'Lifetime';
       // Try to get member creation date or use a default
       const memberStartDate = member.createdAt ? new Date(member.createdAt) : new Date('2025-01-01');
       
-      if (subscriptionType === 'Yearly') {
-        // For yearly: $500 per year
+      if (subscriptionType === 'Yearly + Janaza Fund') {
+        // For yearly + janaza fund: $500 per year
         // Calculate how many years in the date range
         const rangeStart = Math.max(fromDate.getTime(), memberStartDate.getTime());
         const rangeEnd = toDate.getTime();
         const yearsInRange = Math.max(0, (rangeEnd - rangeStart) / (365.25 * 24 * 60 * 60 * 1000));
         expected += Math.ceil(yearsInRange) * 500;
       } else {
-        // For monthly: $50 per month
+        // For lifetime: $250 per year
         const rangeStart = Math.max(fromDate.getTime(), memberStartDate.getTime());
         const rangeEnd = toDate.getTime();
-        const monthsInRange = Math.max(0, (rangeEnd - rangeStart) / (30.44 * 24 * 60 * 60 * 1000));
-        expected += Math.ceil(monthsInRange) * 50;
+        const yearsInRange = Math.max(0, (rangeEnd - rangeStart) / (365.25 * 24 * 60 * 60 * 1000));
+        expected += Math.ceil(yearsInRange) * 250;
       }
     });
 
     // If no expected calculated, use a default based on active members
     if (expected === 0 && activeMembers.length > 0) {
-      // Default: assume monthly subscription for all
-      const monthsInRange = Math.ceil((toDate - fromDate) / (30.44 * 24 * 60 * 60 * 1000));
-      expected = activeMembers.length * 50 * monthsInRange;
+      // Default: assume lifetime subscription for all ($250/year)
+      const yearsInRange = Math.max(0, (toDate - fromDate) / (365.25 * 24 * 60 * 60 * 1000));
+      expected = activeMembers.length * 250 * Math.ceil(yearsInRange);
     }
 
     // Calculate average per member
@@ -740,7 +740,9 @@ export function AdminPage() {
   // Fetch email settings from server
   const fetchEmailSettings = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/email-settings`);
       if (response.ok) {
         const data = await response.json();
@@ -778,7 +780,9 @@ export function AdminPage() {
   // Save email settings
   const handleSaveEmailSettings = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/email-settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -801,7 +805,9 @@ export function AdminPage() {
   // Fetch email template from server
   const fetchEmailTemplate = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/email-settings/template`);
       if (response.ok) {
         const data = await response.json();
@@ -850,7 +856,9 @@ export function AdminPage() {
   // Save email template
   const handleSaveEmailTemplate = async () => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/email-settings/template`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -878,7 +886,9 @@ export function AdminPage() {
 
     setTestingEmail(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/email-settings/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -913,7 +923,9 @@ export function AdminPage() {
 
     setSendingEmails(prev => ({ ...prev, [memberId]: true }));
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/reminders/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -963,7 +975,9 @@ export function AdminPage() {
   // Payment Approval Functions
   const handleApprovePayment = async (paymentId) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
       
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}/approve`, {
@@ -1003,7 +1017,9 @@ export function AdminPage() {
   const handleRejectPayment = async (paymentId) => {
     try {
       const reason = window.prompt("Enter rejection reason (optional):") || "";
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
       
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}/reject`, {
@@ -1094,7 +1110,9 @@ export function AdminPage() {
         return;
       }
 
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const paymentId = editingPayment._id || editingPayment.id;
       
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
@@ -1141,7 +1159,9 @@ export function AdminPage() {
     }
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
         method: 'DELETE',
@@ -1175,7 +1195,9 @@ export function AdminPage() {
 
     setSendingToAll(true);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/reminders/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1434,7 +1456,7 @@ Subscription Manager HK`;
         balance: "$0",
         nextDue: "",
         lastPayment: "",
-        subscriptionType: "Monthly",
+        subscriptionType: "Lifetime",
       });
       setShowMemberForm(false);
       showToast("Member added successfully!");
@@ -1448,7 +1470,7 @@ Subscription Manager HK`;
     setMemberForm({
       ...member,
       password: "", // Don't pre-fill password for security
-      subscriptionType: member.subscriptionType || "Monthly",
+      subscriptionType: member.subscriptionType || "Lifetime",
     });
     setShowMemberForm(true);
   };
@@ -1472,7 +1494,7 @@ Subscription Manager HK`;
         balance: "$0",
         nextDue: "",
         lastPayment: "",
-        subscriptionType: "Monthly",
+        subscriptionType: "Lifetime",
       });
       setShowMemberForm(false);
       showToast("Member updated successfully!");
@@ -1521,8 +1543,8 @@ Subscription Manager HK`;
     setInvoiceForm({
       memberId: "",
       period: "",
-      amount: "50",
-      invoiceType: "Monthly",
+      amount: "250",
+      invoiceType: "Lifetime",
       due: "",
       notes: "",
     });
@@ -1557,7 +1579,9 @@ Subscription Manager HK`;
         referencePrefix = "ONL";
       }
       const reference = `${referencePrefix}_${Date.now()}`;
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
 
       // Step 1: Create payment record with "Completed" status (matches backend approval flow)
       const paymentResponse = await fetch(`${apiUrl}/api/payments`, {
@@ -1775,7 +1799,9 @@ Subscription Manager HK`;
     try {
       showToast("Sending reminder email...");
 
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/invoices/send-reminder`, {
         method: "POST",
         headers: {
@@ -1860,7 +1886,9 @@ Subscription Manager HK`;
   // Approve pending member
   const handleApproveMember = async (memberId) => {
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/members/${memberId}/approve`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -2124,7 +2152,7 @@ Subscription Manager HK`;
                             balance: "$0",
                             nextDue: "",
                             lastPayment: "",
-                            subscriptionType: "Monthly",
+                            subscriptionType: "Lifetime",
                           });
                         }}
                       >
@@ -2210,11 +2238,11 @@ Subscription Manager HK`;
                       <label>
                         Subscription Type
                         <select
-                          value={memberForm.subscriptionType || "Monthly"}
+                          value={memberForm.subscriptionType || "Lifetime"}
                           onChange={(e) => setMemberForm({ ...memberForm, subscriptionType: e.target.value })}
                         >
-                          <option value="Monthly">Monthly - $50/month</option>
-                          <option value="Yearly">Yearly - $500/year</option>
+                          <option value="Lifetime">Lifetime - $250/year</option>
+                          <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - $500/year</option>
                         </select>
                       </label>
                       <label>
@@ -2301,7 +2329,7 @@ Subscription Manager HK`;
                                 📱 {member.phone || "No phone"}
                               </div>
                               <div style={{ fontSize: "0.8125rem", color: "#856404", marginTop: "8px" }}>
-                                📅 Subscription: {member.subscriptionType || 'Monthly'}
+                                📅 Subscription: {member.subscriptionType || 'Lifetime'}
                               </div>
                             </div>
                             <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
@@ -3179,7 +3207,7 @@ Subscription Manager HK`;
               <article className="screen-card" id="invoice-builder">
                 <header className="screen-card__header">
                   <h3><i className="fas fa-file-invoice" style={{ marginRight: "10px" }}></i>Invoice Builder</h3>
-                  <p>Create invoices for monthly or Eid contributions.</p>
+                  <p>Create invoices for Lifetime or Yearly + Janaza Fund subscriptions.</p>
                 </header>
                 
                 {/* Invoice Success Card */}
@@ -3509,7 +3537,7 @@ Subscription Manager HK`;
                       value={invoiceForm.invoiceType}
                       onChange={(e) => {
                         const type = e.target.value;
-                        const amount = type === "Monthly" ? "50" : "100";
+                        const amount = type === "Yearly + Janaza Fund" ? "500" : "250";
                         setInvoiceForm({ ...invoiceForm, invoiceType: type, amount: amount });
                       }}
                       style={{ 
@@ -3527,8 +3555,9 @@ Subscription Manager HK`;
                       }}
                     >
                       <option value="">Select Invoice Type</option>
-                      <option value="Monthly">Monthly - $50</option>
-                      <option value="Eid">Eid - $100</option>
+                      <option value="Lifetime">Lifetime - $250</option>
+                      <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - $500</option>
+                      {/* <option value="Eid">Eid - $100</option> */}
                     </select>
                   </label>
 
@@ -3656,7 +3685,9 @@ Subscription Manager HK`;
                         try {
                           showToast("Sending reminder email...");
 
-                          const apiUrl = import.meta.env.VITE_API_URL || '';
+                          // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
                           const response = await fetch(`${apiUrl}/api/invoices/send-reminder`, {
                             method: "POST",
                             headers: {
@@ -3695,8 +3726,8 @@ Subscription Manager HK`;
                           setInvoiceForm({
                             memberId: "",
                             period: "",
-                            amount: "50",
-                            invoiceType: "Monthly",
+                            amount: "250",
+                            invoiceType: "Lifetime",
                             due: "",
                             notes: "",
                           });
@@ -3815,7 +3846,9 @@ Subscription Manager HK`;
                           
                           // Save to database
                           try {
-                            const apiUrl = import.meta.env.VITE_API_URL || '';
+                            // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
                             await fetch(`${apiUrl}/api/email-settings`, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },

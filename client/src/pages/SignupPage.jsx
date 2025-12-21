@@ -12,7 +12,7 @@ export function SignupPage() {
     phone: "",
     password: "",
     confirmPassword: "",
-    subscriptionType: "Monthly",
+    subscriptionType: "Lifetime",
   });
   const [error, setError] = useState(null);
   const [emailError, setEmailError] = useState(null);
@@ -99,7 +99,9 @@ export function SignupPage() {
     setLoading(true);
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/members`, {
         method: 'POST',
         headers: {
@@ -243,46 +245,46 @@ export function SignupPage() {
                 }}>
                   <button
                     type="button"
-                    onClick={() => setForm({ ...form, subscriptionType: "Monthly" })}
+                    onClick={() => setForm({ ...form, subscriptionType: "Lifetime" })}
                     style={{
                       padding: "16px",
                       border: "none",
                       borderRadius: "10px",
-                      background: form.subscriptionType === "Monthly" 
+                      background: form.subscriptionType === "Lifetime" 
                         ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" 
                         : "#f8f9ff",
-                      color: form.subscriptionType === "Monthly" ? "white" : "#1a1a1a",
+                      color: form.subscriptionType === "Lifetime" ? "white" : "#1a1a1a",
                       cursor: "pointer",
                       fontSize: "1rem",
                       fontWeight: "600",
-                      boxShadow: form.subscriptionType === "Monthly" 
+                      boxShadow: form.subscriptionType === "Lifetime" 
                         ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
                         : "0 2px 4px rgba(90, 49, 234, 0.08)",
                     }}
                   >
-                    <div style={{ fontWeight: "600", marginBottom: "4px" }}>Monthly</div>
-                    <div style={{ fontSize: "0.875rem", opacity: 0.9 }}>$50/month</div>
+                    <div style={{ fontWeight: "600", marginBottom: "4px" }}>Lifetime</div>
+                    <div style={{ fontSize: "0.875rem", opacity: 0.9 }}>$250/year</div>
                   </button>
                   <button
                     type="button"
-                    onClick={() => setForm({ ...form, subscriptionType: "Yearly" })}
+                    onClick={() => setForm({ ...form, subscriptionType: "Yearly + Janaza Fund" })}
                     style={{
                       padding: "16px",
                       border: "none",
                       borderRadius: "10px",
-                      background: form.subscriptionType === "Yearly" 
+                      background: form.subscriptionType === "Yearly + Janaza Fund" 
                         ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" 
                         : "#f8f9ff",
-                      color: form.subscriptionType === "Yearly" ? "white" : "#1a1a1a",
+                      color: form.subscriptionType === "Yearly + Janaza Fund" ? "white" : "#1a1a1a",
                       cursor: "pointer",
                       fontSize: "1rem",
                       fontWeight: "600",
-                      boxShadow: form.subscriptionType === "Yearly" 
+                      boxShadow: form.subscriptionType === "Yearly + Janaza Fund" 
                         ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
                         : "0 2px 4px rgba(90, 49, 234, 0.08)",
                     }}
                   >
-                    <div style={{ fontWeight: "600", marginBottom: "4px" }}>Yearly</div>
+                    <div style={{ fontWeight: "600", marginBottom: "4px" }}>Yearly + Janaza Fund</div>
                     <div style={{ fontSize: "0.875rem", opacity: 0.9 }}>$500/year</div>
                   </button>
                 </div>

@@ -10,7 +10,7 @@ const UserSchema = new mongoose.Schema({
   balance: String,
   nextDue: String,
   lastPayment: String,
-  subscriptionType: { type: String, default: "Monthly" },
+  subscriptionType: { type: String, default: "Lifetime" },
 }, {
   timestamps: true  // Automatically adds createdAt and updatedAt fields
 });

@@ -76,7 +76,9 @@ export function AppProvider({ children }) {
   // adminUsers removed - now using admins from MongoDB API
 
   const [selectedMember, setSelectedMember] = useState(null);
-  const apiBaseUrl = import.meta.env.VITE_API_URL || "";
+  // In development, use empty string to use Vite proxy (localhost:4000)
+  // In production, use VITE_API_URL if set
+  const apiBaseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
 
   // Fetch data from server on mount
   // Retry helper function

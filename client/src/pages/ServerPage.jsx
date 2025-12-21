@@ -52,7 +52,7 @@ export function ServerPage() {
     balance: "$0",
     nextDue: "",
     lastPayment: "",
-    subscriptionType: "Monthly",
+    subscriptionType: "Lifetime",
   });
 
   const [adminForm, setAdminForm] = useState({
@@ -68,7 +68,7 @@ export function ServerPage() {
     memberName: "",
     period: "",
     amount: "",
-    invoiceType: "Monthly",
+    invoiceType: "Lifetime",
     due: "",
     status: "Unpaid",
     notes: "",
@@ -162,7 +162,7 @@ export function ServerPage() {
       balance: member.balance || "$0",
       nextDue: member.nextDue || "",
       lastPayment: member.lastPayment || "",
-      subscriptionType: member.subscriptionType || "Monthly",
+      subscriptionType: member.subscriptionType || "Lifetime",
     });
     setShowForm(true);
   };
@@ -177,7 +177,7 @@ export function ServerPage() {
       balance: "$0",
       nextDue: "",
       lastPayment: "",
-      subscriptionType: "Monthly",
+      subscriptionType: "Lifetime",
     });
   };
 
@@ -298,7 +298,7 @@ export function ServerPage() {
       memberName: invoice.memberName || "",
       period: invoice.period || "",
       amount: invoice.amount?.replace("$", "") || "",
-      invoiceType: invoice.invoiceType || "Monthly",
+      invoiceType: invoice.invoiceType || "Lifetime",
       due: invoice.due || "",
       status: invoice.status || "Unpaid",
       notes: invoice.notes || "",
@@ -312,7 +312,7 @@ export function ServerPage() {
       memberName: "",
       period: "",
       amount: "",
-      invoiceType: "Monthly",
+      invoiceType: "Lifetime",
       due: "",
       status: "Unpaid",
       notes: "",
@@ -386,7 +386,9 @@ export function ServerPage() {
     try {
       // Payment methods use updatePaymentMethod for both add and update
       // If name doesn't exist, it creates; if it exists, it updates
-      const apiUrl = import.meta.env.VITE_API_URL || '';
+      // In development, use empty string to use Vite proxy (localhost:4000)
+      // In production, use VITE_API_URL if set
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const response = await fetch(`${apiUrl}/api/payment-methods`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -692,8 +694,8 @@ export function ServerPage() {
                             onChange={(e) => setMemberForm({ ...memberForm, subscriptionType: e.target.value })}
                             className="mono-input"
                           >
-                            <option value="Monthly">Monthly</option>
-                            <option value="Yearly">Yearly</option>
+                            <option value="Lifetime">Lifetime</option>
+                            <option value="Yearly + Janaza Fund">Yearly + Janaza Fund</option>
                           </select>
                         </label>
                         <div className="server-form-actions">
@@ -945,8 +947,8 @@ export function ServerPage() {
                             onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceType: e.target.value })}
                             className="mono-input"
                           >
-                            <option value="Monthly">Monthly</option>
-                            <option value="Eid">Eid</option>
+                            <option value="Lifetime">Lifetime</option>
+                            <option value="Yearly + Janaza Fund">Yearly + Janaza Fund</option>
                           </select>
                         </label>
                         <label>

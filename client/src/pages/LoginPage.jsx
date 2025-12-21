@@ -12,6 +12,9 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
+  // Feature flag to show/hide member login (set to true to show, false to hide)
+  const SHOW_MEMBER_LOGIN = false;
+
   const handleLogin = async (role) => {
     // Handle both admin and member login via MongoDB API
     if (role === "admin" || role === "member") {
@@ -27,8 +30,10 @@ export function LoginPage() {
       setAuthMessage(null);
 
       try {
-        const apiUrl = import.meta.env.VITE_API_URL || '';
-        const response = await fetch(`${apiUrl}/api/login`, {
+        // In development, use empty string to use Vite proxy (localhost:4000)
+        // In production, use VITE_API_URL if set
+        const apiBaseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+        const response = await fetch(`${apiBaseUrl}/api/login`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -202,9 +207,11 @@ export function LoginPage() {
               <p>
                 <strong>Admin:</strong> admin2002@gmail.com / #Admin2204
               </p>
-              <p>
-                <strong>Member:</strong> member1234@gmail.com / member1234
-              </p>
+              {SHOW_MEMBER_LOGIN && (
+                <p>
+                  <strong>Member:</strong> member1234@gmail.com / member1234
+                </p>
+              )}
             </div>
 
             <div className="login-buttons">
@@ -218,19 +225,22 @@ export function LoginPage() {
                 {loadingRole === "admin" ? "Authorising…" : "Login as Admin"}
               </button>
 
-              {/* Member login (email/password) */}
-              <button
-                type="button"
-                className="btn-member"
-                onClick={() => handleLogin("member")}
-                disabled={loadingRole === "admin"}
-              >
-                {loadingRole === "member" ? "Authorising…" : "Login as Member"}
-              </button>
+              {/* Member login (email/password) - Hidden when SHOW_MEMBER_LOGIN is false */}
+              {SHOW_MEMBER_LOGIN && (
+                <button
+                  type="button"
+                  className="btn-member"
+                  onClick={() => handleLogin("member")}
+                  disabled={loadingRole === "admin"}
+                >
+                  {loadingRole === "member" ? "Authorising…" : "Login as Member"}
+                </button>
+              )}
             </div>
 
-            {/* Google sign-in option for members */}
-            <div style={{ marginTop: "16px", textAlign: "center", width: "100%" }}>
+            {/* Google sign-in option for members - Hidden when SHOW_MEMBER_LOGIN is false */}
+            {SHOW_MEMBER_LOGIN && (
+              <div style={{ marginTop: "16px", textAlign: "center", width: "100%" }}>
               <div style={{ 
                 display: "flex", 
                 alignItems: "center", 
@@ -251,8 +261,10 @@ export function LoginPage() {
                 <GoogleLogin
                   onSuccess={async (credentialResponse) => {
                     try {
-                      const apiUrl = import.meta.env.VITE_API_URL || "";
-                      const res = await fetch(`${apiUrl}/api/login/google-member`, {
+                      // In development, use empty string to use Vite proxy (localhost:4000)
+                      // In production, use VITE_API_URL if set
+                      const apiBaseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                      const res = await fetch(`${apiBaseUrl}/api/login/google-member`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ credential: credentialResponse.credential }),
@@ -308,6 +320,7 @@ export function LoginPage() {
                 />
               </div>
             </div>
+            )}
 
 
             {authMessage && (
