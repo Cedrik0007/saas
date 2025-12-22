@@ -2440,9 +2440,9 @@ tbody td {
 }
 
 .badge-active {
-  background: linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%);
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
   color: #ffffff;
-  box-shadow: 0 2px 4px rgba(90, 49, 234, 0.3);
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
 }
 
 .badge-inactive {
@@ -2579,6 +2579,83 @@ tbody td {
   gap: 10px;
   grid-column: 1 / -1;
   flex-wrap: wrap;
+}
+
+/* Helper list and field errors for Add Member form */
+.helper-list {
+  list-style: none;
+  margin: 0 0 16px 0;
+  padding: 0;
+}
+
+.helper-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--gray-600);
+  margin-bottom: 4px;
+}
+
+.helper-list i {
+  color: var(--success);
+}
+
+.field-error--wrapper input,
+.field-error--wrapper select {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2);
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: #b91c1c;
+}
+
+.field-error i {
+  color: #b91c1c;
+}
+
+button[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Compact icon-only buttons for row actions */
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--gray-200);
+  background: #ffffff;
+  color: var(--gray-600);
+}
+
+.icon-btn i {
+  pointer-events: none;
+}
+
+.icon-btn--view:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.icon-btn--edit:hover {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.icon-btn--delete:hover {
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .segmented {

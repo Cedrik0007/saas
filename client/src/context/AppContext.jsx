@@ -41,6 +41,9 @@ export function AppProvider({ children }) {
     return saved ? JSON.parse(saved) : initialCommunicationLog;
   });
 
+  // Reminder logs from backend (automatic + manual email reminders)
+  const [reminderLogs, setReminderLogs] = useState([]);
+
   const [paymentMethods, setPaymentMethods] = useState(initialPaymentMethods); // Will be loaded from database
 
   const [metrics, setMetrics] = useState(() => {
@@ -111,6 +114,7 @@ export function AppProvider({ children }) {
           fetchPayments(),
           fetchDonations(),
           fetchPaymentMethods(),
+          fetchReminderLogs(),
         ]);
       } catch (error) {
         console.error('Error fetching initial data:', error);
@@ -249,6 +253,20 @@ export function AppProvider({ children }) {
       // Set empty array instead of dummy data - will retry automatically
       setPaymentMethods([]);
       throw error; // Re-throw to allow retry mechanism
+    }
+  };
+
+  // Fetch reminder logs (automatic + manual email reminders) from server
+  const fetchReminderLogs = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/reminders/logs`);
+      if (!response.ok) throw new Error('Failed to fetch reminder logs');
+      const data = await response.json();
+      setReminderLogs(data);
+      console.log('✓ Loaded', data.length, 'reminder logs from MongoDB');
+    } catch (error) {
+      console.error('Error fetching reminder logs:', error);
+      setReminderLogs([]);
     }
   };
 
@@ -682,9 +700,11 @@ export function AppProvider({ children }) {
     fetchPayments,
     fetchDonations,
     fetchPaymentMethods,
+    fetchReminderLogs,
     recentPayments,
     paymentHistory,
     communicationLog,
+    reminderLogs,
     paymentMethods,
     metrics,
     reminderRules,

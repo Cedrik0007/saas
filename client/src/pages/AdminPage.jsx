@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
@@ -49,6 +49,8 @@ export function AdminPage() {
     deleteAdminUser,
     resetAllData,
     addPayment,
+    reminderLogs,
+    fetchReminderLogs,
     donations,
     fetchDonations,
     addDonation,
@@ -62,14 +64,22 @@ export function AdminPage() {
     { id: "member-detail", label: "Member Detail" },
     { id: "invoice-builder", label: "Invoice Builder" },
     { id: "automation", label: "Reminders" },
-    { id: "payment-methods", label: "Payments" },
-    { id: "payment-approvals", label: "Payment Approvals" },
+    { id: "communications", label: "Reminders Log" },
+    // { id: "payment-methods", label: "Payments" },
+    // { id: "payment-approvals", label: "Payment Approvals" },
     { id: "donations", label: "Donations" },
     { id: "reports", label: "Reports" },
     { id: "settings", label: "Settings" },
   ];
 
-  const [activeSection, setActiveSection] = useState(sections[0].id);
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Initialize activeSection from URL or default to dashboard
+  const [activeSection, setActiveSection] = useState(() => {
+    const sectionFromUrl = searchParams.get('section');
+    const isValidSection = sectionFromUrl && sections.find(s => s.id === sectionFromUrl);
+    return isValidSection ? sectionFromUrl : sections[0].id;
+  });
   const [activeTab, setActiveTab] = useState("Invoices");
   const [showMemberForm, setShowMemberForm] = useState(false);
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
@@ -83,15 +93,124 @@ export function AdminPage() {
     name: "",
     email: "",
     phone: "",
-    password: "",
     status: "Active",
-    balance: "$0",
+    balance: "250", // default for Lifetime (numeric string)
     nextDue: "",
     lastPayment: "",
     subscriptionType: "Lifetime",
   });
-  
-  const [showMemberPassword, setShowMemberPassword] = useState(false);
+
+  // Add Member validation state
+  const [memberErrors, setMemberErrors] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    nextDue: "",
+    lastPayment: "",
+  });
+
+  const [isMemberSubmitting, setIsMemberSubmitting] = useState(false);
+
+  const validateMemberField = (field, value, options = {}) => {
+    let error = "";
+
+    switch (field) {
+      case "name":
+        if (!value.trim()) error = "Name is required.";
+        else if (value.trim().length < 2) error = "Name must be at least 2 characters.";
+        break;
+
+      case "email":
+        if (!value.trim()) error = "Email is required.";
+        else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+          error = "Please enter a valid email address.";
+        }
+        break;
+
+      case "phone":
+        if (value && value.length < 8) {
+          error = "Phone number must be at least 8 digits.";
+        }
+        break;
+
+      case "nextDue":
+      case "lastPayment":
+        if (value && isNaN(new Date(value).getTime())) {
+          error = "Please select a valid date.";
+        }
+        break;
+
+      default:
+        break;
+    }
+
+    return error;
+  };
+
+  const validateMemberForm = () => {
+    const newErrors = {
+      name: validateMemberField("name", memberForm.name),
+      email: validateMemberField("email", memberForm.email),
+      phone: validateMemberField("phone", memberForm.phone),
+      nextDue: validateMemberField("nextDue", memberForm.nextDue),
+      lastPayment: validateMemberField("lastPayment", memberForm.lastPayment),
+    };
+
+    setMemberErrors(newErrors);
+
+    const hasError = Object.values(newErrors).some(Boolean);
+    return !hasError;
+  };
+
+  const handleMemberFieldChange = (field, rawValue) => {
+    let value = rawValue;
+
+    if (field === "phone") {
+      value = rawValue.replace(/\D/g, "");
+    } else if (field === "balance") {
+      value = rawValue.replace(/\D/g, "");
+    } else if (field === "subscriptionType") {
+      // Auto-update balance when subscription changes
+      if (rawValue === "Yearly + Janaza Fund") {
+        value = rawValue;
+        setMemberForm(prev => ({
+          ...prev,
+          subscriptionType: rawValue,
+          balance: "500",
+        }));
+      } else {
+        value = rawValue;
+        setMemberForm(prev => ({
+          ...prev,
+          subscriptionType: rawValue,
+          balance: "250",
+        }));
+      }
+
+      // No need to run generic update below for subscriptionType
+      return;
+    }
+
+    setMemberForm(prev => ({
+      ...prev,
+      [field]: value,
+    }));
+
+    const error = validateMemberField(
+      field,
+      value,
+      field === "password" ? { editingMember } : {}
+    );
+    setMemberErrors(prev => ({
+      ...prev,
+      [field]: error,
+    }));
+  };
+
+  const isMemberFormValid =
+    !Object.values(memberErrors).some(Boolean) &&
+    memberForm.name.trim() &&
+    memberForm.email.trim();
 
   const [adminsForm, setAdminsForm] = useState({
     name: "",
@@ -99,10 +218,16 @@ export function AdminPage() {
     password: "",
   });
 
+  // Get current month and year in "MMM YYYY" format
+  const getCurrentPeriod = () => {
+    const now = new Date();
+    return now.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  };
+
   const [invoiceForm, setInvoiceForm] = useState({
     memberId: "",
-    period: "",
-    amount: "250",
+    period: getCurrentPeriod(),
+    amount: "250", // numeric string
     invoiceType: "Lifetime",
     due: "",
     notes: "",
@@ -174,8 +299,20 @@ export function AdminPage() {
   });
   const [uploadingQR, setUploadingQR] = useState({});
   const [selectedPeriod, setSelectedPeriod] = useState("This Year");
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentModalInvoice, setPaymentModalInvoice] = useState(null);
+  const [paymentModalData, setPaymentModalData] = useState({
+    paymentMethod: "Admin", // "Admin" or "Online"
+    imageFile: null,
+    imagePreview: null,
+    imageUrl: "",
+  });
+  const [uploadingPaymentModal, setUploadingPaymentModal] = useState(false);
+  const [showPaymentDetailsModal, setShowPaymentDetailsModal] = useState(false);
+  const [selectedPaymentDetails, setSelectedPaymentDetails] = useState(null);
   const [hoveredMonth, setHoveredMonth] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const chartContainerRef = useRef(null);
   const [sendingEmails, setSendingEmails] = useState({}); // Track which member is sending
   const [sendingToAll, setSendingToAll] = useState(false);
   const [sendingWhatsApp, setSendingWhatsApp] = useState({}); // Track which member is sending WhatsApp
@@ -183,7 +320,6 @@ export function AdminPage() {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
   const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
   const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
-  const [expandedPaymentIndex, setExpandedPaymentIndex] = useState(null); // Accordion for member payment history (mobile)
   const [memberSearchTerm, setMemberSearchTerm] = useState(""); // Search filter for members
   const [invoiceMemberSearch, setInvoiceMemberSearch] = useState(""); // Search filter for invoice member select
   const [donationMemberSearch, setDonationMemberSearch] = useState(""); // Search filter for donation member select
@@ -218,8 +354,47 @@ export function AdminPage() {
   const [paymentsPageSize, setPaymentsPageSize] = useState(10);
   const [donationsPage, setDonationsPage] = useState(1);
   const [donationsPageSize, setDonationsPageSize] = useState(10);
+  const [remindersPage, setRemindersPage] = useState(1);
+  const [remindersPageSize, setRemindersPageSize] = useState(10);
 
   const navigate = useNavigate();
+
+  // Sync URL with activeSection changes
+  useEffect(() => {
+    const currentSection = searchParams.get('section');
+    if (currentSection !== activeSection) {
+      setSearchParams({ section: activeSection }, { replace: false });
+    }
+  }, [activeSection, searchParams, setSearchParams]);
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      // Read section from current URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const sectionFromUrl = urlParams.get('section');
+      const isValidSection = sectionFromUrl && sections.find(s => s.id === sectionFromUrl);
+      if (isValidSection && sectionFromUrl !== activeSection) {
+        setActiveSection(sectionFromUrl);
+      } else if (!sectionFromUrl && activeSection !== sections[0].id) {
+        setActiveSection(sections[0].id);
+      }
+    };
+
+    // Listen for popstate events (back/forward button)
+    window.addEventListener('popstate', handlePopState);
+    
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [activeSection]);
+
+  // Refresh reminder logs when opening the global Reminders Log section
+  useEffect(() => {
+    if (activeSection === "communications") {
+      fetchReminderLogs();
+    }
+  }, [activeSection, fetchReminderLogs]);
 
   // Calculate monthly collections from paymentHistory
   const calculateMonthlyCollections = () => {
@@ -1312,9 +1487,13 @@ Subscription Manager HK`;
         setTimeout(() => {
           window.open(whatsappUrl, '_blank');
           
-          // Log to communication
+          // Log to communication with member metadata
           const comm = {
             channel: "WhatsApp",
+            type: "Bulk Outstanding Reminder",
+            memberId: member.id,
+            memberEmail: member.email,
+            memberName: member.name,
             message: `WhatsApp reminder sent to ${member.name} (${member.phone}) - $${totalDue} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
             status: "Delivered",
           };
@@ -1442,35 +1621,45 @@ Subscription Manager HK`;
   // Member CRUD Operations
   const handleAddMember = async (e) => {
     e.preventDefault();
-    if (!memberForm.name || !memberForm.email) {
-      showToast("Please fill all required fields", "error");
+
+    if (!validateMemberForm()) {
+      showToast("Please fix the errors in the form.", "error");
       return;
     }
+
     try {
+      setIsMemberSubmitting(true);
+
       await addMember(memberForm);
       setMemberForm({
         name: "",
         email: "",
         phone: "",
         status: "Active",
-        balance: "$0",
+        balance: "250",
         nextDue: "",
         lastPayment: "",
         subscriptionType: "Lifetime",
       });
       setShowMemberForm(false);
-      showToast("Member added successfully!");
+      showToast("Member added successfully!", "success");
     } catch (error) {
+      console.error("Failed to add member:", error);
       showToast("Failed to add member. Please try again.", "error");
+    } finally {
+      setIsMemberSubmitting(false);
     }
   };
 
   const handleEditMember = (member) => {
     setEditingMember(member);
+    const subscriptionType = member.subscriptionType || "Lifetime";
+    // Balance always matches subscription type amount (not the stored balance)
+    const balance = subscriptionType === "Yearly + Janaza Fund" ? "500" : "250";
     setMemberForm({
       ...member,
-      password: "", // Don't pre-fill password for security
-      subscriptionType: member.subscriptionType || "Lifetime",
+      subscriptionType: subscriptionType,
+      balance: balance,
     });
     setShowMemberForm(true);
   };
@@ -1542,7 +1731,7 @@ Subscription Manager HK`;
     
     setInvoiceForm({
       memberId: "",
-      period: "",
+      period: getCurrentPeriod(),
       amount: "250",
       invoiceType: "Lifetime",
       due: "",
@@ -1552,7 +1741,7 @@ Subscription Manager HK`;
     showToast("Invoice created successfully!");
   };
 
-  const handleMarkAsPaid = async (invoiceId, method = "Cash") => {
+  const handleMarkAsPaid = async (invoiceId, method = "Cash", screenshotUrl = null) => {
     try {
       const invoice = invoices.find((inv) => inv.id === invoiceId);
       if (!invoice) {
@@ -1606,6 +1795,7 @@ Subscription Manager HK`;
           paidToAdminName: adminName,
           approvedBy: adminName,
           approvedAt: new Date().toISOString(),
+          screenshot: screenshotUrl || invoice.screenshot || null,
         }),
       });
 
@@ -1737,9 +1927,13 @@ Subscription Manager HK`;
     // Open WhatsApp
     window.open(whatsappUrl, '_blank');
 
-    // Log to communication
+    // Log to communication with member metadata
     const comm = {
       channel: "WhatsApp",
+      type: "Manual Outstanding Reminder",
+      memberId: memberData.id,
+      memberEmail: memberData.email,
+      memberName: memberData.name,
       message: `WhatsApp reminder sent to ${memberData.name} (${memberData.phone}) - $${totalDue} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
       status: "Delivered",
     };
@@ -1828,9 +2022,13 @@ Subscription Manager HK`;
 
       console.log("✓ Email sent successfully:", data);
 
-      // Log to communication
+      // Log to communication with member metadata
       const comm = {
         channel: "Email",
+        type: "Manual Outstanding Reminder",
+        memberId: memberData.id,
+        memberEmail: memberData.email,
+        memberName: memberData.name,
         message: `Payment reminder: ${memberData.name} (${memberData.email}) - $${totalDue.toFixed(2)} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
         status: "Delivered",
       };
@@ -1842,9 +2040,13 @@ Subscription Manager HK`;
     } catch (error) {
       console.error("✗ Email send error:", error);
 
-      // Log failed attempt
+      // Log failed attempt with member metadata
       const comm = {
         channel: "Email",
+        type: "Manual Outstanding Reminder",
+        memberId: memberData.id,
+        memberEmail: memberData.email,
+        memberName: memberData.name,
         message: `Reminder attempt to ${memberData.name} - $${totalDue.toFixed(2)} due`,
         status: "Failed",
       };
@@ -2026,11 +2228,16 @@ Subscription Manager HK`;
                       </div>
                     </div>
                     <div 
+                      ref={chartContainerRef}
                       className="chart" 
-                      style={{ position: "relative" }}
+                      style={{ position: "relative", overflow: "visible" }}
                       onMouseMove={(e) => {
-                        if (hoveredMonth) {
-                          setMousePosition({ x: e.clientX, y: e.clientY });
+                        if (hoveredMonth && chartContainerRef.current) {
+                          const rect = chartContainerRef.current.getBoundingClientRect();
+                          setMousePosition({ 
+                            x: e.clientX - rect.left, 
+                            y: e.clientY - rect.top 
+                          });
                         }
                       }}
                     >
@@ -2045,36 +2252,84 @@ Subscription Manager HK`;
                           data-month={item.month}
                           onMouseEnter={(e) => {
                             setHoveredMonth(item);
-                            setMousePosition({ x: e.clientX, y: e.clientY });
+                            if (chartContainerRef.current) {
+                              const rect = chartContainerRef.current.getBoundingClientRect();
+                              setMousePosition({ 
+                                x: e.clientX - rect.left, 
+                                y: e.clientY - rect.top 
+                              });
+                            }
                           }}
                           onMouseMove={(e) => {
-                            if (hoveredMonth?.monthKey === item.monthKey) {
-                              setMousePosition({ x: e.clientX, y: e.clientY });
+                            if (hoveredMonth?.monthKey === item.monthKey && chartContainerRef.current) {
+                              const rect = chartContainerRef.current.getBoundingClientRect();
+                              setMousePosition({ 
+                                x: e.clientX - rect.left, 
+                                y: e.clientY - rect.top 
+                              });
                             }
                           }}
                           onMouseLeave={() => setHoveredMonth(null)}
                         >
                         </div>
                       ))}
-                      {hoveredMonth && (
-                        <div style={{
-                          position: "fixed",
-                          left: `${mousePosition.x + 10}px`,
-                          top: `${mousePosition.y - 40}px`,
-                          padding: "8px 12px",
-                          background: "#000",
-                          color: "#fff",
-                          borderRadius: "6px",
-                          fontSize: "0.875rem",
-                          whiteSpace: "nowrap",
-                          zIndex: 1000,
-                          pointerEvents: "none",
-                          boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
-                        }}>
-                          {hoveredMonth.month} {new Date().getFullYear()}: ${hoveredMonth.value.toFixed(2)}
-                          {hoveredMonth.count > 0 && ` (${hoveredMonth.count} payment${hoveredMonth.count > 1 ? 's' : ''})`}
-                        </div>
-                      )}
+                      {hoveredMonth && chartContainerRef.current && (() => {
+                        // Calculate tooltip position with overflow prevention
+                        const tooltipWidth = 220; // Approximate tooltip width
+                        const tooltipHeight = 40;
+                        const chartRect = chartContainerRef.current.getBoundingClientRect();
+                        const viewportWidth = window.innerWidth;
+                        const viewportHeight = window.innerHeight;
+                        
+                        let left = mousePosition.x + 10;
+                        let top = mousePosition.y - 50;
+                        
+                        // Prevent horizontal overflow - check right edge
+                        const tooltipRightEdge = chartRect.left + left + tooltipWidth;
+                        if (tooltipRightEdge > viewportWidth - 10) {
+                          // Position tooltip to the left of cursor
+                          left = mousePosition.x - tooltipWidth - 10;
+                        }
+                        // Prevent left overflow
+                        if (chartRect.left + left < 10) {
+                          left = 10;
+                        }
+                        
+                        // Prevent vertical overflow - check top edge
+                        if (chartRect.top + top < 10) {
+                          top = 10 - chartRect.top;
+                        }
+                        // Prevent bottom overflow
+                        const tooltipBottomEdge = chartRect.top + top + tooltipHeight;
+                        if (tooltipBottomEdge > viewportHeight - 10) {
+                          top = mousePosition.y - tooltipHeight - 10;
+                          // Ensure it doesn't go above viewport
+                          if (chartRect.top + top < 10) {
+                            top = 10 - chartRect.top;
+                          }
+                        }
+                        
+                        return (
+                          <div style={{
+                            position: "absolute",
+                            left: `${left}px`,
+                            top: `${top}px`,
+                            padding: "8px 12px",
+                            background: "#000",
+                            color: "#fff",
+                            borderRadius: "6px",
+                            fontSize: "0.875rem",
+                            whiteSpace: "nowrap",
+                            zIndex: 1000,
+                            pointerEvents: "none",
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+                            maxWidth: "250px"
+                          }}>
+                            {hoveredMonth.month} {new Date().getFullYear()}: ${hoveredMonth.value.toFixed(2)}
+                            {hoveredMonth.count > 0 && ` (${hoveredMonth.count} payment${hoveredMonth.count > 1 ? 's' : ''})`}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -2144,12 +2399,13 @@ Subscription Manager HK`;
                         onClick={() => {
                           setShowMemberForm(true);
                           setEditingMember(null);
+                          // Reset form with balance matching default subscription type
                           setMemberForm({
                             name: "",
                             email: "",
                             phone: "",
                             status: "Active",
-                            balance: "$0",
+                            balance: "250", // default based on Lifetime subscription
                             nextDue: "",
                             lastPayment: "",
                             subscriptionType: "Lifetime",
@@ -2165,116 +2421,188 @@ Subscription Manager HK`;
                 {/* Member Form */}
                 {showMemberForm && (
                   <div className="card" style={{ marginBottom: "20px", background: "#f9fafb" }}>
-                    <h4>{editingMember ? "Edit Member" : "Add New Member"}</h4>
-                    <form className="form-grid" onSubmit={editingMember ? handleUpdateMember : handleAddMember}>
-                      <label>
+                    <h4 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <i className="fas fa-user-plus" aria-hidden="true"></i>
+                      {editingMember ? "Edit Member" : "Add New Member"}
+                    </h4>
+
+
+                    <form
+                      className="form-grid"
+                      onSubmit={editingMember ? handleUpdateMember : handleAddMember}
+                      noValidate
+                    >
+                      <label className={memberErrors.name ? "field-error--wrapper" : ""}>
+                        <span>
+                          <i className="fas fa-user" aria-hidden="true" style={{ marginRight: 6 }}></i>
                         Name *
+                        </span>
                         <input
                           type="text"
                           required
                           value={memberForm.name}
-                          onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })}
+                          onChange={(e) => handleMemberFieldChange("name", e.target.value)}
+                          aria-invalid={!!memberErrors.name}
+                          aria-describedby={memberErrors.name ? "member-name-error" : undefined}
                         />
+                        {memberErrors.name && (
+                          <div id="member-name-error" className="field-error">
+                            <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
+                            <span>{memberErrors.name}</span>
+                          </div>
+                        )}
                       </label>
-                      <label>
+
+                      <label className={memberErrors.email ? "field-error--wrapper" : ""}>
+                        <span>
+                          <i className="fas fa-envelope" aria-hidden="true" style={{ marginRight: 6 }}></i>
                         Email *
+                        </span>
                         <input
                           type="email"
                           required
                           value={memberForm.email}
-                          onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })}
+                          onChange={(e) => handleMemberFieldChange("email", e.target.value)}
+                          aria-invalid={!!memberErrors.email}
+                          aria-describedby={memberErrors.email ? "member-email-error" : undefined}
                         />
+                        {memberErrors.email && (
+                          <div id="member-email-error" className="field-error">
+                            <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
+                            <span>{memberErrors.email}</span>
+                          </div>
+                        )}
                       </label>
-                      <label>
-                        Phone
+
+                      <label className={memberErrors.phone ? "field-error--wrapper" : ""}>
+                        <span>
+                          <i className="fas fa-phone" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                          WhatsApp Number
+                        </span>
                         <input
                           type="tel"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={memberForm.phone}
-                          onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })}
+                          onChange={(e) => handleMemberFieldChange("phone", e.target.value)}
+                          aria-invalid={!!memberErrors.phone}
+                          aria-describedby={memberErrors.phone ? "member-phone-error" : undefined}
                         />
-                      </label>
-                      <label>
-                        Password {editingMember ? "(leave blank to keep current)" : "*"}
-                        <div style={{ position: "relative" }}>
-                          <input
-                            type={showMemberPassword ? "text" : "password"}
-                            required={!editingMember}
-                            value={memberForm.password}
-                            onChange={(e) => setMemberForm({ ...memberForm, password: e.target.value })}
-                            placeholder={editingMember ? "Enter new password or leave blank" : "Enter password for member"}
-                            style={{ paddingRight: "40px" }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowMemberPassword(!showMemberPassword)}
-                            style={{
-                              position: "absolute",
-                              right: "8px",
-                              top: "50%",
-                              transform: "translateY(-50%)",
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              padding: "4px 8px",
-                              color: "#666",
-                              fontSize: "0.875rem"
-                            }}
-                            title={showMemberPassword ? "Hide password" : "Show password"}
-                          >
-                            {showMemberPassword ? "👁️" : "👁️‍🗨️"}
-                          </button>
+                        {memberErrors.phone && (
+                          <div id="member-phone-error" className="field-error">
+                            <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
+                            <span>{memberErrors.phone}</span>
                         </div>
+                        )}
                       </label>
+
+                      {/* Password removed from Add Member form as requested */}
                       <label>
+                        <span>
+                          <i className="fas fa-toggle-on" aria-hidden="true" style={{ marginRight: 6 }}></i>
                         Status
+                        </span>
                         <select
                           value={memberForm.status}
-                          onChange={(e) => setMemberForm({ ...memberForm, status: e.target.value })}
+                          onChange={(e) => handleMemberFieldChange("status", e.target.value)}
                         >
                           <option>Active</option>
                           <option>Inactive</option>
                         </select>
                       </label>
+
                       <label>
+                        <span>
+                          <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
                         Subscription Type
+                        </span>
                         <select
                           value={memberForm.subscriptionType || "Lifetime"}
-                          onChange={(e) => setMemberForm({ ...memberForm, subscriptionType: e.target.value })}
+                          onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
                         >
                           <option value="Lifetime">Lifetime - $250/year</option>
                           <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - $500/year</option>
                         </select>
                       </label>
+
                       <label>
-                        balance
+                        <span>
+                          <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                          Balance
+                        </span>
                         <input
-                          type="text"
+                          type="number"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
                           value={memberForm.balance}
-                          onChange={(e) => setMemberForm({ ...memberForm, balance: e.target.value })}
+                          readOnly
+                          style={{
+                            background: "#f5f5f5",
+                            cursor: "not-allowed",
+                            color: "#666"
+                          }}
+                          title="Balance is automatically set based on subscription type"
                         />
                       </label>
-                      <label>
+
+                      <label className={memberErrors.nextDue ? "field-error--wrapper" : ""}>
+                        <span>
+                          <i className="fas fa-calendar-day" aria-hidden="true" style={{ marginRight: 6 }}></i>
                         Next Due Date
+                        </span>
                         <input
-                          type="text"
+                          type="date"
                           value={memberForm.nextDue}
-                          onChange={(e) => setMemberForm({ ...memberForm, nextDue: e.target.value })}
+                          onChange={(e) => handleMemberFieldChange("nextDue", e.target.value)}
+                          onKeyDown={(e) => e.preventDefault()}
+                          onPaste={(e) => e.preventDefault()}
+                          aria-invalid={!!memberErrors.nextDue}
+                          aria-describedby={memberErrors.nextDue ? "member-nextDue-error" : undefined}
                         />
+                        {memberErrors.nextDue && (
+                          <div id="member-nextDue-error" className="field-error">
+                            <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
+                            <span>{memberErrors.nextDue}</span>
+                          </div>
+                        )}
                       </label>
-                      <label>
+
+                      <label className={memberErrors.lastPayment ? "field-error--wrapper" : ""}>
+                        <span>
+                          <i className="fas fa-receipt" aria-hidden="true" style={{ marginRight: 6 }}></i>
                         Last Payment Date
+                        </span>
                         <input
-                          type="text"
+                          type="date"
                           value={memberForm.lastPayment}
-                          onChange={(e) => setMemberForm({ ...memberForm, lastPayment: e.target.value })}
+                          onChange={(e) => handleMemberFieldChange("lastPayment", e.target.value)}
+                          onKeyDown={(e) => e.preventDefault()}
+                          onPaste={(e) => e.preventDefault()}
+                          aria-invalid={!!memberErrors.lastPayment}
+                          aria-describedby={memberErrors.lastPayment ? "member-lastPayment-error" : undefined}
                         />
+                        {memberErrors.lastPayment && (
+                          <div id="member-lastPayment-error" className="field-error">
+                            <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
+                            <span>{memberErrors.lastPayment}</span>
+                          </div>
+                        )}
                       </label>
+
                       <div className="form-actions">
-                        < button type="button" className="ghost-btn" onClick={() => setShowMemberForm(false)}>
+                        <button type="button" className="ghost-btn" onClick={() => setShowMemberForm(false)}>
                           Cancel
                         </button>
-                        <button type="submit" className="primary-btn">
-                          {editingMember ? "Update" : "Add"} Member
+                        <button
+                          type="submit"
+                          className="primary-btn"
+                          disabled={!isMemberFormValid || isMemberSubmitting}
+                        >
+                          {isMemberSubmitting
+                            ? "Saving..."
+                            : editingMember
+                            ? "Update Member"
+                            : "Add Member"}
                         </button>
                       </div>
                     </form>
@@ -2470,25 +2798,29 @@ Subscription Manager HK`;
                                       </button>
                                     )}
                                     <button
-                                      className="ghost-btn"
-                                      style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                                      className="ghost-btn icon-btn icon-btn--view"
                                       onClick={() => handleViewMemberDetail(member)}
+                                      title="View member"
+                                      aria-label="View member"
                                     >
-                                      View
+                                      <i className="fas fa-eye" aria-hidden="true"></i>
                                     </button>
                                     <button
-                                      className="secondary-btn"
-                                      style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                                      className="secondary-btn icon-btn icon-btn--edit"
                                       onClick={() => handleEditMember(member)}
+                                      title="Edit member"
+                                      aria-label="Edit member"
                                     >
-                                      Edit
+                                      <i className="fas fa-pen" aria-hidden="true"></i>
                                     </button>
                                     <button
-                                      className="ghost-btn"
-                                      style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
+                                      className="ghost-btn icon-btn icon-btn--delete"
+                                      style={{ color: "#ef4444" }}
                                       onClick={() => handleDeleteMember(member.id)}
+                                      title="Delete member"
+                                      aria-label="Delete member"
                                     >
-                                      Delete
+                                      <i className="fas fa-trash" aria-hidden="true"></i>
                                     </button>
                                   </div>
                                 ),
@@ -2671,7 +3003,11 @@ Subscription Manager HK`;
                           "Due Date",
                           "Actions",
                         ]}
-                        rows={getMemberInvoices(selectedMember.id).map((invoice) => ({
+                        rows={getMemberInvoices(selectedMember.id).map((invoice) => {
+                          const effectiveStatus = getEffectiveInvoiceStatus(invoice);
+                          const isUnpaid = effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
+                          
+                          return {
                           "Invoice #": invoice.id,
                           Period: invoice.period,
                           Amount: invoice.amount,
@@ -2719,38 +3055,37 @@ Subscription Manager HK`;
                                   e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.3)";
                                 }}
                               >
-                                📷 View
+                                  <i className="fas fa-image" aria-hidden="true"></i>
                               </button>
                             )
                           } : "-",
                           Actions: {
                             render: () => (
-                              <div style={{ display: "flex", gap: "8px" }}>
-                                {invoice.status !== "Paid" && (
-                                  <>
+                                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                  {isUnpaid && (
                                     <button
-                                      className="secondary-btn"
-                                      style={{ padding: "4px 10px", fontSize: "0.85rem" }}
+                                      className="primary-btn"
+                                      style={{ 
+                                        padding: "4px 10px", 
+                                        fontSize: "0.85rem",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "4px"
+                                      }}
                                       onClick={() => {
-                                        if (window.confirm(`Mark invoice ${invoice.id} as paid (Cash)?`)) {
-                                          handleMarkAsPaid(invoice.id, "Cash");
-                                        }
+                                        setPaymentModalInvoice(invoice);
+                                        setPaymentModalData({
+                                          paymentMethod: "Admin",
+                                          imageFile: null,
+                                          imagePreview: null,
+                                          imageUrl: invoice.screenshot || "",
+                                        });
+                                        setShowPaymentModal(true);
                                       }}
                                     >
-                                      Paid (Cash)
+                                      <i className="fas fa-money-bill-wave"></i>
+                                      Pay
                                     </button>
-                                    <button
-                                      className="secondary-btn"
-                                      style={{ padding: "4px 10px", fontSize: "0.85rem" }}
-                                      onClick={() => {
-                                        if (window.confirm(`Mark invoice ${invoice.id} as paid (Online)?`)) {
-                                          handleMarkAsPaid(invoice.id, "Online");
-                                        }
-                                      }}
-                                    >
-                                      Paid (Online)
-                                    </button>
-                                  </>
                                 )}
                                 <button
                                   className="ghost-btn"
@@ -2762,7 +3097,8 @@ Subscription Manager HK`;
                               </div>
                             ),
                           },
-                        }))}
+                          };
+                        })}
                       />
                     </div>
                   )}
@@ -2811,13 +3147,14 @@ Subscription Manager HK`;
                             }}
                           >
                             {memberPayments.map((item, idx) => {
-                              const isExpanded = expandedPaymentIndex === idx;
                               return (
                                 <div
                                   key={idx}
-                                  className={`payment-history-card ${
-                                    isExpanded ? "expanded" : ""
-                                  }`}
+                                  className="payment-history-card"
+                                  onClick={() => {
+                                    setSelectedPaymentDetails(item);
+                                    setShowPaymentDetailsModal(true);
+                                  }}
                                   style={{
                                     background: "#fff",
                                     border: "none",
@@ -2826,26 +3163,25 @@ Subscription Manager HK`;
                                     transition: "all 0.3s ease",
                                     boxShadow:
                                       "0 2px 8px rgba(90, 49, 234, 0.08)",
+                                    cursor: "pointer",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.15)";
+                                    e.currentTarget.style.transform = "translateY(-2px)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.08)";
+                                    e.currentTarget.style.transform = "translateY(0)";
                                   }}
                                 >
-                                  {/* Accordion header */}
-                                  <button
-                                    type="button"
+                                  {/* Card header */}
+                                  <div
                                     className="payment-history-card__main"
-                                    onClick={() =>
-                                      setExpandedPaymentIndex(
-                                        isExpanded ? null : idx
-                                      )
-                                    }
                                     style={{
                                       display: "flex",
                                       justifyContent: "space-between",
                                       alignItems: "center",
                                       width: "100%",
-                                      background: "none",
-                                      border: "none",
-                                      padding: 0,
-                                      cursor: "pointer",
                                     }}
                                   >
                                     <div>
@@ -2863,109 +3199,29 @@ Subscription Manager HK`;
                                       style={{
                                         display: "flex",
                                         alignItems: "center",
+                                        gap: "12px",
                                       }}
                                     >
-                                      <i
-                                        className={`fa-solid fa-angle-down ${isExpanded ? "expanded" : ""}`}
-                                        style={{
-                                          fontSize: "1rem",
-                                          color: "#666",
-                                          transition: "transform 0.3s ease",
-                                          transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-                                        }}
-                                      ></i>
-                                    </div>
-                                  </button>
-
-                                  {/* Accordion content */}
-                                  <div
-                                    className={`payment-history-card__details ${
-                                      isExpanded ? "expanded" : "collapsed"
-                                    }`}
-                                    style={{
-                                      marginTop: "12px",
-                                      borderTop: "1px solid #f0f0f0",
-                                      paddingTop: "12px",
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "8px",
-                                      }}
-                                    >
-                                      {item.date && (
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
-                                          }}
-                                        >
-                                          <span
-                                            style={{
-                                              fontSize: "0.875rem",
-                                              color: "#666",
-                                            }}
-                                          >
-                                            Date:
-                                          </span>
-                                          <strong
-                                            style={{ fontSize: "0.875rem" }}
-                                          >
-                                            {item.date}
-                                          </strong>
-                                        </div>
-                                      )}
                                       {item.amount && (
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
-                                          }}
-                                        >
-                                          <span
-                                            style={{
-                                              fontSize: "0.875rem",
-                                              color: "#666",
-                                            }}
-                                          >
-                                            Amount:
-                                          </span>
                                           <strong
                                             style={{
-                                              fontSize: "0.875rem",
+                                            fontSize: "1.125rem",
                                               fontWeight: "700",
+                                            color: "#5a31ea",
                                             }}
                                           >
                                             {item.amount}
                                           </strong>
-                                        </div>
                                       )}
                                       {item.status && (
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
-                                          }}
-                                        >
-                                          <span
-                                            style={{
-                                              fontSize: "0.875rem",
-                                              color: "#666",
-                                            }}
-                                          >
-                                            Status:
-                                          </span>
                                           <span
                                             className={`badge ${
-                                              item.status === "Paid"
+                                            item.status === "Paid" ||
+                                            item.status === "Completed"
                                                 ? "badge-paid"
                                                 : item.status ===
-                                                  "Pending Verification"
+                                                "Pending Verification" ||
+                                                item.status === "Pending"
                                                 ? "badge-pending"
                                                 : "badge-unpaid"
                                             }`}
@@ -2976,173 +3232,74 @@ Subscription Manager HK`;
                                           >
                                             {item.status}
                                           </span>
-                                        </div>
                                       )}
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          justifyContent: "space-between",
-                                          alignItems: "center",
-                                        }}
-                                      >
-                                        <span
+                                      <i
+                                        className="fas fa-chevron-right"
                                           style={{
                                             fontSize: "0.875rem",
-                                            color: "#666",
-                                          }}
-                                        >
-                                          Method:
-                                        </span>
-                                        <strong
-                                          style={{ fontSize: "0.875rem" }}
-                                        >
-                                          {getPaymentMethodDisplay(item)}
-                                        </strong>
+                                          color: "#999",
+                                        }}
+                                      ></i>
                                       </div>
-                                      {item.reference &&
-                                        item.reference !== "N/A" &&
-                                        item.reference !== "-" && (
-                                          <div
-                                            style={{
-                                              display: "flex",
-                                              justifyContent: "space-between",
-                                              alignItems: "center",
-                                            }}
-                                          >
-                                            <span
-                                              style={{
-                                                fontSize: "0.875rem",
-                                                color: "#666",
-                                              }}
-                                            >
-                                              Reference:
-                                            </span>
-                                            <strong
-                                              style={{
-                                                fontSize: "0.875rem",
-                                                fontFamily: "monospace",
-                                              }}
-                                            >
-                                              {item.reference}
-                                            </strong>
                                           </div>
-                                        )}
-                                      {item.paidToAdminName && (
+                                  
+                                  {/* Quick preview info */}
                                         <div
                                           style={{
+                                      marginTop: "12px",
                                             display: "flex",
                                             justifyContent: "space-between",
                                             alignItems: "center",
                                           }}
                                         >
-                                          <span
-                                            style={{
-                                              fontSize: "0.875rem",
-                                              color: "#666",
-                                            }}
-                                          >
-                                            Paid to:
-                                          </span>
-                                          <strong
-                                            style={{ fontSize: "0.875rem" }}
-                                          >
-                                            {item.paidToAdminName}
-                                          </strong>
-                                        </div>
-                                      )}
-                                      {item.period && (
                                         <div
                                           style={{
                                             display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
+                                        flexDirection: "column",
+                                        gap: "4px",
+                                        flex: 1,
                                           }}
                                         >
+                                      {item.date && (
                                           <span
                                             style={{
-                                              fontSize: "0.875rem",
+                                            fontSize: "0.8125rem",
                                               color: "#666",
                                             }}
                                           >
-                                            Period:
+                                          {item.date}
                                           </span>
-                                          <strong
-                                            style={{ fontSize: "0.875rem" }}
-                                          >
-                                            {item.period}
-                                          </strong>
-                                        </div>
                                       )}
-                                      {item.member && (
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
-                                          }}
-                                        >
                                           <span
                                             style={{
-                                              fontSize: "0.875rem",
+                                          fontSize: "0.8125rem",
                                               color: "#666",
                                             }}
                                           >
-                                            Member:
+                                        {getPaymentMethodDisplay(item)}
                                           </span>
-                                          <strong
-                                            style={{ fontSize: "0.875rem" }}
-                                          >
-                                            {item.member}
-                                          </strong>
                                         </div>
-                                      )}
-                                    </div>
-
                                     {item.screenshot && (
                                       <div
                                         style={{
-                                          marginTop: "16px",
-                                          paddingTop: "16px",
-                                          borderTop: "1px solid #f0f0f0",
+                                          width: "60px",
+                                          height: "60px",
+                                          borderRadius: "8px",
+                                          overflow: "hidden",
+                                          border: "2px solid #e0e0e0",
+                                          flexShrink: 0,
+                                          marginLeft: "12px",
                                         }}
                                       >
-                                        <button
-                                          onClick={() => {
-                                            const newWindow = window.open();
-                                            if (newWindow) {
-                                              newWindow.document.write(`
-                                                <html>
-                                                  <head><title>Payment Screenshot</title></head>
-                                                  <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                                                    <img src="${item.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
-                                                  </body>
-                                                </html>
-                                              `);
-                                            }
-                                          }}
+                                        <img
+                                          src={item.screenshot}
+                                          alt="Payment attachment"
                                           style={{
                                             width: "100%",
-                                            padding: "10px 16px",
-                                            background:
-                                              "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
-                                            color: "#ffffff",
-                                            border: "none",
-                                            borderRadius: "8px",
-                                            fontSize: "0.875rem",
-                                            fontWeight: "600",
-                                            cursor: "pointer",
-                                            transition: "all 0.2s ease",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            gap: "8px",
-                                            boxShadow:
-                                              "0 2px 8px rgba(90, 49, 234, 0.3)",
+                                            height: "100%",
+                                            objectFit: "cover",
                                           }}
-                                        >
-                                          <span>📷</span>
-                                          <span>View Screenshot</span>
-                                        </button>
+                                        />
                                       </div>
                                     )}
                                   </div>
@@ -3159,12 +3316,14 @@ Subscription Manager HK`;
                     <div className="tab-panel">
                       {(() => {
                         // Filter communication log for selected member
-                        const memberCommunications = communicationLog.filter((comm) => 
+                        const memberCommunications = communicationLog
+                          .filter((comm) =>
                           comm.memberId === selectedMember.id || 
                           comm.memberEmail === selectedMember.email || 
                           comm.memberName === selectedMember.name ||
                           comm.member === selectedMember.name
-                        ).sort((a, b) => {
+                          )
+                          .sort((a, b) => {
                           // Sort by date, newest first
                           const dateA = new Date(a.date || 0);
                           const dateB = new Date(b.date || 0);
@@ -3173,27 +3332,71 @@ Subscription Manager HK`;
 
                         if (memberCommunications.length === 0) {
                           return (
-                            <div style={{ 
+                            <div
+                              style={{
                               textAlign: "center", 
                               padding: "40px 20px",
-                              color: "#666"
-                            }}>
-                              <p style={{ margin: 0, fontSize: "1rem" }}>No communication history available for this member.</p>
+                                color: "#666",
+                              }}
+                            >
+                              <p style={{ margin: 0, fontSize: "1rem" }}>
+                                No communication history available for this member.
+                              </p>
                             </div>
                           );
                         }
 
+                        // Summary: how many reminders and by which channel
+                        const totalReminders = memberCommunications.length;
+                        const emailCount = memberCommunications.filter(
+                          (c) => c.channel === "Email"
+                        ).length;
+                        const whatsappCount = memberCommunications.filter(
+                          (c) => c.channel === "WhatsApp"
+                        ).length;
+
                         return (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: "12px",
+                                padding: "12px 16px",
+                                borderRadius: "8px",
+                                background: "#f9fafb",
+                                border: "1px solid #e5e7eb",
+                              }}
+                            >
+                              <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>
+                                Reminders sent to this member:
+                              </span>
+                              <span className="badge badge-paid">
+                                Total: {totalReminders}
+                              </span>
+                              <span className="badge badge-unpaid">
+                                Email: {emailCount}
+                              </span>
+                              <span className="badge badge-pending">
+                                WhatsApp: {whatsappCount}
+                              </span>
+                            </div>
+
                           <ul className="timeline">
                             {memberCommunications.map((item, idx) => (
                               <li key={idx}>
                                 <p>
-                                  {item.channel || "N/A"} · {item.message || "N/A"} · {item.date || "N/A"}
+                                    <strong>{item.channel || "N/A"}</strong>
+                                    {item.type ? ` · ${item.type}` : ""}
+                                    {" · "}{item.message || "N/A"}{" · "}{item.date || "N/A"}
                                 </p>
-                                <span className={statusClass[item.status] || "badge"}>{item.status || "N/A"}</span>
+                                  <span className={statusClass[item.status] || "badge"}>
+                                    {item.status || "N/A"}
+                                  </span>
                               </li>
                             ))}
                           </ul>
+                          </div>
                         );
                       })()}
                     </div>
@@ -3564,11 +3767,34 @@ Subscription Manager HK`;
                   <label style={{ marginBottom: "24px" }}>
                     <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Period *</span>
                     <input
-                      type="text"
+                      type="month"
                       required
-                      placeholder="e.g. Nov 2025"
-                      value={invoiceForm.period}
-                      onChange={(e) => setInvoiceForm({ ...invoiceForm, period: e.target.value })}
+                      value={invoiceForm.period ? (() => {
+                        // Convert "MMM YYYY" format (e.g., "Nov 2025") to "YYYY-MM" for month input
+                        if (invoiceForm.period.match(/^[A-Za-z]{3} \d{4}$/)) {
+                          const date = new Date(invoiceForm.period + " 01");
+                          if (!isNaN(date.getTime())) {
+                            const year = date.getFullYear();
+                            const month = String(date.getMonth() + 1).padStart(2, "0");
+                            return `${year}-${month}`;
+                          }
+                        }
+                        // If already in YYYY-MM format, return as is
+                        if (invoiceForm.period.match(/^\d{4}-\d{2}$/)) {
+                          return invoiceForm.period;
+                        }
+                        return "";
+                      })() : ""}
+                      onChange={(e) => {
+                        // Convert "YYYY-MM" to "MMM YYYY" format (e.g., "Nov 2025")
+                        const date = new Date(e.target.value + "-01");
+                        if (!isNaN(date.getTime())) {
+                          const formatted = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                          setInvoiceForm({ ...invoiceForm, period: formatted });
+                        }
+                      }}
+                      onKeyDown={(e) => e.preventDefault()}
+                      onPaste={(e) => e.preventDefault()}
                       className="mono-input"
                       style={{ color: "#1a1a1a" }}
                     />
@@ -3578,9 +3804,14 @@ Subscription Manager HK`;
                     <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount ($) *</span>
                     <input
                       type="number"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       required
                       value={invoiceForm.amount}
-                      onChange={(e) => setInvoiceForm({ ...invoiceForm, amount: e.target.value })}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\\D/g, "");
+                        setInvoiceForm({ ...invoiceForm, amount: value });
+                      }}
                       className="mono-input"
                       style={{ color: "#1a1a1a" }}
                     />
@@ -3593,6 +3824,8 @@ Subscription Manager HK`;
                       required
                       value={invoiceForm.due}
                       onChange={(e) => setInvoiceForm({ ...invoiceForm, due: e.target.value })}
+                      onKeyDown={(e) => e.preventDefault()}
+                      onPaste={(e) => e.preventDefault()}
                       className="mono-input"
                       style={{ color: "#1a1a1a" }}
                     />
@@ -3725,7 +3958,7 @@ Subscription Manager HK`;
                           // Reset form
                           setInvoiceForm({
                             memberId: "",
-                            period: "",
+                            period: getCurrentPeriod(),
                             amount: "250",
                             invoiceType: "Lifetime",
                             due: "",
@@ -4575,6 +4808,231 @@ Subscription Manager HK`;
               </article>
             )}
 
+            {/* GLOBAL REMINDERS / COMMUNICATION LOG */}
+            {activeSection === "communications" && (
+              <article className="screen-card" id="communications">
+                <header className="screen-card__header">
+                  <div>
+                    <h3>Reminders Log</h3>
+                    <p>See all reminder emails and WhatsApp messages sent to members.</p>
+                  </div>
+                </header>
+
+                <div className="card" style={{ marginTop: "20px" }}>
+                  {(() => {
+                    // Build combined list:
+                    // - Email reminders from backend reminderLogs (automatic + manual)
+                    // - WhatsApp reminders from local communicationLog
+                    const emailItems = (reminderLogs || []).map((log) => {
+                      const member =
+                        members.find((m) => m.id === log.memberId) ||
+                        members.find(
+                          (m) =>
+                            m.email &&
+                            log.memberEmail &&
+                            m.email.toLowerCase() === log.memberEmail.toLowerCase()
+                        );
+                      return {
+                        memberName: member?.name || log.memberEmail || "N/A",
+                        memberId: log.memberId,
+                        channel: "Email",
+                        type:
+                          log.reminderType === "overdue"
+                            ? "Overdue (auto/manual)"
+                            : "Upcoming (auto/manual)",
+                        message: `Email reminder - ${log.amount} · ${log.invoiceCount} invoice(s)`,
+                        date: log.sentAt
+                          ? new Date(log.sentAt).toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })
+                          : "N/A",
+                        status: "Delivered"
+                      };
+                    });
+
+                    const whatsappItems = (communicationLog || [])
+                      .filter((c) => c.channel === "WhatsApp")
+                      .map((c) => ({
+                        memberName: c.memberName || c.member || "N/A",
+                        memberId: c.memberId,
+                        channel: "WhatsApp",
+                        type: c.type || "Manual Outstanding Reminder",
+                        message: c.message,
+                        date: c.date,
+                        status: c.status || "Delivered"
+                      }));
+
+                    const allItems = [...emailItems, ...whatsappItems];
+
+                    const total = allItems.length;
+                    const emailCount = emailItems.length;
+                    const whatsappCount = whatsappItems.length;
+
+                    if (total === 0) {
+                      return (
+                        <div style={{ padding: "32px 20px", textAlign: "center", color: "#666" }}>
+                          <p style={{ margin: 0 }}>No reminders have been sent yet.</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "12px",
+                            marginBottom: "16px",
+                          }}
+                        >
+                          <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>
+                            Summary:
+                          </span>
+                          <span className="badge badge-paid">Total: {total}</span>
+                          <span className="badge badge-unpaid">Email: {emailCount}</span>
+                          <span className="badge badge-pending">WhatsApp: {whatsappCount}</span>
+                        </div>
+
+                        {/* Paginate results - minimum 10 per page */}
+                        {(() => {
+                          const pageSize = Math.max(remindersPageSize, 10);
+                          const totalPages = Math.max(1, Math.ceil(total / pageSize));
+                          const currentPage = Math.min(remindersPage, totalPages);
+                          const start = (currentPage - 1) * pageSize;
+                          const end = start + pageSize;
+                          const pageItems = allItems.slice(start, end);
+
+                          return (
+                            <>
+                              <div style={{ overflowX: "auto" }}>
+                                <table className="table">
+                                  <thead>
+                                    <tr>
+                                      <th>Member</th>
+                                      <th>Channel</th>
+                                      <th>Type</th>
+                                      <th>Message</th>
+                                      <th>Date</th>
+                                      <th>Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {pageItems.map((item, idx) => (
+                                      <tr key={`${item.memberId || item.memberName || "row"}-${start + idx}`}>
+                                        <td>
+                                          {item.memberName || item.member || "N/A"}
+                                          {item.memberId ? ` (${item.memberId})` : ""}
+                                        </td>
+                                        <td>{item.channel || "N/A"}</td>
+                                        <td>{item.type || "-"}</td>
+                                        <td style={{ maxWidth: "320px", whiteSpace: "normal" }}>
+                                          {item.message || "N/A"}
+                                        </td>
+                                        <td>{item.date || "N/A"}</td>
+                                        <td>
+                                          <span className={statusClass[item.status] || "badge"}>
+                                            {item.status || "N/A"}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Pagination controls */}
+                              <div
+                                style={{
+                                  marginTop: "16px",
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  flexWrap: "wrap",
+                                  gap: "8px",
+                                }}
+                              >
+                                <div style={{ fontSize: "0.875rem", color: "#555" }}>
+                                  Showing{" "}
+                                  <strong>
+                                    {start + 1}-{Math.min(end, total)}
+                                  </strong>{" "}
+                                  of <strong>{total}</strong> reminders
+                                </div>
+
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <button
+                                    type="button"
+                                    className="secondary-btn"
+                                    disabled={currentPage <= 1}
+                                    onClick={() => setRemindersPage(Math.max(1, currentPage - 1))}
+                                  >
+                                    Previous
+                                  </button>
+                                  <span style={{ fontSize: "0.875rem" }}>
+                                    Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="secondary-btn"
+                                    disabled={currentPage >= totalPages}
+                                    onClick={() =>
+                                      setRemindersPage(Math.min(totalPages, currentPage + 1))
+                                    }
+                                  >
+                                    Next
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+
+                        {/* Old non-paginated table kept for reference (now replaced by paginated view)
+                        <div style={{ overflowX: "auto" }}>
+                          <table className="table">
+                            <thead>
+                              <tr>
+                                <th>Member</th>
+                                <th>Channel</th>
+                                <th>Type</th>
+                                <th>Message</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {allItems.map((item, idx) => (
+                                <tr key={idx}>
+                                  <td>
+                                    {item.memberName || item.member || "N/A"}
+                                    {item.memberId ? ` (${item.memberId})` : ""}
+                                  </td>
+                                  <td>{item.channel || "N/A"}</td>
+                                  <td>{item.type || "-"}</td>
+                                  <td style={{ maxWidth: "320px", whiteSpace: "normal" }}>
+                                    {item.message || "N/A"}
+                                  </td>
+                                  <td>{item.date || "N/A"}</td>
+                                  <td>
+                                    <span className={statusClass[item.status] || "badge"}>
+                                      {item.status || "N/A"}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div> */}
+                      </>
+                    );
+                  })()}
+                </div>
+              </article>
+            )}
+
             {/* PAYMENT METHODS */}
             {activeSection === "payment-methods" && (
               <article className="screen-card" id="payment-methods">
@@ -4631,7 +5089,7 @@ Subscription Manager HK`;
                           formData.append("screenshot", file);
                           formData.append("uploadType", "qr-code"); // Specify this is a QR code upload
 
-                          const uploadResponse = await fetch(`${apiUrl}/api/upload-screenshot`, {
+                          const uploadResponse = await fetch(`${apiUrl}/api/upload/screenshot`, {
                             method: "POST",
                             body: formData,
                           });
@@ -5415,9 +5873,11 @@ Subscription Manager HK`;
                                       href={payment.screenshot} 
                                       target="_blank" 
                                       rel="noopener noreferrer"
-                                      style={{ color: "#000", textDecoration: "underline", fontWeight: "500" }}
+                                      style={{ color: "#000", textDecoration: "none" }}
+                                      title="View screenshot"
+                                      aria-label="View screenshot"
                                     >
-                                      📷 View
+                                      <i className="fas fa-image" aria-hidden="true"></i>
                                     </a>
                                   ) : "N/A"
                                 },
@@ -5434,22 +5894,24 @@ Subscription Manager HK`;
                                       {payment.status === "Pending" && (
                                         <>
                                           <button
-                                            className="primary-btn"
-                                            style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                                            className="icon-btn icon-btn--view"
                                             onClick={() => {
                                               if (paymentIdString) handleApprovePayment(paymentIdString);
                                             }}
+                                            title="Approve payment (By Admin)"
+                                            aria-label="Approve payment (By Admin)"
                                           >
-                                            ✓ Approve
+                                            <i className="fas fa-check" aria-hidden="true"></i>
                                           </button>
                                           <button
-                                            className="ghost-btn"
-                                            style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
+                                            className="icon-btn icon-btn--delete"
                                             onClick={() => {
                                               if (paymentIdString) handleRejectPayment(paymentIdString);
                                             }}
+                                            title="Reject payment (By Admin)"
+                                            aria-label="Reject payment (By Admin)"
                                           >
-                                            ✗ Reject
+                                            <i className="fas fa-times" aria-hidden="true"></i>
                                           </button>
                                         </>
                                       )}
@@ -5458,28 +5920,76 @@ Subscription Manager HK`;
                                           Reason: {payment.rejectionReason}
                                         </span>
                                       )}
-                                      {payment.status === "Completed" && (
+                                      {payment.status === "Completed" && (() => {
+                                        // Check if paid by admin (cash payment)
+                                        const isPaidByAdmin = payment.paidToAdmin || payment.paidToAdminName;
+                                        // Check if paid online
+                                        const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
+                                        const isPaidOnline = onlineMethods.includes(payment.method);
+                                        
+                                        if (isPaidByAdmin) {
+                                          return (
+                                            <span
+                                              className="icon-btn"
+                                              style={{
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                fontSize: "0.875rem",
+                                                color: "#4caf50",
+                                                cursor: "default",
+                                                padding: "4px 8px",
+                                              }}
+                                              title="Paid by Admin (Cash)"
+                                              aria-label="Paid by Admin (Cash)"
+                                            >
+                                              <i className="fas fa-user-shield" aria-hidden="true"></i>
+                                            </span>
+                                          );
+                                        } else if (isPaidOnline) {
+                                          return (
+                                            <span
+                                              className="icon-btn"
+                                              style={{
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                justifyContent: "center",
+                                                fontSize: "0.875rem",
+                                                color: "#2196F3",
+                                                cursor: "default",
+                                                padding: "4px 8px",
+                                              }}
+                                              title="Paid Online"
+                                              aria-label="Paid Online"
+                                            >
+                                              <i className="fas fa-globe" aria-hidden="true"></i>
+                                            </span>
+                                          );
+                                        } else {
+                                          // Fallback: show approved text
+                                          return (
                                         <span style={{ fontSize: "0.75rem", color: "#4caf50" }}>
                                           ✓ Approved by {payment.approvedBy || "Admin"}
                                         </span>
-                                      )}
+                                          );
+                                        }
+                                      })()}
                                       <button
-                                        className="secondary-btn"
-                                        style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                                      className="secondary-btn icon-btn icon-btn--edit"
                                         onClick={() => handleEditPayment(payment)}
                                         title="Edit Payment"
                                       >
-                                        ✏️ Edit
+                                      <i className="fas fa-pen" aria-hidden="true"></i>
                                       </button>
                                       <button
-                                        className="ghost-btn"
-                                        style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
+                                      className="ghost-btn icon-btn icon-btn--delete"
+                                      style={{ color: "#ef4444" }}
                                         onClick={() => {
                                           if (paymentIdString) handleDeletePayment(paymentIdString);
                                         }}
                                         title="Delete Payment"
                                       >
-                                        🗑️ Delete
+                                      <i className="fas fa-trash" aria-hidden="true"></i>
                                       </button>
                                     </div>
                                   )
@@ -5594,10 +6104,15 @@ Subscription Manager HK`;
                         <label>
                           Amount *
                           <input
-                            type="text"
+                            type="number"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
                             value={donationForm.amount}
-                            onChange={(e) => setDonationForm({ ...donationForm, amount: e.target.value })}
-                            placeholder="$100"
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/\D/g, "");
+                              setDonationForm({ ...donationForm, amount: value });
+                            }}
+                            placeholder="100"
                             required
                           />
                         </label>
@@ -5651,8 +6166,8 @@ Subscription Manager HK`;
                               }
                             }}
                           >
-                            <span>👤</span>
-                            <span>Member</span>
+                            <span style={{ color: donationForm.isMember ? "#ffffff" : "inherit" }}>👤</span>
+                            <span style={{ color: donationForm.isMember ? "#ffffff" : "inherit" }}>Member</span>
                           </button>
                           <button
                             type="button"
@@ -5688,8 +6203,8 @@ Subscription Manager HK`;
                               }
                             }}
                           >
-                            <span>🌐</span>
-                            <span>Non-Member</span>
+                            <span style={{ color: !donationForm.isMember ? "#ffffff" : "inherit" }}>🌐</span>
+                            <span style={{ color: !donationForm.isMember ? "#ffffff" : "inherit" }}>Non-Member</span>
                           </button>
                         </div>
                       </div>
@@ -6533,6 +7048,710 @@ Subscription Manager HK`;
           </div>
         </div>
       </main>
+      
+      {/* Payment Modal */}
+      {showPaymentModal && paymentModalInvoice && (
+        <div 
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+            padding: "20px",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowPaymentModal(false);
+              setPaymentModalInvoice(null);
+              setPaymentModalData({
+                paymentMethod: "Admin",
+                imageFile: null,
+                imagePreview: null,
+                imageUrl: "",
+              });
+            }
+          }}
+        >
+          <div 
+            className="card"
+            style={{
+              maxWidth: "600px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+              <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
+                <i className="fas fa-money-bill-wave" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                Pay Invoice #{paymentModalInvoice.id}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPaymentModal(false);
+                  setPaymentModalInvoice(null);
+                  setPaymentModalData({
+                    paymentMethod: "Admin",
+                    imageFile: null,
+                    imagePreview: null,
+                    imageUrl: "",
+                  });
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  color: "#666",
+                  cursor: "pointer",
+                  padding: "0",
+                  width: "32px",
+                  height: "32px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "4px",
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = "#f0f0f0";
+                  e.target.style.color = "#333";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = "transparent";
+                  e.target.style.color = "#666";
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              {/* Invoice Info */}
+              <div style={{ 
+                padding: "16px", 
+                background: "#f8f9ff", 
+                borderRadius: "8px",
+                border: "1px solid #e0e0e0"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                  <span style={{ color: "#666", fontSize: "0.875rem" }}>Amount:</span>
+                  <strong style={{ color: "#1a1a1a", fontSize: "1.125rem" }}>{paymentModalInvoice.amount}</strong>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                  <span style={{ color: "#666", fontSize: "0.875rem" }}>Period:</span>
+                  <span style={{ color: "#1a1a1a" }}>{paymentModalInvoice.period}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "#666", fontSize: "0.875rem" }}>Due Date:</span>
+                  <span style={{ color: "#1a1a1a" }}>{paymentModalInvoice.due}</span>
+                </div>
+              </div>
+
+              {/* Payment Method Selection */}
+              <div>
+                <label style={{ 
+                  display: "block", 
+                  fontSize: "0.875rem", 
+                  fontWeight: "600", 
+                  color: "#333", 
+                  marginBottom: "12px" 
+                }}>
+                  Payment Method
+                </label>
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentModalData({ 
+                      ...paymentModalData, 
+                      paymentMethod: "Admin" 
+                    })}
+                    style={{
+                      flex: "1",
+                      minWidth: "150px",
+                      padding: "12px 20px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: paymentModalData.paymentMethod === "Admin" 
+                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" 
+                        : "#f8f9ff",
+                      color: paymentModalData.paymentMethod === "Admin" ? "#ffffff" : "#1a1a1a",
+                      boxShadow: paymentModalData.paymentMethod === "Admin" 
+                        ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
+                        : "0 2px 4px rgba(90, 49, 234, 0.08)",
+                      fontWeight: "600",
+                      fontSize: "0.9375rem",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <i className="fas fa-user-shield"></i>
+                    Paid to Admin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentModalData({ 
+                      ...paymentModalData, 
+                      paymentMethod: "Online" 
+                    })}
+                    style={{
+                      flex: "1",
+                      minWidth: "150px",
+                      padding: "12px 20px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: paymentModalData.paymentMethod === "Online" 
+                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" 
+                        : "#f8f9ff",
+                      color: paymentModalData.paymentMethod === "Online" ? "#ffffff" : "#1a1a1a",
+                      boxShadow: paymentModalData.paymentMethod === "Online" 
+                        ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
+                        : "0 2px 4px rgba(90, 49, 234, 0.08)",
+                      fontWeight: "600",
+                      fontSize: "0.9375rem",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <i className="fas fa-globe"></i>
+                    Paid Online
+                  </button>
+                </div>
+              </div>
+
+              {/* Attachment Upload */}
+              <div>
+                <label style={{ 
+                  display: "block", 
+                  fontSize: "0.875rem", 
+                  fontWeight: "600", 
+                  color: "#333", 
+                  marginBottom: "12px" 
+                }}>
+                  Attachment Image (Optional)
+                </label>
+                <div style={{ 
+                  border: "2px dashed #d0d0d0",
+                  borderRadius: "8px",
+                  padding: "20px",
+                  textAlign: "center",
+                  background: "#fafafa",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = "#5a31ea";
+                  e.currentTarget.style.background = "#f8f9ff";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "#d0d0d0";
+                  e.currentTarget.style.background = "#fafafa";
+                }}
+                onClick={() => {
+                  const input = document.createElement("input");
+                  input.type = "file";
+                  input.accept = "image/*";
+                  input.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    if (!file.type.startsWith("image/")) {
+                      showToast("Please upload an image file", "error");
+                      return;
+                    }
+
+                    // Create preview
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                      setPaymentModalData(prev => ({
+                        ...prev,
+                        imageFile: file,
+                        imagePreview: reader.result,
+                      }));
+                    };
+                    reader.readAsDataURL(file);
+                  };
+                  input.click();
+                }}
+                >
+                  {paymentModalData.imagePreview || (paymentModalInvoice.screenshot && !paymentModalData.imageFile) ? (
+                    <div style={{ position: "relative" }}>
+                      <img 
+                        src={paymentModalData.imagePreview || paymentModalInvoice.screenshot} 
+                        alt="Preview" 
+                        style={{ 
+                          maxWidth: "100%", 
+                          maxHeight: "200px", 
+                          borderRadius: "8px",
+                          marginBottom: "8px"
+                        }} 
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPaymentModalData({
+                            ...paymentModalData,
+                            imageFile: null,
+                            imagePreview: null,
+                            imageUrl: "",
+                          });
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: "8px",
+                          right: "8px",
+                          background: "#ef4444",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "50%",
+                          width: "28px",
+                          height: "28px",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "0.875rem",
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <i className="fas fa-cloud-upload-alt" style={{ 
+                        fontSize: "2rem", 
+                        color: "#5a31ea", 
+                        marginBottom: "8px" 
+                      }}></i>
+                      <p style={{ margin: "0", color: "#666", fontSize: "0.875rem" }}>
+                        Click to upload image
+                      </p>
+                      <p style={{ margin: "4px 0 0 0", color: "#999", fontSize: "0.75rem" }}>
+                        PNG, JPG, GIF up to 5MB
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => {
+                    setShowPaymentModal(false);
+                    setPaymentModalInvoice(null);
+                    setPaymentModalData({
+                      paymentMethod: "Admin",
+                      imageFile: null,
+                      imagePreview: null,
+                      imageUrl: "",
+                    });
+                  }}
+                  disabled={uploadingPaymentModal}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="primary-btn"
+                  disabled={uploadingPaymentModal}
+                  onClick={async () => {
+                    setUploadingPaymentModal(true);
+                    try {
+                      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                      let imageUrl = paymentModalData.imageUrl || paymentModalInvoice.screenshot;
+
+                      // Upload image if new file exists
+                      if (paymentModalData.imageFile) {
+                        const formData = new FormData();
+                        formData.append("screenshot", paymentModalData.imageFile);
+                        formData.append("uploadType", "invoice-payment-attachment");
+
+                        const uploadResponse = await fetch(`${apiUrl}/api/upload/screenshot`, {
+                          method: "POST",
+                          body: formData,
+                        });
+
+                        if (!uploadResponse.ok) {
+                          // Try to get error message from response
+                          let errorMessage = "Failed to upload image";
+                          try {
+                            const errorData = await uploadResponse.json();
+                            errorMessage = errorData.error || errorMessage;
+                            console.error("Upload error response:", errorData);
+                          } catch (parseError) {
+                            console.error("Failed to parse error response:", parseError);
+                            errorMessage = `Upload failed with status ${uploadResponse.status}`;
+                          }
+                          throw new Error(errorMessage);
+                        }
+
+                        const uploadData = await uploadResponse.json();
+                        if (!uploadData.url) {
+                          throw new Error("No URL returned from upload. Please try again.");
+                        }
+                        imageUrl = uploadData.url;
+                      }
+
+                      // Update invoice with screenshot if image was uploaded
+                      if (imageUrl && imageUrl !== paymentModalInvoice.screenshot) {
+                        await updateInvoice(paymentModalInvoice.id, {
+                          screenshot: imageUrl,
+                        });
+                      }
+
+                      // Mark invoice as paid
+                      const paymentMethod = paymentModalData.paymentMethod === "Admin" ? "Cash" : "Online";
+                      await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl);
+
+                      // Close modal and reset
+                      setShowPaymentModal(false);
+                      setPaymentModalInvoice(null);
+                      setPaymentModalData({
+                        paymentMethod: "Admin",
+                        imageFile: null,
+                        imagePreview: null,
+                        imageUrl: "",
+                      });
+
+                      showToast(`Invoice #${paymentModalInvoice.id} marked as paid!`, "success");
+                    } catch (error) {
+                      console.error("Error processing payment:", error);
+                      showToast(error.message || "Failed to process payment", "error");
+                    } finally {
+                      setUploadingPaymentModal(false);
+                    }
+                  }}
+                  style={{
+                    opacity: uploadingPaymentModal ? 0.6 : 1,
+                    cursor: uploadingPaymentModal ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {uploadingPaymentModal ? "Processing..." : "Mark as Paid"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Details Modal */}
+      {showPaymentDetailsModal && selectedPaymentDetails && (
+        <div 
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+            padding: "20px",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowPaymentDetailsModal(false);
+              setSelectedPaymentDetails(null);
+            }
+          }}
+        >
+          <div 
+            className="card"
+            style={{
+              maxWidth: "600px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+              <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
+                <i className="fas fa-receipt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                Payment Details
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPaymentDetailsModal(false);
+                  setSelectedPaymentDetails(null);
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  color: "#666",
+                  cursor: "pointer",
+                  padding: "0",
+                  width: "32px",
+                  height: "32px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "4px",
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = "#f0f0f0";
+                  e.target.style.color = "#333";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = "transparent";
+                  e.target.style.color = "#666";
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Payment Info Grid */}
+              <div style={{ 
+                display: "grid",
+                gridTemplateColumns: "repeat(2, 1fr)",
+                gap: "16px",
+              }}>
+                {selectedPaymentDetails.date && (
+                  <div style={{ 
+                    padding: "16px", 
+                    background: "#f8f9ff", 
+                    borderRadius: "8px",
+                    border: "1px solid #e0e0e0"
+                  }}>
+                    <span style={{ display: "block", color: "#666", fontSize: "0.875rem", marginBottom: "4px" }}>Date</span>
+                    <strong style={{ color: "#1a1a1a", fontSize: "1rem" }}>{selectedPaymentDetails.date}</strong>
+                  </div>
+                )}
+                {selectedPaymentDetails.amount && (
+                  <div style={{ 
+                    padding: "16px", 
+                    background: "#f8f9ff", 
+                    borderRadius: "8px",
+                    border: "1px solid #e0e0e0"
+                  }}>
+                    <span style={{ display: "block", color: "#666", fontSize: "0.875rem", marginBottom: "4px" }}>Amount</span>
+                    <strong style={{ color: "#5a31ea", fontSize: "1.25rem", fontWeight: "700" }}>{selectedPaymentDetails.amount}</strong>
+                  </div>
+                )}
+                {selectedPaymentDetails.status && (
+                  <div style={{ 
+                    padding: "16px", 
+                    background: "#f8f9ff", 
+                    borderRadius: "8px",
+                    border: "1px solid #e0e0e0"
+                  }}>
+                    <span style={{ display: "block", color: "#666", fontSize: "0.875rem", marginBottom: "4px" }}>Status</span>
+                    <span
+                      className={`badge ${
+                        selectedPaymentDetails.status === "Paid" ||
+                        selectedPaymentDetails.status === "Completed"
+                          ? "badge-paid"
+                          : selectedPaymentDetails.status ===
+                            "Pending Verification" ||
+                            selectedPaymentDetails.status === "Pending"
+                          ? "badge-pending"
+                          : "badge-unpaid"
+                      }`}
+                      style={{
+                        fontSize: "0.875rem",
+                        padding: "6px 12px",
+                        display: "inline-block",
+                        marginTop: "4px",
+                      }}
+                    >
+                      {selectedPaymentDetails.status}
+                    </span>
+                  </div>
+                )}
+                <div style={{ 
+                  padding: "16px", 
+                  background: "#f8f9ff", 
+                  borderRadius: "8px",
+                  border: "1px solid #e0e0e0"
+                }}>
+                  <span style={{ display: "block", color: "#666", fontSize: "0.875rem", marginBottom: "4px" }}>Payment Method</span>
+                  <strong style={{ color: "#1a1a1a", fontSize: "1rem" }}>{getPaymentMethodDisplay(selectedPaymentDetails)}</strong>
+                </div>
+              </div>
+
+              {/* Additional Details */}
+              <div style={{ 
+                padding: "20px", 
+                background: "#fafafa", 
+                borderRadius: "8px",
+                border: "1px solid #e0e0e0"
+              }}>
+                <h4 style={{ margin: "0 0 16px 0", fontSize: "1rem", fontWeight: "600", color: "#333" }}>Additional Information</h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {selectedPaymentDetails.reference &&
+                    selectedPaymentDetails.reference !== "N/A" &&
+                    selectedPaymentDetails.reference !== "-" && (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.875rem", color: "#666" }}>Reference:</span>
+                        <strong style={{ fontSize: "0.875rem", fontFamily: "monospace", color: "#1a1a1a" }}>
+                          {selectedPaymentDetails.reference}
+                        </strong>
+                      </div>
+                    )}
+                  {selectedPaymentDetails.paidToAdminName && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Paid to:</span>
+                      <strong style={{ fontSize: "0.875rem", color: "#1a1a1a" }}>
+                        {selectedPaymentDetails.paidToAdminName}
+                      </strong>
+                    </div>
+                  )}
+                  {selectedPaymentDetails.period && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Period:</span>
+                      <strong style={{ fontSize: "0.875rem", color: "#1a1a1a" }}>
+                        {selectedPaymentDetails.period}
+                      </strong>
+                    </div>
+                  )}
+                  {selectedPaymentDetails.member && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Member:</span>
+                      <strong style={{ fontSize: "0.875rem", color: "#1a1a1a" }}>
+                        {selectedPaymentDetails.member}
+                      </strong>
+                    </div>
+                  )}
+                  {selectedPaymentDetails.memberEmail && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Email:</span>
+                      <strong style={{ fontSize: "0.875rem", color: "#1a1a1a" }}>
+                        {selectedPaymentDetails.memberEmail}
+                      </strong>
+                    </div>
+                  )}
+                  {selectedPaymentDetails.invoiceId && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "0.875rem", color: "#666" }}>Invoice ID:</span>
+                      <strong style={{ fontSize: "0.875rem", fontFamily: "monospace", color: "#1a1a1a" }}>
+                        {selectedPaymentDetails.invoiceId}
+                      </strong>
+                    </div>
+                  )}
+                  {selectedPaymentDetails.notes && (
+                    <div style={{ marginTop: "8px", paddingTop: "12px", borderTop: "1px solid #e0e0e0" }}>
+                      <span style={{ display: "block", fontSize: "0.875rem", color: "#666", marginBottom: "4px" }}>Notes:</span>
+                      <p style={{ margin: 0, fontSize: "0.875rem", color: "#1a1a1a" }}>
+                        {selectedPaymentDetails.notes}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Screenshot */}
+              {selectedPaymentDetails.screenshot && (
+                <div>
+                  <h4 style={{ margin: "0 0 12px 0", fontSize: "1rem", fontWeight: "600", color: "#333" }}>
+                    <i className="fas fa-image" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                    Payment Screenshot
+                  </h4>
+                  <div style={{
+                    border: "1px solid #e0e0e0",
+                    borderRadius: "8px",
+                    overflow: "hidden",
+                    background: "#fafafa",
+                  }}>
+                    <img 
+                      src={selectedPaymentDetails.screenshot} 
+                      alt="Payment Screenshot" 
+                      style={{ 
+                        width: "100%",
+                        height: "auto",
+                        display: "block",
+                        cursor: "pointer",
+                      }}
+                      onClick={() => {
+                        const newWindow = window.open();
+                        if (newWindow) {
+                          newWindow.document.write(`
+                            <html>
+                              <head><title>Payment Screenshot</title></head>
+                              <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                <img src="${selectedPaymentDetails.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
+                              </body>
+                            </html>
+                          `);
+                        }
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newWindow = window.open();
+                      if (newWindow) {
+                        newWindow.document.write(`
+                          <html>
+                            <head><title>Payment Screenshot</title></head>
+                            <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                              <img src="${selectedPaymentDetails.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
+                            </body>
+                          </html>
+                        `);
+                      }
+                    }}
+                    className="primary-btn"
+                    style={{
+                      width: "100%",
+                      marginTop: "12px",
+                      padding: "12px 20px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <i className="fas fa-expand"></i>
+                    Open Screenshot in New Window
+                  </button>
+                </div>
+              )}
+
+              {/* Close Button */}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => {
+                    setShowPaymentDetailsModal(false);
+                    setSelectedPaymentDetails(null);
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <SiteFooter />
     </>
   );

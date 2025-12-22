@@ -76,7 +76,7 @@ router.post("/", async (req, res) => {
     });
     
     const savedMember = await newMember.save();
-    
+
     // Check if invoice already exists for this member (prevent duplicates)
     const existingInvoice = await InvoiceModel.findOne({ 
       memberId: savedMember.id,
@@ -126,10 +126,13 @@ router.post("/", async (req, res) => {
       console.log(`⚠ Invoice already exists for member ${savedMember.name} (${savedMember.id}), skipping duplicate creation`);
     }
     
-    // Update member balance
+    // Update member balance (this will also format it like "$250.00 Outstanding")
     await calculateAndUpdateMemberBalance(savedMember.id);
+
+    // Fetch the updated member with the computed balance so frontend sees correct outstanding
+    const updatedMember = await UserModel.findOne({ id: savedMember.id });
     
-    res.status(201).json(savedMember);
+    res.status(201).json(updatedMember);
   } catch (error) {
     console.error("Error creating member:", error);
     if (error.code === 11000) {
