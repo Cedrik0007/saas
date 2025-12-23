@@ -427,6 +427,32 @@ main {
   color: #9ca3af;
 }
 
+.mono-input.input-error {
+  border: 1px solid var(--danger);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.mono-input.input-error:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+.mono-input:disabled {
+  background-color: var(--gray-100);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Spinner animation for loading states */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .login-hints {
   font-size: 0.875rem;
   color: #666666;
@@ -2036,17 +2062,110 @@ main {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
+  width: 100%;
+  display: flex;
+  align-items: center;
 }
 
 .admin-tab.active {
   background: linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%);
   color: #ffffff;
   box-shadow: 0 2px 8px rgba(90, 49, 234, 0.3);
+  font-weight: 600;
 }
 
-.admin-tab:hover {
+.admin-tab:hover:not(.active) {
   background: #f8f9ff;
   color: #5a31ea;
+}
+
+/* Grouped Navigation Styles */
+.admin-nav-grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+
+.nav-group:last-child {
+  margin-bottom: 0;
+}
+
+.nav-group-header {
+  padding: 8px 16px 6px 16px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+  margin-bottom: 6px;
+}
+
+.nav-group:first-of-type .nav-group-header {
+  margin-top: 0;
+}
+
+.nav-group-label {
+  color: #9ca3af;
+  font-size: 0.7rem;
+}
+
+.admin-tab-nested {
+  padding: 10px 16px 10px 36px;
+  font-size: 0.875rem;
+  position: relative;
+  margin-left: 4px;
+}
+
+.admin-tab-nested::before {
+  content: '';
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #d1d5db;
+  transition: all 0.2s ease;
+}
+
+.admin-tab-nested.active {
+  background: linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(90, 49, 234, 0.3);
+  font-weight: 600;
+  margin-left: 0;
+  border-left: 3px solid rgba(255, 255, 255, 0.3);
+}
+
+.admin-tab-nested.active::before {
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
+  width: 6px;
+  height: 6px;
+}
+
+.admin-tab-nested:hover:not(.active) {
+  background: #f8f9ff;
+  color: #5a31ea;
+  margin-left: 0;
+}
+
+.admin-tab-nested:hover:not(.active)::before {
+  background: #5a31ea;
+  width: 6px;
+  height: 6px;
 }
 
 .admin-body {

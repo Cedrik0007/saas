@@ -1,9 +1,10 @@
 import { statusClass } from "../statusClasses";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export function Table({ columns, rows }) {
   const [isMobile, setIsMobile] = useState(false);
   const [selectedCardIndex, setSelectedCardIndex] = useState(null); // For modal popup
+  const [sortConfig, setSortConfig] = useState({ column: null, direction: "asc" });
 
   useEffect(() => {
     const checkMobile = () => {
@@ -290,28 +291,127 @@ export function Table({ columns, rows }) {
     );
   }
 
+  const getAlignmentForColumn = (col) => {
+    const numericColumns = [
+      "Amount",
+      "Balance",
+      "Outstanding",
+      "Total",
+      "Collected",
+      "Expected",
+      "Avg per Member",
+      "Transactions",
+      "Donation",
+      "Donations",
+      "Invoice #",
+    ];
+
+    if (col === "Status" || col === "Actions") return "center";
+    if (numericColumns.includes(col)) return "right";
+    return "left";
+  };
+
+  const getComparableValue = (value) => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      // Try numeric (strip currency symbols/commas)
+      const numeric = parseFloat(value.replace(/[^0-9.-]/g, "") || "NaN");
+      if (!isNaN(numeric)) return numeric;
+      return value.toLowerCase();
+    }
+    return value;
+  };
+
+  const handleSort = (column) => {
+    setSortConfig((prev) => {
+      if (prev.column === column) {
+        return { column, direction: prev.direction === "asc" ? "desc" : "asc" };
+      }
+      return { column, direction: "asc" };
+    });
+  };
+
+  const sortedRows = useMemo(() => {
+    if (!sortConfig.column) return rows;
+    const col = sortConfig.column;
+    const dir = sortConfig.direction === "asc" ? 1 : -1;
+
+    return [...rows].sort((a, b) => {
+      const aValRaw = a[col];
+      const bValRaw = b[col];
+
+      // For custom renderers, don't attempt to sort (keep original order)
+      if (
+        (typeof aValRaw === "object" && aValRaw !== null && aValRaw.render) ||
+        (typeof bValRaw === "object" && bValRaw !== null && bValRaw.render)
+      ) {
+        return 0;
+      }
+
+      const aVal = getComparableValue(aValRaw);
+      const bVal = getComparableValue(bValRaw);
+
+      if (aVal < bVal) return -1 * dir;
+      if (aVal > bVal) return 1 * dir;
+      return 0;
+    });
+  }, [rows, sortConfig]);
+
   // Desktop table layout
   return (
-    <table>
+    <table className="data-table">
       <thead>
         <tr>
-          {columns.map((col) => (
-            <th key={col}>{col}</th>
-          ))}
+          {columns.map((col) => {
+            const align = getAlignmentForColumn(col);
+            const isSorted = sortConfig.column === col;
+            const sortIndicator = isSorted ? (sortConfig.direction === "asc" ? "▲" : "▼") : "↕";
+
+            return (
+              <th
+                key={col}
+                style={{ textAlign: align, cursor: "pointer", whiteSpace: "nowrap" }}
+                onClick={() => handleSort(col)}
+                aria-sort={
+                  isSorted ? (sortConfig.direction === "asc" ? "ascending" : "descending") : "none"
+                }
+              >
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                  <span>{col}</span>
+                  <span style={{ fontSize: "0.7rem", opacity: 0.7 }}>{sortIndicator}</span>
+                </span>
+              </th>
+            );
+          })}
         </tr>
       </thead>
       <tbody>
-        {rows.map((row, rowIndex) => (
+        {sortedRows.map((row, rowIndex) => (
           <tr key={`${row.id ?? rowIndex}-${rowIndex}`}>
             {columns.map((col) => {
               const value = row[col];
+              const align = getAlignmentForColumn(col);
+
               if (typeof value === "object" && value !== null && value.render) {
-                return <td key={`${col}-render-${rowIndex}`} data-label={col}>{value.render()}</td>;
+                return (
+                  <td
+                    key={`${col}-render-${rowIndex}`}
+                    data-label={col}
+                    style={{ textAlign: align, verticalAlign: "middle" }}
+                  >
+                    {value.render()}
+                  </td>
+                );
               }
               const isStatus =
                 typeof value === "string" && statusClass[value] && col === "Status";
               return (
-                <td key={`${col}-${rowIndex}`} data-label={col}>
+                <td
+                  key={`${col}-${rowIndex}`}
+                  data-label={col}
+                  style={{ textAlign: align, verticalAlign: "middle" }}
+                >
                   {isStatus ? (
                     <span className={statusClass[value]}>{value}</span>
                   ) : (

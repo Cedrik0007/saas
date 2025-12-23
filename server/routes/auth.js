@@ -2,8 +2,25 @@ import express from "express";
 import { ensureConnection } from "../config/database.js";
 import AdminModel from "../models/Admin.js";
 import UserModel from "../models/User.js";
+import { getTransporter, setTransporter } from "../config/email.js";
+import EmailSettingsModel from "../models/EmailSettings.js";
+import nodemailer from "nodemailer";
+import crypto from "crypto";
 
 const router = express.Router();
+
+// In-memory store for reset tokens (in production, use Redis or database)
+const resetTokens = new Map(); // token -> { email, role, expiresAt }
+
+// Clean up expired tokens every hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of resetTokens.entries()) {
+    if (data.expiresAt < now) {
+      resetTokens.delete(token);
+    }
+  }
+}, 60 * 60 * 1000); // Every hour
 
 // POST login
 router.post("/login", async (req, res) => {
@@ -127,6 +144,224 @@ router.post("/login", async (req, res) => {
     console.error("Login error:", error);
     res.status(500).json({ 
       message: "Server error during login",
+      success: false 
+    });
+  }
+});
+
+// POST /api/auth/forgot-password - Request password reset
+router.post("/auth/forgot-password", async (req, res) => {
+  const { email, role } = req.body ?? {};
+  
+  if (!email) {
+    return res.status(400).json({ 
+      message: "Email is required",
+      success: false 
+    });
+  }
+
+  try {
+    await ensureConnection();
+    const emailLower = email.trim().toLowerCase();
+    
+    let user = null;
+    let userName = "";
+    
+    // Check based on role
+    if (role === "admin" || role === "Admin") {
+      user = await AdminModel.findOne({ email: emailLower });
+      if (user) {
+        userName = user.name;
+      }
+    } else if (role === "member" || role === "Member") {
+      const escapedEmail = emailLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      user = await UserModel.findOne({ 
+        email: { $regex: `^${escapedEmail}$`, $options: 'i' }
+      });
+      if (user) {
+        userName = user.name;
+      }
+    }
+
+    // Always return success message for security (don't reveal if email exists)
+    // But only send email if user exists
+    if (user) {
+      // Generate reset token
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour from now
+      
+      // Store token
+      resetTokens.set(resetToken, {
+        email: emailLower,
+        role: role,
+        expiresAt: expiresAt
+      });
+
+      // Get email settings
+      const emailSettings = await EmailSettingsModel.findOne({});
+      
+      if (emailSettings && emailSettings.emailUser && emailSettings.emailPassword) {
+        // Update transporter with saved settings
+        const transporter = nodemailer.createTransport({
+          service: emailSettings.emailService || 'gmail',
+          auth: {
+            user: emailSettings.emailUser,
+            pass: emailSettings.emailPassword,
+          },
+        });
+        setTransporter(transporter);
+
+        // Create reset link
+        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const resetLink = `${baseUrl}/reset-password?token=${resetToken}&role=${role}`;
+
+        // Send email
+        const mailOptions = {
+          from: emailSettings.emailUser,
+          to: emailLower,
+          subject: "Password Reset Request - Subscription Manager HK",
+          html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #333; border-bottom: 2px solid #5a31ea; padding-bottom: 10px;">
+    Password Reset Request
+  </h2>
+  <p>Dear ${userName || 'User'},</p>
+  <p>We received a request to reset your password for your ${role} account.</p>
+  <p>Click the button below to reset your password:</p>
+  <div style="text-align: center; margin: 30px 0;">
+    <a href="${resetLink}" style="background: #5a31ea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: 600;">
+      Reset Password
+    </a>
+  </div>
+  <p style="color: #666; font-size: 0.875rem;">Or copy and paste this link into your browser:</p>
+  <p style="color: #666; font-size: 0.875rem; word-break: break-all;">${resetLink}</p>
+  <p style="color: #666; font-size: 0.875rem; margin-top: 20px;">
+    <strong>This link will expire in 1 hour.</strong>
+  </p>
+  <p style="color: #666; font-size: 0.875rem;">
+    If you didn't request this password reset, please ignore this email. Your password will remain unchanged.
+  </p>
+  <p style="margin-top: 30px;">Best regards,<br><strong>Subscription Manager HK</strong></p>
+</div>`,
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`✓ Password reset email sent to ${emailLower}`);
+      } else {
+        console.warn(`⚠️ Email not configured. Cannot send password reset email to ${emailLower}`);
+        // Still return success for security, but log the issue
+      }
+    }
+
+    // Always return success message (security best practice)
+    return res.json({
+      success: true,
+      message: "If an account with that email exists, a password reset link has been sent to your email.",
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({ 
+      message: "Server error. Please try again later.",
+      success: false 
+    });
+  }
+});
+
+// POST /api/auth/reset-password - Reset password with token
+router.post("/auth/reset-password", async (req, res) => {
+  const { token, newPassword, role } = req.body ?? {};
+  
+  if (!token || !newPassword) {
+    return res.status(400).json({ 
+      message: "Token and new password are required",
+      success: false 
+    });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ 
+      message: "Password must be at least 6 characters long",
+      success: false 
+    });
+  }
+
+  try {
+    // Check if token exists and is valid
+    const tokenData = resetTokens.get(token);
+    
+    if (!tokenData) {
+      return res.status(400).json({ 
+        message: "Invalid or expired reset token",
+        success: false 
+      });
+    }
+
+    // Check if token expired
+    if (tokenData.expiresAt < Date.now()) {
+      resetTokens.delete(token);
+      return res.status(400).json({ 
+        message: "Reset token has expired. Please request a new one.",
+        success: false 
+      });
+    }
+
+    // Check if role matches
+    if (tokenData.role !== role) {
+      return res.status(400).json({ 
+        message: "Invalid reset token",
+        success: false 
+      });
+    }
+
+    await ensureConnection();
+    const emailLower = tokenData.email;
+
+    // Update password based on role
+    if (role === "admin" || role === "Admin") {
+      const admin = await AdminModel.findOne({ email: emailLower });
+      if (!admin) {
+        return res.status(404).json({ 
+          message: "Admin account not found",
+          success: false 
+        });
+      }
+      
+      admin.password = newPassword.trim();
+      await admin.save();
+      console.log(`✓ Password reset for admin: ${emailLower}`);
+    } else if (role === "member" || role === "Member") {
+      const escapedEmail = emailLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const member = await UserModel.findOne({ 
+        email: { $regex: `^${escapedEmail}$`, $options: 'i' }
+      });
+      
+      if (!member) {
+        return res.status(404).json({ 
+          message: "Member account not found",
+          success: false 
+        });
+      }
+      
+      member.password = newPassword.trim();
+      await member.save();
+      console.log(`✓ Password reset for member: ${emailLower}`);
+    } else {
+      return res.status(400).json({ 
+        message: "Invalid role specified",
+        success: false 
+      });
+    }
+
+    // Delete used token
+    resetTokens.delete(token);
+
+    return res.json({
+      success: true,
+      message: "Password has been reset successfully. You can now login with your new password.",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ 
+      message: "Server error. Please try again later.",
       success: false 
     });
   }

@@ -58,18 +58,90 @@ export function AdminPage() {
     loading,
   } = useApp();
 
+  // Get current admin role from sessionStorage and normalize legacy values
+  const rawAdminRole = sessionStorage.getItem('adminRole') || 'Viewer';
+  let currentAdminRole = rawAdminRole;
+  if (rawAdminRole === "Owner") {
+    currentAdminRole = "Admin";
+  } else if (rawAdminRole === "Finance Admin") {
+    currentAdminRole = "Finance";
+  }
+  const isAdmin = currentAdminRole === "Admin";
+  const isViewer = currentAdminRole === "Viewer";
+  const isFinanceRole = currentAdminRole === "Admin" || currentAdminRole === "Finance";
+
+  // Portal labelling based on role
+  const portalTitleByRole = {
+    Admin: "Admin Portal",
+    Finance: "Finance Portal",
+    Staff: "Staff Portal",
+    Viewer: "Viewer Portal",
+  };
+  const portalSubtitleByRole = {
+    Admin: "Full administration access",
+    Finance: "Finance operations and reporting",
+    Staff: "Member management and reporting",
+    Viewer: "Read-only access to view data",
+  };
+  const currentPortalTitle = portalTitleByRole[currentAdminRole] || "Admin Portal";
+  const currentPortalSubtitle = portalSubtitleByRole[currentAdminRole] || "Administration";
+
+  // Grouped navigation structure
+  const navigationGroups = [
+    {
+      id: "members",
+      label: "Members",
+      icon: "fa-users",
+      items: [
+        { id: "members", label: "Members List", roles: ["Admin", "Finance", "Staff", "Viewer"] },
+        { id: "member-detail", label: "Member Details", roles: ["Admin", "Finance", "Staff", "Viewer"] },
+        { id: "invoice-builder", label: "Subscriptions", roles: ["Admin", "Finance"] },
+      ]
+    },
+    {
+      id: "finance",
+      label: "Finance",
+      icon: "fa-dollar-sign",
+      items: [
+        { id: "invoices", label: "Invoices", roles: ["Admin", "Finance"] },
+        { id: "payments", label: "Payments", roles: ["Admin", "Finance"] },
+        { id: "donations", label: "Donations", roles: ["Admin", "Finance"] },
+      ]
+    },
+    {
+      id: "communication",
+      label: "Communication",
+      icon: "fa-comments",
+      items: [
+        { id: "automation", label: "Reminders", roles: ["Admin", "Finance"] },
+        { id: "communications", label: "Reminder Logs", roles: ["Admin", "Finance", "Staff", "Viewer"] },
+      ]
+    },
+    {
+      id: "reports",
+      label: "Reports",
+      icon: "fa-chart-bar",
+      items: [
+        { id: "reports", label: "Financial Reports", roles: ["Admin", "Finance", "Staff", "Viewer"] },
+        { id: "export-reports", label: "Export Reports", roles: ["Admin", "Finance"] },
+      ]
+    },
+    {
+      id: "settings",
+      label: "Settings",
+      icon: "fa-cog",
+      items: [
+        { id: "settings", label: "Users", roles: ["Admin"] },
+        { id: "roles", label: "Roles", roles: ["Admin"] },
+        { id: "org-settings", label: "Organization Settings", roles: ["Admin", "Finance"] },
+      ]
+    },
+  ];
+
+  // Flatten sections for URL routing compatibility
   const sections = [
     { id: "dashboard", label: "Dashboard" },
-    { id: "members", label: "Members" },
-    { id: "member-detail", label: "Member Detail" },
-    { id: "invoice-builder", label: "Invoice Builder" },
-    { id: "automation", label: "Reminders" },
-    { id: "communications", label: "Reminders Log" },
-    // { id: "payment-methods", label: "Payments" },
-    // { id: "payment-approvals", label: "Payment Approvals" },
-    { id: "donations", label: "Donations" },
-    { id: "reports", label: "Reports" },
-    { id: "settings", label: "Settings" },
+    ...navigationGroups.flatMap(group => group.items),
   ];
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -133,12 +205,21 @@ export function AdminPage() {
         }
         break;
 
-      case "nextDue":
-      case "lastPayment":
-        if (value && isNaN(new Date(value).getTime())) {
-          error = "Please select a valid date.";
+      case "nextDue": {
+        if (!value) {
+          error = "Start date is required.";
+        } else if (isNaN(new Date(value).getTime())) {
+          error = "Please select a valid start date.";
         }
         break;
+      }
+
+      case "lastPayment": {
+        if (value && isNaN(new Date(value).getTime())) {
+          error = "Please select a valid end date.";
+        }
+        break;
+      }
 
       default:
         break;
@@ -233,18 +314,43 @@ export function AdminPage() {
     notes: "",
   });
 
+  // Auto-generate invoice numbers like INV-2025-001 based on existing invoices
+  const generateInvoiceId = () => {
+    const year = new Date().getFullYear();
+    const prefix = `INV-${year}-`;
+    const existingIds = (invoices || [])
+      .map((inv) => inv.id)
+      .filter(Boolean)
+      .filter((id) => id.startsWith(prefix));
+
+    const maxSeq = existingIds.reduce((max, id) => {
+      const parts = id.split("-");
+      const seqStr = parts[2] || "";
+      const seqNum = parseInt(seqStr, 10);
+      if (isNaN(seqNum)) return max;
+      return Math.max(max, seqNum);
+    }, 0);
+
+    const nextSeq = String(maxSeq + 1).padStart(3, "0");
+    return `${prefix}${nextSeq}`;
+  };
+
+  const nextInvoiceId = useMemo(() => generateInvoiceId(), [invoices]);
+
   const [showDonationForm, setShowDonationForm] = useState(false);
   const [donationForm, setDonationForm] = useState({
     donorName: "",
     isMember: false,
     memberId: "",
     amount: "",
+    method: "",
+    date: "",
     notes: "",
   });
 
   const [orgForm, setOrgForm] = useState(organizationInfo);
   const [showAdminForm, setShowAdminForm] = useState(false);
-  const [adminForm, setAdminForm] = useState({ name: "", role: "Viewer", status: "Active" });
+  const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
   
   // Email template state
   const [emailTemplate, setEmailTemplate] = useState({
@@ -321,6 +427,16 @@ export function AdminPage() {
   const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
   const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
   const [memberSearchTerm, setMemberSearchTerm] = useState(""); // Search filter for members
+  const [memberStatusFilter, setMemberStatusFilter] = useState("All"); // Status filter for members
+  const [memberSortByOutstanding, setMemberSortByOutstanding] = useState("none"); // Sort by outstanding amount
+  const [memberNotes, setMemberNotes] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("memberNotes") || "{}");
+    } catch {
+      return {};
+    }
+  });
+  const [memberNoteDraft, setMemberNoteDraft] = useState("");
   const [invoiceMemberSearch, setInvoiceMemberSearch] = useState(""); // Search filter for invoice member select
   const [donationMemberSearch, setDonationMemberSearch] = useState(""); // Search filter for donation member select
   const [showMemberDropdown, setShowMemberDropdown] = useState(false); // Show/hide member dropdown
@@ -356,6 +472,8 @@ export function AdminPage() {
   const [donationsPageSize, setDonationsPageSize] = useState(10);
   const [remindersPage, setRemindersPage] = useState(1);
   const [remindersPageSize, setRemindersPageSize] = useState(10);
+  const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed
+  const [remindersChannelFilter, setRemindersChannelFilter] = useState("All"); // All, Email, WhatsApp
 
   const navigate = useNavigate();
 
@@ -592,6 +710,24 @@ export function AdminPage() {
     return calculateDashboardMetrics();
   }, [invoices, paymentHistory, members]);
 
+  // Dashboard last updated timestamp (changes when core data changes)
+  const dashboardLastUpdated = useMemo(() => {
+    return new Date().toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, [members, invoices, paymentHistory, payments]);
+
+  // Sync member note draft when selected member changes
+  useEffect(() => {
+    if (selectedMember) {
+      setMemberNoteDraft(memberNotes[selectedMember.id] || "");
+    }
+  }, [selectedMember, memberNotes]);
+
   // Calculate report stats based on date range from real database data
   const calculateReportStats = () => {
     const fromDate = new Date(dateRange.from);
@@ -768,6 +904,23 @@ export function AdminPage() {
       console.error('Error exporting CSV:', error);
       showToast("Failed to export CSV", "error");
     }
+  };
+
+  // Guarded export helpers (role-based)
+  const handleSecureExportCSV = () => {
+    if (!isFinanceRole) {
+      showToast("You are not authorized to export reports", "error");
+      return;
+    }
+    handleExportCSV();
+  };
+
+  const handleSecureExportPDF = () => {
+    if (!isFinanceRole) {
+      showToast("You are not authorized to export reports", "error");
+      return;
+    }
+    handleExportPDF();
   };
 
   // Export PDF function
@@ -1359,6 +1512,10 @@ export function AdminPage() {
 
   // Send reminder to all outstanding members
   const handleSendToAllOutstanding = async () => {
+    if (isViewer) {
+      showToast("You are not authorized to send bulk reminders", "error");
+      return;
+    }
     if (!emailSettings.emailUser || !emailSettings.emailPassword) {
       showToast('Please configure email credentials first', 'error');
       return;
@@ -1398,6 +1555,10 @@ export function AdminPage() {
 
   // Send WhatsApp reminder to all outstanding members
   const handleSendWhatsAppToAllOutstanding = async () => {
+    if (isViewer) {
+      showToast("You are not authorized to send bulk reminders", "error");
+      return;
+    }
     const outstandingMembers = members.filter(member => {
       // Check member balance field instead of invoices
       if (!member.balance || !member.phone) return false;
@@ -1711,16 +1872,24 @@ Subscription Manager HK`;
       return;
     }
 
+    const amountNum = parseFloat(invoiceForm.amount);
+    if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
+      showToast("Amount must be a positive number", "error");
+      return;
+    }
+
     const member = members.find((m) => m.id === invoiceForm.memberId);
     const newInvoice = {
+      id: generateInvoiceId(),
       memberId: invoiceForm.memberId,
       memberName: member?.name || "",
       period: invoiceForm.period,
-      amount: `$${invoiceForm.amount}`,
+      amount: `$${amountNum.toFixed(2)}`,
       status: "Unpaid",
       due: invoiceForm.due,
       method: "-",
       reference: "-",
+      notes: invoiceForm.notes || "",
     };
 
     addInvoice(newInvoice);
@@ -1840,7 +2009,19 @@ Subscription Manager HK`;
   };
 
   const handleDeleteInvoice = (id) => {
-    if (window.confirm("Are you sure you want to delete this invoice?")) {
+    const invoice = invoices.find((inv) => inv.id === id);
+    if (!invoice) {
+      showToast("Invoice not found", "error");
+      return;
+    }
+
+    // Prevent deletion after payment (Paid/Completed)
+    if (invoice.status === "Paid" || invoice.status === "Completed") {
+      showToast("Paid invoices cannot be deleted", "error");
+      return;
+    }
+
+    if (window.confirm("Are you sure you want to delete this invoice? This cannot be undone.")) {
       deleteInvoice(id);
       showToast("Invoice deleted successfully!");
     }
@@ -2169,21 +2350,43 @@ Subscription Manager HK`;
             className={`admin-menu ${isMobileMenuOpen ? "mobile-open" : ""}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="eyebrow light">Admin Portal</p>
-            <h3>Finance Operations</h3>
-            <nav>
-              {sections.map((section) => (
+            <p className="eyebrow light">{currentPortalTitle}</p>
+            <h3>{currentPortalSubtitle}</h3>
+            <nav className="admin-nav-grouped">
+              {/* Dashboard - Always visible */}
+              <div className="nav-group">
                 <button
-                  key={section.id}
-                  className={`admin-tab ${activeSection === section.id ? "active" : ""}`}
+                  className={`admin-tab ${activeSection === "dashboard" ? "active" : ""}`}
                   onClick={() => {
-                    console.log('Clicking section:', section.id, section.label);
-                    handleNavClick(section.id);
-                    setIsMobileMenuOpen(false); // Close menu on section click
+                    handleNavClick("dashboard");
+                    setIsMobileMenuOpen(false);
                   }}
                 >
-                  {section.label}
+                  <i className="fas fa-chart-line" style={{ marginRight: "8px" }}></i>
+                  Dashboard
                 </button>
+              </div>
+
+              {/* Grouped Navigation Items - show all items */}
+              {navigationGroups.map((group) => (
+                <div key={group.id} className="nav-group">
+                  <div className="nav-group-header">
+                    <i className={`fas ${group.icon}`} style={{ marginRight: "8px", fontSize: "0.875rem", color: "#666" }}></i>
+                    <span className="nav-group-label">{group.label}</span>
+                  </div>
+                  {group.items.map((item) => (
+                    <button
+                      key={item.id}
+                      className={`admin-tab admin-tab-nested ${activeSection === item.id ? "active" : ""}`}
+                      onClick={() => {
+                        handleNavClick(item.id);
+                        setIsMobileMenuOpen(false);
+                      }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               ))}
             </nav>
           </aside>
@@ -2198,26 +2401,97 @@ Subscription Manager HK`;
                 </header>
                 <div className="card dashboard-card">
                   <div className="kpi-grid">
-                    <div className="card kpi">
-                      <p><i className="fas fa-users" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Total Members</p>
-                      <h4>{members.length}</h4>
+                    {/* Total Members */}
+                    <button
+                      type="button"
+                      className="card kpi"
+                      style={{ textAlign: "left", cursor: "pointer" }}
+                      onClick={() => handleNavClick("members")}
+                    >
+                      <p>
+                        <i className="fas fa-users" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                        Total Members
+                      </p>
+                      <h4>{members.length.toLocaleString("en-US")}</h4>
                       <small>Active members</small>
-                    </div>
-                    <div className="card kpi">
-                      <p><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#10b981" }}></i>Total Collected</p>
-                      <h4>${dashboardMetrics.collectedMonth.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
-                      <small>${dashboardMetrics.collectedYear.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} YTD</small>
-                    </div>
-                    <div className="card kpi">
-                      <p><i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#f59e0b" }}></i>Total Outstanding</p>
-                      <h4>${dashboardMetrics.outstanding.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
-                      <small>Expected ${dashboardMetrics.expectedAnnual.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</small>
-                    </div>
-                    <div className="card kpi">
-                      <p><i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: "#ef4444" }}></i>Overdue Members</p>
-                      <h4>{dashboardMetrics.overdueMembers}</h4>
+                    </button>
+
+                    {/* Total Collected */}
+                    <button
+                      type="button"
+                      className="card kpi"
+                      style={{ textAlign: "left", cursor: "pointer" }}
+                      onClick={() => handleNavClick("payments")}
+                    >
+                      <p>
+                        <i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#10b981" }}></i>
+                        Total Collected
+                      </p>
+                      <h4>
+                        $
+                        {dashboardMetrics.collectedMonth.toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </h4>
+                      <small>
+                        $
+                        {dashboardMetrics.collectedYear.toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        YTD
+                      </small>
+                    </button>
+
+                    {/* Outstanding */}
+                    <button
+                      type="button"
+                      className="card kpi"
+                      style={{ textAlign: "left", cursor: "pointer" }}
+                      onClick={() => handleNavClick("members")}
+                    >
+                      <p>
+                        <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#f59e0b" }}></i>
+                        Total Outstanding
+                      </p>
+                      <h4 style={{ color: dashboardMetrics.outstanding > 0 ? "#f59e0b" : "#111827" }}>
+                        $
+                        {dashboardMetrics.outstanding.toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </h4>
+                      <small>
+                        Expected $
+                        {dashboardMetrics.expectedAnnual.toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </small>
+                    </button>
+
+                    {/* Overdue Members */}
+                    <button
+                      type="button"
+                      className="card kpi"
+                      style={{ textAlign: "left", cursor: "pointer" }}
+                      onClick={() => handleNavClick("members")}
+                    >
+                      <p>
+                        <i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                        Overdue Members
+                      </p>
+                      <h4 style={{ color: dashboardMetrics.overdueMembers > 0 ? "#ef4444" : "#111827" }}>
+                        {dashboardMetrics.overdueMembers.toLocaleString("en-US")}
+                      </h4>
                       <small>Requires attention</small>
-                    </div>
+                    </button>
+                  </div>
+
+                  {/* Last updated timestamp */}
+                  <div style={{ marginTop: "12px", fontSize: "0.75rem", color: "#6b7280" }}>
+                    Last updated: {dashboardLastUpdated}
                   </div>
 
                   <div className="card chart-card">
@@ -2418,20 +2692,79 @@ Subscription Manager HK`;
                   </div>
                 </header>
 
-                {/* Member Form */}
+                {/* Member Form - now as popup/modal */}
                 {showMemberForm && (
-                  <div className="card" style={{ marginBottom: "20px", background: "#f9fafb" }}>
-                    <h4 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <i className="fas fa-user-plus" aria-hidden="true"></i>
-                      {editingMember ? "Edit Member" : "Add New Member"}
-                    </h4>
-
-
-                    <form
-                      className="form-grid"
-                      onSubmit={editingMember ? handleUpdateMember : handleAddMember}
-                      noValidate
+                  <div
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: "rgba(0, 0, 0, 0.4)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 10000,
+                      padding: "20px",
+                    }}
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) {
+                        setShowMemberForm(false);
+                        setEditingMember(null);
+                      }
+                    }}
+                  >
+                    <div
+                      className="card"
+                      style={{
+                        maxWidth: "720px",
+                        width: "100%",
+                        maxHeight: "90vh",
+                        overflowY: "auto",
+                        background: "#f9fafb",
+                        position: "relative",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
                     >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "16px",
+                        }}
+                      >
+                        <h4
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            margin: 0,
+                          }}
+                        >
+                          <i className="fas fa-user-plus" aria-hidden="true"></i>
+                          {editingMember ? "Edit Member" : "Add New Member"}
+                        </h4>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => {
+                            setShowMemberForm(false);
+                            setEditingMember(null);
+                          }}
+                          style={{ fontSize: "1.2rem", lineHeight: 1 }}
+                          aria-label="Close add member form"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <form
+                        className="form-grid"
+                        onSubmit={editingMember ? handleUpdateMember : handleAddMember}
+                        noValidate
+                      >
                       <label className={memberErrors.name ? "field-error--wrapper" : ""}>
                         <span>
                           <i className="fas fa-user" aria-hidden="true" style={{ marginRight: 6 }}></i>
@@ -2548,7 +2881,7 @@ Subscription Manager HK`;
                       <label className={memberErrors.nextDue ? "field-error--wrapper" : ""}>
                         <span>
                           <i className="fas fa-calendar-day" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                        Next Due Date
+                          Start Date *
                         </span>
                         <input
                           type="date"
@@ -2570,7 +2903,7 @@ Subscription Manager HK`;
                       <label className={memberErrors.lastPayment ? "field-error--wrapper" : ""}>
                         <span>
                           <i className="fas fa-receipt" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                        Last Payment Date
+                          End Date (optional)
                         </span>
                         <input
                           type="date"
@@ -2590,7 +2923,14 @@ Subscription Manager HK`;
                       </label>
 
                       <div className="form-actions">
-                        <button type="button" className="ghost-btn" onClick={() => setShowMemberForm(false)}>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => {
+                            setShowMemberForm(false);
+                            setEditingMember(null);
+                          }}
+                        >
                           Cancel
                         </button>
                         <button
@@ -2606,6 +2946,7 @@ Subscription Manager HK`;
                         </button>
                       </div>
                     </form>
+                    </div>
                   </div>
                 )}
 
@@ -2744,104 +3085,225 @@ Subscription Manager HK`;
                   </div>
                 </div>
 
-                <div className="card">
-                  <div className="table-wrapper">
-                    {(() => {
-                      // Filter members based on search term
-                      const filteredMembers = members.filter(member => 
-                        !memberSearchTerm || 
-                        member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
-                      );
-                      
-                      // Calculate pagination
-                      const totalPages = Math.ceil(filteredMembers.length / membersPageSize) || 1;
-                      const currentPage = Math.min(membersPage, totalPages);
-                      const startIndex = (currentPage - 1) * membersPageSize;
-                      const endIndex = startIndex + membersPageSize;
-                      const paginatedMembers = filteredMembers.slice(startIndex, endIndex);
-                      
-                      return (
-                        <>
-                          <Table
-                            columns={[
-                              "ID",
-                              "Name",
-                              "Email",
-                              "WhatsApp",
-                              "Status",
-                              "Balance",
-                              "Actions",
-                            ]}
-                            rows={paginatedMembers.map((member) => ({
-                              ID: member.id,
-                              Name: member.name,
-                              Email: member.email,
-                              WhatsApp: member.phone,
-                              Status: {
-                                render: () => (
-                                  <span className={statusClass[member.status]}>
-                                    {member.status}
-                                  </span>
-                                ),
-                              },
-                              Balance: member.balance,
-                              Actions: {
-                                render: () => (
-                                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                                    {member.status === 'Pending' && (
-                                      <button
-                                        className="primary-btn"
-                                        style={{ padding: "6px 12px", fontSize: "0.85rem" }}
-                                        onClick={() => handleApproveMember(member.id)}
-                                      >
-                                        ✓ Approve
-                                      </button>
-                                    )}
-                                    <button
-                                      className="ghost-btn icon-btn icon-btn--view"
-                                      onClick={() => handleViewMemberDetail(member)}
-                                      title="View member"
-                                      aria-label="View member"
-                                    >
-                                      <i className="fas fa-eye" aria-hidden="true"></i>
-                                    </button>
-                                    <button
-                                      className="secondary-btn icon-btn icon-btn--edit"
-                                      onClick={() => handleEditMember(member)}
-                                      title="Edit member"
-                                      aria-label="Edit member"
-                                    >
-                                      <i className="fas fa-pen" aria-hidden="true"></i>
-                                    </button>
-                                    <button
-                                      className="ghost-btn icon-btn icon-btn--delete"
-                                      style={{ color: "#ef4444" }}
-                                      onClick={() => handleDeleteMember(member.id)}
-                                      title="Delete member"
-                                      aria-label="Delete member"
-                                    >
-                                      <i className="fas fa-trash" aria-hidden="true"></i>
-                                    </button>
-                                  </div>
-                                ),
-                              },
-                            }))}
-                          />
-                          {totalPages > 0 && filteredMembers.length > 0 && (
-                            <Pagination
-                              currentPage={currentPage}
-                              totalPages={totalPages}
-                              onPageChange={setMembersPage}
-                              pageSize={membersPageSize}
-                              onPageSizeChange={setMembersPageSize}
-                              totalItems={filteredMembers.length}
+                  <div className="card">
+                    <div className="table-wrapper">
+                      {(() => {
+                        // Filter members based on search term and status (using derived status)
+                        const filteredMembers = members
+                          .filter((member) =>
+                            !memberSearchTerm ||
+                            member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
+                          )
+                          .filter((member) => {
+                            if (memberStatusFilter === "All") return true;
+
+                            const balanceStr = member.balance?.toString() || "";
+                            const numericOutstanding = parseFloat(
+                              balanceStr.replace(/[^0-9.]/g, "") || 0
+                            ) || 0;
+
+                            const derivedStatus =
+                              member.status === "Inactive"
+                                ? "Inactive"
+                                : member.status === "Pending"
+                                ? "Pending"
+                                : balanceStr.toLowerCase().includes("overdue") || numericOutstanding > 0
+                                ? "Overdue"
+                                : "Active";
+
+                            return derivedStatus === memberStatusFilter;
+                          });
+
+                        // Sort by outstanding amount if requested
+                        const sortedMembers = [...filteredMembers].sort((a, b) => {
+                          if (memberSortByOutstanding === "none") return 0;
+
+                          const parseOutstanding = (balance) => {
+                            if (!balance) return 0;
+                            const str = balance.toString();
+                            const num = parseFloat(str.replace(/[^0-9.]/g, "") || 0);
+                            return isNaN(num) ? 0 : num;
+                          };
+
+                          const aVal = parseOutstanding(a.balance);
+                          const bVal = parseOutstanding(b.balance);
+
+                          if (memberSortByOutstanding === "asc") return aVal - bVal;
+                          if (memberSortByOutstanding === "desc") return bVal - aVal;
+                          return 0;
+                        });
+                        
+                        // Calculate pagination
+                        const totalPages = Math.ceil(sortedMembers.length / membersPageSize) || 1;
+                        const currentPage = Math.min(membersPage, totalPages);
+                        const startIndex = (currentPage - 1) * membersPageSize;
+                        const endIndex = startIndex + membersPageSize;
+                        const paginatedMembers = sortedMembers.slice(startIndex, endIndex);
+                        
+                        const isOwner = currentAdminRole === "Owner";
+
+                        return (
+                          <>
+                            {/* Filters above table */}
+                            <div style={{ marginBottom: "16px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                              <label style={{ fontSize: "0.875rem", color: "#666" }}>
+                                Status:&nbsp;
+                                <select
+                                  value={memberStatusFilter}
+                                  onChange={(e) => setMemberStatusFilter(e.target.value)}
+                                  style={{
+                                    padding: "8px 12px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #e5e7eb",
+                                    background: "#ffffff",
+                                    fontSize: "0.875rem",
+                                  }}
+                                >
+                                  <option value="All">All</option>
+                                  <option value="Active">Active</option>
+                                  <option value="Overdue">Overdue</option>
+                                  <option value="Inactive">Inactive</option>
+                                  <option value="Pending">Pending</option>
+                                </select>
+                              </label>
+                              <label style={{ fontSize: "0.875rem", color: "#666" }}>
+                                Sort by Outstanding:&nbsp;
+                                <select
+                                  value={memberSortByOutstanding}
+                                  onChange={(e) => setMemberSortByOutstanding(e.target.value)}
+                                  style={{
+                                    padding: "8px 12px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #e5e7eb",
+                                    background: "#ffffff",
+                                    fontSize: "0.875rem",
+                                  }}
+                                >
+                                  <option value="none">None</option>
+                                  <option value="asc">Lowest first</option>
+                                  <option value="desc">Highest first</option>
+                                </select>
+                              </label>
+                            </div>
+
+                            <Table
+                              columns={[
+                                "Member Name",
+                                "Status",
+                                "Outstanding",
+                                "Actions",
+                              ]}
+                              rows={paginatedMembers.map((member) => {
+                                // Derive outstanding numeric amount
+                                const balanceStr = member.balance?.toString() || "";
+                                const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0) || 0;
+
+                                // Derive status: Active / Overdue / Inactive / Pending
+                                const derivedStatus =
+                                  member.status === "Inactive"
+                                    ? "Inactive"
+                                    : member.status === "Pending"
+                                    ? "Pending"
+                                    : balanceStr.toLowerCase().includes("overdue") || numericOutstanding > 0
+                                    ? "Overdue"
+                                    : "Active";
+
+                                const statusBadgeClass =
+                                  derivedStatus === "Active"
+                                    ? "badge badge-active"
+                                    : derivedStatus === "Overdue"
+                                    ? "badge badge-overdue"
+                                    : derivedStatus === "Inactive"
+                                    ? "badge badge-inactive"
+                                    : "badge badge-pending";
+
+                                return {
+                                  "Member Name": member.name,
+                                  Status: {
+                                    render: () => (
+                                      <span className={statusBadgeClass}>
+                                        {derivedStatus}
+                                      </span>
+                                    ),
+                                  },
+                                  Outstanding: {
+                                    render: () => (
+                                      <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                        <span
+                                          style={{
+                                            color:
+                                              numericOutstanding > 0
+                                                ? derivedStatus === "Overdue"
+                                                  ? "#ef4444"
+                                                  : "#f59e0b"
+                                                : "#111827",
+                                            fontWeight: numericOutstanding > 0 ? 600 : 500,
+                                          }}
+                                        >
+                                          $
+                                          {numericOutstanding.toLocaleString("en-US", {
+                                            minimumFractionDigits: 2,
+                                            maximumFractionDigits: 2,
+                                          })}
+                                        </span>
+                                      </div>
+                                    ),
+                                  },
+                                  Actions: {
+                                    render: () => (
+                                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                        <button
+                                          className="ghost-btn icon-btn icon-btn--view"
+                                          onClick={() => handleViewMemberDetail(member)}
+                                          title="View member"
+                                          aria-label="View member"
+                                        >
+                                          <i className="fas fa-eye" aria-hidden="true"></i>
+                                        </button>
+                                        <button
+                                          className="secondary-btn icon-btn icon-btn--edit"
+                                          onClick={() => handleEditMember(member)}
+                                          title="Edit member"
+                                          aria-label="Edit member"
+                                        >
+                                          <i className="fas fa-pen" aria-hidden="true"></i>
+                                        </button>
+                                        {isOwner && (
+                                          <button
+                                            className="ghost-btn icon-btn icon-btn--delete"
+                                            style={{ color: "#ef4444" }}
+                                            onClick={() => {
+                                              if (window.confirm(`Delete member ${member.name}? This cannot be undone.`)) {
+                                                handleDeleteMember(member.id);
+                                              }
+                                            }}
+                                            title="Delete member"
+                                            aria-label="Delete member"
+                                          >
+                                            <i className="fas fa-trash" aria-hidden="true"></i>
+                                          </button>
+                                        )}
+                                      </div>
+                                    ),
+                                  },
+                                };
+                              })}
                             />
-                          )}
-                        </>
-                      );
-                    })()}
+                            {totalPages > 0 && sortedMembers.length > 0 && (
+                              <Pagination
+                                currentPage={currentPage}
+                                totalPages={totalPages}
+                                onPageChange={setMembersPage}
+                                pageSize={membersPageSize}
+                                onPageSizeChange={setMembersPageSize}
+                                totalItems={sortedMembers.length}
+                              />
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
-                </div>
               </article>
             )}
 
@@ -2870,29 +3332,33 @@ Subscription Manager HK`;
                       </div>
                     </div>
                     <div className="header-actions">
-                      <button
-                        className="secondary-btn"
-                        onClick={() => {
-                          setInvoiceForm({ ...invoiceForm, memberId: selectedMember.id });
-                          setActiveSection("invoice-builder");
-                        }}
-                      >
-                        Create Invoice
-                      </button>
-                      <button
-                        className="secondary-btn"
-                        onClick={() => handleSendWhatsAppReminder(selectedMember)}
-                        title="Send reminder via WhatsApp"
-                      >
-                        📱 WhatsApp
-                      </button>
-                      <button
-                        className="primary-btn"
-                        onClick={() => handleSendReminder(selectedMember)}
-                        title="Send reminder via Email"
-                      >
-                        📧 Email
-                      </button>
+                      {!isViewer && (
+                        <>
+                          <button
+                            className="secondary-btn"
+                            onClick={() => {
+                              setInvoiceForm({ ...invoiceForm, memberId: selectedMember.id });
+                              setActiveSection("invoice-builder");
+                            }}
+                          >
+                            Create Invoice
+                          </button>
+                          <button
+                            className="secondary-btn"
+                            onClick={() => handleSendWhatsAppReminder(selectedMember)}
+                            title="Send reminder via WhatsApp"
+                          >
+                            📱 WhatsApp
+                          </button>
+                          <button
+                            className="primary-btn"
+                            onClick={() => handleSendReminder(selectedMember)}
+                            title="Send reminder via Email"
+                          >
+                            📧 Email
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -2928,6 +3394,53 @@ Subscription Manager HK`;
                     </div>
                   </div>
 
+                  {/* Overdue warning */}
+                  {(() => {
+                    const memberInvoices = getMemberInvoices(selectedMember.id);
+                    const overdueInvoices = memberInvoices.filter(
+                      (inv) => getEffectiveInvoiceStatus(inv) === "Overdue"
+                    );
+                    const outstandingTotal = overdueInvoices.reduce((sum, inv) => {
+                      const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, "") || 0);
+                      return sum + amount;
+                    }, 0);
+
+                    if (overdueInvoices.length === 0 && outstandingTotal <= 0) return null;
+
+                    return (
+                      <div
+                        style={{
+                          marginTop: "16px",
+                          padding: "12px 16px",
+                          borderRadius: "8px",
+                          background:
+                            "linear-gradient(135deg, rgba(248, 113, 113, 0.1) 0%, rgba(239, 68, 68, 0.12) 100%)",
+                          border: "1px solid rgba(239, 68, 68, 0.4)",
+                          color: "#b91c1c",
+                          fontSize: "0.875rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <i className="fas fa-exclamation-triangle" aria-hidden="true"></i>
+                        <span>
+                          This member has{" "}
+                          <strong>{overdueInvoices.length} overdue invoice{overdueInvoices.length > 1 ? "s" : ""}</strong>{" "}
+                          totaling{" "}
+                          <strong>
+                            $
+                            {outstandingTotal.toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </strong>
+                          . Please follow up as soon as possible.
+                        </span>
+                      </div>
+                    );
+                  })()}
+
                   <div className="tabs">
                     <button
                       className={`tab ${activeTab === "Invoices" ? "active" : ""}`}
@@ -2946,6 +3459,18 @@ Subscription Manager HK`;
                       onClick={() => setActiveTab("Communication")}
                     >
                       Communication
+                    </button>
+                    <button
+                      className={`tab ${activeTab === "Activity" ? "active" : ""}`}
+                      onClick={() => setActiveTab("Activity")}
+                    >
+                      Activity
+                    </button>
+                    <button
+                      className={`tab ${activeTab === "Notes" ? "active" : ""}`}
+                      onClick={() => setActiveTab("Notes")}
+                    >
+                      Notes
                     </button>
                   </div>
 
@@ -3006,6 +3531,9 @@ Subscription Manager HK`;
                         rows={getMemberInvoices(selectedMember.id).map((invoice) => {
                           const effectiveStatus = getEffectiveInvoiceStatus(invoice);
                           const isUnpaid = effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
+                          const isPaid =
+                            effectiveStatus === "Paid" ||
+                            effectiveStatus === "Completed";
                           
                           return {
                           "Invoice #": invoice.id,
@@ -3062,7 +3590,7 @@ Subscription Manager HK`;
                           Actions: {
                             render: () => (
                                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                                  {isUnpaid && (
+                                  {isUnpaid && !isViewer && (
                                     <button
                                       className="primary-btn"
                                       style={{ 
@@ -3087,13 +3615,19 @@ Subscription Manager HK`;
                                       Pay
                                     </button>
                                 )}
-                                <button
-                                  className="ghost-btn"
-                                  style={{ padding: "4px 10px", fontSize: "0.85rem", color: "#ef4444" }}
-                                  onClick={() => handleDeleteInvoice(invoice.id)}
-                                >
-                                  Delete
-                                </button>
+                                  {!isPaid && !isViewer && (
+                                    <button
+                                      className="ghost-btn"
+                                      style={{ padding: "4px 10px", fontSize: "0.85rem", color: "#ef4444" }}
+                                      onClick={() => {
+                                        if (window.confirm(`Delete invoice ${invoice.id}? This cannot be undone.`)) {
+                                          handleDeleteInvoice(invoice.id);
+                                        }
+                                      }}
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
                               </div>
                             ),
                           },
@@ -3314,28 +3848,32 @@ Subscription Manager HK`;
 
                   {activeTab === "Communication" && (
                     <div className="tab-panel">
+                      <h4>Communication History</h4>
                       {(() => {
                         // Filter communication log for selected member
                         const memberCommunications = communicationLog
                           .filter((comm) =>
-                          comm.memberId === selectedMember.id || 
-                          comm.memberEmail === selectedMember.email || 
-                          comm.memberName === selectedMember.name ||
-                          comm.member === selectedMember.name
+                            comm.memberId === selectedMember.id ||
+                            (comm.memberEmail &&
+                              selectedMember.email &&
+                              comm.memberEmail.toLowerCase() === selectedMember.email.toLowerCase()) ||
+                            (comm.memberName &&
+                              selectedMember.name &&
+                              comm.memberName.toLowerCase() === selectedMember.name.toLowerCase())
                           )
                           .sort((a, b) => {
-                          // Sort by date, newest first
-                          const dateA = new Date(a.date || 0);
-                          const dateB = new Date(b.date || 0);
-                          return dateB - dateA;
-                        });
+                            // Sort by date, newest first
+                            const dateA = new Date(a.date || a.timestamp || 0);
+                            const dateB = new Date(b.date || b.timestamp || 0);
+                            return dateB - dateA;
+                          });
 
                         if (memberCommunications.length === 0) {
                           return (
                             <div
                               style={{
-                              textAlign: "center", 
-                              padding: "40px 20px",
+                                textAlign: "center",
+                                padding: "40px 20px",
                                 color: "#666",
                               }}
                             >
@@ -3382,23 +3920,171 @@ Subscription Manager HK`;
                               </span>
                             </div>
 
-                          <ul className="timeline">
-                            {memberCommunications.map((item, idx) => (
-                              <li key={idx}>
-                                <p>
+                            <ul className="timeline">
+                              {memberCommunications.map((item, idx) => (
+                                <li key={idx}>
+                                  <p>
                                     <strong>{item.channel || "N/A"}</strong>
                                     {item.type ? ` · ${item.type}` : ""}
-                                    {" · "}{item.message || "N/A"}{" · "}{item.date || "N/A"}
-                                </p>
-                                  <span className={statusClass[item.status] || "badge"}>
-                                    {item.status || "N/A"}
-                                  </span>
-                              </li>
-                            ))}
-                          </ul>
+                                    {" · "}
+                                    {item.message || "N/A"}
+                                    {" · "}
+                                    {item.date
+                                      ? new Date(item.date).toLocaleString()
+                                      : item.timestamp
+                                      ? new Date(item.timestamp).toLocaleString()
+                                      : "N/A"}
+                                  </p>
+                                  {item.status && (
+                                    <span className={statusClass[item.status] || "badge"}>
+                                      {item.status}
+                                    </span>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
                           </div>
                         );
                       })()}
+                    </div>
+                  )}
+
+                  {activeTab === "Activity" && (
+                    <div className="tab-panel">
+                      <h4>Activity Timeline</h4>
+                      {(() => {
+                        const memberInvoices = getMemberInvoices(selectedMember.id).map((inv) => {
+                          const status = getEffectiveInvoiceStatus(inv);
+                          const date = inv.createdAt || inv.date || inv.due || null;
+                          return {
+                            type: "Invoice",
+                            date: date ? new Date(date) : null,
+                            label: `Invoice ${inv.id || ""} · ${inv.period || ""} · ${
+                              inv.amount || ""
+                            } · ${status || "N/A"}`,
+                          };
+                        });
+
+                        const memberPayments = (paymentHistory || [])
+                          .filter(
+                            (payment) =>
+                              payment.memberId === selectedMember.id ||
+                              (payment.memberEmail &&
+                                selectedMember.email &&
+                                payment.memberEmail.toLowerCase() ===
+                                  selectedMember.email.toLowerCase()) ||
+                              (payment.member &&
+                                selectedMember.name &&
+                                payment.member.toLowerCase() ===
+                                  selectedMember.name.toLowerCase())
+                          )
+                          .map((p) => ({
+                            type: "Payment",
+                            date: p.date ? new Date(p.date) : null,
+                            label: `${p.method || "Payment"} · ${p.amount || ""} · ${
+                              p.status || ""
+                            }`,
+                          }));
+
+                        const memberComms = (communicationLog || [])
+                          .filter((item) => {
+                            const matchesEmail =
+                              item.memberEmail &&
+                              selectedMember.email &&
+                              item.memberEmail.toLowerCase() ===
+                                selectedMember.email.toLowerCase();
+                            const matchesName =
+                              item.memberName &&
+                              selectedMember.name &&
+                              item.memberName.toLowerCase() ===
+                                selectedMember.name.toLowerCase();
+                            return matchesEmail || matchesName;
+                          })
+                          .map((c) => ({
+                            type: c.type || c.channel || "Communication",
+                            date: c.date ? new Date(c.date) : c.timestamp ? new Date(c.timestamp) : null,
+                            label: c.message || "Communication sent",
+                          }));
+
+                        const allEvents = [...memberInvoices, ...memberPayments, ...memberComms]
+                          .filter((e) => e.date)
+                          .sort((a, b) => b.date - a.date);
+
+                        if (allEvents.length === 0) {
+                          return (
+                            <div
+                              style={{
+                                textAlign: "center",
+                                padding: "40px 20px",
+                                color: "#666",
+                              }}
+                            >
+                              <p style={{ margin: 0, fontSize: "1rem" }}>
+                                No activity recorded for this member yet.
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="payment-history-list">
+                            {allEvents.map((event, index) => (
+                              <div key={index} className="payment-history-card">
+                                <div className="payment-card-header">
+                                  <div className="payment-card-main">
+                                    <span className="payment-amount">{event.type}</span>
+                                    <span className="payment-meta">
+                                      {event.date?.toLocaleString()}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="payment-card-body">
+                                  <p style={{ margin: 0, fontSize: "0.9rem", color: "#4b5563" }}>
+                                    {event.label}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {activeTab === "Notes" && (
+                    <div className="tab-panel">
+                      <h4>Internal Notes</h4>
+                      <p style={{ fontSize: "0.875rem", color: "#6b7280", marginBottom: "12px" }}>
+                        These notes are <strong>internal only</strong> and are not visible to members.
+                      </p>
+                      <textarea
+                        value={memberNoteDraft}
+                        onChange={(e) => setMemberNoteDraft(e.target.value)}
+                        rows={5}
+                        className="settings-form__input"
+                        placeholder="Add any internal notes about this member (e.g., context, special arrangements, follow-up actions)..."
+                        disabled={isViewer}
+                      />
+                      {!isViewer && (
+                        <div style={{ marginTop: "12px", textAlign: "right" }}>
+                          <button
+                            className="primary-btn"
+                            onClick={() => {
+                              const updated = { ...memberNotes, [selectedMember.id]: memberNoteDraft };
+                              setMemberNotes(updated);
+                              localStorage.setItem("memberNotes", JSON.stringify(updated));
+                              showToast("Internal note saved");
+                            }}
+                          >
+                            Save Note
+                          </button>
+                        </div>
+                      )}
+                      {isViewer && (
+                        <p style={{ marginTop: "8px", fontSize: "0.8rem", color: "#6b7280" }}>
+                          You have read-only access. Contact an Owner or Admin to update notes.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3529,6 +4215,20 @@ Subscription Manager HK`;
                 )}
                 
                 <form className="card form-grid" onSubmit={handleAddInvoice} style={{ padding: "40px", background: "linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
+                  <label style={{ marginBottom: "24px" }}>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}>
+                      <i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                      Invoice Number
+                    </span>
+                    <input
+                      type="text"
+                      value={nextInvoiceId}
+                      readOnly
+                      className="mono-input"
+                      style={{ color: "#6b7280", background: "#f3f4f6", cursor: "not-allowed" }}
+                    />
+                  </label>
+
                   <label style={{ marginBottom: "24px" }}>
                     <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member *</span>
                     <div style={{ position: "relative" }} data-member-dropdown>
@@ -3842,6 +4542,62 @@ Subscription Manager HK`;
                     ></textarea>
                   </label>
 
+                  {/* Live invoice preview */}
+                  <div
+                    style={{
+                      marginBottom: "16px",
+                      padding: "16px 18px",
+                      borderRadius: "10px",
+                      background: "#f9fafb",
+                      border: "1px solid #e5e7eb",
+                      fontSize: "0.875rem",
+                      color: "#4b5563",
+                    }}
+                  >
+                    <h4 style={{ margin: "0 0 8px 0", fontSize: "0.95rem", color: "#111827" }}>
+                      Invoice Preview
+                    </h4>
+                    <p style={{ margin: "4px 0" }}>
+                      <strong>Invoice #:</strong> {nextInvoiceId}
+                    </p>
+                    <p style={{ margin: "4px 0" }}>
+                      <strong>Member:</strong>{" "}
+                      {invoiceForm.memberId
+                        ? (() => {
+                            const selected = members.find((m) => m.id === invoiceForm.memberId);
+                            return selected ? `${selected.name} (${selected.id})` : "Not selected";
+                          })()
+                        : "Not selected"}
+                    </p>
+                    <p style={{ margin: "4px 0" }}>
+                      <strong>Period:</strong> {invoiceForm.period || "N/A"}
+                    </p>
+                    <p style={{ margin: "4px 0" }}>
+                      <strong>Amount:</strong>{" "}
+                      {invoiceForm.amount
+                        ? `$${Number(invoiceForm.amount || 0).toFixed(2)}`
+                        : "$0.00"}
+                    </p>
+                    <p style={{ margin: "4px 0" }}>
+                      <strong>Due Date:</strong>{" "}
+                      {invoiceForm.due
+                        ? new Date(invoiceForm.due).toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })
+                        : "N/A"}
+                    </p>
+                    <p style={{ margin: "4px 0" }}>
+                      <strong>Status:</strong> Unpaid
+                    </p>
+                    {invoiceForm.notes && (
+                      <p style={{ margin: "4px 0" }}>
+                        <strong>Notes:</strong> {invoiceForm.notes}
+                      </p>
+                    )}
+                  </div>
+
                   <div className="form-actions" style={{ marginTop: "8px", gap: "12px" }}>
                     <button type="submit" className="primary-btn" style={{ padding: "14px 28px", fontSize: "1rem", fontWeight: "600" }}>
                       <i className="fas fa-file-invoice" style={{ marginRight: "8px" }}></i>Create Invoice
@@ -3862,16 +4618,24 @@ Subscription Manager HK`;
                           return;
                         }
 
+                        const amountNum = parseFloat(invoiceForm.amount);
+                        if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
+                          showToast("Amount must be a positive number", "error");
+                          return;
+                        }
+
                         // Create the invoice object from form data
                         const newInvoice = {
+                          id: generateInvoiceId(),
                           memberId: invoiceForm.memberId,
                           memberName: member?.name || "",
                           period: invoiceForm.period,
-                          amount: `$${invoiceForm.amount}`,
+                          amount: `$${amountNum.toFixed(2)}`,
                           status: "Unpaid",
                           due: invoiceForm.due,
                           method: "-",
                           reference: "-",
+                          notes: invoiceForm.notes || "",
                         };
 
                         // Add invoice to state
@@ -4848,7 +5612,9 @@ Subscription Manager HK`;
                               year: "numeric",
                             })
                           : "N/A",
-                        status: "Delivered"
+                        status: log.status === "failed" ? "Failed" : "Delivered",
+                        rawDate: log.sentAt || null,
+                        raw: log,
                       };
                     });
 
@@ -4861,10 +5627,31 @@ Subscription Manager HK`;
                         type: c.type || "Manual Outstanding Reminder",
                         message: c.message,
                         date: c.date,
-                        status: c.status || "Delivered"
+                        status: c.status || "Delivered",
+                        rawDate: c.timestamp || null,
+                        raw: c,
                       }));
 
-                    const allItems = [...emailItems, ...whatsappItems];
+                    let allItems = [...emailItems, ...whatsappItems];
+
+                    // Apply filters
+                    allItems = allItems.filter((item) => {
+                      const statusOk =
+                        remindersStatusFilter === "All" ||
+                        (remindersStatusFilter === "Delivered" && item.status === "Delivered") ||
+                        (remindersStatusFilter === "Failed" && item.status === "Failed");
+                      const channelOk =
+                        remindersChannelFilter === "All" ||
+                        item.channel === remindersChannelFilter;
+                      return statusOk && channelOk;
+                    });
+
+                    // Sort newest first by rawDate when available
+                    allItems.sort((a, b) => {
+                      const dateA = a.rawDate ? new Date(a.rawDate).getTime() : 0;
+                      const dateB = b.rawDate ? new Date(b.rawDate).getTime() : 0;
+                      return dateB - dateA;
+                    });
 
                     const total = allItems.length;
                     const emailCount = emailItems.length;
@@ -4905,43 +5692,166 @@ Subscription Manager HK`;
                           const end = start + pageSize;
                           const pageItems = allItems.slice(start, end);
 
-                          return (
-                            <>
-                              <div style={{ overflowX: "auto" }}>
-                                <table className="table">
-                                  <thead>
-                                    <tr>
-                                      <th>Member</th>
-                                      <th>Channel</th>
-                                      <th>Type</th>
-                                      <th>Message</th>
-                                      <th>Date</th>
-                                      <th>Status</th>
+                        return (
+                          <>
+                            {/* Filters */}
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: "12px",
+                                marginBottom: "12px",
+                                alignItems: "center",
+                              }}
+                            >
+                              <label style={{ fontSize: "0.875rem", color: "#555" }}>
+                                Status:&nbsp;
+                                <select
+                                  value={remindersStatusFilter}
+                                  onChange={(e) => {
+                                    setRemindersStatusFilter(e.target.value);
+                                    setRemindersPage(1);
+                                  }}
+                                  style={{
+                                    padding: "6px 10px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #e5e7eb",
+                                    fontSize: "0.85rem",
+                                  }}
+                                >
+                                  <option value="All">All</option>
+                                  <option value="Delivered">Delivered</option>
+                                  <option value="Failed">Failed</option>
+                                </select>
+                              </label>
+                              <label style={{ fontSize: "0.875rem", color: "#555" }}>
+                                Channel:&nbsp;
+                                <select
+                                  value={remindersChannelFilter}
+                                  onChange={(e) => {
+                                    setRemindersChannelFilter(e.target.value);
+                                    setRemindersPage(1);
+                                  }}
+                                  style={{
+                                    padding: "6px 10px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #e5e7eb",
+                                    fontSize: "0.85rem",
+                                  }}
+                                >
+                                  <option value="All">All</option>
+                                  <option value="Email">Email</option>
+                                  <option value="WhatsApp">WhatsApp</option>
+                                </select>
+                              </label>
+                            </div>
+
+                            <div style={{ overflowX: "auto" }}>
+                              <table className="table">
+                                <thead>
+                                  <tr>
+                                    <th>Member</th>
+                                    <th>Channel</th>
+                                    <th>Type</th>
+                                    <th>Message</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {pageItems.map((item, idx) => (
+                                    <tr key={`${item.memberId || item.memberName || "row"}-${start + idx}`}>
+                                      <td>
+                                        {item.memberName || item.member || "N/A"}
+                                        {item.memberId ? ` (${item.memberId})` : ""}
+                                      </td>
+                                      <td>{item.channel || "N/A"}</td>
+                                      <td>{item.type || "-"}</td>
+                                      <td style={{ maxWidth: "320px", whiteSpace: "normal" }}>
+                                        {item.message || "N/A"}
+                                      </td>
+                                      <td>{item.date || "N/A"}</td>
+                                      <td>
+                                        <span className={statusClass[item.status] || "badge"}>
+                                          {item.status || "N/A"}
+                                        </span>
+                                      </td>
+                                      <td>
+                                        <div style={{ display: "flex", gap: "6px" }}>
+                                          {/* View full message in alert-style preview */}
+                                          <button
+                                            type="button"
+                                            className="icon-btn icon-btn--view"
+                                            title="View full message"
+                                            aria-label="View full message"
+                                            onClick={() => {
+                                              const fullText = [
+                                                `Member: ${item.memberName || "N/A"}`,
+                                                `Channel: ${item.channel || "N/A"}`,
+                                                `Type: ${item.type || "-"}`,
+                                                `Date: ${item.date || "N/A"}`,
+                                                "",
+                                                "Message:",
+                                                item.message || "N/A",
+                                              ].join("\n");
+                                              window.alert(fullText);
+                                            }}
+                                          >
+                                            <i className="fas fa-eye" aria-hidden="true"></i>
+                                          </button>
+                                          {/* Retry failed email reminders */}
+                                          {item.channel === "Email" && item.status === "Failed" && !isViewer && (
+                                            <button
+                                              type="button"
+                                              className="icon-btn icon-btn--edit"
+                                              title="Retry sending"
+                                              aria-label="Retry sending reminder"
+                                              onClick={async () => {
+                                                try {
+                                                  // Only backend-stored reminder logs have raw.id or raw._id
+                                                  const raw = item.raw;
+                                                  const reminderId = raw?._id || raw?.id;
+                                                  const apiUrl = import.meta.env.DEV
+                                                    ? ""
+                                                    : import.meta.env.VITE_API_URL || "";
+                                                  const res = await fetch(
+                                                    `${apiUrl}/api/reminders/retry`,
+                                                    {
+                                                      method: "POST",
+                                                      headers: { "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ reminderId }),
+                                                    }
+                                                  );
+                                                  const data = await res.json();
+                                                  if (res.ok) {
+                                                    showToast(data.message || "Reminder retry queued");
+                                                    // Refresh logs
+                                                    if (typeof fetchReminderLogs === "function") {
+                                                      fetchReminderLogs();
+                                                    }
+                                                  } else {
+                                                    showToast(
+                                                      data.error || "Failed to retry reminder",
+                                                      "error"
+                                                    );
+                                                  }
+                                                } catch (error) {
+                                                  console.error("Retry reminder failed", error);
+                                                  showToast("Failed to retry reminder", "error");
+                                                }
+                                              }}
+                                            >
+                                              <i className="fas fa-redo" aria-hidden="true"></i>
+                                            </button>
+                                          )}
+                                        </div>
+                                      </td>
                                     </tr>
-                                  </thead>
-                                  <tbody>
-                                    {pageItems.map((item, idx) => (
-                                      <tr key={`${item.memberId || item.memberName || "row"}-${start + idx}`}>
-                                        <td>
-                                          {item.memberName || item.member || "N/A"}
-                                          {item.memberId ? ` (${item.memberId})` : ""}
-                                        </td>
-                                        <td>{item.channel || "N/A"}</td>
-                                        <td>{item.type || "-"}</td>
-                                        <td style={{ maxWidth: "320px", whiteSpace: "normal" }}>
-                                          {item.message || "N/A"}
-                                        </td>
-                                        <td>{item.date || "N/A"}</td>
-                                        <td>
-                                          <span className={statusClass[item.status] || "badge"}>
-                                            {item.status || "N/A"}
-                                          </span>
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
 
                               {/* Pagination controls */}
                               <div
@@ -6015,6 +6925,441 @@ Subscription Manager HK`;
               </article>
             )}
 
+            {/* INVOICES */}
+            {activeSection === "invoices" && (
+              <article className="screen-card" id="invoices">
+                <header className="screen-card__header">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
+                    <div>
+                      <h3><i className="fas fa-file-invoice" style={{ marginRight: "10px" }}></i>Invoices</h3>
+                      <p>View and manage all invoices.</p>
+                    </div>
+                    <button
+                      className="primary-btn"
+                      onClick={() => {
+                        handleNavClick("invoice-builder");
+                        showToast("Redirecting to Invoice Builder...");
+                      }}
+                    >
+                      <i className="fas fa-plus" style={{ marginRight: "8px" }}></i>Create Invoice
+                    </button>
+                  </div>
+                </header>
+                <div className="card">
+                  <div className="table-wrapper">
+                    <Table
+                      columns={["Invoice ID", "Member", "Period", "Amount", "Due Date", "Status", "Actions"]}
+                      rows={invoices.map((invoice) => ({
+                        "Invoice ID": invoice.id || invoice.invoiceId || "N/A",
+                        Member: invoice.memberName || invoice.member || "Unknown",
+                        Period: invoice.period || "N/A",
+                        Amount: invoice.amount || "$0",
+                        "Due Date": invoice.due ? new Date(invoice.due).toLocaleDateString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric'
+                        }) : "N/A",
+                        Status: {
+                          render: () => (
+                            <span className={
+                              invoice.status === "Paid" ? "badge badge-paid" :
+                              invoice.status === "Overdue" ? "badge badge-overdue" :
+                              invoice.status === "Pending" ? "badge badge-pending" :
+                              "badge badge-unpaid"
+                            }>
+                              {invoice.status || "Unpaid"}
+                            </span>
+                          )
+                        },
+                        Actions: {
+                          render: () => (
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              <button
+                                className="ghost-btn icon-btn icon-btn--edit"
+                                onClick={() => {
+                                  const member = members.find(m => 
+                                    m.id === invoice.memberId || 
+                                    m.email === invoice.memberEmail ||
+                                    m.name === invoice.memberName
+                                  );
+                                  if (member) {
+                                    handleViewMemberDetail(member);
+                                    setActiveSection("member-detail");
+                                    setActiveTab("Invoices");
+                                  }
+                                }}
+                                title="View Invoice Details"
+                              >
+                                <i className="fas fa-eye" aria-hidden="true"></i>
+                              </button>
+                              <button
+                                className="ghost-btn icon-btn icon-btn--delete"
+                                style={{ color: "#ef4444" }}
+                                onClick={() => {
+                                  if (invoice.id || invoice._id) {
+                                    handleDeleteInvoice(invoice.id || invoice._id);
+                                  }
+                                }}
+                                title="Delete Invoice"
+                              >
+                                <i className="fas fa-trash" aria-hidden="true"></i>
+                              </button>
+                            </div>
+                          )
+                        },
+                      }))}
+                    />
+                  </div>
+                </div>
+              </article>
+            )}
+
+            {/* PAYMENTS */}
+            {activeSection === "payments" && (
+              <article className="screen-card" id="payments">
+                <header className="screen-card__header">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
+                    <div>
+                      <h3><i className="fas fa-credit-card" style={{ marginRight: "10px" }}></i>Payments</h3>
+                      <p>View and manage all payment transactions.</p>
+                    </div>
+                    <button
+                      className="secondary-btn"
+                      onClick={() => {
+                        setShowPaymentForm(true);
+                        setEditingPayment(null);
+                        setPaymentForm({
+                          memberId: "",
+                          member: "",
+                          invoiceId: "",
+                          amount: "",
+                          method: "",
+                          reference: "",
+                          date: new Date().toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric"
+                          }),
+                          status: "Pending",
+                          screenshot: "",
+                          notes: "",
+                        });
+                      }}
+                    >
+                      <i className="fas fa-plus" style={{ marginRight: "8px" }}></i>Add Payment
+                    </button>
+                  </div>
+                </header>
+
+                {/* Payment Form */}
+                {showPaymentForm && (
+                  <div className="card" style={{ marginBottom: "20px", background: "#f9fafb" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                      <h4>{editingPayment ? "Edit Payment" : "Add New Payment"}</h4>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => {
+                          setShowPaymentForm(false);
+                          setEditingPayment(null);
+                          setPaymentForm({
+                            memberId: "",
+                            member: "",
+                            invoiceId: "",
+                            amount: "",
+                            method: "",
+                            reference: "",
+                            date: new Date().toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric"
+                            }),
+                            status: "Pending",
+                            screenshot: "",
+                            notes: "",
+                          });
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <form className="form-grid" onSubmit={editingPayment ? handleUpdatePayment : handleAddPayment}>
+                      <label>
+                        Member *
+                        <select
+                          value={paymentForm.memberId}
+                          onChange={(e) => {
+                            const selectedMember = members.find(m => m.id === e.target.value);
+                            setPaymentForm({
+                              ...paymentForm,
+                              memberId: e.target.value,
+                              member: selectedMember ? selectedMember.name : "",
+                            });
+                          }}
+                          required
+                        >
+                          <option value="">Select Member</option>
+                          {members.map(member => (
+                            <option key={member.id} value={member.id}>
+                              {member.name} ({member.id})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Invoice ID
+                        <input
+                          type="text"
+                          value={paymentForm.invoiceId}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, invoiceId: e.target.value })}
+                          placeholder="INV-2025-001"
+                        />
+                      </label>
+                      <label>
+                        Amount *
+                        <input
+                          type="text"
+                          value={paymentForm.amount}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                          placeholder="$50"
+                          required
+                        />
+                      </label>
+                      <label>
+                        Payment Method *
+                        <select
+                          value={paymentForm.method}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })}
+                          required
+                        >
+                          <option value="">Select Method</option>
+                          <option value="Bank Transfer">Bank Transfer</option>
+                          <option value="FPS">FPS</option>
+                          <option value="PayMe">PayMe</option>
+                          <option value="Alipay">Alipay</option>
+                          <option value="Credit Card">Credit Card</option>
+                          <option value="Cash">Cash</option>
+                        </select>
+                      </label>
+                      <label>
+                        Reference Number
+                        <input
+                          type="text"
+                          value={paymentForm.reference}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
+                          placeholder="Transaction reference"
+                        />
+                      </label>
+                      <label>
+                        Date
+                        <input
+                          type="text"
+                          value={paymentForm.date}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                          placeholder="01 Jan 2025"
+                        />
+                      </label>
+                      <label>
+                        Status *
+                        <select
+                          value={paymentForm.status}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, status: e.target.value })}
+                          required
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="Completed">Completed</option>
+                          <option value="Rejected">Rejected</option>
+                        </select>
+                      </label>
+                      <label>
+                        Screenshot URL
+                        <input
+                          type="text"
+                          value={paymentForm.screenshot}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, screenshot: e.target.value })}
+                          placeholder="https://..."
+                        />
+                      </label>
+                      <label style={{ gridColumn: "1 / -1" }}>
+                        Notes
+                        <textarea
+                          value={paymentForm.notes}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                          rows={3}
+                          placeholder="Additional notes..."
+                        />
+                      </label>
+                      <div className="form-actions" style={{ gridColumn: "1 / -1" }}>
+                        <button type="button" className="ghost-btn" onClick={() => {
+                          setShowPaymentForm(false);
+                          setEditingPayment(null);
+                          setPaymentForm({
+                            memberId: "",
+                            member: "",
+                            invoiceId: "",
+                            amount: "",
+                            method: "",
+                            reference: "",
+                            date: new Date().toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric"
+                            }),
+                            status: "Pending",
+                            screenshot: "",
+                            notes: "",
+                          });
+                        }}>
+                          Cancel
+                        </button>
+                        <button type="submit" className="primary-btn">
+                          {editingPayment ? "Update" : "Add"} Payment
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                <div className="card">
+                  <div style={{ padding: "24px" }}>
+                    {/* Payment Status Filter */}
+                    <div style={{ marginBottom: "20px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                      <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
+                      <select
+                        value={paymentStatusFilter}
+                        onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                        style={{
+                          padding: "8px 12px",
+                          borderRadius: "6px",
+                          border: "1px solid #e5e7eb",
+                          background: "#ffffff",
+                          fontSize: "0.875rem",
+                        }}
+                      >
+                        <option value="All">All</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Completed">Completed</option>
+                        <option value="Paid">Paid</option>
+                        <option value="Rejected">Rejected</option>
+                      </select>
+                    </div>
+
+                    {(() => {
+                      const filteredPayments = (payments || [])
+                        .filter(payment => {
+                          if (paymentStatusFilter === "All") return true;
+                          return payment.status === paymentStatusFilter;
+                        })
+                        .sort((a, b) => {
+                          // Sort by date, pending first
+                          if (a.status === 'Pending' && b.status !== 'Pending') return -1;
+                          if (a.status !== 'Pending' && b.status === 'Pending') return 1;
+                          const dateA = a.createdAt ? new Date(a.createdAt) : new Date(a.date || 0);
+                          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.date || 0);
+                          return dateB - dateA;
+                        });
+                      
+                      // Calculate pagination
+                      const totalPages = Math.ceil(filteredPayments.length / paymentsPageSize) || 1;
+                      const currentPage = Math.min(paymentsPage, totalPages);
+                      const startIndex = (currentPage - 1) * paymentsPageSize;
+                      const endIndex = startIndex + paymentsPageSize;
+                      const paginatedPayments = filteredPayments.slice(startIndex, endIndex);
+                      
+                      return (
+                        <>
+                          <Table
+                            columns={[
+                              "Date",
+                              "Member",
+                              "Invoice ID",
+                              "Amount",
+                              "Method",
+                              "Screenshot",
+                              "Status",
+                              "Actions",
+                            ]}
+                            rows={paginatedPayments.map((payment) => {
+                              const paymentId = payment._id || payment.id;
+                              const paymentIdString = paymentId?.toString ? paymentId.toString() : paymentId;
+                              
+                              return {
+                                Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric'
+                                }) : "N/A"),
+                                Member: payment.member || "Unknown",
+                                "Invoice ID": payment.invoiceId || "N/A",
+                                Amount: payment.amount || "$0",
+                                Method: getPaymentMethodDisplay(payment),
+                                Screenshot: {
+                                  render: () => payment.screenshot ? (
+                                    <a 
+                                      href={payment.screenshot} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      style={{ color: "#5a31ea", textDecoration: "none" }}
+                                    >
+                                      <i className="fas fa-image" style={{ marginRight: "4px" }}></i>View
+                                    </a>
+                                  ) : "N/A"
+                                },
+                                Status: {
+                                  render: () => (
+                                    <span className={
+                                      payment.status === "Paid" || payment.status === "Completed" ? "badge badge-paid" :
+                                      payment.status === "Pending" ? "badge badge-pending" :
+                                      payment.status === "Rejected" ? "badge badge-overdue" :
+                                      "badge badge-active"
+                                    }>
+                                      {payment.status}
+                                    </span>
+                                  )
+                                },
+                                Actions: {
+                                  render: () => (
+                                    <div style={{ display: "flex", gap: "8px" }}>
+                                      <button
+                                        className="ghost-btn icon-btn icon-btn--edit"
+                                        onClick={() => handleEditPayment(payment)}
+                                        title="Edit Payment"
+                                      >
+                                        <i className="fas fa-pen" aria-hidden="true"></i>
+                                      </button>
+                                      <button
+                                        className="ghost-btn icon-btn icon-btn--delete"
+                                        style={{ color: "#ef4444" }}
+                                        onClick={() => {
+                                          if (paymentIdString) handleDeletePayment(paymentIdString);
+                                        }}
+                                        title="Delete Payment"
+                                      >
+                                        <i className="fas fa-trash" aria-hidden="true"></i>
+                                      </button>
+                                    </div>
+                                  )
+                                },
+                              };
+                            })}
+                          />
+                          {totalPages > 0 && filteredPayments.length > 0 && (
+                            <Pagination
+                              currentPage={currentPage}
+                              totalPages={totalPages}
+                              onPageChange={setPaymentsPage}
+                              pageSize={paymentsPageSize}
+                              onPageSizeChange={setPaymentsPageSize}
+                              totalItems={filteredPayments.length}
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </article>
+            )}
+
             {/* DONATIONS */}
             {activeSection === "donations" && (
               <article className="screen-card" id="donations" style={{ minHeight: "400px" }}>
@@ -6058,11 +7403,32 @@ Subscription Manager HK`;
                       onSubmit={async (e) => {
                         e.preventDefault();
                         try {
-                          if (!donationForm.donorName || !donationForm.amount) {
-                            showToast("Please fill all required fields", "error");
+                          if (!donationForm.donorName) {
+                            showToast("Donor name is required", "error");
                             return;
                           }
-                          await addDonation(donationForm);
+                          if (!donationForm.amount) {
+                            showToast("Amount is required", "error");
+                            return;
+                          }
+                          const amountNum = parseFloat(donationForm.amount);
+                          if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
+                            showToast("Amount must be a positive number", "error");
+                            return;
+                          }
+                          if (!donationForm.method) {
+                            showToast("Payment method is required", "error");
+                            return;
+                          }
+                          if (!donationForm.date) {
+                            showToast("Date is required", "error");
+                            return;
+                          }
+
+                          await addDonation({
+                            ...donationForm,
+                            amount: amountNum.toFixed(2),
+                          });
                           showToast("Donation added successfully!");
                           setShowDonationForm(false);
                           setDonationForm({
@@ -6070,6 +7436,8 @@ Subscription Manager HK`;
                             isMember: false,
                             memberId: "",
                             amount: "",
+                            method: "",
+                            date: "",
                             notes: "",
                           });
                           setDonationMemberSearch("");
@@ -6109,7 +7477,7 @@ Subscription Manager HK`;
                             pattern="[0-9]*"
                             value={donationForm.amount}
                             onChange={(e) => {
-                              const value = e.target.value.replace(/\D/g, "");
+                              const value = e.target.value.replace(/[^0-9.]/g, "");
                               setDonationForm({ ...donationForm, amount: value });
                             }}
                             placeholder="100"
@@ -6410,6 +7778,33 @@ Subscription Manager HK`;
                         </div>
                       )}
                       <label>
+                        Payment Method *
+                        <select
+                          value={donationForm.method}
+                          onChange={(e) => setDonationForm({ ...donationForm, method: e.target.value })}
+                          required
+                        >
+                          <option value="">Select method</option>
+                          <option value="Cash">Cash</option>
+                          <option value="Bank Transfer">Bank Transfer</option>
+                          <option value="FPS">FPS</option>
+                          <option value="PayMe">PayMe</option>
+                          <option value="Alipay">Alipay</option>
+                          <option value="Credit Card">Credit Card</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        Date *
+                        <input
+                          type="date"
+                          value={donationForm.date}
+                          onChange={(e) => setDonationForm({ ...donationForm, date: e.target.value })}
+                          required
+                        />
+                      </label>
+
+                      <label>
                         Notes (Optional)
                         <textarea
                           value={donationForm.notes}
@@ -6432,6 +7827,8 @@ Subscription Manager HK`;
                               isMember: false,
                               memberId: "",
                               amount: "",
+                              method: "",
+                              date: "",
                               notes: "",
                             });
                             setDonationMemberSearch("");
@@ -6475,17 +7872,93 @@ Subscription Manager HK`;
                         
                         return (
                           <>
+                            <div style={{ marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                              <div style={{ fontSize: "0.875rem", color: "#666" }}>
+                                Total donations:{" "}
+                                <strong>
+                                  $
+                                  {filteredDonations.reduce((sum, d) => {
+                                    const val = parseFloat(d?.amount || 0);
+                                    return sum + (isNaN(val) ? 0 : val);
+                                  }, 0).toLocaleString("en-US", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                </strong>
+                              </div>
+                              <button
+                                type="button"
+                                className="ghost-btn"
+                                onClick={() => {
+                                  try {
+                                    const rows = filteredDonations.map((d) => ({
+                                      Date:
+                                        d.date ||
+                                        (d.createdAt
+                                          ? new Date(d.createdAt).toLocaleDateString("en-GB", {
+                                              day: "2-digit",
+                                              month: "short",
+                                              year: "numeric",
+                                            })
+                                          : "N/A"),
+                                      DonorName: d.donorName || "",
+                                      Type: d.isMember ? "Member" : "Non-Member",
+                                      Amount: d.amount || "0",
+                                      Method: d.method || "",
+                                      Notes: (d.notes || "").replace(/\r?\n/g, " "),
+                                    }));
+
+                                    const header = ["Date", "DonorName", "Type", "Amount", "Method", "Notes"];
+                                    const csvRows = [
+                                      header.join(","),
+                                      ...rows.map((r) =>
+                                        header
+                                          .map((key) => {
+                                            const val = r[key] ?? "";
+                                            const safe = String(val).replace(/"/g, '""');
+                                            return `"${safe}"`;
+                                          })
+                                          .join(",")
+                                      ),
+                                    ];
+
+                                    const blob = new Blob([csvRows.join("\n")], {
+                                      type: "text/csv;charset=utf-8;",
+                                    });
+                                    const url = URL.createObjectURL(blob);
+                                    const link = document.createElement("a");
+                                    link.href = url;
+                                    const ts = new Date().toISOString().slice(0, 10);
+                                    link.download = `donations-report-${ts}.csv`;
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    document.body.removeChild(link);
+                                    URL.revokeObjectURL(url);
+                                    showToast("Donations report exported as CSV");
+                                  } catch (error) {
+                                    console.error("Export donations CSV failed", error);
+                                    showToast("Failed to export donations report", "error");
+                                  }
+                                }}
+                              >
+                                📥 Export Donations CSV
+                              </button>
+                            </div>
+
                             <Table
-                              columns={["Date", "Donor Name", "Type", "Amount", "Notes", "Actions"]}
+                              columns={["Date", "Donor Name", "Type", "Amount", "Method", "Notes", "Actions"]}
                               rows={paginatedDonations.map((donation) => {
                                 if (!donation) return null;
-                                const donationDate = donation.date || 
-                                  (donation.createdAt ? new Date(donation.createdAt).toLocaleDateString('en-GB', {
-                                    day: '2-digit',
-                                    month: 'short',
-                                    year: 'numeric'
-                                  }) : "N/A");
-                                
+                                const donationDate =
+                                  donation.date ||
+                                  (donation.createdAt
+                                    ? new Date(donation.createdAt).toLocaleDateString("en-GB", {
+                                        day: "2-digit",
+                                        month: "short",
+                                        year: "numeric",
+                                      })
+                                    : "N/A");
+
                                 return {
                                   Date: donationDate,
                                   "Donor Name": donation.donorName || "Unknown",
@@ -6494,7 +7967,13 @@ Subscription Manager HK`;
                                   ) : (
                                     <span className="badge badge-inactive">Non-Member</span>
                                   ),
-                                  Amount: donation.amount || "$0",
+                                  Amount: donation.amount
+                                    ? `$${Number(donation.amount).toLocaleString("en-US", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}`
+                                    : "$0.00",
+                                  Method: donation.method || "-",
                                   Notes: donation.notes || "-",
                                   Actions: {
                                     render: () => (
@@ -6516,10 +7995,10 @@ Subscription Manager HK`;
                                       >
                                         Delete
                                       </button>
-                                    )
+                                    ),
                                   },
                                 };
-                              }).filter(row => row !== null)}
+                              }).filter((row) => row !== null)}
                             />
                             {totalPages > 0 && filteredDonations.length > 0 && (
                               <Pagination
@@ -6700,7 +8179,7 @@ Subscription Manager HK`;
                     <div className="card">
                       <div className="table-wrapper">
                         <Table
-                          columns={["Date", "Type", "Source", "Amount", "Details"]}
+                          columns={["Date", "Type", "Member / Donor", "Amount", "Details"]}
                           rows={(() => {
                             // Combine payments and donations
                             const allTransactions = [
@@ -6738,7 +8217,7 @@ Subscription Manager HK`;
                             });
 
                             // Apply filters
-                            return allTransactions.filter(t => {
+                            const filteredTransactions = allTransactions.filter(t => {
                               if (reportFilter === "payments" && t.type !== "Payment") return false;
                               if (reportFilter === "donations" && t.type !== "Donation") return false;
                               if (t.type === "Donation") {
@@ -6747,17 +8226,87 @@ Subscription Manager HK`;
                               }
                               return true;
                             });
-                          })().map((transaction) => ({
-                            Date: transaction.date,
-                            Type: transaction.type === "Payment" ? (
-                              <span className="badge badge-paid">Payment</span>
-                            ) : (
-                              <span className="badge badge-active">Donation</span>
-                            ),
-                            Source: transaction.source,
-                            Amount: transaction.amount,
-                            Details: transaction.details,
-                          }))}
+
+                            // Group by member / donor
+                            const groupedByMember = filteredTransactions.reduce((acc, t) => {
+                              const key = t.source || "Unknown";
+                              if (!acc[key]) {
+                                acc[key] = { name: key, total: 0, count: 0 };
+                              }
+                              const numericAmount = parseFloat(
+                                (typeof t.amount === "string"
+                                  ? t.amount.replace(/[^0-9.]/g, "")
+                                  : t.amount) || 0
+                              );
+                              acc[key].total += isNaN(numericAmount) ? 0 : numericAmount;
+                              acc[key].count += 1;
+                              return acc;
+                            }, {});
+
+                            const rows = filteredTransactions.map((transaction) => ({
+                              Date: transaction.date,
+                              Type:
+                                transaction.type === "Payment" ? (
+                                  <span className="badge badge-paid">Payment</span>
+                                ) : (
+                                  <span className="badge badge-active">Donation</span>
+                                ),
+                              "Member / Donor": transaction.source,
+                              Amount: transaction.amount,
+                              Details: {
+                                render: () => (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                    <span>{transaction.details}</span>
+                                    {transaction.type === "Payment" && transaction.invoiceId && (
+                                      <button
+                                        type="button"
+                                        className="text-btn"
+                                        style={{ padding: 0, fontSize: "0.8rem" }}
+                                        onClick={() => {
+                                          const invoice = invoices.find(
+                                            (inv) =>
+                                              inv.id === transaction.invoiceId ||
+                                              inv._id === transaction.invoiceId
+                                          );
+                                          if (!invoice) {
+                                            showToast("Invoice not found for this transaction", "error");
+                                            return;
+                                          }
+                                          const member =
+                                            members.find((m) => m.id === invoice.memberId) ||
+                                            members.find(
+                                              (m) =>
+                                                m.name &&
+                                                invoice.memberName &&
+                                                m.name.toLowerCase() ===
+                                                  invoice.memberName.toLowerCase()
+                                            );
+                                          if (!member) {
+                                            showToast("Member not found for this invoice", "error");
+                                            return;
+                                          }
+                                          setSelectedMember(member);
+                                          setActiveSection("member-detail");
+                                          setActiveTab("Invoices");
+                                        }}
+                                      >
+                                        View Invoice
+                                      </button>
+                                    )}
+                                  </div>
+                                ),
+                              },
+                            }));
+
+                            // Add a simple grouped summary below as separate rows if desired
+                            // (kept in memory; can be rendered in a second table or card if needed)
+                            const groupedSummary = Object.values(groupedByMember).sort(
+                              (a, b) => b.total - a.total
+                            );
+                            // Currently we just compute groupedSummary; it can be displayed in a separate chart/card.
+
+                            return rows;
+                          })()}
                         />
                       </div>
                     </div>
@@ -6766,13 +8315,17 @@ Subscription Manager HK`;
                   <div style={{ display: "flex", gap: "12px", marginTop: "24px", flexWrap: "wrap" }}>
                     <button
                       className="secondary-btn"
-                      onClick={handleExportCSV}
+                      onClick={handleSecureExportCSV}
+                      disabled={!isFinanceRole}
+                      title={isFinanceRole ? "Export CSV" : "Export allowed only for finance roles"}
                     >
                       📥 Export CSV
                     </button>
                     <button
                       className="ghost-btn"
-                      onClick={handleExportPDF}
+                      onClick={handleSecureExportPDF}
+                      disabled={!isFinanceRole}
+                      title={isFinanceRole ? "Export PDF" : "Export allowed only for finance roles"}
                     >
                       📄 Export PDF
                     </button>
@@ -6791,12 +8344,214 @@ Subscription Manager HK`;
               </article>
             )}
 
-            {/* SETTINGS */}
-            {activeSection === "settings" && (
-              <article className="screen-card" id="settings">
+            {/* EXPORT REPORTS */}
+            {activeSection === "export-reports" && (
+              <article className="screen-card" id="export-reports">
                 <header className="screen-card__header">
-                  <h3>Admin Settings</h3>
-                  <p>Organization profile and admin accounts.</p>
+                  <h3><i className="fas fa-file-export" style={{ marginRight: "10px" }}></i>Export Reports</h3>
+                  <p>Export financial data in various formats.</p>
+                </header>
+                <div className="card">
+                  <div style={{ padding: "24px" }}>
+                    <div style={{ marginBottom: "24px" }}>
+                      <h4 style={{ marginBottom: "12px" }}>Export Options</h4>
+                      <p style={{ color: "#666", marginBottom: "20px" }}>
+                        Export your financial data in CSV or PDF format. Select a date range to export specific periods.
+                      </p>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+                      <div className="card" style={{ padding: "20px", background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)" }}>
+                        <h4 style={{ marginBottom: "8px", fontSize: "1rem" }}>📥 CSV Export</h4>
+                        <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
+                          Export all transactions as a CSV file for Excel or spreadsheet applications.
+                        </p>
+                        <button
+                          className="secondary-btn"
+                          onClick={handleSecureExportCSV}
+                          style={{ width: "100%" }}
+                          disabled={!isFinanceRole}
+                          title={isFinanceRole ? "Export CSV" : "Export allowed only for finance roles"}
+                        >
+                          <i className="fas fa-file-csv" style={{ marginRight: "8px" }}></i>
+                          Export CSV
+                        </button>
+                      </div>
+
+                      <div className="card" style={{ padding: "20px", background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)" }}>
+                        <h4 style={{ marginBottom: "8px", fontSize: "1rem" }}>📄 PDF Export</h4>
+                        <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
+                          Generate a formatted PDF report with charts and summaries.
+                        </p>
+                        <button
+                          className="secondary-btn"
+                          onClick={handleSecureExportPDF}
+                          style={{ width: "100%" }}
+                          disabled={!isFinanceRole}
+                          title={isFinanceRole ? "Export PDF" : "Export allowed only for finance roles"}
+                        >
+                          <i className="fas fa-file-pdf" style={{ marginRight: "8px" }}></i>
+                          Export PDF
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: "24px", padding: "16px", background: "#f8f9ff", borderRadius: "8px" }}>
+                      <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "8px" }}>
+                        <strong>Note:</strong> For detailed reports with date filters and analytics, visit the Financial Reports section.
+                      </p>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => {
+                          handleNavClick("reports");
+                          showToast("Redirecting to Financial Reports...");
+                        }}
+                      >
+                        <i className="fas fa-chart-bar" style={{ marginRight: "8px" }}></i>
+                        Go to Financial Reports
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            )}
+
+            {/* ROLES */}
+            {activeSection === "roles" && isAdmin && (
+              <article className="screen-card" id="roles">
+                <header className="screen-card__header">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
+                    <div>
+                      <h3><i className="fas fa-user-shield" style={{ marginRight: "10px" }}></i>Roles</h3>
+                      <p>Manage admin roles and permissions.</p>
+                    </div>
+                    <button
+                      className="primary-btn"
+                      onClick={() => {
+                        setShowAdminForm(true);
+                        setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
+                              setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
+                      }}
+                    >
+                      <i className="fas fa-plus" style={{ marginRight: "8px" }}></i>Add Admin
+                    </button>
+                  </div>
+                </header>
+                <div className="card">
+                  <div style={{ padding: "24px" }}>
+                    <div style={{ marginBottom: "20px" }}>
+                      <h4 style={{ marginBottom: "12px" }}>Available Roles</h4>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "24px" }}>
+                        <div style={{ padding: "16px", background: "#f8f9ff", borderRadius: "8px", border: "2px solid #5a31ea" }}>
+                          <h5 style={{ margin: "0 0 8px 0", color: "#5a31ea" }}>Admin</h5>
+                          <p style={{ fontSize: "0.875rem", color: "#666", margin: 0 }}>
+                            Full access to all features and settings
+                          </p>
+                        </div>
+                        <div style={{ padding: "16px", background: "#f8f9ff", borderRadius: "8px" }}>
+                          <h5 style={{ margin: "0 0 8px 0" }}>Finance</h5>
+                          <p style={{ fontSize: "0.875rem", color: "#666", margin: 0 }}>
+                            Can manage finances, invoices, and payments
+                          </p>
+                        </div>
+                        <div style={{ padding: "16px", background: "#f8f9ff", borderRadius: "8px" }}>
+                          <h5 style={{ margin: "0 0 8px 0" }}>Staff</h5>
+                          <p style={{ fontSize: "0.875rem", color: "#666", margin: 0 }}>
+                            Can manage members and view reports, no financial exports
+                          </p>
+                        </div>
+                        <div style={{ padding: "16px", background: "#f8f9ff", borderRadius: "8px" }}>
+                          <h5 style={{ margin: "0 0 8px 0" }}>Viewer</h5>
+                          <p style={{ fontSize: "0.875rem", color: "#666", margin: 0 }}>
+                            Read-only access to view data
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="table-wrapper">
+                      <Table
+                        columns={["Name", "Email", "Role", "Status", "Actions"]}
+                        rows={admins.map((admin) => ({
+                          Name: admin.name || "N/A",
+                          Email: admin.email || "N/A",
+                          Role: {
+                            render: () => (
+                              <span className="badge badge-active">
+                                {admin.role || "Viewer"}
+                              </span>
+                            )
+                          },
+                          Status: {
+                            render: () => (
+                              <span className={
+                                admin.status === "Active" ? "badge badge-active" :
+                                admin.status === "Pending" ? "badge badge-pending" :
+                                "badge badge-overdue"
+                              }>
+                                {admin.status || "Active"}
+                              </span>
+                            )
+                          },
+                          Actions: {
+                            render: () => (
+                              <div style={{ display: "flex", gap: "8px" }}>
+                                <button
+                                  className="ghost-btn icon-btn icon-btn--edit"
+                                  onClick={async () => {
+                                    try {
+                                      // Cycle through the 4 allowed roles: Admin -> Finance -> Staff -> Viewer -> Admin
+                                      const roleOrder = ["Admin", "Finance", "Staff", "Viewer"];
+                                      const currentRole = admin.role || "Viewer";
+                                      const currentIndex = roleOrder.indexOf(currentRole);
+                                      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % roleOrder.length;
+                                      const newRole = roleOrder[nextIndex];
+                                      await updateAdminUser(admin.id, { role: newRole });
+                                      showToast(`${admin.name}'s role updated to ${newRole}`);
+                                    } catch (error) {
+                                      showToast(error.message || "Failed to update role", "error");
+                                    }
+                                  }}
+                                  title="Change Role"
+                                >
+                                  <i className="fas fa-sync-alt" aria-hidden="true"></i>
+                                </button>
+                                {(admin.role || 'Viewer') !== "Admin" && (
+                                  <button
+                                    className="ghost-btn icon-btn icon-btn--delete"
+                                    style={{ color: "#ef4444" }}
+                                    onClick={async () => {
+                                      if (window.confirm(`Remove ${admin.name} from admin users?`)) {
+                                        try {
+                                          await deleteAdminUser(admin.id);
+                                          showToast(`${admin.name} removed`);
+                                        } catch (error) {
+                                          showToast(error.message || "Failed to delete admin", "error");
+                                        }
+                                      }
+                                    }}
+                                    title="Delete Admin"
+                                  >
+                                    <i className="fas fa-trash" aria-hidden="true"></i>
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          },
+                        }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </article>
+            )}
+
+            {/* ORGANIZATION SETTINGS */}
+            {activeSection === "org-settings" && (
+              <article className="screen-card" id="org-settings">
+                <header className="screen-card__header">
+                  <h3><i className="fas fa-building" style={{ marginRight: "10px" }}></i>Organization Settings</h3>
+                  <p>Manage organization information and preferences.</p>
                 </header>
                 <div className="settings-container">
                   <div className="settings-card">
@@ -6814,58 +8569,71 @@ Subscription Manager HK`;
                     >
                       <div className="settings-form__group">
                         <label className="settings-form__label">
-                          Name
+                          Organization Name
                           <input
                             type="text"
                             className="settings-form__input"
                             value={orgForm.name}
                             onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
-                            placeholder="Organization name"
+                            placeholder="Subscription Manager HK"
                           />
                         </label>
                       </div>
                       <div className="settings-form__group">
                         <label className="settings-form__label">
-                          Contact Email
+                          Email
                           <input
                             type="email"
                             className="settings-form__input"
                             value={orgForm.email}
                             onChange={(e) => setOrgForm({ ...orgForm, email: e.target.value })}
-                            placeholder="contact@organization.com"
+                            placeholder="support@subscriptionhk.org"
                           />
                         </label>
                       </div>
                       <div className="settings-form__group">
                         <label className="settings-form__label">
-                          Contact Number
+                          Phone
                           <input
-                            type="tel"
+                            type="text"
                             className="settings-form__input"
                             value={orgForm.phone}
                             onChange={(e) => setOrgForm({ ...orgForm, phone: e.target.value })}
-                            placeholder="+1 (555) 123-4567"
+                            placeholder="+852 2800 1122"
                           />
                         </label>
                       </div>
                       <div className="settings-form__group">
                         <label className="settings-form__label">
                           Address
-                          <input
-                            type="text"
+                          <textarea
                             className="settings-form__input"
                             value={orgForm.address}
                             onChange={(e) => setOrgForm({ ...orgForm, address: e.target.value })}
-                            placeholder="123 Main St, City, State ZIP"
+                            placeholder="123 Central Street, Hong Kong"
+                            rows={3}
                           />
                         </label>
                       </div>
-                      <button className="settings-form__submit primary-btn" type="submit">
-                        Save Changes
-                      </button>
+                      <div className="settings-form__actions">
+                        <button type="submit" className="primary-btn">
+                          Save Changes
+                        </button>
+                      </div>
                     </form>
                   </div>
+                </div>
+              </article>
+            )}
 
+            {/* SETTINGS */}
+            {activeSection === "settings" && isAdmin && (
+              <article className="screen-card" id="settings">
+                <header className="screen-card__header">
+                  <h3>Admin Settings</h3>
+                  <p>Organization profile and admin accounts.</p>
+                </header>
+                <div className="settings-container">
                   <div className="settings-card">
                     <div className="settings-card__header">
                       <div className="settings-card__header-content">
@@ -6955,8 +8723,9 @@ Subscription Manager HK`;
                                 value={adminForm.role}
                                 onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
                               >
-                                <option>Owner</option>
-                                <option>Finance Admin</option>
+                                <option>Admin</option>
+                                <option>Finance</option>
+                                <option>Staff</option>
                                 <option>Viewer</option>
                               </select>
                             </label>
@@ -7018,7 +8787,7 @@ Subscription Manager HK`;
                                     Activate
                                   </button>
                                 )}
-                                {(user.role || 'Viewer') !== "Owner" && (
+                                {(user.role || 'Viewer') !== "Admin" && (
                                   <button
                                     className="ghost-btn settings-table__action-btn settings-table__action-btn--danger"
                                     onClick={async () => {

@@ -32,13 +32,17 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ message: "Admin ID already exists" });
     }
     
+    const allowedRoles = ["Admin", "Finance", "Staff", "Viewer"];
+    const requestedRole = req.body.role || "Viewer";
+    const safeRole = allowedRoles.includes(requestedRole) ? requestedRole : "Viewer";
+
     const newAdmin = new AdminModel({
       id: adminId,
-      name: req.body.name || '',
-      email: req.body.email || '',
-      password: req.body.password || '',
-      role: req.body.role || 'Viewer',
-      status: req.body.status || 'Active',
+      name: req.body.name || "",
+      email: req.body.email || "",
+      password: req.body.password || "",
+      role: safeRole,
+      status: req.body.status || "Active",
     });
     
     const savedAdmin = await newAdmin.save();
@@ -56,9 +60,15 @@ router.post("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     await ensureConnection();
+    const allowedRoles = ["Admin", "Finance", "Staff", "Viewer"];
+    const update = { ...req.body };
+    if (update.role && !allowedRoles.includes(update.role)) {
+      return res.status(400).json({ message: "Invalid role. Allowed roles are Admin, Finance, Staff, Viewer." });
+    }
+
     const admin = await AdminModel.findOneAndUpdate(
       { id: req.params.id },
-      { $set: req.body },
+      { $set: update },
       { new: true, runValidators: true }
     );
     

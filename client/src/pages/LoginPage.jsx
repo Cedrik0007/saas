@@ -10,7 +10,38 @@ export function LoginPage() {
   const [loadingRole, setLoadingRole] = useState(null);
   const [form, setForm] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
+  const [errors, setErrors] = useState({ email: "", password: "" });
   const navigate = useNavigate();
+
+  // Email validation function
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Validate form fields
+  const validateForm = () => {
+    const newErrors = { email: "", password: "" };
+    let isValid = true;
+
+    // Validate email
+    if (!form.email.trim()) {
+      newErrors.email = "Email is required";
+      isValid = false;
+    } else if (!validateEmail(form.email.trim())) {
+      newErrors.email = "Please enter a valid email address";
+      isValid = false;
+    }
+
+    // Validate password
+    if (!form.password) {
+      newErrors.password = "Password is required";
+      isValid = false;
+    }
+
+    setErrors(newErrors);
+    return isValid;
+  };
 
   // Feature flag to show/hide member login (set to true to show, false to hide)
   const SHOW_MEMBER_LOGIN = false;
@@ -18,16 +49,14 @@ export function LoginPage() {
   const handleLogin = async (role) => {
     // Handle both admin and member login via MongoDB API
     if (role === "admin" || role === "member") {
-      if (!form.email || !form.password) {
-        setAuthMessage({
-          type: "error",
-          text: "Please enter both email and password",
-        });
+      // Validate form before submitting
+      if (!validateForm()) {
         return;
       }
 
       setLoadingRole(role);
       setAuthMessage(null);
+      setErrors({ email: "", password: "" });
 
       try {
         // In development, use empty string to use Vite proxy (localhost:4000)
@@ -48,9 +77,10 @@ export function LoginPage() {
         const data = await response.json();
 
         if (!response.ok || !data.success) {
+          // Show generic error message for security (no specific details)
           setAuthMessage({
             type: "error",
-            text: data.message || "Invalid email or password",
+            text: "Invalid email or password. Please check your credentials and try again.",
           });
           setLoadingRole(null);
           return;
@@ -62,6 +92,12 @@ export function LoginPage() {
         if (data.role === "Admin") {
           sessionStorage.setItem('adminEmail', data.email);
           sessionStorage.setItem('adminName', data.name);
+          if (data.adminId) {
+            sessionStorage.setItem('adminId', data.adminId);
+          }
+          if (data.adminRole) {
+            sessionStorage.setItem('adminRole', data.adminRole);
+          }
           
           setAuthMessage({
             type: "success",
@@ -108,9 +144,10 @@ export function LoginPage() {
         }
       } catch (error) {
         console.error("Login error:", error);
+        // Show generic error message for security
         setAuthMessage({
           type: "error",
-          text: "Network error. Please check your connection and try again.",
+          text: "Unable to connect. Please check your connection and try again.",
         });
         setLoadingRole(null);
       }
@@ -139,32 +176,74 @@ export function LoginPage() {
           <div className="login-form-card">
             <div className="login-form-card__header">
               <h1><i className="fas fa-sign-in-alt" style={{ marginRight: "12px", color: "#5a31ea" }}></i>Sign in</h1>
-              <p>
-                New user? <Link to="/signup" style={{ color: "#5a31ea", textDecoration: "none", fontWeight: "500" }}>Sign up here</Link>
-              </p>
             </div>
 
             <label className="mono-label">
-              <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email</span>
+              <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
               <input
                 type="email"
                 value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, email: e.target.value });
+                  // Clear error when user starts typing
+                  if (errors.email) {
+                    setErrors({ ...errors, email: "" });
+                  }
+                }}
+                onBlur={() => {
+                  // Validate on blur
+                  if (form.email.trim() && !validateEmail(form.email.trim())) {
+                    setErrors({ ...errors, email: "Please enter a valid email address" });
+                  } else if (!form.email.trim()) {
+                    setErrors({ ...errors, email: "Email is required" });
+                  } else {
+                    setErrors({ ...errors, email: "" });
+                  }
+                }}
                 placeholder="Enter your email address"
-                className="mono-input"
+                className={`mono-input ${errors.email ? "input-error" : ""}`}
+                disabled={loadingRole !== null}
               />
+              {errors.email && (
+                <div className="field-error" style={{ 
+                  marginTop: "4px", 
+                  fontSize: "0.875rem", 
+                  color: "#ef4444",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px"
+                }}>
+                  <i className="fas fa-exclamation-circle" style={{ fontSize: "0.75rem" }}></i>
+                  {errors.email}
+                </div>
+              )}
             </label>
 
             <label className="mono-label">
-              <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password</span>
+              <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password <span style={{ color: "#ef4444" }}>*</span></span>
               <div style={{ position: "relative" }}>
                 <input
                   type={showPassword ? "text" : "password"}
                   value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  onChange={(e) => {
+                    setForm({ ...form, password: e.target.value });
+                    // Clear error when user starts typing
+                    if (errors.password) {
+                      setErrors({ ...errors, password: "" });
+                    }
+                  }}
+                  onBlur={() => {
+                    // Validate on blur
+                    if (!form.password) {
+                      setErrors({ ...errors, password: "Password is required" });
+                    } else {
+                      setErrors({ ...errors, password: "" });
+                    }
+                  }}
                   placeholder="Enter your password"
-                  className="mono-input"
+                  className={`mono-input ${errors.password ? "input-error" : ""}`}
                   style={{ paddingRight: "45px" }}
+                  disabled={loadingRole !== null}
                 />
                 <button
                   type="button"
@@ -184,6 +263,7 @@ export function LoginPage() {
                     color: "#666",
                   }}
                   aria-label={showPassword ? "Hide password" : "Show password"}
+                  disabled={loadingRole !== null}
                 >
                   {showPassword ? (
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -197,6 +277,38 @@ export function LoginPage() {
                     </svg>
                   )}
                 </button>
+              </div>
+              {errors.password && (
+                <div className="field-error" style={{ 
+                  marginTop: "4px", 
+                  fontSize: "0.875rem", 
+                  color: "#ef4444",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px"
+                }}>
+                  <i className="fas fa-exclamation-circle" style={{ fontSize: "0.75rem" }}></i>
+                  {errors.password}
+                </div>
+              )}
+              <div style={{ marginTop: "8px", textAlign: "right" }}>
+                <Link 
+                  to="/forgot-password" 
+                  style={{ 
+                    color: "#5a31ea", 
+                    textDecoration: "none", 
+                    fontSize: "0.875rem",
+                    fontWeight: "500"
+                  }}
+                  onClick={(e) => {
+                    // Prevent navigation if button is disabled (during loading)
+                    if (loadingRole !== null) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  Forgot Password?
+                </Link>
               </div>
             </label>
 
@@ -220,9 +332,34 @@ export function LoginPage() {
                 type="button"
                 className="btn-admin"
                 onClick={() => handleLogin("admin")}
-                disabled={loadingRole === "member"}
+                disabled={loadingRole !== null}
+                style={{ 
+                  position: "relative",
+                  opacity: loadingRole !== null ? 0.7 : 1,
+                  cursor: loadingRole !== null ? "not-allowed" : "pointer"
+                }}
               >
-                {loadingRole === "admin" ? "Authorising…" : "Login as Admin"}
+                {loadingRole === "admin" ? (
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                    <svg 
+                      style={{ 
+                        animation: "spin 1s linear infinite",
+                        width: "16px",
+                        height: "16px"
+                      }} 
+                      viewBox="0 0 24 24" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      strokeWidth="2"
+                    >
+                      <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
+                      <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"></path>
+                    </svg>
+                    Authorising…
+                  </span>
+                ) : (
+                  "Login as Admin"
+                )}
               </button>
 
               {/* Member login (email/password) - Hidden when SHOW_MEMBER_LOGIN is false */}
@@ -231,9 +368,34 @@ export function LoginPage() {
                   type="button"
                   className="btn-member"
                   onClick={() => handleLogin("member")}
-                  disabled={loadingRole === "admin"}
+                  disabled={loadingRole !== null}
+                  style={{ 
+                    position: "relative",
+                    opacity: loadingRole !== null ? 0.7 : 1,
+                    cursor: loadingRole !== null ? "not-allowed" : "pointer"
+                  }}
                 >
-                  {loadingRole === "member" ? "Authorising…" : "Login as Member"}
+                  {loadingRole === "member" ? (
+                    <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                      <svg 
+                        style={{ 
+                          animation: "spin 1s linear infinite",
+                          width: "16px",
+                          height: "16px"
+                        }} 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2"
+                      >
+                        <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
+                        <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"></path>
+                      </svg>
+                      Authorising…
+                    </span>
+                  ) : (
+                    "Login as Member"
+                  )}
                 </button>
               )}
             </div>
