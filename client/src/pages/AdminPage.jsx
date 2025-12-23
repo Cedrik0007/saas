@@ -8425,16 +8425,6 @@ Subscription Manager HK`;
                       <h3><i className="fas fa-user-shield" style={{ marginRight: "10px" }}></i>Roles</h3>
                       <p>Manage admin roles and permissions.</p>
                     </div>
-                    <button
-                      className="primary-btn"
-                      onClick={() => {
-                        setShowAdminForm(true);
-                        setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
-                              setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
-                      }}
-                    >
-                      <i className="fas fa-plus" style={{ marginRight: "8px" }}></i>Add Admin
-                    </button>
                   </div>
                 </header>
                 <div className="card">
@@ -8644,103 +8634,20 @@ Subscription Manager HK`;
                         <button
                           className="settings-card__add-btn secondary-btn"
                           onClick={() => {
+                            if (!isAdmin) {
+                              showToast("Only Admin can add new admin users", "error");
+                              return;
+                            }
                             setShowAdminForm(true);
-                            setAdminForm({ name: "", role: "Viewer", status: "Active" });
+                            setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
                           }}
+                          disabled={!isAdmin}
+                          title={isAdmin ? "Add a new admin user" : "Only Admin can add admins"}
                         >
                           + Add Admin
                         </button>
                       </div>
                     </div>
-
-                    {showAdminForm && (
-                      <div className="settings-admin-form">
-                        <div className="settings-admin-form__header">
-                          <h4 className="settings-admin-form__title">Add New Admin</h4>
-                        </div>
-                        <form
-                          onSubmit={async (e) => {
-                            e.preventDefault();
-                            if (!adminForm.name) {
-                              showToast("Please enter admin name", "error");
-                              return;
-                            }
-                            try {
-                              await addAdminUser(adminForm);
-                              setShowAdminForm(false);
-                              setAdminForm({ name: "", role: "Viewer", status: "Active" });
-                              showToast("Admin user added!");
-                            } catch (error) {
-                              showToast(error.message || "Failed to add admin user", "error");
-                            }
-                          }}
-                          className="settings-form"
-                        >
-                          <div className="settings-form__group">
-                            <label className="settings-form__label">
-                              Name
-                              <input
-                                type="text"
-                                className="settings-form__input"
-                                required
-                                value={adminForm.name}
-                                onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
-                                placeholder="Enter Your Name"
-                              />
-                            </label>
-                          </div>
-                          <div className="settings-form__group">
-                            <label className="settings-form__label">
-                              Email
-                              <input
-                                type="email"
-                                className="settings-form__input"
-                                required
-                                value={adminForm.email}
-                                onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
-                                placeholder="Enter your Email"
-                              />
-                            </label>
-                          </div>
-                          <div className="settings-form__group">
-                            <label className="settings-form__label">
-                              Password
-                              <input
-                                type="password"
-                                className="settings-form__input"
-                                required
-                                value={adminForm.password}
-                                onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
-                                placeholder="Enter Your Password"
-                              />
-                            </label>
-                          </div>
-                          <div className="settings-form__group">
-                            <label className="settings-form__label">
-                              Role
-                              <select
-                                className="settings-form__select"
-                                value={adminForm.role}
-                                onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
-                              >
-                                <option>Admin</option>
-                                <option>Finance</option>
-                                <option>Staff</option>
-                                <option>Viewer</option>
-                              </select>
-                            </label>
-                          </div>
-                          <div className="settings-form__actions">
-                            <button type="button" className="ghost-btn settings-form__cancel" onClick={() => setShowAdminForm(false)}>
-                              Cancel
-                            </button>
-                            <button type="submit" className="primary-btn settings-form__submit-btn">
-                              Add Admin
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-                    )}
 
                     <div className="settings-table-wrapper">
                       <Table
@@ -8812,6 +8719,165 @@ Subscription Manager HK`;
                     </div>
                   </div>
                 </div>
+                {/* Add Admin Modal */}
+                {showAdminForm && (
+                  <div
+                    style={{
+                      position: "fixed",
+                      inset: 0,
+                      background: "rgba(0, 0, 0, 0.45)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 10000,
+                      padding: "20px",
+                    }}
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) {
+                        setShowAdminForm(false);
+                      }
+                    }}
+                  >
+                    <div
+                      className="card"
+                      style={{
+                        maxWidth: "600px",
+                        width: "100%",
+                        maxHeight: "90vh",
+                        overflowY: "auto",
+                        background: "#f9fafb",
+                        position: "relative",
+                        padding: "24px 24px 20px",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "16px",
+                        }}
+                      >
+                        <h4
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            margin: 0,
+                          }}
+                        >
+                          <i className="fas fa-user-plus" aria-hidden="true"></i>
+                          Add New Admin
+                        </h4>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() => setShowAdminForm(false)}
+                          style={{ fontSize: "1.2rem", lineHeight: 1 }}
+                          aria-label="Close add admin form"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!adminForm.name) {
+                            showToast("Please enter admin name", "error");
+                            return;
+                          }
+                          if (!adminForm.email) {
+                            showToast("Please enter admin email", "error");
+                            return;
+                          }
+                          if (!adminForm.password) {
+                            showToast("Please enter admin password", "error");
+                            return;
+                          }
+                          try {
+                            await addAdminUser(adminForm);
+                            setShowAdminForm(false);
+                            setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
+                            showToast("Admin user added!");
+                          } catch (error) {
+                            showToast(error.message || "Failed to add admin user", "error");
+                          }
+                        }}
+                        className="settings-form"
+                      >
+                        <div className="settings-form__group">
+                          <label className="settings-form__label">
+                            Name
+                            <input
+                              type="text"
+                              className="settings-form__input"
+                              required
+                              value={adminForm.name}
+                              onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
+                              placeholder="Enter admin name"
+                            />
+                          </label>
+                        </div>
+                        <div className="settings-form__group">
+                          <label className="settings-form__label">
+                            Email
+                            <input
+                              type="email"
+                              className="settings-form__input"
+                              required
+                              value={adminForm.email}
+                              onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+                              placeholder="Enter admin email"
+                            />
+                          </label>
+                        </div>
+                        <div className="settings-form__group">
+                          <label className="settings-form__label">
+                            Password
+                            <input
+                              type="password"
+                              className="settings-form__input"
+                              required
+                              value={adminForm.password}
+                              onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
+                              placeholder="Set a password"
+                            />
+                          </label>
+                        </div>
+                        <div className="settings-form__group">
+                          <label className="settings-form__label">
+                            Role
+                            <select
+                              className="settings-form__select"
+                              value={adminForm.role}
+                              onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
+                            >
+                              <option>Admin</option>
+                              <option>Finance</option>
+                              <option>Staff</option>
+                              <option>Viewer</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        <div className="settings-form__actions">
+                          <button
+                            type="button"
+                            className="ghost-btn settings-form__cancel"
+                            onClick={() => setShowAdminForm(false)}
+                          >
+                            Cancel
+                          </button>
+                          <button type="submit" className="primary-btn settings-form__submit-btn">
+                            Add Admin
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </article>
             )}
           </div>

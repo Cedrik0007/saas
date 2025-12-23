@@ -358,7 +358,7 @@ export function LoginPage() {
                     Authorising…
                   </span>
                 ) : (
-                  "Login as Admin"
+                  "Login"
                 )}
               </button>
 
