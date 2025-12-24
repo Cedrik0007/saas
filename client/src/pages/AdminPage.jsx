@@ -9691,10 +9691,20 @@ Subscription Manager HK`;
                   {/* Transactions Table */}
                   <div style={{ marginTop: "24px" }}>
                     <h4 style={{ marginBottom: "16px", fontSize: "1.125rem", fontWeight: "600" }}>Transactions</h4>
-                    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                      <div className="table-wrapper" style={{ overflowX: "auto", width: "100%" }}>
+                    <div className="card" style={{ overflow: "hidden" }}>
+                      <div className="table-wrapper" style={{ overflowX: "auto", width: "100%", maxWidth: "100%" }}>
                         <Table
-                          columns={["Date", "Type", "Member / Donor", "Amount", "Details"]}
+                          columns={[
+                            "Date",
+                            "Type",
+                            "Member / Donor",
+                            "Invoice ID",
+                            "Amount",
+                            "Method",
+                            "Screenshot",
+                            "Status",
+                            "Actions",
+                          ]}
                           rows={(() => {
                             // Combine payments and donations
                             const allTransactions = [
@@ -9703,7 +9713,11 @@ Subscription Manager HK`;
                                 type: 'Payment',
                                 source: p.member || 'Unknown',
                                 amount: p.amount,
-                                details: `${getPaymentMethodDisplay(p)} - ${p.period || 'N/A'}`,
+                                method: p.method,
+                                screenshot: p.screenshot,
+                                status: p.status || 'Completed',
+                                invoiceId: p.invoiceId,
+                                period: p.period,
                                 date: p.date || (p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB', {
                                   day: '2-digit',
                                   month: 'short',
@@ -9716,7 +9730,11 @@ Subscription Manager HK`;
                                 type: 'Donation',
                                 source: d.donorName,
                                 amount: d.amount,
-                                details: d.isMember ? 'Member Donation' : 'Non-Member Donation',
+                                method: d.method || 'N/A',
+                                screenshot: d.screenshot || null,
+                                status: 'Completed',
+                                invoiceId: null,
+                                period: null,
                                 date: d.date || (d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', {
                                   day: '2-digit',
                                   month: 'short',
@@ -9742,83 +9760,90 @@ Subscription Manager HK`;
                               return true;
                             });
 
-                            // Group by member / donor
-                            const groupedByMember = filteredTransactions.reduce((acc, t) => {
-                              const key = t.source || "Unknown";
-                              if (!acc[key]) {
-                                acc[key] = { name: key, total: 0, count: 0 };
-                              }
-                              const numericAmount = parseFloat(
-                                (typeof t.amount === "string"
-                                  ? t.amount.replace(/[^0-9.]/g, "")
-                                  : t.amount) || 0
-                              );
-                              acc[key].total += isNaN(numericAmount) ? 0 : numericAmount;
-                              acc[key].count += 1;
-                              return acc;
-                            }, {});
-
-                            const rows = filteredTransactions.map((transaction) => ({
-                              Date: transaction.date,
-                              Type:
-                                transaction.type === "Payment" ? (
-                                  <span className="badge badge-paid">Payment</span>
-                                ) : (
-                                  <span className="badge badge-active">Donation</span>
-                                ),
-                              "Member / Donor": transaction.source,
-                              Amount: transaction.amount,
-                              Details: {
-                                render: () => (
-                                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                    <span>{transaction.details}</span>
-                                    {transaction.type === "Payment" && transaction.invoiceId && (
-                                      <button
-                                        type="button"
-                                        className="text-btn"
-                                        style={{ padding: 0, fontSize: "0.8rem" }}
-                                        onClick={() => {
-                                          const invoice = invoices.find(
-                                            (inv) =>
-                                              inv.id === transaction.invoiceId ||
-                                              inv._id === transaction.invoiceId
-                                          );
-                                          if (!invoice) {
-                                            showToast("Invoice not found for this transaction", "error");
-                                            return;
-                                          }
-                                          const member =
-                                            members.find((m) => m.id === invoice.memberId) ||
-                                            members.find(
-                                              (m) =>
-                                                m.name &&
-                                                invoice.memberName &&
-                                                m.name.toLowerCase() ===
-                                                  invoice.memberName.toLowerCase()
+                            const rows = filteredTransactions.map((transaction) => {
+                              const transactionId = transaction._id || transaction.id;
+                              
+                              return {
+                                Date: transaction.date || "N/A",
+                                Type: {
+                                  render: () => (
+                                    transaction.type === "Payment" ? (
+                                      <span className="badge badge-paid">Payment</span>
+                                    ) : (
+                                      <span className="badge badge-active">Donation</span>
+                                    )
+                                  ),
+                                },
+                                "Member / Donor": transaction.source || "Unknown",
+                                "Invoice ID": transaction.invoiceId || (transaction.type === "Donation" ? "N/A" : "N/A"),
+                                Amount: transaction.amount || "$0",
+                                Method: transaction.type === "Payment" 
+                                  ? getPaymentMethodDisplay(transaction)
+                                  : (transaction.method || "N/A"),
+                                Screenshot: {
+                                  render: () => transaction.screenshot ? (
+                                    <a 
+                                      href={transaction.screenshot} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      style={{ color: "#5a31ea", textDecoration: "none" }}
+                                      title="View screenshot"
+                                      aria-label="View screenshot"
+                                    >
+                                      <i className="fas fa-image" aria-hidden="true"></i>
+                                    </a>
+                                  ) : "N/A"
+                                },
+                                Status: {
+                                  render: () => (
+                                    <span className={statusClass[transaction.status] || "badge badge-paid"}>
+                                      {transaction.status}
+                                    </span>
+                                  )
+                                },
+                                Actions: {
+                                  render: () => (
+                                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                      {transaction.type === "Payment" && transaction.invoiceId && (
+                                        <button
+                                          className="ghost-btn icon-btn icon-btn--view"
+                                          onClick={() => {
+                                            const invoice = invoices.find(
+                                              (inv) =>
+                                                inv.id === transaction.invoiceId ||
+                                                inv._id === transaction.invoiceId
                                             );
-                                          if (!member) {
-                                            showToast("Member not found for this invoice", "error");
-                                            return;
-                                          }
-                                          setSelectedMember(member);
-                                          setActiveSection("member-detail");
-                                          setActiveTab("Invoices");
-                                        }}
-                                      >
-                                        View Invoice
-                                      </button>
-                                    )}
-                                  </div>
-                                ),
-                              },
-                            }));
-
-                            // Add a simple grouped summary below as separate rows if desired
-                            // (kept in memory; can be rendered in a second table or card if needed)
-                            const groupedSummary = Object.values(groupedByMember).sort(
-                              (a, b) => b.total - a.total
-                            );
-                            // Currently we just compute groupedSummary; it can be displayed in a separate chart/card.
+                                            if (!invoice) {
+                                              showToast("Invoice not found for this transaction", "error");
+                                              return;
+                                            }
+                                            const member =
+                                              members.find((m) => m.id === invoice.memberId) ||
+                                              members.find(
+                                                (m) =>
+                                                  m.name &&
+                                                  invoice.memberName &&
+                                                  m.name.toLowerCase() ===
+                                                    invoice.memberName.toLowerCase()
+                                              );
+                                            if (!member) {
+                                              showToast("Member not found for this invoice", "error");
+                                              return;
+                                            }
+                                            setSelectedMember(member);
+                                            setActiveSection("member-detail");
+                                            setActiveTab("Invoices");
+                                          }}
+                                          title="View Invoice"
+                                        >
+                                          <i className="fas fa-eye" aria-hidden="true"></i>
+                                        </button>
+                                      )}
+                                    </div>
+                                  ),
+                                },
+                              };
+                            });
 
                             return rows;
                           })()}

@@ -2537,11 +2537,22 @@ button {
   color: var(--muted);
 }
 
+/* Table wrapper overflow handling for desktop */
+.table-wrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.95rem;
   display: table;
+  table-layout: auto;
+  min-width: fit-content;
 }
 
 th,
