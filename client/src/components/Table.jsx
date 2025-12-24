@@ -214,6 +214,7 @@ export function Table({ columns, rows }) {
               <div 
                 key={`mobile-row-${rowIndex}`} 
                 className={`mobile-table-card ${statusInfo.borderClass}`}
+                style={row._rowStyle || {}}
                 onClick={() => setSelectedCardIndex(rowIndex)}
               >
                 <div className="mobile-table-card-header">
@@ -388,7 +389,10 @@ export function Table({ columns, rows }) {
       </thead>
       <tbody>
         {sortedRows.map((row, rowIndex) => (
-          <tr key={`${row.id ?? rowIndex}-${rowIndex}`}>
+          <tr 
+            key={`${row.id ?? rowIndex}-${rowIndex}`}
+            style={row._rowStyle || {}}
+          >
             {columns.map((col) => {
               const value = row[col];
               const align = getAlignmentForColumn(col);

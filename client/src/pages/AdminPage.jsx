@@ -67,8 +67,10 @@ export function AdminPage() {
     currentAdminRole = "Finance";
   }
   const isAdmin = currentAdminRole === "Admin";
+  const isOwner = currentAdminRole === "Owner";
   const isViewer = currentAdminRole === "Viewer";
   const isFinanceRole = currentAdminRole === "Admin" || currentAdminRole === "Finance";
+  const isAdminOrOwner = isAdmin || isOwner;
 
   // Portal labelling based on role
   const portalTitleByRole = {
@@ -153,12 +155,28 @@ export function AdminPage() {
     return isValidSection ? sectionFromUrl : sections[0].id;
   });
   const [activeTab, setActiveTab] = useState("Invoices");
+  // Track which navigation groups are expanded (default all collapsed on login)
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    const expanded = {};
+    navigationGroups.forEach(group => {
+      expanded[group.id] = false; // Default all groups collapsed
+    });
+    return expanded;
+  });
   const [showMemberForm, setShowMemberForm] = useState(false);
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [toast, setToast] = useState(null);
   const [lastCreatedInvoice, setLastCreatedInvoice] = useState(null);
   const [showInvoiceSuccessCard, setShowInvoiceSuccessCard] = useState(false);
+  
+  // Confirmation dialog state
+  const [confirmationDialog, setConfirmationDialog] = useState({
+    isOpen: false,
+    message: "",
+    onConfirm: null,
+    onCancel: null,
+  });
   
   // Form states
   const [memberForm, setMemberForm] = useState({
@@ -346,7 +364,11 @@ export function AdminPage() {
     method: "",
     date: "",
     notes: "",
+    reference: "",
+    screenshot: "",
   });
+  const [donationImageFile, setDonationImageFile] = useState(null);
+  const [donationImagePreview, setDonationImagePreview] = useState(null);
 
   const [orgForm, setOrgForm] = useState(organizationInfo);
   const [showAdminForm, setShowAdminForm] = useState(false);
@@ -408,10 +430,11 @@ export function AdminPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentModalInvoice, setPaymentModalInvoice] = useState(null);
   const [paymentModalData, setPaymentModalData] = useState({
-    paymentMethod: "Admin", // "Admin" or "Online"
+    paymentMethod: "", // "Admin" or "Online" - empty by default
     imageFile: null,
     imagePreview: null,
     imageUrl: "",
+    reference: "", // Reference number for online payments
   });
   const [uploadingPaymentModal, setUploadingPaymentModal] = useState(false);
   const [showPaymentDetailsModal, setShowPaymentDetailsModal] = useState(false);
@@ -423,6 +446,9 @@ export function AdminPage() {
   const [sendingToAll, setSendingToAll] = useState(false);
   const [sendingWhatsApp, setSendingWhatsApp] = useState({}); // Track which member is sending WhatsApp
   const [sendingWhatsAppToAll, setSendingWhatsAppToAll] = useState(false);
+  const [showTemplatePreview, setShowTemplatePreview] = useState(false);
+  const [showChannelSelection, setShowChannelSelection] = useState(false);
+  const [pendingReminderAction, setPendingReminderAction] = useState(null); // { type: 'single'|'bulk', memberData?: member }
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
   const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
   const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
@@ -472,6 +498,8 @@ export function AdminPage() {
   const [donationsPageSize, setDonationsPageSize] = useState(10);
   const [remindersPage, setRemindersPage] = useState(1);
   const [remindersPageSize, setRemindersPageSize] = useState(10);
+  const [invoicesPage, setInvoicesPage] = useState(1);
+  const [invoicesPageSize, setInvoicesPageSize] = useState(10);
   const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed
   const [remindersChannelFilter, setRemindersChannelFilter] = useState("All"); // All, Email, WhatsApp
 
@@ -727,6 +755,25 @@ export function AdminPage() {
       setMemberNoteDraft(memberNotes[selectedMember.id] || "");
     }
   }, [selectedMember, memberNotes]);
+
+  // Auto-expand parent group when activeSection changes (e.g., from URL)
+  useEffect(() => {
+    const parentGroup = navigationGroups.find(group => 
+      group.items.some(item => item.id === activeSection)
+    );
+    if (parentGroup) {
+      setExpandedGroups(prev => {
+        // Only update if not already expanded (maintain accordion behavior)
+        if (prev[parentGroup.id]) return prev;
+        // Close all other groups and open only this one (accordion behavior)
+        const newState = {};
+        navigationGroups.forEach(g => {
+          newState[g.id] = g.id === parentGroup.id;
+        });
+        return newState;
+      });
+    }
+  }, [activeSection]);
 
   // Calculate report stats based on date range from real database data
   const calculateReportStats = () => {
@@ -1181,6 +1228,47 @@ export function AdminPage() {
     }
   };
 
+  // Preview email template
+  const handlePreviewTemplate = () => {
+    setShowTemplatePreview(true);
+  };
+
+  // Process template with sample data for preview
+  const getPreviewTemplate = () => {
+    if (!emailTemplate.htmlTemplate) return "";
+    
+    return emailTemplate.htmlTemplate
+      .replace(/\{\{member_name\}\}/g, "John Doe")
+      .replace(/\{\{member_id\}\}/g, "MEMBER001")
+      .replace(/\{\{member_email\}\}/g, "john.doe@example.com")
+      .replace(/\{\{total_due\}\}/g, "$250.00")
+      .replace(/\{\{invoice_count\}\}/g, "3")
+      .replace(/\{\{invoice_list\}\}/g, `
+        <li style="margin-bottom: 10px;">
+          <strong>January 2025</strong>: $100.00 
+          <span style="color: #666;">(Due: 15 Jan 2025)</span> - 
+          <strong style="color: #d32f2f">Overdue</strong>
+        </li>
+        <li style="margin-bottom: 10px;">
+          <strong>February 2025</strong>: $100.00 
+          <span style="color: #666;">(Due: 15 Feb 2025)</span> - 
+          <strong style="color: #f57c00">Unpaid</strong>
+        </li>
+        <li style="margin-bottom: 10px;">
+          <strong>March 2025</strong>: $50.00 
+          <span style="color: #666;">(Due: 15 Mar 2025)</span> - 
+          <strong style="color: #f57c00">Unpaid</strong>
+        </li>
+      `)
+      .replace(/\{\{payment_methods\}\}/g, `
+        <li>FPS: ID 1234567</li>
+        <li>PayMe: Scan QR code in portal</li>
+        <li>Bank Transfer: HSBC 123-456789-001</li>
+        <li>Credit Card: Pay instantly online</li>
+      `)
+      .replace(/\{\{portal_link\}\}/g, `${window.location.origin}/member`);
+  };
+
   // Save email template
   const handleSaveEmailTemplate = async () => {
     try {
@@ -1266,7 +1354,19 @@ export function AdminPage() {
       const data = await response.json();
       
       if (response.ok) {
-        showToast(`Reminder email sent to ${members.find(m => m.id === memberId)?.name || 'member'}!`);
+        const member = members.find(m => m.id === memberId);
+        // Log to communication
+        const comm = {
+          channel: "Email",
+          type: "Manual Reminder",
+          memberId: memberId,
+          memberEmail: member?.email || "",
+          memberName: member?.name || "",
+          message: `Reminder email sent to ${member?.name || 'member'}`,
+          status: "Delivered",
+        };
+        addCommunication(comm);
+        showToast(`Reminder email sent to ${member?.name || 'member'}!`);
       } else {
         showToast(data.error || 'Failed to send reminder email', 'error');
       }
@@ -1379,6 +1479,12 @@ export function AdminPage() {
         return;
       }
 
+      // Validate screenshot for Cash payments
+      if (paymentForm.method === "Cash" && !paymentForm.screenshot) {
+        showToast("Screenshot upload is required for Cash payments", "error");
+        return;
+      }
+
       await addPayment(paymentForm);
       showToast("Payment added successfully!");
       setShowPaymentForm(false);
@@ -1438,6 +1544,12 @@ export function AdminPage() {
         return;
       }
 
+      // Validate screenshot for Cash payments
+      if (paymentForm.method === "Cash" && !paymentForm.screenshot) {
+        showToast("Screenshot upload is required for Cash payments", "error");
+        return;
+      }
+
       // In development, use empty string to use Vite proxy (localhost:4000)
       // In production, use VITE_API_URL if set
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
@@ -1482,38 +1594,39 @@ export function AdminPage() {
   };
 
   const handleDeletePayment = async (paymentId) => {
-    if (!window.confirm("Are you sure you want to delete this payment? This action cannot be undone.")) {
-      return;
-    }
+    showConfirmation(
+      "Are you sure you want to delete this payment? This action cannot be undone.",
+      async () => {
+        try {
+          // In development, use empty string to use Vite proxy (localhost:4000)
+          // In production, use VITE_API_URL if set
+          const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+          
+          const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+          });
 
-    try {
-      // In development, use empty string to use Vite proxy (localhost:4000)
-      // In production, use VITE_API_URL if set
-      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-      
-      const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-      });
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || 'Failed to delete payment');
+          }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to delete payment');
+          showToast("Payment deleted successfully!");
+          await fetchPayments();
+          await fetchInvoices();
+        } catch (error) {
+          console.error('Error deleting payment:', error);
+          showToast(error.message || "Failed to delete payment", "error");
+        }
       }
-
-      showToast("Payment deleted successfully!");
-      await fetchPayments();
-      await fetchInvoices();
-    } catch (error) {
-      console.error('Error deleting payment:', error);
-      showToast(error.message || "Failed to delete payment", "error");
-    }
+    );
   };
 
   // Send reminder to all outstanding members
   const handleSendToAllOutstanding = async () => {
-    if (isViewer) {
-      showToast("You are not authorized to send bulk reminders", "error");
+    if (!isAdminOrOwner) {
+      showToast("Only Admin and Owner can send bulk reminders", "error");
       return;
     }
     if (!emailSettings.emailUser || !emailSettings.emailPassword) {
@@ -1521,10 +1634,7 @@ export function AdminPage() {
       return;
     }
 
-    if (!window.confirm('Are you sure you want to send reminder emails to ALL outstanding members?')) {
-      return;
-    }
-
+    // Confirmation is handled in handleSendReminderWithChannel before calling this
     setSendingToAll(true);
     try {
       // In development, use empty string to use Vite proxy (localhost:4000)
@@ -1555,8 +1665,8 @@ export function AdminPage() {
 
   // Send WhatsApp reminder to all outstanding members
   const handleSendWhatsAppToAllOutstanding = async () => {
-    if (isViewer) {
-      showToast("You are not authorized to send bulk reminders", "error");
+    if (!isAdminOrOwner) {
+      showToast("Only Admin and Owner can send bulk reminders", "error");
       return;
     }
     const outstandingMembers = members.filter(member => {
@@ -1576,10 +1686,7 @@ export function AdminPage() {
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to open WhatsApp for ${outstandingMembers.length} outstanding members? This will open multiple WhatsApp windows.`)) {
-      return;
-    }
-
+    // Confirmation is now handled in handleSendReminderWithChannel
     setSendingWhatsAppToAll(true);
     
     try {
@@ -1760,6 +1867,76 @@ Subscription Manager HK`;
     });
   }, []);
 
+  // Generate breadcrumb path for current section
+  const getBreadcrumbPath = (sectionId) => {
+    if (sectionId === "dashboard") {
+      return [{ id: "dashboard", label: "Dashboard" }];
+    }
+    
+    // Find the section in navigation groups
+    for (const group of navigationGroups) {
+      const item = group.items.find(item => item.id === sectionId);
+      if (item) {
+        return [
+          { id: "dashboard", label: "Dashboard" },
+          { id: sectionId, label: item.label }
+        ];
+      }
+    }
+    
+    // Fallback: just show the section label if found in sections
+    const section = sections.find(s => s.id === sectionId);
+    if (section) {
+      return [
+        { id: "dashboard", label: "Dashboard" },
+        { id: sectionId, label: section.label }
+      ];
+    }
+    
+    return [{ id: "dashboard", label: "Dashboard" }];
+  };
+
+  // Render breadcrumb component
+  const renderBreadcrumb = (sectionId) => {
+    const breadcrumbPath = getBreadcrumbPath(sectionId);
+    if (breadcrumbPath.length === 1) {
+      return null; // Don't show breadcrumb for dashboard
+    }
+    
+    return (
+      <div style={{ 
+        display: "flex", 
+        alignItems: "center", 
+        gap: "8px", 
+        marginBottom: "8px",
+        fontSize: "0.875rem",
+        color: "#6b7280"
+      }}>
+        {breadcrumbPath.map((item, index) => (
+          <span key={item.id}>
+            {index > 0 && <span style={{ margin: "0 4px" }}> &gt; </span>}
+            {index === breadcrumbPath.length - 1 ? (
+              <span style={{ color: "#111827", fontWeight: "500" }}>{item.label}</span>
+            ) : (
+              <span 
+                onClick={() => handleNavClick(item.id)}
+                style={{ 
+                  cursor: "pointer",
+                  color: "#5a31ea",
+                  fontWeight: "500"
+                }}
+                onMouseEnter={(e) => e.target.style.textDecoration = "underline"}
+                onMouseLeave={(e) => e.target.style.textDecoration = "none"}
+              >
+                {item.label}
+              </span>
+            )}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
   const handleNavClick = (id) => {
     console.log('Navigating to section:', id);
     setActiveSection(id);
@@ -1768,6 +1945,21 @@ Subscription Manager HK`;
     setShowDonationForm(false);
     // Close mobile menu when navigating
     setIsMobileMenuOpen(false);
+    
+    // Auto-expand the parent group if clicking a nested item (maintain accordion behavior)
+    const parentGroup = navigationGroups.find(group => 
+      group.items.some(item => item.id === id)
+    );
+    if (parentGroup && !expandedGroups[parentGroup.id]) {
+      setExpandedGroups(prev => {
+        // Close all other groups and open only this one (accordion behavior)
+        const newState = {};
+        navigationGroups.forEach(g => {
+          newState[g.id] = g.id === parentGroup.id;
+        });
+        return newState;
+      });
+    }
   };
 
   const handleLogout = () => {
@@ -1777,6 +1969,22 @@ Subscription Manager HK`;
   const showToast = (message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  // Show confirmation dialog
+  const showConfirmation = (message, onConfirm, onCancel = null) => {
+    setConfirmationDialog({
+      isOpen: true,
+      message,
+      onConfirm: () => {
+        setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null });
+        if (onConfirm) onConfirm();
+      },
+      onCancel: () => {
+        setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null });
+        if (onCancel) onCancel();
+      },
+    });
   };
 
   // Member CRUD Operations
@@ -1854,14 +2062,17 @@ Subscription Manager HK`;
   };
 
   const handleDeleteMember = async (id) => {
-    if (window.confirm("Are you sure you want to delete this member?")) {
-      try {
-        await deleteMember(id);
-        showToast("Member deleted successfully!");
-      } catch (error) {
-        showToast("Failed to delete member. Please try again.", "error");
+    showConfirmation(
+      "Are you sure you want to delete this member?",
+      async () => {
+        try {
+          await deleteMember(id);
+          showToast("Member deleted successfully!");
+        } catch (error) {
+          showToast("Failed to delete member. Please try again.", "error");
+        }
       }
-    }
+    );
   };
 
   // Invoice CRUD Operations
@@ -1910,7 +2121,7 @@ Subscription Manager HK`;
     showToast("Invoice created successfully!");
   };
 
-  const handleMarkAsPaid = async (invoiceId, method = "Cash", screenshotUrl = null) => {
+  const handleMarkAsPaid = async (invoiceId, method = "Cash", screenshotUrl = null, referenceNumber = null) => {
     try {
       const invoice = invoices.find((inv) => inv.id === invoiceId);
       if (!invoice) {
@@ -1929,14 +2140,16 @@ Subscription Manager HK`;
       const adminId = sessionStorage.getItem('adminId') || currentAdmin?.id || 'Admin';
       const adminName = sessionStorage.getItem('adminName') || currentAdmin?.name || 'Admin';
       
-      // Map UI method to stored payment method + reference prefix
+      // Map UI method to stored payment method + reference
       let paymentMethod = "Cash to Admin";
-      let referencePrefix = "CASH";
+      let reference;
       if (method === "Online") {
         paymentMethod = "Online Payment";
-        referencePrefix = "ONL";
+        // Use provided reference number or generate one
+        reference = referenceNumber || `ONL_${Date.now()}`;
+      } else {
+        reference = `CASH_${Date.now()}`;
       }
-      const reference = `${referencePrefix}_${Date.now()}`;
       // In development, use empty string to use Vite proxy (localhost:4000)
       // In production, use VITE_API_URL if set
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
@@ -2021,10 +2234,13 @@ Subscription Manager HK`;
       return;
     }
 
-    if (window.confirm("Are you sure you want to delete this invoice? This cannot be undone.")) {
-      deleteInvoice(id);
-      showToast("Invoice deleted successfully!");
-    }
+    showConfirmation(
+      "Are you sure you want to delete this invoice? This cannot be undone.",
+      () => {
+        deleteInvoice(id);
+        showToast("Invoice deleted successfully!");
+      }
+    );
   };
 
   // WhatsApp Reminder (Click-to-Chat)
@@ -2129,6 +2345,55 @@ Subscription Manager HK`;
   };
 
   // Email Reminder (using nodemailer via API)
+  // Show channel selection before sending reminder
+  const handleRequestReminder = (memberData, isBulk = false, memberId = null) => {
+    setPendingReminderAction({ 
+      type: isBulk ? 'bulk' : (memberId ? 'manual' : 'single'), 
+      memberData: memberData || null,
+      memberId: memberId || null
+    });
+    setShowChannelSelection(true);
+  };
+
+  // Handle channel selection and send reminder
+  const handleSendReminderWithChannel = async (channel) => {
+    setShowChannelSelection(false);
+    
+    if (pendingReminderAction?.type === 'bulk') {
+      // Show confirmation for bulk send
+      showConfirmation(
+        channel === 'Email' 
+          ? 'Are you sure you want to send reminder emails to ALL outstanding members?'
+          : `Are you sure you want to open WhatsApp for all outstanding members? This will open multiple WhatsApp windows.`,
+        () => {
+          if (channel === 'Email') {
+            handleSendToAllOutstanding();
+          } else if (channel === 'WhatsApp') {
+            handleSendWhatsAppToAllOutstanding();
+          }
+        }
+      );
+    } else if (pendingReminderAction?.memberData) {
+      if (channel === 'Email') {
+        await handleSendReminder(pendingReminderAction.memberData);
+      } else if (channel === 'WhatsApp') {
+        handleSendWhatsAppReminder(pendingReminderAction.memberData);
+      }
+    } else if (pendingReminderAction?.memberId) {
+      // Handle manual reminder by memberId
+      if (channel === 'Email') {
+        await handleSendManualReminder(pendingReminderAction.memberId);
+      } else if (channel === 'WhatsApp') {
+        const member = members.find(m => m.id === pendingReminderAction.memberId);
+        if (member) {
+          handleSendWhatsAppReminder(member);
+        }
+      }
+    }
+    
+    setPendingReminderAction(null);
+  };
+
   const handleSendReminder = async (memberData) => {
     if (!memberData) {
       showToast("No member selected", "error");
@@ -2315,6 +2580,252 @@ Subscription Manager HK`;
       />
       
       {/* Toast Notification */}
+      {/* Confirmation Dialog */}
+      {confirmationDialog.isOpen && (
+        <div 
+          className="confirmation-dialog-overlay"
+          onClick={(e) => {
+            // Prevent closing on background click
+            e.stopPropagation();
+          }}
+        >
+          <div 
+            className="confirmation-dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="confirmation-dialog-content">
+              <p className="confirmation-dialog-message">
+                {confirmationDialog.message}
+              </p>
+            </div>
+            <div className="confirmation-dialog-actions">
+              <button
+                className="secondary-btn"
+                onClick={confirmationDialog.onCancel || (() => setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null }))}
+              >
+                Cancel
+              </button>
+              <button
+                className="danger-btn"
+                onClick={confirmationDialog.onConfirm}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Template Preview Modal */}
+      {showTemplatePreview && (
+        <div 
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10001,
+            padding: "20px",
+          }}
+          onClick={() => setShowTemplatePreview(false)}
+        >
+          <div 
+            className="card"
+            style={{
+              maxWidth: "800px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+              <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
+                <i className="fas fa-eye" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                Email Template Preview
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowTemplatePreview(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  color: "#666",
+                  cursor: "pointer",
+                  padding: "0",
+                  width: "32px",
+                  height: "32px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "4px",
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = "#f0f0f0";
+                  e.target.style.color = "#333";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = "transparent";
+                  e.target.style.color = "#666";
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div 
+              dangerouslySetInnerHTML={{ __html: getPreviewTemplate() }}
+              style={{
+                border: "1px solid #e0e0e0",
+                borderRadius: "8px",
+                padding: "24px",
+                background: "#fff",
+                minHeight: "200px"
+              }}
+            />
+            <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+              <button
+                className="secondary-btn"
+                onClick={() => setShowTemplatePreview(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Channel Selection Modal */}
+      {showChannelSelection && (
+        <div 
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10001,
+            padding: "20px",
+          }}
+          onClick={() => {
+            setShowChannelSelection(false);
+            setPendingReminderAction(null);
+          }}
+        >
+          <div 
+            className="card"
+            style={{
+              maxWidth: "500px",
+              width: "100%",
+              position: "relative",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+              <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
+                <i className="fas fa-paper-plane" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                Select Channel
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowChannelSelection(false);
+                  setPendingReminderAction(null);
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: "1.5rem",
+                  color: "#666",
+                  cursor: "pointer",
+                  padding: "0",
+                  width: "32px",
+                  height: "32px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "4px",
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = "#f0f0f0";
+                  e.target.style.color = "#333";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = "transparent";
+                  e.target.style.color = "#666";
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <p style={{ marginBottom: "24px", color: "#666" }}>
+              {pendingReminderAction?.type === 'bulk' 
+                ? "Select the channel to send reminders to all outstanding members:"
+                : `Select the channel to send reminder to ${pendingReminderAction?.memberData?.name || 'member'}:`}
+            </p>
+            <div style={{ display: "flex", gap: "12px", flexDirection: "column" }}>
+              <button
+                className="primary-btn"
+                onClick={() => handleSendReminderWithChannel('Email')}
+                style={{
+                  padding: "16px 24px",
+                  borderRadius: "8px",
+                  fontWeight: "600",
+                  fontSize: "1rem",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "12px"
+                }}
+              >
+                <i className="fas fa-envelope" style={{ fontSize: "1.25rem" }}></i>
+                Email
+              </button>
+              <button
+                className="primary-btn"
+                onClick={() => handleSendReminderWithChannel('WhatsApp')}
+                style={{
+                  padding: "16px 24px",
+                  borderRadius: "8px",
+                  fontWeight: "600",
+                  fontSize: "1rem",
+                  backgroundColor: "#25D366",
+                  borderColor: "#25D366",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "12px"
+                }}
+              >
+                <i className="fab fa-whatsapp" style={{ fontSize: "1.25rem" }}></i>
+                WhatsApp
+              </button>
+            </div>
+            <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end" }}>
+              <button
+                className="secondary-btn"
+                onClick={() => {
+                  setShowChannelSelection(false);
+                  setPendingReminderAction(null);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div
           style={{
@@ -2367,25 +2878,55 @@ Subscription Manager HK`;
                 </button>
               </div>
 
-              {/* Grouped Navigation Items - show all items */}
+              {/* Grouped Navigation Items - accordion style */}
               {navigationGroups.map((group) => (
                 <div key={group.id} className="nav-group">
-                  <div className="nav-group-header">
+                  <button
+                    className="nav-group-header"
+                    onClick={() => {
+                      setExpandedGroups(prev => {
+                        const isCurrentlyExpanded = prev[group.id];
+                        // Accordion behavior: if opening this group, close all others
+                        if (!isCurrentlyExpanded) {
+                          const newState = {};
+                          navigationGroups.forEach(g => {
+                            newState[g.id] = g.id === group.id;
+                          });
+                          return newState;
+                        } else {
+                          // If closing, just close this one
+                          return {
+                            ...prev,
+                            [group.id]: false
+                          };
+                        }
+                      });
+                    }}
+                    type="button"
+                  >
                     <i className={`fas ${group.icon}`} style={{ marginRight: "8px", fontSize: "0.875rem", color: "#666" }}></i>
                     <span className="nav-group-label">{group.label}</span>
+                    <i 
+                      className={`fas fa-chevron-down nav-group-chevron ${expandedGroups[group.id] ? 'expanded' : ''}`}
+                      style={{ marginLeft: "auto", fontSize: "0.7rem", color: "#9ca3af", transition: "transform 0.2s ease" }}
+                    ></i>
+                  </button>
+                  <div 
+                    className={`nav-group-items ${expandedGroups[group.id] ? 'expanded' : ''}`}
+                  >
+                    {group.items.map((item) => (
+                      <button
+                        key={item.id}
+                        className={`admin-tab admin-tab-nested ${activeSection === item.id ? "active" : ""}`}
+                        onClick={() => {
+                          handleNavClick(item.id);
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
-                  {group.items.map((item) => (
-                    <button
-                      key={item.id}
-                      className={`admin-tab admin-tab-nested ${activeSection === item.id ? "active" : ""}`}
-                      onClick={() => {
-                        handleNavClick(item.id);
-                        setIsMobileMenuOpen(false);
-                      }}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
                 </div>
               ))}
             </nav>
@@ -2479,10 +3020,10 @@ Subscription Manager HK`;
                       onClick={() => handleNavClick("members")}
                     >
                       <p>
-                        <i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                        <i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: dashboardMetrics.overdueMembers > 0 ? "#f59e0b" : "#6b7280" }}></i>
                         Overdue Members
                       </p>
-                      <h4 style={{ color: dashboardMetrics.overdueMembers > 0 ? "#ef4444" : "#111827" }}>
+                      <h4 style={{ color: dashboardMetrics.overdueMembers > 0 ? "#f59e0b" : "#111827" }}>
                         {dashboardMetrics.overdueMembers.toLocaleString("en-US")}
                       </h4>
                       <small>Requires attention</small>
@@ -2638,6 +3179,7 @@ Subscription Manager HK`;
                 <header className="screen-card__header">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
                     <div>
+                      {renderBreadcrumb("members")}
                       <h3>Members List</h3>
                       <p>Manage all members and their subscriptions.</p>
                     </div>
@@ -2658,11 +3200,14 @@ Subscription Manager HK`;
                       {/* <button
                         className="ghost-btn"
                         onClick={() => {
-                          if (window.confirm("This will reset all data to initial values from data.js. Continue?")) {
-                            resetAllData();
-                            showToast("Data reset! Showing fresh data from data.js");
-                            window.location.reload();
-                          }
+                          showConfirmation(
+                            "This will reset all data to initial values from data.js. Continue?",
+                            () => {
+                              resetAllData();
+                              showToast("Data reset! Showing fresh data from data.js");
+                              window.location.reload();
+                            }
+                          );
                         }}
                         style={{ fontSize: "0.85rem", padding: "8px 16px" }}
                       >
@@ -2886,9 +3431,28 @@ Subscription Manager HK`;
                         <input
                           type="date"
                           value={memberForm.nextDue}
-                          onChange={(e) => handleMemberFieldChange("nextDue", e.target.value)}
+                          onChange={(e) => {
+                            const selectedDate = e.target.value;
+                            if (selectedDate) {
+                              const year = new Date(selectedDate).getFullYear();
+                              // Validate year range: 1900 to 2100
+                              if (year < 1900 || year > 2100) {
+                                showToast("Please select a valid date between 1900 and 2100", "error");
+                                return;
+                              }
+                            }
+                            handleMemberFieldChange("nextDue", selectedDate);
+                          }}
+                          min="1900-01-01"
+                          max="2100-12-31"
                           onKeyDown={(e) => e.preventDefault()}
                           onPaste={(e) => e.preventDefault()}
+                          onClick={(e) => {
+                            e.currentTarget.focus();
+                            if (e.currentTarget.showPicker) {
+                              e.currentTarget.showPicker();
+                            }
+                          }}
                           aria-invalid={!!memberErrors.nextDue}
                           aria-describedby={memberErrors.nextDue ? "member-nextDue-error" : undefined}
                         />
@@ -2908,9 +3472,28 @@ Subscription Manager HK`;
                         <input
                           type="date"
                           value={memberForm.lastPayment}
-                          onChange={(e) => handleMemberFieldChange("lastPayment", e.target.value)}
+                          onChange={(e) => {
+                            const selectedDate = e.target.value;
+                            if (selectedDate) {
+                              const year = new Date(selectedDate).getFullYear();
+                              // Validate year range: 1900 to 2100
+                              if (year < 1900 || year > 2100) {
+                                showToast("Please select a valid date between 1900 and 2100", "error");
+                                return;
+                              }
+                            }
+                            handleMemberFieldChange("lastPayment", selectedDate);
+                          }}
+                          min="1900-01-01"
+                          max="2100-12-31"
                           onKeyDown={(e) => e.preventDefault()}
                           onPaste={(e) => e.preventDefault()}
+                          onClick={(e) => {
+                            e.currentTarget.focus();
+                            if (e.currentTarget.showPicker) {
+                              e.currentTarget.showPicker();
+                            }
+                          }}
                           aria-invalid={!!memberErrors.lastPayment}
                           aria-describedby={memberErrors.lastPayment ? "member-lastPayment-error" : undefined}
                         />
@@ -3273,9 +3856,10 @@ Subscription Manager HK`;
                                             className="ghost-btn icon-btn icon-btn--delete"
                                             style={{ color: "#ef4444" }}
                                             onClick={() => {
-                                              if (window.confirm(`Delete member ${member.name}? This cannot be undone.`)) {
-                                                handleDeleteMember(member.id);
-                                              }
+                                              showConfirmation(
+                                                `Delete member ${member.name}? This cannot be undone.`,
+                                                () => handleDeleteMember(member.id)
+                                              );
                                             }}
                                             title="Delete member"
                                             aria-label="Delete member"
@@ -3311,8 +3895,11 @@ Subscription Manager HK`;
             {activeSection === "member-detail" && selectedMember && (
               <article className="screen-card" id="member-detail">
                 <header className="screen-card__header">
-                  <h3>Member Detail</h3>
-                  <p>360º view with invoices, payment history, communications.</p>
+                  <div>
+                    {renderBreadcrumb("member-detail")}
+                    <h3>Member Detail</h3>
+                    <p>360º view with invoices, payment history, communications.</p>
+                  </div>
                 </header>
                 <div className="card member-detail">
                   <div className="member-header">
@@ -3344,18 +3931,11 @@ Subscription Manager HK`;
                             Create Invoice
                           </button>
                           <button
-                            className="secondary-btn"
-                            onClick={() => handleSendWhatsAppReminder(selectedMember)}
-                            title="Send reminder via WhatsApp"
-                          >
-                            📱 WhatsApp
-                          </button>
-                          <button
                             className="primary-btn"
-                            onClick={() => handleSendReminder(selectedMember)}
-                            title="Send reminder via Email"
+                            onClick={() => handleRequestReminder(selectedMember, false)}
+                            title="Send reminder"
                           >
-                            📧 Email
+                            📨 Send Reminder
                           </button>
                         </>
                       )}
@@ -3603,10 +4183,11 @@ Subscription Manager HK`;
                                       onClick={() => {
                                         setPaymentModalInvoice(invoice);
                                         setPaymentModalData({
-                                          paymentMethod: "Admin",
+                                          paymentMethod: "",
                                           imageFile: null,
                                           imagePreview: null,
                                           imageUrl: invoice.screenshot || "",
+                                          reference: "",
                                         });
                                         setShowPaymentModal(true);
                                       }}
@@ -3620,9 +4201,10 @@ Subscription Manager HK`;
                                       className="ghost-btn"
                                       style={{ padding: "4px 10px", fontSize: "0.85rem", color: "#ef4444" }}
                                       onClick={() => {
-                                        if (window.confirm(`Delete invoice ${invoice.id}? This cannot be undone.`)) {
-                                          handleDeleteInvoice(invoice.id);
-                                        }
+                                        showConfirmation(
+                                          `Delete invoice ${invoice.id}? This cannot be undone.`,
+                                          () => handleDeleteInvoice(invoice.id)
+                                        );
                                       }}
                                     >
                                       Delete
@@ -4095,8 +4677,11 @@ Subscription Manager HK`;
             {activeSection === "invoice-builder" && (
               <article className="screen-card" id="invoice-builder">
                 <header className="screen-card__header">
-                  <h3><i className="fas fa-file-invoice" style={{ marginRight: "10px" }}></i>Invoice Builder</h3>
-                  <p>Create invoices for Lifetime or Yearly + Janaza Fund subscriptions.</p>
+                  <div>
+                    {renderBreadcrumb("invoice-builder")}
+                    <h3><i className="fas fa-file-invoice" style={{ marginRight: "10px" }}></i>Invoice Builder</h3>
+                    <p>Create invoices for Lifetime or Yearly + Janaza Fund subscriptions.</p>
+                  </div>
                 </header>
                 
                 {/* Invoice Success Card */}
@@ -4495,6 +5080,12 @@ Subscription Manager HK`;
                       }}
                       onKeyDown={(e) => e.preventDefault()}
                       onPaste={(e) => e.preventDefault()}
+                      onClick={(e) => {
+                        e.currentTarget.focus();
+                        if (e.currentTarget.showPicker) {
+                          e.currentTarget.showPicker();
+                        }
+                      }}
                       className="mono-input"
                       style={{ color: "#1a1a1a" }}
                     />
@@ -4523,9 +5114,28 @@ Subscription Manager HK`;
                       type="date"
                       required
                       value={invoiceForm.due}
-                      onChange={(e) => setInvoiceForm({ ...invoiceForm, due: e.target.value })}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value;
+                        if (selectedDate) {
+                          const year = new Date(selectedDate).getFullYear();
+                          // Validate year range: 1900 to 2100
+                          if (year < 1900 || year > 2100) {
+                            showToast("Please select a valid date between 1900 and 2100", "error");
+                            return;
+                          }
+                        }
+                        setInvoiceForm({ ...invoiceForm, due: selectedDate });
+                      }}
+                      min="1900-01-01"
+                      max="2100-12-31"
                       onKeyDown={(e) => e.preventDefault()}
                       onPaste={(e) => e.preventDefault()}
+                      onClick={(e) => {
+                        e.currentTarget.focus();
+                        if (e.currentTarget.showPicker) {
+                          e.currentTarget.showPicker();
+                        }
+                      }}
                       className="mono-input"
                       style={{ color: "#1a1a1a" }}
                     />
@@ -4771,6 +5381,7 @@ Subscription Manager HK`;
               <article className="screen-card" id="automation">
                 <header className="screen-card__header">
                   <div>
+                    {renderBreadcrumb("automation")}
                     <h3>Reminders &amp; Automation</h3>
                     <p>Configure automated payment reminders and email templates.</p>
                   </div>
@@ -4951,34 +5562,17 @@ Subscription Manager HK`;
                     }}>
                       <button
                         className="primary-btn"
-                        onClick={handleSendToAllOutstanding}
-                        disabled={sendingToAll}
+                        onClick={() => handleRequestReminder(null, true)}
+                        disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
                         style={{
                           padding: "12px 24px",
                           borderRadius: "8px",
                           fontWeight: "600",
-                          opacity: sendingToAll ? 0.5 : 1,
-                          cursor: sendingToAll ? "not-allowed" : "pointer"
+                          opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                          cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer"
                         }}
                       >
-                        {sendingToAll ? "Sending..." : "📧 Send Email to All"}
-                      </button>
-                      <button
-                        className="primary-btn"
-                        onClick={handleSendWhatsAppToAllOutstanding}
-                        disabled={sendingWhatsAppToAll}
-                        style={{
-                          padding: "12px 24px",
-                        
-                          borderRadius: "8px",
-                          fontWeight: "600",
-                          backgroundColor: "#25D366",
-                          borderColor: "#25D366",
-                          opacity: sendingWhatsAppToAll ? 0.5 : 1,
-                          cursor: sendingWhatsAppToAll ? "not-allowed" : "pointer"
-                        }}
-                      >
-                        {sendingWhatsAppToAll ? "Opening..." : "💬 Send WhatsApp to All"}
+                        {sendingToAll || sendingWhatsAppToAll ? "Sending..." : "📨 Send Reminder to All"}
                       </button>
                     </div>
                   </div>
@@ -5070,39 +5664,19 @@ Subscription Manager HK`;
                             }}>
                               <button
                                 className="secondary-btn"
-                                onClick={() => handleSendManualReminder(member.id)}
-                                disabled={isSending}
+                                onClick={() => handleRequestReminder(member, false)}
+                                disabled={isSending || sendingWhatsApp[member.id]}
                                 style={{
                                   padding: "10px 20px",
                                   borderRadius: "8px",
                                   fontWeight: "600",
                                   fontSize: "0.875rem",
-                                  opacity: isSending ? 0.5 : 1,
-                                  cursor: isSending ? "not-allowed" : "pointer"
+                                  opacity: (isSending || sendingWhatsApp[member.id]) ? 0.5 : 1,
+                                  cursor: (isSending || sendingWhatsApp[member.id]) ? "not-allowed" : "pointer"
                                 }}
                               >
-                                {isSending ? "Sending..." : "📧 Email"}
+                                {(isSending || sendingWhatsApp[member.id]) ? "Sending..." : "📨 Send Reminder"}
                               </button>
-                              {member.phone && (
-                                <button
-                                  className="secondary-btn"
-                                  onClick={() => handleSendWhatsAppReminder(member)}
-                                  disabled={sendingWhatsApp[member.id]}
-                                  style={{
-                                    padding: "10px 20px",
-                                    borderRadius: "8px",
-                                    fontWeight: "600",
-                                    fontSize: "0.875rem",
-                                    backgroundColor: "#25D366",
-                                    borderColor: "#25D366",
-                                    color: "#fff",
-                                    opacity: sendingWhatsApp[member.id] ? 0.5 : 1,
-                                    cursor: sendingWhatsApp[member.id] ? "not-allowed" : "pointer"
-                                  }}
-                                >
-                                  {sendingWhatsApp[member.id] ? "Opening..." : "💬 WhatsApp"}
-                                </button>
-                              )}
                             </div>
                           </div>
                         );
@@ -5238,6 +5812,17 @@ Subscription Manager HK`;
                       paddingTop: "16px",
                       borderTop: "1px solid #e0e0e0"
                     }}>
+                      <button
+                        className="secondary-btn"
+                        onClick={handlePreviewTemplate}
+                        style={{
+                          padding: "12px 24px",
+                          borderRadius: "8px",
+                          fontWeight: "600"
+                        }}
+                      >
+                        👁️ Preview Template
+                      </button>
                       <button
                         className="primary-btn"
                         onClick={handleSaveEmailTemplate}
@@ -5577,6 +6162,7 @@ Subscription Manager HK`;
               <article className="screen-card" id="communications">
                 <header className="screen-card__header">
                   <div>
+                    {renderBreadcrumb("communications")}
                     <h3>Reminders Log</h3>
                     <p>See all reminder emails and WhatsApp messages sent to members.</p>
                   </div>
@@ -6525,23 +7111,58 @@ Subscription Manager HK`;
                       >
                         + Add Payment
                       </button>
-                      <select
-                        value={paymentStatusFilter}
-                        onChange={(e) => setPaymentStatusFilter(e.target.value)}
-                        style={{
-                          padding: "10px 16px",
-                          borderRadius: "8px",
-                          border: "1px solid #e0e0e0",
-                          fontSize: "0.875rem",
-                          background: "#fff",
-                          cursor: "pointer"
-                        }}
-                      >
-                        <option value="All">All Payments</option>
-                        <option value="Pending">Pending Approval</option>
-                        <option value="Completed">Approved</option>
-                        <option value="Rejected">Rejected</option>
-                      </select>
+                      {/* Status Filter - Segmented Buttons */}
+                      <div style={{ 
+                        display: "flex", 
+                        gap: "4px", 
+                        background: "#f3f4f6", 
+                        padding: "4px", 
+                        borderRadius: "8px",
+                        flexWrap: "wrap"
+                      }}>
+                        {[
+                          { value: "All", label: "All" },
+                          { value: "Pending", label: "Pending" },
+                          { value: "Completed", label: "Approved" },
+                          { value: "Rejected", label: "Rejected" }
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setPaymentStatusFilter(option.value)}
+                            style={{
+                              padding: "8px 16px",
+                              borderRadius: "6px",
+                              border: "none",
+                              fontSize: "0.875rem",
+                              fontWeight: "500",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              background: paymentStatusFilter === option.value
+                                ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                : "transparent",
+                              color: paymentStatusFilter === option.value ? "#ffffff" : "#6b7280",
+                              boxShadow: paymentStatusFilter === option.value
+                                ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                : "none",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (paymentStatusFilter !== option.value) {
+                                e.target.style.background = "#e5e7eb";
+                                e.target.style.color = "#374151";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (paymentStatusFilter !== option.value) {
+                                e.target.style.background = "transparent";
+                                e.target.style.color = "#6b7280";
+                              }
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
                       <div style={{
                         padding: "10px 16px",
                         background: "#fff3cd",
@@ -6557,171 +7178,283 @@ Subscription Manager HK`;
                   </div>
                 </header>
 
-                {/* Payment Form */}
+                {/* Payment Form - shown as popup modal */}
                 {showPaymentForm && (
-                  <div className="card" style={{ marginBottom: "20px", background: "#f9fafb" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-                      <h4>{editingPayment ? "Edit Payment" : "Add New Payment"}</h4>
-                      <button
-                        className="ghost-btn"
-                        onClick={() => {
-                          setShowPaymentForm(false);
-                          setEditingPayment(null);
-                          setPaymentForm({
-                            memberId: "",
-                            member: "",
-                            invoiceId: "",
-                            amount: "",
-                            method: "",
-                            reference: "",
-                            date: new Date().toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric"
-                            }),
-                            status: "Pending",
-                            screenshot: "",
-                            notes: "",
-                          });
+                  <div
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: "rgba(0, 0, 0, 0.5)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 10000,
+                      padding: "20px",
+                    }}
+                    onClick={(e) => {
+                      // 点击遮罩不关闭，避免误操作；只允许通过按钮关闭
+                      if (e.target === e.currentTarget) {
+                        // 如果你希望点击背景也能关闭，可以在这里调用关闭逻辑
+                      }
+                    }}
+                  >
+                    <div
+                      className="card"
+                      style={{
+                        maxWidth: "640px",
+                        width: "100%",
+                        maxHeight: "90vh",
+                        overflowY: "auto",
+                        position: "relative",
+                        background: "#ffffff",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: "20px",
                         }}
                       >
-                        ×
-                      </button>
-                    </div>
-                    <form className="form-grid" onSubmit={editingPayment ? handleUpdatePayment : handleAddPayment}>
-                      <label>
-                        Member *
-                        <select
-                          value={paymentForm.memberId}
-                          onChange={(e) => {
-                            const selectedMember = members.find(m => m.id === e.target.value);
+                        <h4 style={{ margin: 0 }}>
+                          {editingPayment ? "Edit Payment" : "Add New Payment"}
+                        </h4>
+                        <button
+                          className="ghost-btn"
+                          type="button"
+                          onClick={() => {
+                            setShowPaymentForm(false);
+                            setEditingPayment(null);
                             setPaymentForm({
-                              ...paymentForm,
-                              memberId: e.target.value,
-                              member: selectedMember ? selectedMember.name : "",
+                              memberId: "",
+                              member: "",
+                              invoiceId: "",
+                              amount: "",
+                              method: "",
+                              reference: "",
+                              date: new Date().toLocaleDateString("en-GB", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              }),
+                              status: "Pending",
+                              screenshot: "",
+                              notes: "",
                             });
                           }}
-                          required
                         >
-                          <option value="">Select Member</option>
-                          {members.map(member => (
-                            <option key={member.id} value={member.id}>
-                              {member.name} ({member.id})
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Invoice ID
-                        <input
-                          type="text"
-                          value={paymentForm.invoiceId}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, invoiceId: e.target.value })}
-                          placeholder="INV-2025-001"
-                        />
-                      </label>
-                      <label>
-                        Amount *
-                        <input
-                          type="text"
-                          value={paymentForm.amount}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                          placeholder="$50"
-                          required
-                        />
-                      </label>
-                      <label>
-                        Payment Method *
-                        <select
-                          value={paymentForm.method}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })}
-                          required
-                        >
-                          <option value="">Select Method</option>
-                          <option value="Bank Transfer">Bank Transfer</option>
-                          <option value="FPS">FPS</option>
-                          <option value="PayMe">PayMe</option>
-                          <option value="Alipay">Alipay</option>
-                          <option value="Credit Card">Credit Card</option>
-                          <option value="Cash">Cash</option>
-                        </select>
-                      </label>
-                      <label>
-                        Reference Number
-                        <input
-                          type="text"
-                          value={paymentForm.reference}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
-                          placeholder="Transaction reference"
-                        />
-                      </label>
-                      <label>
-                        Date
-                        <input
-                          type="text"
-                          value={paymentForm.date}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
-                          placeholder="01 Jan 2025"
-                        />
-                      </label>
-                      <label>
-                        Status *
-                        <select
-                          value={paymentForm.status}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, status: e.target.value })}
-                          required
-                        >
-                          <option value="Pending">Pending</option>
-                          <option value="Completed">Completed</option>
-                          <option value="Rejected">Rejected</option>
-                        </select>
-                      </label>
-                      <label>
-                        Screenshot URL
-                        <input
-                          type="text"
-                          value={paymentForm.screenshot}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, screenshot: e.target.value })}
-                          placeholder="https://..."
-                        />
-                      </label>
-                      <label style={{ gridColumn: "1 / -1" }}>
-                        Notes
-                        <textarea
-                          value={paymentForm.notes}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                          rows={3}
-                          placeholder="Additional notes..."
-                        />
-                      </label>
-                      <div className="form-actions" style={{ gridColumn: "1 / -1" }}>
-                        <button type="button" className="ghost-btn" onClick={() => {
-                          setShowPaymentForm(false);
-                          setEditingPayment(null);
-                          setPaymentForm({
-                            memberId: "",
-                            member: "",
-                            invoiceId: "",
-                            amount: "",
-                            method: "",
-                            reference: "",
-                            date: new Date().toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric"
-                            }),
-                            status: "Pending",
-                            screenshot: "",
-                            notes: "",
-                          });
-                        }}>
-                          Cancel
-                        </button>
-                        <button type="submit" className="primary-btn">
-                          {editingPayment ? "Update" : "Add"} Payment
+                          ×
                         </button>
                       </div>
-                    </form>
+                      <form
+                        className="form-grid"
+                        onSubmit={editingPayment ? handleUpdatePayment : handleAddPayment}
+                      >
+                        <label>
+                          Member *
+                          <select
+                            value={paymentForm.memberId}
+                            onChange={(e) => {
+                              const selectedMember = members.find(
+                                (m) => m.id === e.target.value
+                              );
+                              setPaymentForm({
+                                ...paymentForm,
+                                memberId: e.target.value,
+                                member: selectedMember ? selectedMember.name : "",
+                              });
+                            }}
+                            required
+                          >
+                            <option value="">Select Member</option>
+                            {members.map((member) => (
+                              <option key={member.id} value={member.id}>
+                                {member.name} ({member.id})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Invoice ID
+                          <input
+                            type="text"
+                            value={paymentForm.invoiceId}
+                            onChange={(e) =>
+                              setPaymentForm({
+                                ...paymentForm,
+                                invoiceId: e.target.value,
+                              })
+                            }
+                            placeholder="INV-2025-001"
+                          />
+                        </label>
+                        <label>
+                          Amount *
+                          <input
+                            type="text"
+                            value={paymentForm.amount}
+                            onChange={(e) =>
+                              setPaymentForm({
+                                ...paymentForm,
+                                amount: e.target.value,
+                              })
+                            }
+                            placeholder="$50"
+                            required
+                          />
+                        </label>
+                        <label>
+                          Payment Method *
+                          <select
+                            value={paymentForm.method}
+                            onChange={(e) =>
+                              setPaymentForm({
+                                ...paymentForm,
+                                method: e.target.value,
+                              })
+                            }
+                            required
+                          >
+                            <option value="">Select Method</option>
+                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="FPS">FPS</option>
+                            <option value="PayMe">PayMe</option>
+                            <option value="Alipay">Alipay</option>
+                            <option value="Credit Card">Credit Card</option>
+                            <option value="Cash">Cash</option>
+                          </select>
+                        </label>
+                        <label>
+                          Reference Number
+                          <input
+                            type="text"
+                            value={paymentForm.reference}
+                            onChange={(e) =>
+                              setPaymentForm({
+                                ...paymentForm,
+                                reference: e.target.value,
+                              })
+                            }
+                            placeholder="Transaction reference"
+                          />
+                        </label>
+                        <label>
+                          Date
+                          <input
+                            type="text"
+                            value={paymentForm.date}
+                            onChange={(e) =>
+                              setPaymentForm({
+                                ...paymentForm,
+                                date: e.target.value,
+                              })
+                            }
+                            placeholder="01 Jan 2025"
+                          />
+                        </label>
+                        <label>
+                          Status *
+                          <select
+                            value={paymentForm.status}
+                            onChange={(e) =>
+                              setPaymentForm({
+                                ...paymentForm,
+                                status: e.target.value,
+                              })
+                            }
+                            required
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Rejected">Rejected</option>
+                          </select>
+                        </label>
+                        <label>
+                          Screenshot URL{" "}
+                          {paymentForm.method === "Cash" && (
+                            <span style={{ color: "#ef4444" }}>*</span>
+                          )}
+                          <input
+                            type="text"
+                            value={paymentForm.screenshot}
+                            onChange={(e) =>
+                              setPaymentForm({
+                                ...paymentForm,
+                                screenshot: e.target.value,
+                              })
+                            }
+                            placeholder="https://..."
+                            required={paymentForm.method === "Cash"}
+                          />
+                          {paymentForm.method === "Cash" &&
+                            !paymentForm.screenshot && (
+                              <small
+                                style={{
+                                  color: "#ef4444",
+                                  fontSize: "0.75rem",
+                                  marginTop: "4px",
+                                  display: "block",
+                                }}
+                              >
+                                Screenshot is required for Cash payments
+                              </small>
+                            )}
+                        </label>
+                        <label style={{ gridColumn: "1 / -1" }}>
+                          Notes
+                          <textarea
+                            value={paymentForm.notes}
+                            onChange={(e) =>
+                              setPaymentForm({
+                                ...paymentForm,
+                                notes: e.target.value,
+                              })
+                            }
+                            rows={3}
+                            placeholder="Additional notes..."
+                          />
+                        </label>
+                        <div
+                          className="form-actions"
+                          style={{ gridColumn: "1 / -1" }}
+                        >
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            onClick={() => {
+                              setShowPaymentForm(false);
+                              setEditingPayment(null);
+                              setPaymentForm({
+                                memberId: "",
+                                member: "",
+                                invoiceId: "",
+                                amount: "",
+                                method: "",
+                                reference: "",
+                                date: new Date().toLocaleDateString("en-GB", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  year: "numeric",
+                                }),
+                                status: "Pending",
+                                screenshot: "",
+                                notes: "",
+                              });
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button type="submit" className="primary-btn">
+                            {editingPayment ? "Update" : "Add"} Payment
+                          </button>
+                        </div>
+                      </form>
+                    </div>
                   </div>
                 )}
 
@@ -6931,6 +7664,7 @@ Subscription Manager HK`;
                 <header className="screen-card__header">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
                     <div>
+                      {renderBreadcrumb("invoices")}
                       <h3><i className="fas fa-file-invoice" style={{ marginRight: "10px" }}></i>Invoices</h3>
                       <p>View and manage all invoices.</p>
                     </div>
@@ -6945,70 +7679,160 @@ Subscription Manager HK`;
                     </button>
                   </div>
                 </header>
+                
+                {/* Summary Cards */}
+                {(() => {
+                  const totalInvoices = invoices.length;
+                  const unpaidInvoices = invoices.filter(inv => {
+                    const status = inv.status || "Unpaid";
+                    return status !== "Paid" && status !== "Completed";
+                  });
+                  const totalUnpaidAmount = unpaidInvoices.reduce((sum, inv) => {
+                    const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
+                    return sum + amount;
+                  }, 0);
+                  
+                  return (
+                    <div style={{ 
+                      display: "grid", 
+                      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+                      gap: "16px", 
+                      marginBottom: "24px" 
+                    }}>
+                      <div style={{
+                        background: "#ffffff",
+                        border: "none",
+                        borderRadius: "8px",
+                        padding: "20px",
+                        boxShadow: "0 2px 8px rgba(90, 49, 234, 0.1)",
+                      }}>
+                        <p style={{ margin: "0 0 8px 0", fontSize: "0.875rem", color: "#666", fontWeight: "500" }}>
+                          Total Invoices
+                        </p>
+                        <h4 style={{ margin: "0", fontSize: "1.75rem", fontWeight: "700", color: "#1a1a1a" }}>
+                          {totalInvoices.toLocaleString("en-US")}
+                        </h4>
+                      </div>
+                      <div style={{
+                        background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)",
+                        border: "1px solid #f59e0b",
+                        borderRadius: "8px",
+                        padding: "20px",
+                        boxShadow: "0 2px 8px rgba(245, 158, 11, 0.2)",
+                      }}>
+                        <p style={{ margin: "0 0 8px 0", fontSize: "0.875rem", color: "#92400e", fontWeight: "500" }}>
+                          Total Unpaid Amount
+                        </p>
+                        <h4 style={{ margin: "0", fontSize: "1.75rem", fontWeight: "700", color: "#92400e" }}>
+                          ${totalUnpaidAmount.toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </h4>
+                      </div>
+                    </div>
+                  );
+                })()}
+                
                 <div className="card">
                   <div className="table-wrapper">
-                    <Table
-                      columns={["Invoice ID", "Member", "Period", "Amount", "Due Date", "Status", "Actions"]}
-                      rows={invoices.map((invoice) => ({
-                        "Invoice ID": invoice.id || invoice.invoiceId || "N/A",
-                        Member: invoice.memberName || invoice.member || "Unknown",
-                        Period: invoice.period || "N/A",
-                        Amount: invoice.amount || "$0",
-                        "Due Date": invoice.due ? new Date(invoice.due).toLocaleDateString('en-GB', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric'
-                        }) : "N/A",
-                        Status: {
-                          render: () => (
-                            <span className={
-                              invoice.status === "Paid" ? "badge badge-paid" :
-                              invoice.status === "Overdue" ? "badge badge-overdue" :
-                              invoice.status === "Pending" ? "badge badge-pending" :
-                              "badge badge-unpaid"
-                            }>
-                              {invoice.status || "Unpaid"}
-                            </span>
-                          )
-                        },
-                        Actions: {
-                          render: () => (
-                            <div style={{ display: "flex", gap: "8px" }}>
-                              <button
-                                className="ghost-btn icon-btn icon-btn--edit"
-                                onClick={() => {
-                                  const member = members.find(m => 
-                                    m.id === invoice.memberId || 
-                                    m.email === invoice.memberEmail ||
-                                    m.name === invoice.memberName
-                                  );
-                                  if (member) {
-                                    handleViewMemberDetail(member);
-                                    setActiveSection("member-detail");
-                                    setActiveTab("Invoices");
-                                  }
-                                }}
-                                title="View Invoice Details"
-                              >
-                                <i className="fas fa-eye" aria-hidden="true"></i>
-                              </button>
-                              <button
-                                className="ghost-btn icon-btn icon-btn--delete"
-                                style={{ color: "#ef4444" }}
-                                onClick={() => {
-                                  if (invoice.id || invoice._id) {
-                                    handleDeleteInvoice(invoice.id || invoice._id);
-                                  }
-                                }}
-                                title="Delete Invoice"
-                              >
-                                <i className="fas fa-trash" aria-hidden="true"></i>
-                              </button>
-                            </div>
-                          )
-                        },
-                      }))}
-                    />
+                    {(() => {
+                      // Calculate pagination
+                      const startIndex = (invoicesPage - 1) * invoicesPageSize;
+                      const endIndex = startIndex + invoicesPageSize;
+                      const paginatedInvoices = invoices.slice(startIndex, endIndex);
+                      const totalPages = Math.ceil(invoices.length / invoicesPageSize);
+                      
+                      return (
+                        <>
+                          <Table
+                            columns={["Invoice ID", "Member", "Period", "Amount", "Due Date", "Status", "Actions"]}
+                            rows={paginatedInvoices.map((invoice) => {
+                              const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
+                              const isOverdue = invoice.status === "Overdue";
+                              const isUnpaid = !isPaid && !isOverdue && (invoice.status === "Unpaid" || !invoice.status);
+                              
+                              return {
+                                "Invoice ID": invoice.id || invoice.invoiceId || "N/A",
+                                Member: invoice.memberName || invoice.member || "Unknown",
+                                Period: invoice.period || "N/A",
+                                Amount: invoice.amount || "$0",
+                                "Due Date": invoice.due ? new Date(invoice.due).toLocaleDateString('en-GB', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric'
+                                }) : "N/A",
+                                Status: {
+                                  render: () => (
+                                    <span className={
+                                      invoice.status === "Paid" ? "badge badge-paid" :
+                                      invoice.status === "Overdue" ? "badge badge-overdue" :
+                                      invoice.status === "Pending" ? "badge badge-pending" :
+                                      "badge badge-unpaid"
+                                    }>
+                                      {invoice.status || "Unpaid"}
+                                    </span>
+                                  )
+                                },
+                                Actions: {
+                                  render: () => (
+                                    <div style={{ display: "flex", gap: "8px" }}>
+                                      <button
+                                        className="ghost-btn icon-btn icon-btn--edit"
+                                        onClick={() => {
+                                          const member = members.find(m => 
+                                            m.id === invoice.memberId || 
+                                            m.email === invoice.memberEmail ||
+                                            m.name === invoice.memberName
+                                          );
+                                          if (member) {
+                                            handleViewMemberDetail(member);
+                                            setActiveSection("member-detail");
+                                            setActiveTab("Invoices");
+                                          }
+                                        }}
+                                        title="View Invoice Details"
+                                      >
+                                        <i className="fas fa-eye" aria-hidden="true"></i>
+                                      </button>
+                                      {!isPaid && (
+                                        <button
+                                          className="ghost-btn icon-btn icon-btn--delete"
+                                          style={{ color: "#ef4444" }}
+                                          onClick={() => {
+                                            if (invoice.id || invoice._id) {
+                                              handleDeleteInvoice(invoice.id || invoice._id);
+                                            }
+                                          }}
+                                          title="Delete Invoice"
+                                        >
+                                          <i className="fas fa-trash" aria-hidden="true"></i>
+                                        </button>
+                                      )}
+                                    </div>
+                                  )
+                                },
+                                _rowStyle: isOverdue 
+                                  ? { background: "linear-gradient(135deg, rgba(254, 243, 199, 0.4) 0%, rgba(254, 226, 226, 0.4) 100%)", borderLeft: "4px solid #ef4444" }
+                                  : isUnpaid
+                                  ? { background: "rgba(254, 243, 199, 0.3)", borderLeft: "4px solid #f59e0b" }
+                                  : {}
+                              };
+                            })}
+                          />
+                          {totalPages > 0 && invoices.length > 0 && (
+                            <Pagination
+                              currentPage={invoicesPage}
+                              totalPages={totalPages}
+                              onPageChange={setInvoicesPage}
+                              pageSize={invoicesPageSize}
+                              onPageSizeChange={setInvoicesPageSize}
+                              totalItems={invoices.length}
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </article>
@@ -7020,6 +7844,7 @@ Subscription Manager HK`;
                 <header className="screen-card__header">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
                     <div>
+                      {renderBreadcrumb("payments")}
                       <h3><i className="fas fa-credit-card" style={{ marginRight: "10px" }}></i>Payments</h3>
                       <p>View and manage all payment transactions.</p>
                     </div>
@@ -7051,41 +7876,118 @@ Subscription Manager HK`;
                   </div>
                 </header>
 
-                {/* Payment Form */}
+                {/* Payment Form Modal */}
                 {showPaymentForm && (
-                  <div className="card" style={{ marginBottom: "20px", background: "#f9fafb" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-                      <h4>{editingPayment ? "Edit Payment" : "Add New Payment"}</h4>
-                      <button
-                        className="ghost-btn"
-                        onClick={() => {
-                          setShowPaymentForm(false);
-                          setEditingPayment(null);
-                          setPaymentForm({
-                            memberId: "",
-                            member: "",
-                            invoiceId: "",
-                            amount: "",
-                            method: "",
-                            reference: "",
-                            date: new Date().toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric"
-                            }),
-                            status: "Pending",
-                            screenshot: "",
-                            notes: "",
-                          });
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <form className="form-grid" onSubmit={editingPayment ? handleUpdatePayment : handleAddPayment}>
+                  <div 
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: "rgba(0, 0, 0, 0.5)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 10000,
+                      padding: "20px",
+                    }}
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) {
+                        setShowPaymentForm(false);
+                        setEditingPayment(null);
+                        setPaymentForm({
+                          memberId: "",
+                          member: "",
+                          invoiceId: "",
+                          amount: "",
+                          method: "",
+                          reference: "",
+                          date: new Date().toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric"
+                          }),
+                          status: "Pending",
+                          screenshot: "",
+                          notes: "",
+                        });
+                      }
+                    }}
+                  >
+                    <div 
+                      className="card"
+                      style={{
+                        maxWidth: "800px",
+                        width: "100%",
+                        maxHeight: "90vh",
+                        overflowY: "auto",
+                        position: "relative",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+                        <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
+                          <i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                          {editingPayment ? "Edit Payment" : "Add New Payment"}
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowPaymentForm(false);
+                            setEditingPayment(null);
+                            setPaymentForm({
+                              memberId: "",
+                              member: "",
+                              invoiceId: "",
+                              amount: "",
+                              method: "",
+                              reference: "",
+                              date: new Date().toLocaleDateString("en-GB", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric"
+                              }),
+                              status: "Pending",
+                              screenshot: "",
+                              notes: "",
+                            });
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            fontSize: "1.5rem",
+                            color: "#666",
+                            cursor: "pointer",
+                            padding: "0",
+                            width: "32px",
+                            height: "32px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            borderRadius: "4px",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.background = "#f0f0f0";
+                            e.target.style.color = "#333";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.background = "transparent";
+                            e.target.style.color = "#666";
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <form className="form-grid" onSubmit={editingPayment ? handleUpdatePayment : handleAddPayment}>
                       <label>
                         Member *
                         <select
+                          ref={(el) => {
+                            if (el && editingPayment) {
+                              setTimeout(() => el.focus(), 100);
+                            }
+                          }}
                           value={paymentForm.memberId}
                           onChange={(e) => {
                             const selectedMember = members.find(m => m.id === e.target.value);
@@ -7171,13 +8073,19 @@ Subscription Manager HK`;
                         </select>
                       </label>
                       <label>
-                        Screenshot URL
+                        Screenshot URL {paymentForm.method === "Cash" && <span style={{ color: "#ef4444" }}>*</span>}
                         <input
                           type="text"
                           value={paymentForm.screenshot}
                           onChange={(e) => setPaymentForm({ ...paymentForm, screenshot: e.target.value })}
                           placeholder="https://..."
+                          required={paymentForm.method === "Cash"}
                         />
+                        {paymentForm.method === "Cash" && !paymentForm.screenshot && (
+                          <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
+                            Screenshot is required for Cash payments
+                          </small>
+                        )}
                       </label>
                       <label style={{ gridColumn: "1 / -1" }}>
                         Notes
@@ -7216,31 +8124,67 @@ Subscription Manager HK`;
                         </button>
                       </div>
                     </form>
+                    </div>
                   </div>
                 )}
 
                 <div className="card">
                   <div style={{ padding: "24px" }}>
-                    {/* Payment Status Filter */}
+                    {/* Payment Status Filter - Segmented Buttons */}
                     <div style={{ marginBottom: "20px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                       <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
-                      <select
-                        value={paymentStatusFilter}
-                        onChange={(e) => setPaymentStatusFilter(e.target.value)}
-                        style={{
-                          padding: "8px 12px",
-                          borderRadius: "6px",
-                          border: "1px solid #e5e7eb",
-                          background: "#ffffff",
-                          fontSize: "0.875rem",
-                        }}
-                      >
-                        <option value="All">All</option>
-                        <option value="Pending">Pending</option>
-                        <option value="Completed">Completed</option>
-                        <option value="Paid">Paid</option>
-                        <option value="Rejected">Rejected</option>
-                      </select>
+                      <div style={{ 
+                        display: "flex", 
+                        gap: "4px", 
+                        background: "#f3f4f6", 
+                        padding: "4px", 
+                        borderRadius: "8px",
+                        flexWrap: "wrap"
+                      }}>
+                        {[
+                          { value: "All", label: "All" },
+                          { value: "Pending", label: "Pending" },
+                          { value: "Completed", label: "Completed" },
+                          { value: "Paid", label: "Paid" },
+                          { value: "Rejected", label: "Rejected" }
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setPaymentStatusFilter(option.value)}
+                            style={{
+                              padding: "8px 16px",
+                              borderRadius: "6px",
+                              border: "none",
+                              fontSize: "0.875rem",
+                              fontWeight: "500",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              background: paymentStatusFilter === option.value
+                                ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                : "transparent",
+                              color: paymentStatusFilter === option.value ? "#ffffff" : "#6b7280",
+                              boxShadow: paymentStatusFilter === option.value
+                                ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                : "none",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (paymentStatusFilter !== option.value) {
+                                e.target.style.background = "#e5e7eb";
+                                e.target.style.color = "#374151";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (paymentStatusFilter !== option.value) {
+                                e.target.style.background = "transparent";
+                                e.target.style.color = "#6b7280";
+                              }
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
                     {(() => {
@@ -7366,6 +8310,7 @@ Subscription Manager HK`;
                 <header className="screen-card__header">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
                     <div>
+                      {renderBreadcrumb("donations")}
                       <h3>Donations</h3>
                       <p>Manage donation records from members and non-members.</p>
                     </div>
@@ -7378,28 +8323,106 @@ Subscription Manager HK`;
                   </div>
                 </header>
 
-                {/* Add Donation Form */}
+                {/* Add Donation Form Modal */}
                 {showDonationForm && (
-                  <div className="card" style={{ marginBottom: "24px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-                      <h4>Add Donation</h4>
-                      <button
-                        className="ghost-btn"
-                        onClick={() => {
+                  <div 
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: "rgba(0, 0, 0, 0.5)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 10000,
+                      padding: "20px",
+                    }}
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) {
                           setShowDonationForm(false);
                           setDonationForm({
                             donorName: "",
                             isMember: false,
                             memberId: "",
                             amount: "",
+                            method: "",
+                            date: "",
                             notes: "",
+                            reference: "",
+                            screenshot: "",
                           });
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <form
+                          setDonationImageFile(null);
+                          setDonationImagePreview(null);
+                          setDonationMemberSearch("");
+                          setShowDonationMemberDropdown(false);
+                      }
+                    }}
+                  >
+                    <div 
+                      className="card"
+                      style={{
+                        maxWidth: "800px",
+                        width: "100%",
+                        maxHeight: "90vh",
+                        overflowY: "auto",
+                        position: "relative",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+                        <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
+                          <i className="fas fa-heart" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                          Add Donation
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => {
+                          setShowDonationForm(false);
+                          setDonationForm({
+                            donorName: "",
+                            isMember: false,
+                            memberId: "",
+                            amount: "",
+                            method: "",
+                            date: "",
+                            notes: "",
+                            reference: "",
+                            screenshot: "",
+                          });
+                          setDonationImageFile(null);
+                          setDonationImagePreview(null);
+                          setDonationMemberSearch("");
+                          setShowDonationMemberDropdown(false);
+                          }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            fontSize: "1.5rem",
+                            color: "#666",
+                            cursor: "pointer",
+                            padding: "0",
+                            width: "32px",
+                            height: "32px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            borderRadius: "4px",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.background = "#f0f0f0";
+                            e.target.style.color = "#333";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.background = "transparent";
+                            e.target.style.color = "#666";
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <form
                       onSubmit={async (e) => {
                         e.preventDefault();
                         try {
@@ -7425,9 +8448,60 @@ Subscription Manager HK`;
                             return;
                           }
 
+                          // Upload image if file exists
+                          let imageUrl = donationForm.screenshot;
+                          if (donationImageFile) {
+                            const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                            const formData = new FormData();
+                            formData.append("screenshot", donationImageFile);
+                            formData.append("uploadType", "donation-proof");
+
+                            const uploadResponse = await fetch(`${apiUrl}/api/upload/screenshot`, {
+                              method: "POST",
+                              body: formData,
+                            });
+
+                            if (!uploadResponse.ok) {
+                              let errorMessage = "Failed to upload image";
+                              try {
+                                const errorData = await uploadResponse.json();
+                                errorMessage = errorData.error || errorMessage;
+                              } catch (parseError) {
+                                errorMessage = `Upload failed with status ${uploadResponse.status}`;
+                              }
+                              throw new Error(errorMessage);
+                            }
+
+                            const uploadData = await uploadResponse.json();
+                            if (!uploadData.url) {
+                              throw new Error("No URL returned from upload. Please try again.");
+                            }
+                            imageUrl = uploadData.url;
+                          }
+
+                          // Validate Cash payment method - requires proof image
+                          if (donationForm.method === "Cash" && !imageUrl) {
+                            showToast("Proof image is required for Cash payments", "error");
+                            return;
+                          }
+
+                          // Validate Online payment methods - requires reference number AND proof image
+                          const onlineMethods = ["Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card"];
+                          if (onlineMethods.includes(donationForm.method)) {
+                            if (!donationForm.reference.trim()) {
+                              showToast("Reference number is required for online payment methods", "error");
+                              return;
+                            }
+                            if (!imageUrl) {
+                              showToast("Proof image is required for online payment methods", "error");
+                              return;
+                            }
+                          }
+
                           await addDonation({
                             ...donationForm,
                             amount: amountNum.toFixed(2),
+                            screenshot: imageUrl,
                           });
                           showToast("Donation added successfully!");
                           setShowDonationForm(false);
@@ -7439,7 +8513,11 @@ Subscription Manager HK`;
                             method: "",
                             date: "",
                             notes: "",
+                            reference: "",
+                            screenshot: "",
                           });
+                          setDonationImageFile(null);
+                          setDonationImagePreview(null);
                           setDonationMemberSearch("");
                           setShowDonationMemberDropdown(false);
                           await fetchDonations();
@@ -7794,12 +8872,276 @@ Subscription Manager HK`;
                         </select>
                       </label>
 
+                      {/* Reference Number - Required for Online payment methods */}
+                      {["Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card"].includes(donationForm.method) && (
+                        <label>
+                          Reference Number <span style={{ color: "#ef4444" }}>*</span>
+                          <input
+                            type="text"
+                            value={donationForm.reference}
+                            onChange={(e) => setDonationForm({ ...donationForm, reference: e.target.value })}
+                            placeholder="Transaction reference number"
+                            required
+                          />
+                          {!donationForm.reference.trim() && (
+                            <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
+                              Reference number is required for online payment methods
+                            </small>
+                          )}
+                        </label>
+                      )}
+
+                      {/* Proof Image - Required for Cash payment method */}
+                      {donationForm.method === "Cash" && (
+                        <label style={{ gridColumn: "1 / -1" }}>
+                          Proof Image <span style={{ color: "#ef4444" }}>*</span>
+                          <div
+                            style={{
+                              border: "2px dashed #d0d0d0",
+                              borderRadius: "8px",
+                              padding: "24px",
+                              textAlign: "center",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              background: donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = "#5a31ea";
+                              e.currentTarget.style.background = "#f8f9ff";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = "#d0d0d0";
+                              e.currentTarget.style.background = donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa";
+                            }}
+                            onClick={() => {
+                              const input = document.createElement("input");
+                              input.type = "file";
+                              input.accept = "image/*";
+                              input.onchange = async (e) => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+
+                                if (!file.type.startsWith("image/")) {
+                                  showToast("Please upload an image file", "error");
+                                  return;
+                                }
+
+                                // Create preview
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setDonationImageFile(file);
+                                  setDonationImagePreview(reader.result);
+                                };
+                                reader.readAsDataURL(file);
+                              };
+                              input.click();
+                            }}
+                          >
+                            {donationImagePreview || donationForm.screenshot ? (
+                              <div style={{ position: "relative", display: "inline-block" }}>
+                                <img 
+                                  src={donationImagePreview || donationForm.screenshot} 
+                                  alt="Preview" 
+                                  style={{ 
+                                    maxWidth: "100%", 
+                                    maxHeight: "200px", 
+                                    borderRadius: "8px",
+                                    marginBottom: "8px"
+                                  }} 
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDonationImageFile(null);
+                                    setDonationImagePreview(null);
+                                    setDonationForm({ ...donationForm, screenshot: "" });
+                                  }}
+                                  style={{
+                                    position: "absolute",
+                                    top: "8px",
+                                    right: "8px",
+                                    background: "#ef4444",
+                                    color: "#fff",
+                                    border: "none",
+                                    borderRadius: "50%",
+                                    width: "28px",
+                                    height: "28px",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "0.875rem",
+                                  }}
+                                >
+                                  ×
+                                </button>
+                                <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
+                                  Click to change image
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <i className="fas fa-cloud-upload-alt" style={{ 
+                                  fontSize: "2rem", 
+                                  color: "#5a31ea", 
+                                  marginBottom: "8px" 
+                                }}></i>
+                                <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
+                                  Click to upload image
+                                </div>
+                                <div style={{ fontSize: "0.75rem", color: "#999", marginTop: "4px" }}>
+                                  PNG, JPG, GIF up to 10MB
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          {!donationImagePreview && !donationForm.screenshot && (
+                            <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
+                              Proof image is required for Cash payments
+                            </small>
+                          )}
+                        </label>
+                      )}
+
+                      {/* Proof Image - Also required for Online payment methods */}
+                      {["Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card"].includes(donationForm.method) && (
+                        <label style={{ gridColumn: "1 / -1" }}>
+                          Proof Image <span style={{ color: "#ef4444" }}>*</span>
+                          <div
+                            style={{
+                              border: "2px dashed #d0d0d0",
+                              borderRadius: "8px",
+                              padding: "24px",
+                              textAlign: "center",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              background: donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = "#5a31ea";
+                              e.currentTarget.style.background = "#f8f9ff";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = "#d0d0d0";
+                              e.currentTarget.style.background = donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa";
+                            }}
+                            onClick={() => {
+                              const input = document.createElement("input");
+                              input.type = "file";
+                              input.accept = "image/*";
+                              input.onchange = async (e) => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+
+                                if (!file.type.startsWith("image/")) {
+                                  showToast("Please upload an image file", "error");
+                                  return;
+                                }
+
+                                // Create preview
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setDonationImageFile(file);
+                                  setDonationImagePreview(reader.result);
+                                };
+                                reader.readAsDataURL(file);
+                              };
+                              input.click();
+                            }}
+                          >
+                            {donationImagePreview || donationForm.screenshot ? (
+                              <div style={{ position: "relative", display: "inline-block" }}>
+                                <img 
+                                  src={donationImagePreview || donationForm.screenshot} 
+                                  alt="Preview" 
+                                  style={{ 
+                                    maxWidth: "100%", 
+                                    maxHeight: "200px", 
+                                    borderRadius: "8px",
+                                    marginBottom: "8px"
+                                  }} 
+                                />
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDonationImageFile(null);
+                                    setDonationImagePreview(null);
+                                    setDonationForm({ ...donationForm, screenshot: "" });
+                                  }}
+                                  style={{
+                                    position: "absolute",
+                                    top: "8px",
+                                    right: "8px",
+                                    background: "#ef4444",
+                                    color: "#fff",
+                                    border: "none",
+                                    borderRadius: "50%",
+                                    width: "28px",
+                                    height: "28px",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "0.875rem",
+                                  }}
+                                >
+                                  ×
+                                </button>
+                                <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
+                                  Click to change image
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <i className="fas fa-cloud-upload-alt" style={{ 
+                                  fontSize: "2rem", 
+                                  color: "#5a31ea", 
+                                  marginBottom: "8px" 
+                                }}></i>
+                                <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
+                                  Click to upload image
+                                </div>
+                                <div style={{ fontSize: "0.75rem", color: "#999", marginTop: "4px" }}>
+                                  PNG, JPG, GIF up to 10MB
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          {!donationImagePreview && !donationForm.screenshot && (
+                            <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
+                              Proof image is required for online payment methods
+                            </small>
+                          )}
+                        </label>
+                      )}
+
                       <label>
                         Date *
                         <input
                           type="date"
                           value={donationForm.date}
-                          onChange={(e) => setDonationForm({ ...donationForm, date: e.target.value })}
+                          onChange={(e) => {
+                            const selectedDate = e.target.value;
+                            if (selectedDate) {
+                              const year = new Date(selectedDate).getFullYear();
+                              // Validate year range: 1900 to 2100
+                              if (year < 1900 || year > 2100) {
+                                showToast("Please select a valid date between 1900 and 2100", "error");
+                                return;
+                              }
+                            }
+                            setDonationForm({ ...donationForm, date: selectedDate });
+                          }}
+                          min="1900-01-01"
+                          max="2100-12-31"
+                          onClick={(e) => {
+                            e.currentTarget.focus();
+                            if (e.currentTarget.showPicker) {
+                              e.currentTarget.showPicker();
+                            }
+                          }}
                           required
                         />
                       </label>
@@ -7821,24 +9163,29 @@ Subscription Manager HK`;
                           type="button"
                           className="ghost-btn"
                           onClick={() => {
-                            setShowDonationForm(false);
-                            setDonationForm({
-                              donorName: "",
-                              isMember: false,
-                              memberId: "",
-                              amount: "",
-                              method: "",
-                              date: "",
-                              notes: "",
-                            });
-                            setDonationMemberSearch("");
-                            setShowDonationMemberDropdown(false);
+                          setShowDonationForm(false);
+                          setDonationForm({
+                            donorName: "",
+                            isMember: false,
+                            memberId: "",
+                            amount: "",
+                            method: "",
+                            date: "",
+                            notes: "",
+                            reference: "",
+                            screenshot: "",
+                          });
+                          setDonationImageFile(null);
+                          setDonationImagePreview(null);
+                          setDonationMemberSearch("");
+                          setShowDonationMemberDropdown(false);
                           }}
                         >
                           Cancel
                         </button>
                       </div>
                     </form>
+                    </div>
                   </div>
                 )}
 
@@ -7981,16 +9328,19 @@ Subscription Manager HK`;
                                         className="ghost-btn"
                                         style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
                                         onClick={async () => {
-                                          if (window.confirm("Are you sure you want to delete this donation?")) {
-                                            try {
-                                              const donationId = donation._id || donation.id;
-                                              await deleteDonation(donationId);
-                                              showToast("Donation deleted successfully!");
-                                              await fetchDonations();
-                                            } catch (error) {
-                                              showToast(error.message || "Failed to delete donation", "error");
+                                          showConfirmation(
+                                            "Are you sure you want to delete this donation?",
+                                            async () => {
+                                              try {
+                                                const donationId = donation._id || donation.id;
+                                                await deleteDonation(donationId);
+                                                showToast("Donation deleted successfully!");
+                                                await fetchDonations();
+                                              } catch (error) {
+                                                showToast(error.message || "Failed to delete donation", "error");
+                                              }
                                             }
-                                          }
+                                          );
                                         }}
                                       >
                                         Delete
@@ -8023,8 +9373,11 @@ Subscription Manager HK`;
             {activeSection === "reports" && (
               <article className="screen-card" id="reports">
                 <header className="screen-card__header">
-                  <h3>Reports</h3>
-                  <p>Financial overview and payment analytics.</p>
+                  <div>
+                    {renderBreadcrumb("reports")}
+                    <h3>Reports</h3>
+                    <p>Financial overview and payment analytics.</p>
+                  </div>
                 </header>
                 <div className="card reports">
                   <div className="reports-header">
@@ -8033,7 +9386,26 @@ Subscription Manager HK`;
                       <input
                         type="date"
                         value={dateRange.from}
-                        onChange={(e) => setDateRange({ ...dateRange, from: e.target.value })}
+                        onChange={(e) => {
+                          const selectedDate = e.target.value;
+                          if (selectedDate) {
+                            const year = new Date(selectedDate).getFullYear();
+                            // Validate year range: 1900 to 2100
+                            if (year < 1900 || year > 2100) {
+                              showToast("Please select a valid date between 1900 and 2100", "error");
+                              return;
+                            }
+                          }
+                          setDateRange({ ...dateRange, from: selectedDate });
+                        }}
+                        min="1900-01-01"
+                        max="2100-12-31"
+                        onClick={(e) => {
+                          e.currentTarget.focus();
+                          if (e.currentTarget.showPicker) {
+                            e.currentTarget.showPicker();
+                          }
+                        }}
                       />
                     </label>
                     <label>
@@ -8041,7 +9413,26 @@ Subscription Manager HK`;
                       <input
                         type="date"
                         value={dateRange.to}
-                        onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
+                        onChange={(e) => {
+                          const selectedDate = e.target.value;
+                          if (selectedDate) {
+                            const year = new Date(selectedDate).getFullYear();
+                            // Validate year range: 1900 to 2100
+                            if (year < 1900 || year > 2100) {
+                              showToast("Please select a valid date between 1900 and 2100", "error");
+                              return;
+                            }
+                          }
+                          setDateRange({ ...dateRange, to: selectedDate });
+                        }}
+                        min="1900-01-01"
+                        max="2100-12-31"
+                        onClick={(e) => {
+                          e.currentTarget.focus();
+                          if (e.currentTarget.showPicker) {
+                            e.currentTarget.showPicker();
+                          }
+                        }}
                       />
                     </label>
                     <div className="chip-group">
@@ -8109,44 +9500,168 @@ Subscription Manager HK`;
                     </div>
                   </div>
 
-                  <div className="chart-stack" style={{ marginTop: "24px" }}>
-                    <div>
-                      <h4>Collected vs Outstanding</h4>
-                      <div className="stacked-bar">
-                        <div
-                          className="collected"
-                          style={{
-                            width: `${Math.min(100, Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 100) || 0)}%`,
-                          }}
-                        >
-                          Collected
+                  {/* Charts Section */}
+                  <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "24px" }}>
+                    {/* Collected vs Outstanding Chart */}
+                    <div className="card" style={{ padding: "24px" }}>
+                      <h4 style={{ marginBottom: "20px", fontSize: "1.125rem", fontWeight: "600" }}>Collected vs Outstanding</h4>
+                      <div style={{ position: "relative", height: "200px", display: "flex", alignItems: "flex-end", gap: "20px", justifyContent: "center" }}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", flex: 1 }}>
+                          <div
+                            style={{
+                              width: "100%",
+                              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                              borderRadius: "8px 8px 0 0",
+                              minHeight: "40px",
+                              height: `${Math.max(10, Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 180) || 0)}px`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#fff",
+                              fontWeight: "600",
+                              fontSize: "0.875rem",
+                              boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)",
+                            }}
+                          >
+                            ${reportStats.collected.toLocaleString()}
+                          </div>
+                          <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#10b981" }}>Collected</span>
                         </div>
-                        <div
-                          className="outstanding"
-                          style={{
-                            width: `${Math.max(0, 100 - Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 100) || 0)}%`,
-                          }}
-                        >
-                          Outstanding
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", flex: 1 }}>
+                          <div
+                            style={{
+                              width: "100%",
+                              background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+                              borderRadius: "8px 8px 0 0",
+                              minHeight: "40px",
+                              height: `${Math.max(10, Math.round((dashboardMetrics.outstanding / (reportStats.collected + dashboardMetrics.outstanding)) * 180) || 0)}px`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "#fff",
+                              fontWeight: "600",
+                              fontSize: "0.875rem",
+                              boxShadow: "0 2px 8px rgba(239, 68, 68, 0.3)",
+                            }}
+                          >
+                            ${dashboardMetrics.outstanding.toLocaleString()}
+                          </div>
+                          <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#ef4444" }}>Outstanding</span>
                         </div>
                       </div>
                     </div>
 
-                    <div>
-                      <h4>Payment Method Breakdown</h4>
-                      <ul className="donut-legend">
-                        {reportStats.methodMix.map((item) => (
-                          <li key={item.label}>
-                            <span
-                              className={`legend-dot ${item.label
-                                .toLowerCase()
-                                .replace(/[^a-z]/g, "")}`}
-                            ></span>
-                            {item.label} · {item.value}
-                          </li>
-                        ))}
-                      </ul>
+                    {/* Payments Over Time Chart */}
+                    <div className="card" style={{ padding: "24px" }}>
+                      <h4 style={{ marginBottom: "20px", fontSize: "1.125rem", fontWeight: "600" }}>Payments Over Time</h4>
+                      <div style={{ position: "relative", height: "200px" }}>
+                        {(() => {
+                          // Group payments by week (or day if less than 7 days)
+                          const paymentsByPeriod = {};
+                          const fromDate = new Date(dateRange.from);
+                          const toDate = new Date(dateRange.to);
+                          const daysDiff = Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24));
+                          
+                          reportStats.paymentsInRange.forEach(payment => {
+                            const date = payment.date ? new Date(payment.date) : (payment.createdAt ? new Date(payment.createdAt) : new Date());
+                            let period;
+                            
+                            if (daysDiff <= 7) {
+                              // Group by day
+                              period = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            } else if (daysDiff <= 30) {
+                              // Group by week
+                              const weekStart = new Date(date);
+                              weekStart.setDate(date.getDate() - date.getDay());
+                              period = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            } else {
+                              // Group by month
+                              period = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                            }
+                            
+                            if (!paymentsByPeriod[period]) {
+                              paymentsByPeriod[period] = 0;
+                            }
+                            const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+                            paymentsByPeriod[period] += amount;
+                          });
+
+                          const periods = Object.keys(paymentsByPeriod).sort((a, b) => {
+                            return new Date(a) - new Date(b);
+                          }).slice(-10); // Show last 10 periods
+                          const maxAmount = Math.max(...periods.map(p => paymentsByPeriod[p]), 1);
+
+                          return (
+                            <div style={{ display: "flex", alignItems: "flex-end", gap: "4px", height: "100%", justifyContent: "space-between", padding: "0 8px" }}>
+                              {periods.length > 0 ? periods.map((period, index) => {
+                                const amount = paymentsByPeriod[period];
+                                const height = Math.max(20, (amount / maxAmount) * 160);
+                                return (
+                                  <div key={`${period}-${index}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", flex: 1, minWidth: "40px" }}>
+                                    <div
+                                      style={{
+                                        width: "100%",
+                                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                        borderRadius: "4px 4px 0 0",
+                                        height: `${height}px`,
+                                        minHeight: "20px",
+                                        display: "flex",
+                                        alignItems: "flex-end",
+                                        justifyContent: "center",
+                                        paddingBottom: "4px",
+                                        color: "#fff",
+                                        fontSize: "0.7rem",
+                                        fontWeight: "600",
+                                        boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)",
+                                        cursor: "pointer",
+                                        transition: "all 0.2s ease",
+                                      }}
+                                      title={`${period}: $${amount.toFixed(2)}`}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.transform = "scaleY(1.05)";
+                                        e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.4)";
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.transform = "scaleY(1)";
+                                        e.currentTarget.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
+                                      }}
+                                    >
+                                      {height > 35 && `$${Math.round(amount)}`}
+                                    </div>
+                                    <span style={{ fontSize: "0.65rem", color: "#666", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+                                      {period.length > 8 ? period.substring(0, 6) + '...' : period}
+                                    </span>
+                                  </div>
+                                );
+                              }) : (
+                                <div style={{ width: "100%", textAlign: "center", color: "#999", padding: "40px 0" }}>
+                                  No payment data in selected period
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
+                  </div>
+
+                  {/* Payment Method Breakdown */}
+                  <div className="card" style={{ marginTop: "24px", padding: "24px" }}>
+                    <h4 style={{ marginBottom: "16px", fontSize: "1.125rem", fontWeight: "600" }}>Payment Method Breakdown</h4>
+                    <ul className="donut-legend" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                      {reportStats.methodMix.map((item) => (
+                        <li key={item.label} style={{ marginBottom: "12px", display: "flex", alignItems: "center", gap: "12px" }}>
+                          <span
+                            className={`legend-dot ${item.label
+                              .toLowerCase()
+                              .replace(/[^a-z]/g, "")}`}
+                            style={{ flexShrink: 0 }}
+                          ></span>
+                          <span style={{ flex: 1, fontSize: "0.875rem" }}>{item.label}</span>
+                          <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#1a1a1a" }}>{item.value}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
 
                    {/* Filters */}
@@ -8175,9 +9690,9 @@ Subscription Manager HK`;
 
                   {/* Transactions Table */}
                   <div style={{ marginTop: "24px" }}>
-                    <h4 style={{ marginBottom: "16px" }}>Transactions</h4>
-                    <div className="card">
-                      <div className="table-wrapper">
+                    <h4 style={{ marginBottom: "16px", fontSize: "1.125rem", fontWeight: "600" }}>Transactions</h4>
+                    <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                      <div className="table-wrapper" style={{ overflowX: "auto", width: "100%" }}>
                         <Table
                           columns={["Date", "Type", "Member / Donor", "Amount", "Details"]}
                           rows={(() => {
@@ -8348,8 +9863,11 @@ Subscription Manager HK`;
             {activeSection === "export-reports" && (
               <article className="screen-card" id="export-reports">
                 <header className="screen-card__header">
-                  <h3><i className="fas fa-file-export" style={{ marginRight: "10px" }}></i>Export Reports</h3>
-                  <p>Export financial data in various formats.</p>
+                  <div>
+                    {renderBreadcrumb("export-reports")}
+                    <h3><i className="fas fa-file-export" style={{ marginRight: "10px" }}></i>Export Reports</h3>
+                    <p>Export financial data in various formats.</p>
+                  </div>
                 </header>
                 <div className="card">
                   <div style={{ padding: "24px" }}>
@@ -8422,6 +9940,7 @@ Subscription Manager HK`;
                 <header className="screen-card__header">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
                     <div>
+                      {renderBreadcrumb("roles")}
                       <h3><i className="fas fa-user-shield" style={{ marginRight: "10px" }}></i>Roles</h3>
                       <p>Manage admin roles and permissions.</p>
                     </div>
@@ -8511,14 +10030,18 @@ Subscription Manager HK`;
                                     className="ghost-btn icon-btn icon-btn--delete"
                                     style={{ color: "#ef4444" }}
                                     onClick={async () => {
-                                      if (window.confirm(`Remove ${admin.name} from admin users?`)) {
-                                        try {
-                                          await deleteAdminUser(admin.id);
-                                          showToast(`${admin.name} removed`);
-                                        } catch (error) {
-                                          showToast(error.message || "Failed to delete admin", "error");
+                                      showConfirmation(
+                                        `Remove ${admin.name} from admin users?`,
+                                        async () => {
+                                          try {
+                                            await deleteAdminUser(admin.id);
+                                            showToast(`${admin.name} removed`);
+                                            await fetchAdmins();
+                                          } catch (error) {
+                                            showToast(error.message || "Failed to delete admin", "error");
+                                          }
                                         }
-                                      }
+                                      );
                                     }}
                                     title="Delete Admin"
                                   >
@@ -8540,8 +10063,11 @@ Subscription Manager HK`;
             {activeSection === "org-settings" && (
               <article className="screen-card" id="org-settings">
                 <header className="screen-card__header">
-                  <h3><i className="fas fa-building" style={{ marginRight: "10px" }}></i>Organization Settings</h3>
-                  <p>Manage organization information and preferences.</p>
+                  <div>
+                    {renderBreadcrumb("org-settings")}
+                    <h3><i className="fas fa-building" style={{ marginRight: "10px" }}></i>Organization Settings</h3>
+                    <p>Manage organization information and preferences.</p>
+                  </div>
                 </header>
                 <div className="settings-container">
                   <div className="settings-card">
@@ -8620,8 +10146,11 @@ Subscription Manager HK`;
             {activeSection === "settings" && isAdmin && (
               <article className="screen-card" id="settings">
                 <header className="screen-card__header">
-                  <h3>Admin Settings</h3>
-                  <p>Organization profile and admin accounts.</p>
+                  <div>
+                    {renderBreadcrumb("settings")}
+                    <h3>Admin Settings</h3>
+                    <p>Organization profile and admin accounts.</p>
+                  </div>
                 </header>
                 <div className="settings-container">
                   <div className="settings-card">
@@ -8698,14 +10227,18 @@ Subscription Manager HK`;
                                   <button
                                     className="ghost-btn settings-table__action-btn settings-table__action-btn--danger"
                                     onClick={async () => {
-                                      if (window.confirm(`Remove ${user.name} from admin users?`)) {
-                                        try {
-                                          await deleteAdminUser(user.id);
-                                          showToast(`${user.name} removed`);
-                                        } catch (error) {
-                                          showToast(error.message || "Failed to delete admin", "error");
+                                      showConfirmation(
+                                        `Remove ${user.name} from admin users?`,
+                                        async () => {
+                                          try {
+                                            await deleteAdminUser(user.id);
+                                            showToast(`${user.name} removed`);
+                                            await fetchAdmins();
+                                          } catch (error) {
+                                            showToast(error.message || "Failed to delete admin", "error");
+                                          }
                                         }
-                                      }
+                                      );
                                     }}
                                   >
                                     Remove
@@ -9069,17 +10602,59 @@ Subscription Manager HK`;
                 </div>
               </div>
 
-              {/* Attachment Upload */}
-              <div>
-                <label style={{ 
-                  display: "block", 
-                  fontSize: "0.875rem", 
-                  fontWeight: "600", 
-                  color: "#333", 
-                  marginBottom: "12px" 
-                }}>
-                  Attachment Image (Optional)
-                </label>
+              {/* Reference Number Field - Only shown for Online payments */}
+              {paymentModalData.paymentMethod === "Online" && (
+                <div>
+                  <label style={{ 
+                    display: "block", 
+                    fontSize: "0.875rem", 
+                    fontWeight: "600", 
+                    color: "#333", 
+                    marginBottom: "8px" 
+                  }}>
+                    Reference Number <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentModalData.reference}
+                    onChange={(e) => setPaymentModalData({
+                      ...paymentModalData,
+                      reference: e.target.value
+                    })}
+                    placeholder="Enter payment reference number"
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      border: "1px solid #e0e0e0",
+                      borderRadius: "8px",
+                      fontSize: "0.875rem",
+                      outline: "none",
+                      transition: "border-color 0.2s",
+                    }}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = "#5a31ea";
+                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = "#e0e0e0";
+                      e.target.style.boxShadow = "none";
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Attachment Upload - Required for both payment methods */}
+              {(paymentModalData.paymentMethod === "Admin" || paymentModalData.paymentMethod === "Online") && (
+                <div>
+                  <label style={{ 
+                    display: "block", 
+                    fontSize: "0.875rem", 
+                    fontWeight: "600", 
+                    color: "#333", 
+                    marginBottom: "12px" 
+                  }}>
+                    Attachment Image <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
                 <div style={{ 
                   border: "2px dashed #d0d0d0",
                   borderRadius: "8px",
@@ -9184,6 +10759,7 @@ Subscription Manager HK`;
                   )}
                 </div>
               </div>
+              )}
 
               {/* Action Buttons */}
               <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
@@ -9194,10 +10770,11 @@ Subscription Manager HK`;
                     setShowPaymentModal(false);
                     setPaymentModalInvoice(null);
                     setPaymentModalData({
-                      paymentMethod: "Admin",
+                      paymentMethod: "",
                       imageFile: null,
                       imagePreview: null,
                       imageUrl: "",
+                      reference: "",
                     });
                   }}
                   disabled={uploadingPaymentModal}
@@ -9207,77 +10784,107 @@ Subscription Manager HK`;
                 <button
                   type="button"
                   className="primary-btn"
-                  disabled={uploadingPaymentModal}
+                  disabled={
+                    uploadingPaymentModal || 
+                    !paymentModalData.paymentMethod || 
+                    (!paymentModalData.imageFile && !paymentModalInvoice.screenshot) ||
+                    (paymentModalData.paymentMethod === "Online" && !paymentModalData.reference.trim())
+                  }
                   onClick={async () => {
-                    setUploadingPaymentModal(true);
-                    try {
-                      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-                      let imageUrl = paymentModalData.imageUrl || paymentModalInvoice.screenshot;
+                    // Show confirmation dialog
+                    showConfirmation(
+                      `Are you sure you want to mark Invoice #${paymentModalInvoice.id} as paid?`,
+                      async () => {
+                        setUploadingPaymentModal(true);
+                        try {
+                          const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                          let imageUrl = paymentModalData.imageUrl || paymentModalInvoice.screenshot;
 
-                      // Upload image if new file exists
-                      if (paymentModalData.imageFile) {
-                        const formData = new FormData();
-                        formData.append("screenshot", paymentModalData.imageFile);
-                        formData.append("uploadType", "invoice-payment-attachment");
+                          // Upload image if new file exists
+                          if (paymentModalData.imageFile) {
+                            const formData = new FormData();
+                            formData.append("screenshot", paymentModalData.imageFile);
+                            formData.append("uploadType", "invoice-payment-attachment");
 
-                        const uploadResponse = await fetch(`${apiUrl}/api/upload/screenshot`, {
-                          method: "POST",
-                          body: formData,
-                        });
+                            const uploadResponse = await fetch(`${apiUrl}/api/upload/screenshot`, {
+                              method: "POST",
+                              body: formData,
+                            });
 
-                        if (!uploadResponse.ok) {
-                          // Try to get error message from response
-                          let errorMessage = "Failed to upload image";
-                          try {
-                            const errorData = await uploadResponse.json();
-                            errorMessage = errorData.error || errorMessage;
-                            console.error("Upload error response:", errorData);
-                          } catch (parseError) {
-                            console.error("Failed to parse error response:", parseError);
-                            errorMessage = `Upload failed with status ${uploadResponse.status}`;
+                            if (!uploadResponse.ok) {
+                              // Try to get error message from response
+                              let errorMessage = "Failed to upload image";
+                              try {
+                                const errorData = await uploadResponse.json();
+                                errorMessage = errorData.error || errorMessage;
+                                console.error("Upload error response:", errorData);
+                              } catch (parseError) {
+                                console.error("Failed to parse error response:", parseError);
+                                errorMessage = `Upload failed with status ${uploadResponse.status}`;
+                              }
+                              throw new Error(errorMessage);
+                            }
+
+                            const uploadData = await uploadResponse.json();
+                            if (!uploadData.url) {
+                              throw new Error("No URL returned from upload. Please try again.");
+                            }
+                            imageUrl = uploadData.url;
                           }
-                          throw new Error(errorMessage);
+
+                          // Validate required fields
+                          if (!imageUrl) {
+                            throw new Error("Image upload is required for all payments");
+                          }
+
+                          if (paymentModalData.paymentMethod === "Online" && !paymentModalData.reference.trim()) {
+                            throw new Error("Reference number is required for online payments");
+                          }
+
+                          // Update invoice with screenshot if image was uploaded
+                          if (imageUrl && imageUrl !== paymentModalInvoice.screenshot) {
+                            await updateInvoice(paymentModalInvoice.id, {
+                              screenshot: imageUrl,
+                            });
+                          }
+
+                          // Mark invoice as paid with reference number
+                          const paymentMethod = paymentModalData.paymentMethod === "Admin" ? "Cash" : "Online";
+                          const referenceNumber = paymentModalData.paymentMethod === "Online" 
+                            ? paymentModalData.reference.trim() 
+                            : null;
+                          await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl, referenceNumber);
+
+                          // Close modal and reset
+                          setShowPaymentModal(false);
+                          setPaymentModalInvoice(null);
+                          setPaymentModalData({
+                            paymentMethod: "",
+                            imageFile: null,
+                            imagePreview: null,
+                            imageUrl: "",
+                            reference: "",
+                          });
+
+                          showToast(`Invoice #${paymentModalInvoice.id} marked as paid!`, "success");
+                        } catch (error) {
+                          console.error("Error processing payment:", error);
+                          showToast(error.message || "Failed to process payment", "error");
+                        } finally {
+                          setUploadingPaymentModal(false);
                         }
-
-                        const uploadData = await uploadResponse.json();
-                        if (!uploadData.url) {
-                          throw new Error("No URL returned from upload. Please try again.");
-                        }
-                        imageUrl = uploadData.url;
                       }
-
-                      // Update invoice with screenshot if image was uploaded
-                      if (imageUrl && imageUrl !== paymentModalInvoice.screenshot) {
-                        await updateInvoice(paymentModalInvoice.id, {
-                          screenshot: imageUrl,
-                        });
-                      }
-
-                      // Mark invoice as paid
-                      const paymentMethod = paymentModalData.paymentMethod === "Admin" ? "Cash" : "Online";
-                      await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl);
-
-                      // Close modal and reset
-                      setShowPaymentModal(false);
-                      setPaymentModalInvoice(null);
-                      setPaymentModalData({
-                        paymentMethod: "Admin",
-                        imageFile: null,
-                        imagePreview: null,
-                        imageUrl: "",
-                      });
-
-                      showToast(`Invoice #${paymentModalInvoice.id} marked as paid!`, "success");
-                    } catch (error) {
-                      console.error("Error processing payment:", error);
-                      showToast(error.message || "Failed to process payment", "error");
-                    } finally {
-                      setUploadingPaymentModal(false);
-                    }
+                    );
                   }}
                   style={{
-                    opacity: uploadingPaymentModal ? 0.6 : 1,
-                    cursor: uploadingPaymentModal ? "not-allowed" : "pointer",
+                    opacity: (uploadingPaymentModal || 
+                      !paymentModalData.paymentMethod || 
+                      (!paymentModalData.imageFile && !paymentModalInvoice.screenshot) ||
+                      (paymentModalData.paymentMethod === "Online" && !paymentModalData.reference.trim())) ? 0.6 : 1,
+                    cursor: (uploadingPaymentModal || 
+                      !paymentModalData.paymentMethod || 
+                      (!paymentModalData.imageFile && !paymentModalInvoice.screenshot) ||
+                      (paymentModalData.paymentMethod === "Online" && !paymentModalData.reference.trim())) ? "not-allowed" : "pointer",
                   }}
                 >
                   {uploadingPaymentModal ? "Processing..." : "Mark as Paid"}

@@ -969,6 +969,12 @@ export function ServerPage() {
                             required
                             value={invoiceForm.due}
                             onChange={(e) => setInvoiceForm({ ...invoiceForm, due: e.target.value })}
+                            onClick={(e) => {
+                              e.currentTarget.focus();
+                              if (e.currentTarget.showPicker) {
+                                e.currentTarget.showPicker();
+                              }
+                            }}
                             className="mono-input"
                           />
                         </label>
