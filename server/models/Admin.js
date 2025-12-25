@@ -13,6 +13,9 @@ const AdminSchema = new mongoose.Schema({
     default: "Viewer",
   },
   status: { type: String, default: "Active" },
+  // Account lockout fields
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockoutUntil: { type: Date, default: null },
 });
 
 const AdminModel = mongoose.model("admins", AdminSchema);

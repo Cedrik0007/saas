@@ -5,6 +5,7 @@ import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
 import { Pagination } from "../components/Pagination.jsx";
 import { useApp } from "../context/AppContext.jsx";
+import { useAutoLogout } from "../hooks/useAutoLogout.js";
 import jsPDF from "jspdf";
 import {
 } from "../data";
@@ -504,6 +505,9 @@ export function AdminPage() {
   const [remindersChannelFilter, setRemindersChannelFilter] = useState("All"); // All, Email, WhatsApp
 
   const navigate = useNavigate();
+  
+  // Auto-logout on inactivity (15 minutes)
+  useAutoLogout(15);
 
   // Sync URL with activeSection changes
   useEffect(() => {

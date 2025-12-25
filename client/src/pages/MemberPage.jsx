@@ -4,6 +4,7 @@ import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
 import { useApp } from "../context/AppContext.jsx";
+import { useAutoLogout } from "../hooks/useAutoLogout.js";
 import { statusClass } from "../statusClasses";
 
 export function MemberPage() {
@@ -143,6 +144,9 @@ export function MemberPage() {
   }, [isMobileMenuOpen]);
 
   const navigate = useNavigate();
+  
+  // Auto-logout on inactivity (15 minutes)
+  useAutoLogout(15);
 
   const handleNavClick = (id) => {
     setActiveSection(id);

@@ -11,6 +11,9 @@ const UserSchema = new mongoose.Schema({
   nextDue: String,
   lastPayment: String,
   subscriptionType: { type: String, default: "Lifetime" },
+  // Account lockout fields
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockoutUntil: { type: Date, default: null },
 }, {
   timestamps: true  // Automatically adds createdAt and updatedAt fields
 });

@@ -47,13 +47,50 @@ router.post("/login", async (req, res) => {
         });
       }
 
+      // Check if account is locked
+      if (admin.lockoutUntil && admin.lockoutUntil > new Date()) {
+        const minutesRemaining = Math.ceil((admin.lockoutUntil - new Date()) / (1000 * 60));
+        return res.status(403).json({ 
+          message: `Account temporarily locked due to multiple failed login attempts. Please try again in ${minutesRemaining} minute(s).`,
+          success: false,
+          locked: true
+        });
+      }
+
+      // Reset lockout if it has expired
+      if (admin.lockoutUntil && admin.lockoutUntil <= new Date()) {
+        admin.failedLoginAttempts = 0;
+        admin.lockoutUntil = null;
+      }
+
       // Check password
       if (admin.password !== password) {
+        // Increment failed attempts
+        admin.failedLoginAttempts = (admin.failedLoginAttempts || 0) + 1;
+        
+        // Lock account after 5 failed attempts
+        if (admin.failedLoginAttempts >= 5) {
+          const lockoutDuration = 10 * 60 * 1000; // 10 minutes in milliseconds
+          admin.lockoutUntil = new Date(Date.now() + lockoutDuration);
+          await admin.save();
+          return res.status(403).json({ 
+            message: "Account temporarily locked due to multiple failed login attempts. Please try again in 10 minutes.",
+            success: false,
+            locked: true
+          });
+        }
+        
+        await admin.save();
         return res.status(401).json({ 
           message: "Invalid email or password",
           success: false 
         });
       }
+
+      // Successful login - reset failed attempts
+      admin.failedLoginAttempts = 0;
+      admin.lockoutUntil = null;
+      await admin.save();
 
       // Check if admin is active
       if (admin.status && admin.status !== 'Active') {
@@ -87,6 +124,22 @@ router.post("/login", async (req, res) => {
         });
       }
 
+      // Check if account is locked
+      if (member.lockoutUntil && member.lockoutUntil > new Date()) {
+        const minutesRemaining = Math.ceil((member.lockoutUntil - new Date()) / (1000 * 60));
+        return res.status(403).json({ 
+          message: `Account temporarily locked due to multiple failed login attempts. Please try again in ${minutesRemaining} minute(s).`,
+          success: false,
+          locked: true
+        });
+      }
+
+      // Reset lockout if it has expired
+      if (member.lockoutUntil && member.lockoutUntil <= new Date()) {
+        member.failedLoginAttempts = 0;
+        member.lockoutUntil = null;
+      }
+
       // Check password - require password for member login
       if (!member.password || member.password.trim() === '') {
         return res.status(401).json({ 
@@ -100,11 +153,32 @@ router.post("/login", async (req, res) => {
       const inputPassword = password.trim();
       
       if (memberPassword !== inputPassword) {
+        // Increment failed attempts
+        member.failedLoginAttempts = (member.failedLoginAttempts || 0) + 1;
+        
+        // Lock account after 5 failed attempts
+        if (member.failedLoginAttempts >= 5) {
+          const lockoutDuration = 10 * 60 * 1000; // 10 minutes in milliseconds
+          member.lockoutUntil = new Date(Date.now() + lockoutDuration);
+          await member.save();
+          return res.status(403).json({ 
+            message: "Account temporarily locked due to multiple failed login attempts. Please try again in 10 minutes.",
+            success: false,
+            locked: true
+          });
+        }
+        
+        await member.save();
         return res.status(401).json({ 
           message: "Invalid email or password",
           success: false 
         });
       }
+
+      // Successful login - reset failed attempts
+      member.failedLoginAttempts = 0;
+      member.lockoutUntil = null;
+      await member.save();
 
       // Check if member is approved (status must be 'Active')
       if (member.status === 'Pending') {

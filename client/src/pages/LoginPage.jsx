@@ -13,34 +13,51 @@ export function LoginPage() {
   const [errors, setErrors] = useState({ email: "", password: "" });
   const navigate = useNavigate();
 
+  // Check for logout reason (inactivity) and show message
+  useEffect(() => {
+    const logoutReason = sessionStorage.getItem('logoutReason');
+    if (logoutReason === 'inactivity') {
+      sessionStorage.removeItem('logoutReason');
+      setAuthMessage({
+        type: "error",
+        text: "Session expired due to inactivity. Please login again.",
+      });
+    }
+  }, []);
+
   // Email validation function
   const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
 
-  // Validate form fields
+  // Validate form fields - email first, password only after email is valid
   const validateForm = () => {
     const newErrors = { email: "", password: "" };
-    let isValid = true;
-
-    // Validate email
+    
+    // Validate email first
     if (!form.email.trim()) {
       newErrors.email = "Email is required";
-      isValid = false;
-    } else if (!validateEmail(form.email.trim())) {
+      setErrors(newErrors);
+      return false;
+    }
+    
+    if (!validateEmail(form.email.trim())) {
       newErrors.email = "Please enter a valid email address";
-      isValid = false;
+      setErrors(newErrors);
+      return false;
     }
 
-    // Validate password
+    // Only validate password if email is valid
     if (!form.password) {
       newErrors.password = "Password is required";
-      isValid = false;
+      setErrors(newErrors);
+      return false;
     }
 
+    // All valid
     setErrors(newErrors);
-    return isValid;
+    return true;
   };
 
   // Feature flag to show/hide member login (set to true to show, false to hide)
@@ -77,11 +94,19 @@ export function LoginPage() {
         const data = await response.json();
 
         if (!response.ok || !data.success) {
-          // Show generic error message for security (no specific details)
-          setAuthMessage({
-            type: "error",
-            text: "Invalid email or password. Please check your credentials and try again.",
-          });
+          // Check if account is locked
+          if (data.locked) {
+            setAuthMessage({
+              type: "error",
+              text: data.message || "Account temporarily locked due to multiple failed login attempts. Please try again later.",
+            });
+          } else {
+            // Show generic error message for security (no specific details)
+            setAuthMessage({
+              type: "error",
+              text: data.message || "Invalid email or password. Please check your credentials and try again.",
+            });
+          }
           setLoadingRole(null);
           return;
         }
@@ -233,11 +258,14 @@ export function LoginPage() {
                     }
                   }}
                   onBlur={() => {
-                    // Validate on blur
-                    if (!form.password) {
-                      setErrors({ ...errors, password: "Password is required" });
-                    } else {
-                      setErrors({ ...errors, password: "" });
+                    // Only validate password on blur if email is valid
+                    const emailValid = form.email.trim() && validateEmail(form.email.trim());
+                    if (emailValid) {
+                      if (!form.password) {
+                        setErrors({ ...errors, password: "Password is required" });
+                      } else {
+                        setErrors({ ...errors, password: "" });
+                      }
                     }
                   }}
                   placeholder="Enter your password"

@@ -9,6 +9,7 @@ export function ForgotPasswordPage() {
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [emailError, setEmailError] = useState("");
   const navigate = useNavigate();
 
   // Email validation function
@@ -20,20 +21,17 @@ export function ForgotPasswordPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validate email
+    // Validate email first - show only email error
+    setEmailError("");
+    setMessage(null);
+    
     if (!email.trim()) {
-      setMessage({
-        type: "error",
-        text: "Email is required",
-      });
+      setEmailError("Email is required");
       return;
     }
 
     if (!validateEmail(email.trim())) {
-      setMessage({
-        type: "error",
-        text: "Please enter a valid email address",
-      });
+      setEmailError("Please enter a valid email address");
       return;
     }
 
@@ -56,10 +54,16 @@ export function ForgotPasswordPage() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        setMessage({
-          type: "error",
-          text: data.message || "Failed to send reset email. Please try again.",
-        });
+        // Show error in field error style if it's email-related, otherwise in message
+        const errorMsg = data.message || "Failed to send reset email. Please try again.";
+        if (errorMsg.toLowerCase().includes("email")) {
+          setEmailError(errorMsg);
+        } else {
+          setMessage({
+            type: "error",
+            text: errorMsg,
+          });
+        }
         setLoading(false);
         return;
       }
@@ -111,12 +115,41 @@ export function ForgotPasswordPage() {
                   <input
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      // Clear error when user starts typing
+                      if (emailError) {
+                        setEmailError("");
+                      }
+                    }}
+                    onBlur={() => {
+                      // Validate on blur
+                      if (email.trim() && !validateEmail(email.trim())) {
+                        setEmailError("Please enter a valid email address");
+                      } else if (!email.trim()) {
+                        setEmailError("Email is required");
+                      } else {
+                        setEmailError("");
+                      }
+                    }}
                     placeholder="Enter your email address"
-                    className="mono-input"
+                    className={`mono-input ${emailError ? "input-error" : ""}`}
                     disabled={loading}
                     required
                   />
+                  {emailError && (
+                    <div className="field-error" style={{ 
+                      marginTop: "4px", 
+                      fontSize: "0.875rem", 
+                      color: "#ef4444",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px"
+                    }}>
+                      <i className="fas fa-exclamation-circle" style={{ fontSize: "0.75rem" }}></i>
+                      {emailError}
+                    </div>
+                  )}
                 </label>
 
                 <div className="login-buttons">
