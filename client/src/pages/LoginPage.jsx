@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
@@ -33,6 +33,7 @@ export function LoginPage() {
 
   // Validate form fields - email first, password only after email is valid
   const validateForm = () => {
+    // Clear all errors first
     const newErrors = { email: "", password: "" };
     
     // Validate email first
@@ -55,7 +56,7 @@ export function LoginPage() {
       return false;
     }
 
-    // All valid
+    // All valid - clear all errors
     setErrors(newErrors);
     return true;
   };
@@ -210,17 +211,24 @@ export function LoginPage() {
                 value={form.email}
                 onChange={(e) => {
                   setForm({ ...form, email: e.target.value });
-                  // Clear error when user starts typing
+                  // Clear email error when user starts typing
                   if (errors.email) {
                     setErrors({ ...errors, email: "" });
+                  }
+                  // Clear password error if email becomes invalid
+                  const emailValue = e.target.value.trim();
+                  if (!emailValue || !validateEmail(emailValue)) {
+                    if (errors.password) {
+                      setErrors({ ...errors, password: "" });
+                    }
                   }
                 }}
                 onBlur={() => {
                   // Validate on blur
                   if (form.email.trim() && !validateEmail(form.email.trim())) {
-                    setErrors({ ...errors, email: "Please enter a valid email address" });
+                    setErrors({ ...errors, email: "Please enter a valid email address", password: "" });
                   } else if (!form.email.trim()) {
-                    setErrors({ ...errors, email: "Email is required" });
+                    setErrors({ ...errors, email: "Email is required", password: "" });
                   } else {
                     setErrors({ ...errors, email: "" });
                   }
@@ -264,6 +272,11 @@ export function LoginPage() {
                       if (!form.password) {
                         setErrors({ ...errors, password: "Password is required" });
                       } else {
+                        setErrors({ ...errors, password: "" });
+                      }
+                    } else {
+                      // Clear password error if email is invalid
+                      if (errors.password) {
                         setErrors({ ...errors, password: "" });
                       }
                     }
