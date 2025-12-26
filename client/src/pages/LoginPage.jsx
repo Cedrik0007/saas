@@ -92,7 +92,18 @@ export function LoginPage() {
           }),
         });
 
-        const data = await response.json();
+        let data;
+        try {
+          data = await response.json();
+        } catch (jsonError) {
+          console.error("JSON parse error:", jsonError);
+          setAuthMessage({
+            type: "error",
+            text: "Invalid response from server. Please try again.",
+          });
+          setLoadingRole(null);
+          return;
+        }
 
         if (!response.ok || !data.success) {
           // Check if account is locked
@@ -125,48 +136,42 @@ export function LoginPage() {
             sessionStorage.setItem('adminRole', data.adminRole);
           }
           
-          setAuthMessage({
-            type: "success",
-            text: `Welcome ${data.name}! Redirecting to admin panel...`,
+          // Clear loading state before navigation
+          setLoadingRole(null);
+          
+          // Instant redirect - no delay
+          navigate("/admin", {
+            replace: true,
+            state: {
+              role: "Admin",
+              token: data.token,
+              email: data.email,
+              name: data.name,
+              adminId: data.adminId,
+              adminRole: data.adminRole
+            },
           });
-
-          setTimeout(() => {
-            navigate("/admin", {
-              replace: true,
-              state: {
-                role: "Admin",
-                token: data.token,
-                email: data.email,
-                name: data.name,
-                adminId: data.adminId,
-                adminRole: data.adminRole
-              },
-            });
-          }, 500);
         } else {
           // Member login
           sessionStorage.setItem('memberEmail', data.email);
           sessionStorage.setItem('memberName', data.name);
           sessionStorage.setItem('memberId', data.memberId);
           
-          setAuthMessage({
-            type: "success",
-            text: `Welcome ${data.name}! Redirecting to member portal...`,
+          // Clear loading state before navigation
+          setLoadingRole(null);
+          
+          // Instant redirect - no delay
+          navigate("/member", {
+            replace: true,
+            state: {
+              role: "Member",
+              token: data.token,
+              email: data.email,
+              name: data.name,
+              memberId: data.memberId,
+              phone: data.phone
+            },
           });
-
-          setTimeout(() => {
-            navigate("/member", {
-              replace: true,
-              state: {
-                role: "Member",
-                token: data.token,
-                email: data.email,
-                name: data.name,
-                memberId: data.memberId,
-                phone: data.phone
-              },
-            });
-          }, 500);
         }
       } catch (error) {
         console.error("Login error:", error);
@@ -488,24 +493,18 @@ export function LoginPage() {
                       sessionStorage.setItem("memberName", data.name);
                       sessionStorage.setItem("memberId", data.memberId);
 
-                      setAuthMessage({
-                        type: "success",
-                        text: `Welcome ${data.name}! Redirecting to member portal...`,
+                      // Instant redirect - no delay
+                      navigate("/member", {
+                        replace: true,
+                        state: {
+                          role: "Member",
+                          token: data.token,
+                          email: data.email,
+                          name: data.name,
+                          memberId: data.memberId,
+                          phone: data.phone,
+                        },
                       });
-
-                      setTimeout(() => {
-                        navigate("/member", {
-                          replace: true,
-                          state: {
-                            role: "Member",
-                            token: data.token,
-                            email: data.email,
-                            name: data.name,
-                            memberId: data.memberId,
-                            phone: data.phone,
-                          },
-                        });
-                      }, 500);
                     } catch (error) {
                       console.error("Google member login error:", error);
                       setAuthMessage({
