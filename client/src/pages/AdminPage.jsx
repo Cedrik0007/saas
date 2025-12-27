@@ -177,6 +177,7 @@ export function AdminPage() {
     message: "",
     onConfirm: null,
     onCancel: null,
+    confirmButtonText: "Delete", // Default button text
   });
   
   // Form states
@@ -438,6 +439,10 @@ export function AdminPage() {
     reference: "", // Reference number for online payments
   });
   const [uploadingPaymentModal, setUploadingPaymentModal] = useState(false);
+  const [paymentModalErrors, setPaymentModalErrors] = useState({
+    image: false,
+    reference: false,
+  });
   const [showPaymentDetailsModal, setShowPaymentDetailsModal] = useState(false);
   const [selectedPaymentDetails, setSelectedPaymentDetails] = useState(null);
   const [hoveredMonth, setHoveredMonth] = useState(null);
@@ -450,6 +455,7 @@ export function AdminPage() {
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
   const [showChannelSelection, setShowChannelSelection] = useState(false);
   const [pendingReminderAction, setPendingReminderAction] = useState(null); // { type: 'single'|'bulk', memberData?: member }
+  const [selectedChannels, setSelectedChannels] = useState([]); // Track selected channels for bulk send (can be multiple)
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
   const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
   const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
@@ -666,7 +672,8 @@ export function AdminPage() {
       return sum + (numericValue > 0 ? numericValue : 0);
     }, 0);
     
-    // Calculate Overdue Members - members with overdue invoices
+    // Calculate Overdue Members - members with overdue invoices OR members with Overdue status
+    // First, get all overdue invoices
     const overdueInvoices = invoices.filter(inv => {
       const isMemberInvoice = 
         (inv.memberId && memberIds.has(inv.memberId)) ||
@@ -675,8 +682,63 @@ export function AdminPage() {
       
       return isMemberInvoice && inv.status === "Overdue";
     });
-    const overdueMemberIds = new Set(overdueInvoices.map(inv => inv.memberId).filter(Boolean));
-    const overdueMembersCount = overdueMemberIds.size;
+    
+    // Create sets to track members with overdue invoices
+    const overdueMemberIdsFromInvoices = new Set();
+    const overdueMemberEmailsFromInvoices = new Set();
+    const overdueMemberNamesFromInvoices = new Set();
+    
+    overdueInvoices.forEach(inv => {
+      if (inv.memberId) overdueMemberIdsFromInvoices.add(inv.memberId);
+      if (inv.memberEmail) overdueMemberEmailsFromInvoices.add(inv.memberEmail.toLowerCase());
+      if (inv.memberName) overdueMemberNamesFromInvoices.add(inv.memberName.toLowerCase());
+    });
+    
+    // Count unique overdue members - either from invoices or from status
+    const overdueMemberSet = new Set();
+    
+    members.forEach(member => {
+      let isOverdue = false;
+      
+      // Check if member has overdue invoice
+      const hasOverdueInvoice = 
+        (member.id && overdueMemberIdsFromInvoices.has(member.id)) ||
+        (member.email && overdueMemberEmailsFromInvoices.has(member.email?.toLowerCase())) ||
+        (member.name && overdueMemberNamesFromInvoices.has(member.name?.toLowerCase()));
+      
+      if (hasOverdueInvoice) {
+        isOverdue = true;
+      } else {
+        // Check if member has explicit "Overdue" status
+        if (member.status === "Overdue") {
+          isOverdue = true;
+        } else if (member.status !== "Inactive" && member.status !== "Pending") {
+          // Check derived status (same logic as in members list)
+          if (member.balance) {
+            const balanceStr = member.balance.toString();
+            const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0);
+            
+            // Member is overdue if balance string contains "overdue" or has outstanding > 0
+            if (balanceStr.toLowerCase().includes("overdue") || numericOutstanding > 0) {
+              isOverdue = true;
+            }
+          }
+        }
+      }
+      
+      // Add to set using ID, email, or name as identifier
+      if (isOverdue) {
+        if (member.id) {
+          overdueMemberSet.add(member.id);
+        } else if (member.email) {
+          overdueMemberSet.add(`email:${member.email.toLowerCase()}`);
+        } else if (member.name) {
+          overdueMemberSet.add(`name:${member.name.toLowerCase()}`);
+        }
+      }
+    });
+    
+    const overdueMembersCount = overdueMemberSet.size;
     
     // Calculate expected annual (all members * expected per member)
     // Assuming $800 per member per year as mentioned in the UI
@@ -1976,16 +2038,17 @@ Subscription Manager HK`;
   };
 
   // Show confirmation dialog
-  const showConfirmation = (message, onConfirm, onCancel = null) => {
+  const showConfirmation = (message, onConfirm, onCancel = null, confirmButtonText = "Delete") => {
     setConfirmationDialog({
       isOpen: true,
       message,
+      confirmButtonText,
       onConfirm: () => {
-        setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null });
+        setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null, confirmButtonText: "Delete" });
         if (onConfirm) onConfirm();
       },
       onCancel: () => {
-        setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null });
+        setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null, confirmButtonText: "Delete" });
         if (onCancel) onCancel();
       },
     });
@@ -2356,28 +2419,75 @@ Subscription Manager HK`;
       memberData: memberData || null,
       memberId: memberId || null
     });
+    setSelectedChannels([]); // Reset selected channels
     setShowChannelSelection(true);
   };
 
-  // Handle channel selection and send reminder
+  // Handle channel selection (toggle for bulk, send immediately for single)
+  const handleSelectChannel = (channel) => {
+    if (pendingReminderAction?.type === 'bulk') {
+      // For bulk, toggle channel selection
+      setSelectedChannels(prev => {
+        if (prev.includes(channel)) {
+          return prev.filter(c => c !== channel);
+        } else {
+          return [...prev, channel];
+        }
+      });
+    } else {
+      // For single member, send immediately
+      handleSendReminderWithChannel(channel);
+    }
+  };
+
+  // Handle actual sending after channel selection (for bulk)
+  const handleSendAllWithSelectedChannels = async () => {
+    if (selectedChannels.length === 0) {
+      showToast("Please select at least one channel", "error");
+      return;
+    }
+    
+    setShowChannelSelection(false);
+    
+    // Show confirmation for bulk send
+    const channelNames = selectedChannels.join(" and ");
+    const confirmationMessage = selectedChannels.length === 2
+      ? `Are you sure you want to send reminders via Email AND WhatsApp to ALL outstanding members?`
+      : selectedChannels.includes('Email')
+      ? 'Are you sure you want to send reminder emails to ALL outstanding members?'
+      : `Are you sure you want to open WhatsApp for all outstanding members? This will open multiple WhatsApp windows.`;
+    
+    showConfirmation(
+      confirmationMessage,
+      async () => {
+        try {
+          // Send to all selected channels
+          if (selectedChannels.includes('Email')) {
+            await handleSendToAllOutstanding();
+          }
+          
+          if (selectedChannels.includes('WhatsApp')) {
+            // Add a small delay if both channels are selected
+            if (selectedChannels.includes('Email')) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            await handleSendWhatsAppToAllOutstanding();
+          }
+          
+          setSelectedChannels([]);
+          setPendingReminderAction(null);
+        } catch (error) {
+          console.error("Error sending bulk reminders:", error);
+        }
+      }
+    );
+  };
+
+  // Handle channel selection and send reminder (for single members)
   const handleSendReminderWithChannel = async (channel) => {
     setShowChannelSelection(false);
     
-    if (pendingReminderAction?.type === 'bulk') {
-      // Show confirmation for bulk send
-      showConfirmation(
-        channel === 'Email' 
-          ? 'Are you sure you want to send reminder emails to ALL outstanding members?'
-          : `Are you sure you want to open WhatsApp for all outstanding members? This will open multiple WhatsApp windows.`,
-        () => {
-          if (channel === 'Email') {
-            handleSendToAllOutstanding();
-          } else if (channel === 'WhatsApp') {
-            handleSendWhatsAppToAllOutstanding();
-          }
-        }
-      );
-    } else if (pendingReminderAction?.memberData) {
+    if (pendingReminderAction?.memberData) {
       if (channel === 'Email') {
         await handleSendReminder(pendingReminderAction.memberData);
       } else if (channel === 'WhatsApp') {
@@ -2396,6 +2506,7 @@ Subscription Manager HK`;
     }
     
     setPendingReminderAction(null);
+    setSelectedChannels([]);
   };
 
   const handleSendReminder = async (memberData) => {
@@ -2613,7 +2724,7 @@ Subscription Manager HK`;
                 className="danger-btn"
                 onClick={confirmationDialog.onConfirm}
               >
-                Delete
+                {confirmationDialog.confirmButtonText || "Delete"}
               </button>
             </div>
           </div>
@@ -2774,46 +2885,161 @@ Subscription Manager HK`;
             </div>
             <p style={{ marginBottom: "24px", color: "#666" }}>
               {pendingReminderAction?.type === 'bulk' 
-                ? "Select the channel to send reminders to all outstanding members:"
+                ? (selectedChannels.length > 0 
+                    ? `Selected: ${selectedChannels.join(" and ")}. Click "Send" to send reminders to all outstanding members.`
+                    : "Select one or both channels to send reminders to all outstanding members:")
                 : `Select the channel to send reminder to ${pendingReminderAction?.memberData?.name || 'member'}:`}
             </p>
             <div style={{ display: "flex", gap: "12px", flexDirection: "column" }}>
-              <button
-                className="primary-btn"
-                onClick={() => handleSendReminderWithChannel('Email')}
-                style={{
-                  padding: "16px 24px",
-                  borderRadius: "8px",
-                  fontWeight: "600",
-                  fontSize: "1rem",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "12px"
-                }}
-              >
-                <i className="fas fa-envelope" style={{ fontSize: "1.25rem" }}></i>
-                Email
-              </button>
-              <button
-                className="primary-btn"
-                onClick={() => handleSendReminderWithChannel('WhatsApp')}
-                style={{
-                  padding: "16px 24px",
-                  borderRadius: "8px",
-                  fontWeight: "600",
-                  fontSize: "1rem",
-                  backgroundColor: "#25D366",
-                  borderColor: "#25D366",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "12px"
-                }}
-              >
-                <i className="fab fa-whatsapp" style={{ fontSize: "1.25rem" }}></i>
-                WhatsApp
-              </button>
+              {/* Channel selection buttons - always visible for bulk */}
+              {pendingReminderAction?.type === 'bulk' ? (
+                <>
+                  <button
+                    className={`primary-btn ${selectedChannels.includes('Email') ? 'active' : ''}`}
+                    onClick={() => handleSelectChannel('Email')}
+                    style={{
+                      padding: "16px 24px",
+                      borderRadius: "8px",
+                      fontWeight: "600",
+                      fontSize: "1rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      backgroundColor: selectedChannels.includes('Email') ? "#5a31ea" : "#ffffff",
+                      color: "#ffffff",
+                      border: `2px solid ${selectedChannels.includes('Email') ? "#5a31ea" : "#5a31ea"}`,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <i className="fas fa-envelope" style={{ fontSize: "1.25rem", color: "#ffffff" }}></i>
+                      <span style={{ color: "#ffffff" }}>Email</span>
+                    </div>
+                    {selectedChannels.includes('Email') && (
+                      <i className="fas fa-check-circle" style={{ fontSize: "1.125rem", color: "#ffffff" }}></i>
+                    )}
+                  </button>
+                  <button
+                    className={`primary-btn ${selectedChannels.includes('WhatsApp') ? 'active' : ''}`}
+                    onClick={() => handleSelectChannel('WhatsApp')}
+                    style={{
+                      padding: "16px 24px",
+                      borderRadius: "8px",
+                      fontWeight: "600",
+                      fontSize: "1rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      backgroundColor: selectedChannels.includes('WhatsApp') ? "#25D366" : "#25D366",
+                      color: "#ffffff",
+                      border: `2px solid ${selectedChannels.includes('WhatsApp') ? "#25D366" : "#25D366"}`,
+                      cursor: "pointer",
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <i className="fab fa-whatsapp" style={{ fontSize: "1.25rem", color: "#ffffff" }}></i>
+                      <span style={{ color: "#ffffff" }}>WhatsApp</span>
+                    </div>
+                    {selectedChannels.includes('WhatsApp') && (
+                      <i className="fas fa-check-circle" style={{ fontSize: "1.125rem", color: "#ffffff" }}></i>
+                    )}
+                  </button>
+                  
+                  {/* Send All button - shown when at least one channel is selected */}
+                  {selectedChannels.length > 0 && (
+                    <button
+                      className="primary-btn"
+                      onClick={handleSendAllWithSelectedChannels}
+                      disabled={sendingToAll || sendingWhatsAppToAll}
+                      style={{
+                        padding: "16px 24px",
+                        borderRadius: "8px",
+                        fontWeight: "600",
+                        fontSize: "1rem",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "12px",
+                        marginTop: "8px",
+                        opacity: (sendingToAll || sendingWhatsAppToAll) ? 0.5 : 1,
+                        cursor: (sendingToAll || sendingWhatsAppToAll) ? "not-allowed" : "pointer",
+                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                        border: "none",
+                        color: "#ffffff"
+                      }}
+                    >
+                      {sendingToAll || sendingWhatsAppToAll ? (
+                        <>
+                          <svg 
+                            style={{ 
+                              animation: "spin 1s linear infinite",
+                              width: "16px",
+                              height: "16px"
+                            }} 
+                            viewBox="0 0 24 24" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="2"
+                          >
+                            <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
+                            <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"></path>
+                          </svg>
+                          Sending...
+                        </>
+                      ) : (
+                        <>
+                          <i className="fas fa-paper-plane" style={{ fontSize: "1.25rem" }}></i>
+                          Send
+                        </>
+                      )}
+                    </button>
+                  )}
+                </>
+              ) : (
+                // Single member - send immediately
+                <>
+                  <button
+                    className="primary-btn"
+                    onClick={() => handleSelectChannel('Email')}
+                    style={{
+                      padding: "16px 24px",
+                      borderRadius: "8px",
+                      fontWeight: "600",
+                      fontSize: "1rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "12px"
+                    }}
+                  >
+                    <i className="fas fa-envelope" style={{ fontSize: "1.25rem" }}></i>
+                    Email
+                  </button>
+                  <button
+                    className="primary-btn"
+                    onClick={() => handleSelectChannel('WhatsApp')}
+                    style={{
+                      padding: "16px 24px",
+                      borderRadius: "8px",
+                      fontWeight: "600",
+                      fontSize: "1rem",
+                      backgroundColor: "#25D366",
+                      borderColor: "#25D366",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "12px"
+                    }}
+                  >
+                    <i className="fab fa-whatsapp" style={{ fontSize: "1.25rem" }}></i>
+                    WhatsApp
+                  </button>
+                </>
+              )}
             </div>
             <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end" }}>
               <button
@@ -2821,6 +3047,7 @@ Subscription Manager HK`;
                 onClick={() => {
                   setShowChannelSelection(false);
                   setPendingReminderAction(null);
+                  setSelectedChannels([]);
                 }}
               >
                 Cancel
@@ -3449,13 +3676,9 @@ Subscription Manager HK`;
                           }}
                           min="1900-01-01"
                           max="2100-12-31"
-                          onKeyDown={(e) => e.preventDefault()}
-                          onPaste={(e) => e.preventDefault()}
-                          onClick={(e) => {
-                            e.currentTarget.focus();
-                            if (e.currentTarget.showPicker) {
-                              e.currentTarget.showPicker();
-                            }
+                          onFocus={(e) => {
+                            // Allow manual typing - don't auto-open picker
+                            e.currentTarget.select();
                           }}
                           aria-invalid={!!memberErrors.nextDue}
                           aria-describedby={memberErrors.nextDue ? "member-nextDue-error" : undefined}
@@ -3490,13 +3713,9 @@ Subscription Manager HK`;
                           }}
                           min="1900-01-01"
                           max="2100-12-31"
-                          onKeyDown={(e) => e.preventDefault()}
-                          onPaste={(e) => e.preventDefault()}
-                          onClick={(e) => {
-                            e.currentTarget.focus();
-                            if (e.currentTarget.showPicker) {
-                              e.currentTarget.showPicker();
-                            }
+                          onFocus={(e) => {
+                            // Allow manual typing - don't auto-open picker
+                            e.currentTarget.select();
                           }}
                           aria-invalid={!!memberErrors.lastPayment}
                           aria-describedby={memberErrors.lastPayment ? "member-lastPayment-error" : undefined}
@@ -4193,6 +4412,7 @@ Subscription Manager HK`;
                                           imageUrl: invoice.screenshot || "",
                                           reference: "",
                                         });
+                                        setPaymentModalErrors({ image: false, reference: false });
                                         setShowPaymentModal(true);
                                       }}
                                     >
@@ -5082,13 +5302,9 @@ Subscription Manager HK`;
                           setInvoiceForm({ ...invoiceForm, period: formatted });
                         }
                       }}
-                      onKeyDown={(e) => e.preventDefault()}
-                      onPaste={(e) => e.preventDefault()}
-                      onClick={(e) => {
-                        e.currentTarget.focus();
-                        if (e.currentTarget.showPicker) {
-                          e.currentTarget.showPicker();
-                        }
+                      onFocus={(e) => {
+                        // Allow manual typing - don't auto-open picker
+                        e.currentTarget.select();
                       }}
                       className="mono-input"
                       style={{ color: "#1a1a1a" }}
@@ -5132,8 +5348,6 @@ Subscription Manager HK`;
                       }}
                       min="1900-01-01"
                       max="2100-12-31"
-                      onKeyDown={(e) => e.preventDefault()}
-                      onPaste={(e) => e.preventDefault()}
                       onClick={(e) => {
                         e.currentTarget.focus();
                         if (e.currentTarget.showPicker) {
@@ -5576,7 +5790,7 @@ Subscription Manager HK`;
                           cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer"
                         }}
                       >
-                        {sendingToAll || sendingWhatsAppToAll ? "Sending..." : "📨 Send Reminder to All"}
+                        {sendingToAll || sendingWhatsAppToAll ? "Sending..." : "Send All"}
                       </button>
                     </div>
                   </div>
@@ -9140,11 +9354,9 @@ Subscription Manager HK`;
                           }}
                           min="1900-01-01"
                           max="2100-12-31"
-                          onClick={(e) => {
-                            e.currentTarget.focus();
-                            if (e.currentTarget.showPicker) {
-                              e.currentTarget.showPicker();
-                            }
+                          onFocus={(e) => {
+                            // Allow manual typing - don't auto-open picker
+                            e.currentTarget.select();
                           }}
                           required
                         />
@@ -9404,11 +9616,9 @@ Subscription Manager HK`;
                         }}
                         min="1900-01-01"
                         max="2100-12-31"
-                        onClick={(e) => {
-                          e.currentTarget.focus();
-                          if (e.currentTarget.showPicker) {
-                            e.currentTarget.showPicker();
-                          }
+                        onFocus={(e) => {
+                          // Allow manual typing - don't auto-open picker
+                          e.currentTarget.select();
                         }}
                       />
                     </label>
@@ -9431,11 +9641,9 @@ Subscription Manager HK`;
                         }}
                         min="1900-01-01"
                         max="2100-12-31"
-                        onClick={(e) => {
-                          e.currentTarget.focus();
-                          if (e.currentTarget.showPicker) {
-                            e.currentTarget.showPicker();
-                          }
+                        onFocus={(e) => {
+                          // Allow manual typing - don't auto-open picker
+                          e.currentTarget.select();
                         }}
                       />
                     </label>
@@ -10646,29 +10854,45 @@ Subscription Manager HK`;
                   <input
                     type="text"
                     value={paymentModalData.reference}
-                    onChange={(e) => setPaymentModalData({
-                      ...paymentModalData,
-                      reference: e.target.value
-                    })}
+                    onChange={(e) => {
+                      setPaymentModalData({
+                        ...paymentModalData,
+                        reference: e.target.value
+                      });
+                      // Clear error when user starts typing
+                      if (paymentModalErrors.reference) {
+                        setPaymentModalErrors({ ...paymentModalErrors, reference: false });
+                      }
+                    }}
                     placeholder="Enter payment reference number"
                     style={{
                       width: "100%",
                       padding: "10px 12px",
-                      border: "1px solid #e0e0e0",
+                      border: paymentModalErrors.reference ? "2px solid #ef4444" : "1px solid #e0e0e0",
                       borderRadius: "8px",
                       fontSize: "0.875rem",
                       outline: "none",
                       transition: "border-color 0.2s",
+                      boxShadow: paymentModalErrors.reference ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
                     }}
                     onFocus={(e) => {
-                      e.target.style.borderColor = "#5a31ea";
-                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                      if (!paymentModalErrors.reference) {
+                        e.target.style.borderColor = "#5a31ea";
+                        e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                      }
                     }}
                     onBlur={(e) => {
-                      e.target.style.borderColor = "#e0e0e0";
-                      e.target.style.boxShadow = "none";
+                      if (!paymentModalErrors.reference) {
+                        e.target.style.borderColor = "#e0e0e0";
+                        e.target.style.boxShadow = "none";
+                      }
                     }}
                   />
+                  {paymentModalErrors.reference && (
+                    <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
+                      Reference number is required
+                    </small>
+                  )}
                 </div>
               )}
 
@@ -10685,23 +10909,35 @@ Subscription Manager HK`;
                     Attachment Image <span style={{ color: "#ef4444" }}>*</span>
                   </label>
                 <div style={{ 
-                  border: "2px dashed #d0d0d0",
+                  border: paymentModalErrors.image ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
                   borderRadius: "8px",
                   padding: "20px",
                   textAlign: "center",
-                  background: "#fafafa",
+                  background: paymentModalErrors.image ? "#fef2f2" : "#fafafa",
                   cursor: "pointer",
                   transition: "all 0.2s ease",
+                  boxShadow: paymentModalErrors.image ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "#5a31ea";
-                  e.currentTarget.style.background = "#f8f9ff";
+                  if (!paymentModalErrors.image) {
+                    e.currentTarget.style.borderColor = "#5a31ea";
+                    e.currentTarget.style.background = "#f8f9ff";
+                  }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "#d0d0d0";
-                  e.currentTarget.style.background = "#fafafa";
+                  if (!paymentModalErrors.image) {
+                    e.currentTarget.style.borderColor = "#d0d0d0";
+                    e.currentTarget.style.background = "#fafafa";
+                  } else {
+                    e.currentTarget.style.borderColor = "#ef4444";
+                    e.currentTarget.style.background = "#fef2f2";
+                  }
                 }}
                 onClick={() => {
+                  // Clear error when user clicks to upload
+                  if (paymentModalErrors.image) {
+                    setPaymentModalErrors({ ...paymentModalErrors, image: false });
+                  }
                   const input = document.createElement("input");
                   input.type = "file";
                   input.accept = "image/*";
@@ -10722,6 +10958,8 @@ Subscription Manager HK`;
                         imageFile: file,
                         imagePreview: reader.result,
                       }));
+                      // Clear error when image is uploaded
+                      setPaymentModalErrors(prev => ({ ...prev, image: false }));
                     };
                     reader.readAsDataURL(file);
                   };
@@ -10750,6 +10988,8 @@ Subscription Manager HK`;
                             imagePreview: null,
                             imageUrl: "",
                           });
+                          // Clear error when image is removed
+                          setPaymentModalErrors(prev => ({ ...prev, image: false }));
                         }}
                         style={{
                           position: "absolute",
@@ -10787,6 +11027,11 @@ Subscription Manager HK`;
                     </>
                   )}
                 </div>
+                {paymentModalErrors.image && (
+                  <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "8px", display: "block" }}>
+                    Image has not been uploaded. Please upload an image attachment.
+                  </small>
+                )}
               </div>
               )}
 
@@ -10805,21 +11050,41 @@ Subscription Manager HK`;
                       imageUrl: "",
                       reference: "",
                     });
+                    setPaymentModalErrors({ image: false, reference: false });
                   }}
                   disabled={uploadingPaymentModal}
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  className="primary-btn"
-                  disabled={
-                    uploadingPaymentModal || 
-                    !paymentModalData.paymentMethod || 
-                    (!paymentModalData.imageFile && !paymentModalInvoice.screenshot) ||
-                    (paymentModalData.paymentMethod === "Online" && !paymentModalData.reference.trim())
-                  }
-                  onClick={async () => {
+                {/* Show Mark as Paid button only when payment method is selected */}
+                {paymentModalData.paymentMethod && (
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    disabled={uploadingPaymentModal}
+                    onClick={async () => {
+                    // Validate required fields before showing confirmation
+                    const hasImage = paymentModalData.imageFile || paymentModalData.imageUrl || paymentModalInvoice?.screenshot;
+                    const hasReference = paymentModalData.paymentMethod === "Online" 
+                      ? paymentModalData.reference.trim() 
+                      : true;
+
+                    // Show specific error messages and set error states
+                    if (!hasImage) {
+                      setPaymentModalErrors({ ...paymentModalErrors, image: true });
+                      showToast("Image has not been uploaded. Please upload an image attachment.", "error");
+                      return;
+                    }
+
+                    if (paymentModalData.paymentMethod === "Online" && !hasReference) {
+                      setPaymentModalErrors({ ...paymentModalErrors, reference: true });
+                      showToast("Reference number not entered. Please enter a reference number for online payments.", "error");
+                      return;
+                    }
+
+                    // Clear errors if validation passes
+                    setPaymentModalErrors({ image: false, reference: false });
+
                     // Show confirmation dialog
                     showConfirmation(
                       `Are you sure you want to mark Invoice #${paymentModalInvoice.id} as paid?`,
@@ -10861,7 +11126,7 @@ Subscription Manager HK`;
                             imageUrl = uploadData.url;
                           }
 
-                          // Validate required fields
+                          // Validate required fields (double check)
                           if (!imageUrl) {
                             throw new Error("Image upload is required for all payments");
                           }
@@ -10894,6 +11159,7 @@ Subscription Manager HK`;
                             imageUrl: "",
                             reference: "",
                           });
+                          setPaymentModalErrors({ image: false, reference: false });
 
                           showToast(`Invoice #${paymentModalInvoice.id} marked as paid!`, "success");
                         } catch (error) {
@@ -10902,22 +11168,19 @@ Subscription Manager HK`;
                         } finally {
                           setUploadingPaymentModal(false);
                         }
-                      }
+                      },
+                      null,
+                      "Confirm"
                     );
                   }}
-                  style={{
-                    opacity: (uploadingPaymentModal || 
-                      !paymentModalData.paymentMethod || 
-                      (!paymentModalData.imageFile && !paymentModalInvoice.screenshot) ||
-                      (paymentModalData.paymentMethod === "Online" && !paymentModalData.reference.trim())) ? 0.6 : 1,
-                    cursor: (uploadingPaymentModal || 
-                      !paymentModalData.paymentMethod || 
-                      (!paymentModalData.imageFile && !paymentModalInvoice.screenshot) ||
-                      (paymentModalData.paymentMethod === "Online" && !paymentModalData.reference.trim())) ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {uploadingPaymentModal ? "Processing..." : "Mark as Paid"}
-                </button>
+                    style={{
+                      opacity: uploadingPaymentModal ? 0.6 : 1,
+                      cursor: uploadingPaymentModal ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {uploadingPaymentModal ? "Processing..." : "Mark as Paid"}
+                  </button>
+                )}
               </div>
             </div>
           </div>

@@ -25,34 +25,33 @@ export function Pagination({
       borderTop: "1px solid #e0e0e0",
       background: "#f9fafb"
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
         <span style={{ fontSize: "0.875rem", color: "#666" }}>
           Showing {startItem} to {endItem} of {totalItems} items
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <label style={{ fontSize: "0.875rem", color: "#666", display: "flex", alignItems: "center", gap: "8px" }}>
-            Items per page:
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                onPageSizeChange(Number(e.target.value));
-                onPageChange(1); // Reset to first page when changing page size
-              }}
-              style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                border: "1px solid #e0e0e0",
-                fontSize: "0.875rem",
-                background: "#fff",
-                cursor: "pointer"
-              }}
-            >
-              {pageSizeOptions.map(size => (
-                <option key={size} value={size}>{size}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <label style={{ fontSize: "0.875rem", color: "#666", display: "flex", alignItems: "center", gap: "8px", whiteSpace: "nowrap" }}>
+          <span>Items per page:</span>
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              onPageSizeChange(Number(e.target.value));
+              onPageChange(1); // Reset to first page when changing page size
+            }}
+            style={{
+              padding: "6px 12px",
+              borderRadius: "6px",
+              border: "1px solid #e0e0e0",
+              fontSize: "0.875rem",
+              background: "#fff",
+              cursor: "pointer",
+              minWidth: "70px"
+            }}
+          >
+            {pageSizeOptions.map(size => (
+              <option key={size} value={size}>{size}</option>
+            ))}
+          </select>
+        </label>
       </div>
       
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
