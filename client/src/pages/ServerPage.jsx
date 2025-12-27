@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
+import { Notie } from "../components/Notie.jsx";
 import { useApp } from "../context/AppContext.jsx";
 
 export function ServerPage() {
@@ -103,7 +104,6 @@ export function ServerPage() {
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
   };
 
   const handleLogout = () => {
@@ -495,11 +495,12 @@ export function ServerPage() {
       />
 
       {/* Toast Notification */}
-      {toast && (
-        <div className={`server-toast server-toast--${toast.type}`}>
-          {toast.message}
-        </div>
-      )}
+      <Notie
+        message={toast?.message}
+        type={toast?.type || "success"}
+        onClose={() => setToast(null)}
+        duration={3000}
+      />
 
       <main className="server-main server-main--sticky-header">
         <div className="server-layout">

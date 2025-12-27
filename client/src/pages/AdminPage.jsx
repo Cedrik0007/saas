@@ -4,6 +4,7 @@ import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
 import { Pagination } from "../components/Pagination.jsx";
+import { Notie } from "../components/Notie.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import { useAutoLogout } from "../hooks/useAutoLogout.js";
 import jsPDF from "jspdf";
@@ -2034,7 +2035,6 @@ Subscription Manager HK`;
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
   };
 
   // Show confirmation dialog
@@ -3057,25 +3057,12 @@ Subscription Manager HK`;
         </div>
       )}
 
-      {toast && (
-        <div
-          style={{
-            position: "fixed",
-            top: "20px",
-            right: "20px",
-            zIndex: 1000,
-            background: toast.type === "success" ? "linear-gradient(135deg, #10b981 0%, #34d399 100%)" : "linear-gradient(135deg, #ef4444 0%, #f87171 100%)",
-            color: "white",
-            padding: "16px 24px",
-            borderRadius: "8px",
-            boxShadow: toast.type === "success" ? "0 4px 12px rgba(16, 185, 129, 0.4)" : "0 4px 12px rgba(239, 68, 68, 0.4)",
-            border: "none",
-            animation: "slideIn 0.3s ease",
-          }}
-        >
-          {toast.message}
-        </div>
-      )}
+      <Notie
+        message={toast?.message}
+        type={toast?.type || "success"}
+        onClose={() => setToast(null)}
+        duration={3000}
+      />
 
       <main className="admin-main admin-main--sticky-header">
         {/* Mobile Menu Overlay */}
