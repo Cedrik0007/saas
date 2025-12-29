@@ -4,6 +4,7 @@ import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
 import { Notie } from "../components/Notie.jsx";
+import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
 
 export function ServerPage() {
@@ -103,12 +104,17 @@ export function ServerPage() {
   }, []);
 
   const showToast = (message, type = "success") => {
-    setToast({ message, type });
+    setNotieMessage(message);
+    setNotieType(type);
+    setTimeout(() => setNotieMessage(null), 3000);
   };
 
   const handleLogout = () => {
-    sessionStorage.clear();
-    navigate("/login", { replace: true });
+    showToast("You have been logged out", "success");
+    setTimeout(() => {
+      sessionStorage.clear();
+      navigate("/login", { replace: true });
+    }, 500);
   };
 
   // Member CRUD Operations
@@ -496,9 +502,9 @@ export function ServerPage() {
 
       {/* Toast Notification */}
       <Notie
-        message={toast?.message}
-        type={toast?.type || "success"}
-        onClose={() => setToast(null)}
+        message={notieMessage}
+        type={notieType}
+        onClose={() => setNotieMessage(null)}
         duration={3000}
       />
 
@@ -591,9 +597,9 @@ export function ServerPage() {
                       <h4>
                         {editingItem ? "Edit Member" : "Add New Member"}
                       </h4>
-                      <form className="server-form-grid" onSubmit={editingItem ? handleUpdateMember : handleAddMember}>
+                      <form className="server-form-grid" onSubmit={editingItem ? handleUpdateMember : handleAddMember} noValidate>
                         <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Name *</span>
+                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Name <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="text"
                             required
@@ -603,7 +609,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email *</span>
+                          <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="email"
                             required
@@ -612,17 +618,20 @@ export function ServerPage() {
                             className="mono-input"
                           />
                         </label>
-                        <label>
-                          <span><i className="fas fa-phone" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Phone</span>
-                          <input
-                            type="text"
+                        <div>
+                          <PhoneInput
+                            label={<span><i className="fas fa-phone" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Phone</span>}
                             value={memberForm.phone}
                             onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })}
+                            onError={(error) => {
+                              showToast(error, "error");
+                            }}
+                            placeholder="Enter phone number"
                             className="mono-input"
                           />
-                        </label>
+                        </div>
                         <label>
-                          <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password {editingItem ? "(leave blank to keep current)" : "*"}</span>
+                          <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password {editingItem ? "(leave blank to keep current)" : <span style={{ color: "#ef4444" }}>*</span>}</span>
                           <div style={{ position: "relative" }}>
                             <input
                               type={showMemberPassword ? "text" : "password"}
@@ -650,7 +659,7 @@ export function ServerPage() {
                           </div>
                         </label>
                         <label>
-                          <span><i className="fas fa-tag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Status</span>
+                          <span><i className="fas fa-toggle-on" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Status</span>
                           <select
                             value={memberForm.status}
                             onChange={(e) => setMemberForm({ ...memberForm, status: e.target.value })}
@@ -689,7 +698,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-tag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Subscription Type</span>
+                          <span><i className="fas fa-id-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Subscription Type</span>
                           <select
                             value={memberForm.subscriptionType}
                             onChange={(e) => setMemberForm({ ...memberForm, subscriptionType: e.target.value })}
@@ -743,8 +752,10 @@ export function ServerPage() {
                             <button
                               className="server-action-btn server-action-btn--delete"
                               onClick={() => handleDeleteMember(member.id)}
+                              title="Delete Member"
+                              aria-label="Delete Member"
                             >
-                              <i className="fas fa-trash"></i>Delete
+                              <i className="fas fa-trash"></i>
                             </button>
                           </div>
                         ),
@@ -770,9 +781,9 @@ export function ServerPage() {
                       <h4>
                         {editingItem ? "Edit Admin" : "Add New Admin"}
                       </h4>
-                      <form className="server-form-grid" onSubmit={editingItem ? handleUpdateAdmin : handleAddAdmin}>
+                      <form className="server-form-grid" onSubmit={editingItem ? handleUpdateAdmin : handleAddAdmin} noValidate>
                         <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Name *</span>
+                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Name <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="text"
                             required
@@ -782,7 +793,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email *</span>
+                          <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="email"
                             required
@@ -792,7 +803,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password {editingItem ? "(leave blank to keep current)" : "*"}</span>
+                          <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password {editingItem ? "(leave blank to keep current)" : <span style={{ color: "#ef4444" }}>*</span>}</span>
                           <div style={{ position: "relative" }}>
                             <input
                               type={showAdminPassword ? "text" : "password"}
@@ -881,8 +892,10 @@ export function ServerPage() {
                             <button
                               className="server-action-btn server-action-btn--delete"
                               onClick={() => handleDeleteAdmin(admin.id)}
+                              title="Delete Admin"
+                              aria-label="Delete Admin"
                             >
-                              <i className="fas fa-trash"></i>Delete
+                              <i className="fas fa-trash"></i>
                             </button>
                           </div>
                         ),
@@ -908,9 +921,9 @@ export function ServerPage() {
                       <h4>
                         {editingItem ? "Edit Invoice" : "Add New Invoice"}
                       </h4>
-                      <form className="server-form-grid" onSubmit={editingItem ? handleUpdateInvoice : handleAddInvoice}>
+                      <form className="server-form-grid" onSubmit={editingItem ? handleUpdateInvoice : handleAddInvoice} noValidate>
                         <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member ID *</span>
+                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member ID <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="text"
                             required
@@ -921,7 +934,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member Name *</span>
+                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member Name <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="text"
                             required
@@ -931,7 +944,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Period *</span>
+                          <span><i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Period <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="text"
                             required
@@ -942,7 +955,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-tag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice Type</span>
+                          <span><i className="fas fa-id-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice Type</span>
                           <select
                             value={invoiceForm.invoiceType}
                             onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceType: e.target.value })}
@@ -953,7 +966,7 @@ export function ServerPage() {
                           </select>
                         </label>
                         <label>
-                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount *</span>
+                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="number"
                             required
@@ -964,17 +977,43 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-calendar-check" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Due Date *</span>
+                          <span><i className="fas fa-calendar-check" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Due Date <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="date"
                             required
                             value={invoiceForm.due}
-                            onChange={(e) => setInvoiceForm({ ...invoiceForm, due: e.target.value })}
-                            onFocus={(e) => {
-                              // Allow manual typing - don't auto-open picker
-                              e.currentTarget.select();
+                            onChange={(e) => {
+                              const selectedDate = e.target.value;
+                              setInvoiceForm({ ...invoiceForm, due: selectedDate });
+                            }}
+                            onBlur={(e) => {
+                              const dateValue = e.target.value;
+                              if (dateValue) {
+                                const date = new Date(dateValue);
+                                if (isNaN(date.getTime())) {
+                                  showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
+                                  return;
+                                }
+                                // Validate date components
+                                const [year, month, day] = dateValue.split('-').map(Number);
+                                if (month < 1 || month > 12) {
+                                  showToast("Invalid month. Please enter a month between 01 and 12", "error");
+                                  return;
+                                }
+                                if (day < 1 || day > 31) {
+                                  showToast("Invalid day. Please enter a valid day for the selected month", "error");
+                                  return;
+                                }
+                                // Check if day is valid for the month
+                                const daysInMonth = new Date(year, month, 0).getDate();
+                                if (day > daysInMonth) {
+                                  showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
+                                  return;
+                                }
+                              }
                             }}
                             className="mono-input"
+                            style={{ borderRadius: "4px", width: "100%" }}
                           />
                         </label>
                         <label>
@@ -1044,8 +1083,10 @@ export function ServerPage() {
                             <button
                               className="server-action-btn server-action-btn--delete"
                               onClick={() => handleDeleteInvoice(invoice.id)}
+                              title="Delete Invoice"
+                              aria-label="Delete Invoice"
                             >
-                              <i className="fas fa-trash"></i>Delete
+                              <i className="fas fa-trash"></i>
                             </button>
                           </div>
                         ),
@@ -1106,9 +1147,9 @@ export function ServerPage() {
                       <h4>
                         {editingItem ? "Edit Donation" : "Add New Donation"}
                       </h4>
-                      <form className="server-form-grid" onSubmit={editingItem ? handleUpdateDonation : handleAddDonation}>
+                      <form className="server-form-grid" onSubmit={editingItem ? handleUpdateDonation : handleAddDonation} noValidate>
                         <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donor Name *</span>
+                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donor Name <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="text"
                             required
@@ -1119,7 +1160,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount *</span>
+                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="number"
                             required
@@ -1188,8 +1229,10 @@ export function ServerPage() {
                               <button
                                 className="server-action-btn server-action-btn--delete"
                                 onClick={() => handleDeleteDonation(donation._id || donation.id)}
+                                title="Delete Donation"
+                                aria-label="Delete Donation"
                               >
-                                <i className="fas fa-trash"></i>Delete
+                                <i className="fas fa-trash"></i>
                               </button>
                             </div>
                           ),
@@ -1215,9 +1258,9 @@ export function ServerPage() {
                       <h4>
                         {editingItem ? "Edit Payment Method" : "Add New Payment Method"}
                       </h4>
-                      <form className="server-form-grid" onSubmit={editingItem ? handleUpdatePaymentMethod : handleAddPaymentMethod}>
+                      <form className="server-form-grid" onSubmit={editingItem ? handleUpdatePaymentMethod : handleAddPaymentMethod} noValidate>
                         <label>
-                          <span><i className="fas fa-wallet" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Name *</span>
+                          <span><i className="fas fa-wallet" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Name <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="text"
                             required

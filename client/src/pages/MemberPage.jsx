@@ -4,6 +4,7 @@ import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
 import { Notie } from "../components/Notie.jsx";
+import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import { useAutoLogout } from "../hooks/useAutoLogout.js";
 import { statusClass } from "../statusClasses";
@@ -40,7 +41,8 @@ export function MemberPage() {
   const [uploading, setUploading] = useState(false);
   const [viewingInvoice, setViewingInvoice] = useState(null);
   const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
-  const [toast, setToast] = useState(null);
+  const [notieMessage, setNotieMessage] = useState(null);
+  const [notieType, setNotieType] = useState("success");
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isAlertDismissed, setIsAlertDismissed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
@@ -155,11 +157,16 @@ export function MemberPage() {
   };
 
   const handleLogout = () => {
-    navigate("/login", { replace: true });
+    showToast("You have been logged out", "success");
+    setTimeout(() => {
+      navigate("/login", { replace: true });
+    }, 500);
   };
 
   const showToast = (message, type = "success") => {
-    setToast({ message, type });
+    setNotieMessage(message);
+    setNotieType(type);
+    setTimeout(() => setNotieMessage(null), 3000);
   };
 
   // Get effective invoice status based on payment status
@@ -572,7 +579,7 @@ export function MemberPage() {
         <div style={{
           width: '48px',
           height: '48px',
-          border: '4px solid #f0f0f0',
+          border: '4px solid #e5e7eb',
           borderTop: '4px solid #5a31ea',
           borderRadius: '50%',
           animation: 'spin 1s linear infinite'
@@ -642,9 +649,9 @@ export function MemberPage() {
 
       {/* Toast Notification */}
       <Notie
-        message={toast?.message}
-        type={toast?.type || "success"}
-        onClose={() => setToast(null)}
+        message={notieMessage}
+        type={notieType}
+        onClose={() => setNotieMessage(null)}
         duration={3000}
       />
 
@@ -1030,7 +1037,7 @@ export function MemberPage() {
                                   alignItems: "center",
                                   marginTop: "auto",
                                   paddingTop: "12px",
-                                  borderTop: "1px solid #f0f0f0"
+                                  borderTop: "1px solid #e5e7eb"
                                 }}>
                                   <span style={{ 
                                     fontSize: "1.1rem", 
@@ -1107,7 +1114,7 @@ export function MemberPage() {
 
                         {/* Online Payment Option */}
                         {selectedPaymentMethod === "Online Payment" && (
-                          <form className="method-panel" onSubmit={handleScreenshotPayment}>
+                          <form className="method-panel" onSubmit={handleScreenshotPayment} noValidate>
                             <p style={{ marginBottom: "16px", color: "#666" }}>
                               Upload a screenshot of your payment confirmation for the selected invoice(s). All selected invoices will be marked as paid once the screenshot is uploaded.
                             </p>
@@ -1118,6 +1125,7 @@ export function MemberPage() {
                                 type="file"
                                 accept="image/*"
                                 required
+                                onInvalid={(e) => e.preventDefault()}
                                 onChange={(e) => setPaymentProof(e.target.files[0])}
                               />
                               {paymentProof && (
@@ -1140,7 +1148,7 @@ export function MemberPage() {
 
                         {/* Cash Payment Option */}
                         {selectedPaymentMethod === "Cash Payment" && (
-                          <form className="method-panel" onSubmit={handleAdminPayment}>
+                          <form className="method-panel" onSubmit={handleAdminPayment} noValidate>
                             <p style={{ marginBottom: "16px", color: "#666" }}>
                               Select the admin you paid to. You can optionally upload a payment screenshot as proof. All selected invoices will be pending admin approval.
                             </p>
@@ -1149,6 +1157,7 @@ export function MemberPage() {
                               Select Admin You Paid To *
                               <select
                                 required
+                                onInvalid={(e) => e.preventDefault()}
                                 value={selectedAdminId || ""}
                                 onChange={(e) => setSelectedAdminId(e.target.value)}
                                 style={{ color: "#000" }}
@@ -1335,7 +1344,7 @@ export function MemberPage() {
                         transition: "all 0.2s ease"
                       }}
                       onMouseEnter={(e) => {
-                        e.target.style.background = "#f0f0f0";
+                        e.target.style.background = "#f3f4f6";
                         e.target.style.color = "#000";
                       }}
                       onMouseLeave={(e) => {
@@ -1432,7 +1441,7 @@ export function MemberPage() {
                               newWindow.document.write(`
                                 <html>
                                   <head><title>Payment Screenshot - ${viewingInvoice.id}</title></head>
-                                  <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                  <body style="margin:0;padding:20px;background:#f9fafb;display:flex;justify-content:center;align-items:center;min-height:100vh;">
                                     <img src="${viewingInvoice.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
                                   </body>
                                 </html>
@@ -1704,7 +1713,7 @@ export function MemberPage() {
                                 )}
                                 
                                 {item.screenshot && (
-                                  <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #f0f0f0" }}>
+                                  <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #e5e7eb" }}>
                                     <button
                                       onClick={() => {
                                         const newWindow = window.open();
@@ -1712,7 +1721,7 @@ export function MemberPage() {
                                           newWindow.document.write(`
                                             <html>
                                               <head><title>Payment Screenshot</title></head>
-                                              <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                              <body style="margin:0;padding:20px;background:#f9fafb;display:flex;justify-content:center;align-items:center;min-height:100vh;">
                                                 <img src="${item.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
                                               </body>
                                             </html>
@@ -1765,7 +1774,7 @@ export function MemberPage() {
                                 border: "none",
                                 borderRadius: "8px",
                                 background: safeCurrentPage === 1 
-                                  ? "#f0f0f0" 
+                                  ? "#f3f4f6" 
                                   : "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
                                 color: safeCurrentPage === 1 ? "#999" : "#ffffff",
                                 fontSize: "0.875rem",
@@ -1869,7 +1878,7 @@ export function MemberPage() {
                                 border: "none",
                                 borderRadius: "8px",
                                 background: safeCurrentPage === totalPages
-                                  ? "#f0f0f0"
+                                  ? "#f3f4f6"
                                   : "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
                                 color: safeCurrentPage === totalPages ? "#999" : "#ffffff",
                                 fontSize: "0.875rem",
@@ -1933,7 +1942,7 @@ export function MemberPage() {
                   )}
                 </header>
 
-                <form onSubmit={handleUpdateProfile}>
+                <form onSubmit={handleUpdateProfile} noValidate>
                   {/* Profile Header Card */}
                   <div className="card" style={{
                     padding: "24px",
@@ -1976,8 +1985,10 @@ export function MemberPage() {
                       </div>
                       <div style={{
                         padding: "8px 16px",
-                        background: currentMember?.status === "Active" ? "#e8f5e9" : "#fff3e0",
-                        color: currentMember?.status === "Active" ? "#2e7d32" : "#e65100",
+                        background: currentMember?.status === "Active" 
+                          ? "linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)" 
+                          : "linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)",
+                        color: currentMember?.status === "Active" ? "#065f46" : "#991b1b",
                         borderRadius: "20px",
                         fontSize: "0.875rem",
                         fontWeight: "500"
@@ -1999,7 +2010,7 @@ export function MemberPage() {
                       fontSize: "1.1rem",
                       fontWeight: "600",
                       paddingBottom: "12px",
-                      borderBottom: "2px solid #f0f0f0"
+                      borderBottom: "2px solid #e5e7eb"
                     }}>
                       Personal Information
                     </h4>
@@ -2020,10 +2031,11 @@ export function MemberPage() {
                             fontWeight: "500",
                             color: "#333"
                           }}>
-                            Full Name *
+                            Full Name <span style={{ color: "#ef4444" }}>*</span>
                           </span>
                           <input
                             required
+                            onInvalid={(e) => e.preventDefault()}
                             value={profileForm.name}
                             onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
                             style={{
@@ -2048,11 +2060,12 @@ export function MemberPage() {
                             fontWeight: "500",
                             color: "#333"
                           }}>
-                            Email Address *
+                            Email Address <span style={{ color: "#ef4444" }}>*</span>
                           </span>
                           <input
                             required
                             type="email"
+                            onInvalid={(e) => e.preventDefault()}
                             value={profileForm.email}
                             onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
                             style={{
@@ -2067,35 +2080,30 @@ export function MemberPage() {
                           />
                         </label>
 
-                        <label style={{
+                        <div style={{
                           display: "flex",
                           flexDirection: "column",
                           gap: "8px"
                         }}>
-                          <span style={{
-                            fontSize: "0.875rem",
-                            fontWeight: "500",
-                            color: "#333"
-                          }}>
-                            Phone Number (WhatsApp) *
-                          </span>
-                          <input
-                            required
-                            type="tel"
+                          <PhoneInput
+                            label={
+                              <span style={{
+                                fontSize: "0.875rem",
+                                fontWeight: "500",
+                                color: "#333"
+                              }}>
+                                Phone Number (WhatsApp) <span style={{ color: "#ef4444" }}>*</span>
+                              </span>
+                            }
                             value={profileForm.phone}
                             onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
-                            placeholder="+852 1234 5678"
-                            style={{
-                              padding: "12px 16px",
-                              border: "1px solid #ddd",
-                              borderRadius: "8px",
-                              fontSize: "1rem",
-                              transition: "border-color 0.2s",
+                            onError={(error) => {
+                              showToast(error, "error");
                             }}
-                            onFocus={(e) => e.target.style.borderColor = "#5a31ea"}
-                            onBlur={(e) => e.target.style.borderColor = "#ddd"}
+                            placeholder="Enter phone number"
+                            required
                           />
-                        </label>
+                        </div>
 
                         <label style={{
                           display: "flex",
@@ -2241,7 +2249,7 @@ export function MemberPage() {
                       fontSize: "1.1rem",
                       fontWeight: "600",
                       paddingBottom: "12px",
-                      borderBottom: "2px solid #f0f0f0"
+                      borderBottom: "2px solid #e5e7eb"
                     }}>
                       Notification Preferences
                     </h4>
@@ -2371,7 +2379,7 @@ export function MemberPage() {
                       justifyContent: "flex-end",
                       gap: "12px",
                       paddingTop: "24px",
-                      borderTop: "1px solid #f0f0f0"
+                      borderTop: "1px solid #e5e7eb"
                     }}>
                       <button 
                         type="button" 

@@ -318,8 +318,13 @@ router.post("/auth/forgot-password", async (req, res) => {
 </div>`,
         };
 
-        await transporter.sendMail(mailOptions);
-        console.log(`✓ Password reset email sent to ${emailLower}`);
+        try {
+          await transporter.sendMail(mailOptions);
+          console.log(`✓ Password reset email sent to ${emailLower}`);
+        } catch (emailError) {
+          console.error(`✗ Failed to send password reset email to ${emailLower}:`, emailError);
+          // Still continue and return success for security (don't reveal email sending failures)
+        }
       } else {
         console.warn(`⚠️ Email not configured. Cannot send password reset email to ${emailLower}`);
         // Still return success for security, but log the issue

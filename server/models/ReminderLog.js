@@ -7,6 +7,7 @@ const ReminderLogSchema = new mongoose.Schema({
   reminderType: String, // "overdue" or "upcoming"
   amount: String,
   invoiceCount: Number,
+  status: { type: String, default: "Delivered" }, // "Delivered" or "Failed"
 }, {
   timestamps: true
 });

@@ -52,8 +52,12 @@ export function AppProvider({ children }) {
   });
 
   const [reminderRules, setReminderRules] = useState(() => {
-    const saved = localStorage.getItem("reminderRules");
-    return saved ? JSON.parse(saved) : initialReminderRules;
+    try {
+      const saved = localStorage.getItem("reminderRules");
+      return saved ? JSON.parse(saved) : initialReminderRules;
+    } catch {
+      return initialReminderRules;
+    }
   });
 
   const [automationEnabled, setAutomationEnabled] = useState(true);
@@ -75,6 +79,33 @@ export function AppProvider({ children }) {
       address: "123 Central Street, Hong Kong",
     };
   });
+
+  // User locale preference for number formatting
+  const [userLocale, setUserLocale] = useState(() => {
+    try {
+      const saved = localStorage.getItem("userLocale");
+      if (saved) {
+        return saved;
+      }
+      // Try to detect browser locale
+      const browserLocale = navigator.language || navigator.userLanguage;
+      return browserLocale || "en-US";
+    } catch (error) {
+      console.error("Error getting user locale:", error);
+      return "en-US";
+    }
+  });
+
+  const updateUserLocale = (locale) => {
+    try {
+      localStorage.setItem("userLocale", locale);
+      setUserLocale(locale);
+      // Dispatch custom event to notify components of locale change
+      window.dispatchEvent(new CustomEvent("localeChanged", { detail: { locale } }));
+    } catch (error) {
+      console.error("Error setting user locale:", error);
+    }
+  };
 
   // adminUsers removed - now using admins from MongoDB API
 
@@ -100,31 +131,6 @@ export function AppProvider({ children }) {
       }
     }
   };
-
-  useEffect(() => {
-    const fetchAllData = async () => {
-      setLoading(true);
-      try {
-        // Fetch all data in parallel - each function handles its own errors
-        // and sets empty arrays on failure, so we don't need to catch here
-        await Promise.allSettled([
-          fetchMembers(),
-          fetchAdmins(),
-          fetchInvoices(),
-          fetchPayments(),
-          fetchDonations(),
-          fetchPaymentMethods(),
-          fetchReminderLogs(),
-        ]);
-      } catch (error) {
-        console.error('Error fetching initial data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchAllData();
-  }, []);
 
   // Fetch members from server
   const fetchMembers = async () => {
@@ -269,6 +275,39 @@ export function AppProvider({ children }) {
       setReminderLogs([]);
     }
   };
+
+  // Fetch data on mount - moved after function definitions
+  useEffect(() => {
+    // Fetch data in background without blocking page render
+    // This improves perceived performance - page shows immediately
+    const fetchAllData = async () => {
+      try {
+        // Fetch critical data first (members, admins, invoices)
+        const criticalFetches = Promise.allSettled([
+          fetchMembers(),
+          fetchAdmins(),
+          fetchInvoices(),
+        ]);
+        
+        // Then fetch remaining data
+        const remainingFetches = Promise.allSettled([
+          fetchPayments(),
+          fetchDonations(),
+          fetchPaymentMethods(),
+          fetchReminderLogs(),
+        ]);
+        
+        // Wait for all but don't block render
+        await Promise.allSettled([criticalFetches, remainingFetches]);
+      } catch (error) {
+        console.error('Error fetching initial data:', error);
+      }
+    };
+    
+    // Start fetching immediately but don't block
+    fetchAllData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps - only run once on mount
 
   // Persist other data to localStorage
   useEffect(() => {
@@ -730,6 +769,8 @@ export function AppProvider({ children }) {
     updateReminderRule,
     updateReminderTemplate,
     updateOrganizationInfo,
+    userLocale,
+    updateUserLocale,
     addAdminUser,
     updateAdminUser,
     deleteAdminUser,

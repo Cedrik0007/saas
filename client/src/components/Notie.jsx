@@ -3,7 +3,8 @@ import "./Notie.css";
 
 /**
  * Notie-style notification component
- * Supports: success, warning, error, info types
+ * Supports only: success (green) for positive, error (red) for negative
+ * Warning and info types are mapped to error (negative)
  */
 export function Notie({ message, type = "success", onClose, duration = 3000 }) {
   useEffect(() => {
@@ -17,12 +18,20 @@ export function Notie({ message, type = "success", onClose, duration = 3000 }) {
 
   if (!message) return null;
 
+  // Map all types to only success (green) or error (red)
+  // success = positive notification (green)
+  // error, warning, info = negative notification (red)
+  const normalizedType = type === "success" ? "success" : "error";
+
   return (
-    <div className={`notie notie--${type}`}>
+    <div className={`notie notie--${normalizedType}`}>
       <div className="notie-content">
         {message}
       </div>
     </div>
   );
 }
+
+
+
 

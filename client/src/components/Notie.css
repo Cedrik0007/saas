@@ -5,7 +5,7 @@
   top: 0;
   left: 0;
   right: 0;
-  z-index: 9999;
+  z-index: 10001;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -29,27 +29,15 @@
   letter-spacing: 0.3px;
 }
 
-/* Success (Green) */
+/* Success (Green) - Positive notification */
 .notie--success {
   background-color: #57BF57;
   color: #ffffff;
 }
 
-/* Warning (Orange) */
-.notie--warning {
-  background-color: #E1712E;
-  color: #ffffff;
-}
-
-/* Error (Red) */
+/* Error (Red) - Negative notification */
 .notie--error {
   background-color: #DB2828;
-  color: #ffffff;
-}
-
-/* Info (Blue) */
-.notie--info {
-  background-color: #2185D0;
   color: #ffffff;
 }
 
@@ -75,4 +63,7 @@
     padding: 14px 16px;
   }
 }
+
+
+
 

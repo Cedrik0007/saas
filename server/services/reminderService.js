@@ -134,10 +134,21 @@ export async function checkAndSendReminders() {
             reminderType: reminderType,
             amount: `$${totalDue}`,
             invoiceCount: unpaidInvoices.length,
+            status: "Delivered",
           });
           console.log(`✓ Automated reminder sent to ${member.name} (${member.email}) - $${totalDue} due`);
           remindersSent++;
         } else {
+          // Log failed reminder attempt
+          await ReminderLogModel.create({
+            memberId: member.id,
+            memberEmail: member.email,
+            sentAt: new Date(),
+            reminderType: reminderType,
+            amount: `$${totalDue}`,
+            invoiceCount: unpaidInvoices.length,
+            status: "Failed",
+          });
           remindersFailed++;
           console.log(`✗ Failed to send reminder to ${member.email}`);
         }

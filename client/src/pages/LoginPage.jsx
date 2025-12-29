@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
+import { AlertModal } from "../components/AlertModal.jsx";
+import { Notie } from "../components/Notie.jsx";
 import { loginPresets } from "../data";
 import { GoogleLogin } from "@react-oauth/google";
 
@@ -11,6 +13,8 @@ export function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({ email: "", password: "" });
+  const [notieMessage, setNotieMessage] = useState(null);
+  const [notieType, setNotieType] = useState("error");
   const navigate = useNavigate();
 
   // Check for logout reason (inactivity) and show message
@@ -40,12 +44,18 @@ export function LoginPage() {
     if (!form.email.trim()) {
       newErrors.email = "Email is required";
       setErrors(newErrors);
+      setNotieMessage("Email is required");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
       return false;
     }
     
     if (!validateEmail(form.email.trim())) {
       newErrors.email = "Please enter a valid email address";
       setErrors(newErrors);
+      setNotieMessage("Please enter a valid email address");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
       return false;
     }
 
@@ -53,6 +63,9 @@ export function LoginPage() {
     if (!form.password) {
       newErrors.password = "Password is required";
       setErrors(newErrors);
+      setNotieMessage("Password is required");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
       return false;
     }
 
@@ -212,8 +225,18 @@ export function LoginPage() {
             <label className="mono-label">
               <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
               <input
-                type="email"
+                type="text"
+                inputMode="email"
                 value={form.email}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck="false"
+                data-form-type="other"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                title=""
+                onInvalid={(e) => e.preventDefault()}
                 onChange={(e) => {
                   setForm({ ...form, email: e.target.value });
                   // Clear email error when user starts typing
@@ -232,8 +255,14 @@ export function LoginPage() {
                   // Validate on blur
                   if (form.email.trim() && !validateEmail(form.email.trim())) {
                     setErrors({ ...errors, email: "Please enter a valid email address", password: "" });
+                    setNotieMessage("Please enter a valid email address");
+                    setNotieType("error");
+                    setTimeout(() => setNotieMessage(null), 3000);
                   } else if (!form.email.trim()) {
                     setErrors({ ...errors, email: "Email is required", password: "" });
+                    setNotieMessage("Email is required");
+                    setNotieType("error");
+                    setTimeout(() => setNotieMessage(null), 3000);
                   } else {
                     setErrors({ ...errors, email: "" });
                   }
@@ -242,19 +271,6 @@ export function LoginPage() {
                 className={`mono-input ${errors.email ? "input-error" : ""}`}
                 disabled={loadingRole !== null}
               />
-              {errors.email && (
-                <div className="field-error" style={{ 
-                  marginTop: "4px", 
-                  fontSize: "0.875rem", 
-                  color: "#ef4444",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px"
-                }}>
-                  <i className="fas fa-exclamation-circle" style={{ fontSize: "0.75rem" }}></i>
-                  {errors.email}
-                </div>
-              )}
             </label>
 
             <label className="mono-label">
@@ -263,6 +279,15 @@ export function LoginPage() {
                 <input
                   type={showPassword ? "text" : "password"}
                   value={form.password}
+                  autoComplete="new-password"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck="false"
+                  data-form-type="other"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  title=""
+                  onInvalid={(e) => e.preventDefault()}
                   onChange={(e) => {
                     setForm({ ...form, password: e.target.value });
                     // Clear error when user starts typing
@@ -276,6 +301,9 @@ export function LoginPage() {
                     if (emailValid) {
                       if (!form.password) {
                         setErrors({ ...errors, password: "Password is required" });
+                        setNotieMessage("Password is required");
+                        setNotieType("error");
+                        setTimeout(() => setNotieMessage(null), 3000);
                       } else {
                         setErrors({ ...errors, password: "" });
                       }
@@ -324,19 +352,6 @@ export function LoginPage() {
                   )}
                 </button>
               </div>
-              {errors.password && (
-                <div className="field-error" style={{ 
-                  marginTop: "4px", 
-                  fontSize: "0.875rem", 
-                  color: "#ef4444",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px"
-                }}>
-                  <i className="fas fa-exclamation-circle" style={{ fontSize: "0.75rem" }}></i>
-                  {errors.password}
-                </div>
-              )}
               <div style={{ marginTop: "8px", textAlign: "right" }}>
                 <Link 
                   to="/forgot-password" 
@@ -525,12 +540,18 @@ export function LoginPage() {
             )}
 
 
-            {authMessage && (
-              <div className={`alert ${authMessage.type === "success" ? "alert-success" : "alert-error"}`}>
-                <i className={`fas ${authMessage.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`} style={{ marginRight: "8px" }}></i>
-                {authMessage.text}
-              </div>
-            )}
+            <AlertModal
+              isOpen={!!authMessage}
+              message={authMessage?.text}
+              type={authMessage?.type || "error"}
+              onClose={() => setAuthMessage(null)}
+            />
+            <Notie
+              message={notieMessage}
+              type={notieType}
+              onClose={() => setNotieMessage(null)}
+              duration={3000}
+            />
           </div>
         </div>
       </main>

@@ -5,12 +5,15 @@ import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
 import { Pagination } from "../components/Pagination.jsx";
 import { Notie } from "../components/Notie.jsx";
+import { Tooltip } from "../components/Tooltip.jsx";
+import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import { useAutoLogout } from "../hooks/useAutoLogout.js";
 import jsPDF from "jspdf";
 import {
 } from "../data";
 import { statusClass } from "../statusClasses";
+import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
 
 
 export function AdminPage() {
@@ -46,6 +49,8 @@ export function AdminPage() {
     updateReminderRule,
     updateReminderTemplate,
     updateOrganizationInfo,
+    userLocale,
+    updateUserLocale,
     addAdminUser,
     updateAdminUser,
     deleteAdminUser,
@@ -168,7 +173,8 @@ export function AdminPage() {
   const [showMemberForm, setShowMemberForm] = useState(false);
   const [showInvoiceForm, setShowInvoiceForm] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
-  const [toast, setToast] = useState(null);
+  const [notieMessage, setNotieMessage] = useState(null);
+  const [notieType, setNotieType] = useState("success");
   const [lastCreatedInvoice, setLastCreatedInvoice] = useState(null);
   const [showInvoiceSuccessCard, setShowInvoiceSuccessCard] = useState(false);
   
@@ -178,7 +184,7 @@ export function AdminPage() {
     message: "",
     onConfirm: null,
     onCancel: null,
-    confirmButtonText: "Delete", // Default button text
+    confirmButtonText: "Confirm", // Default button text
   });
   
   // Form states
@@ -193,14 +199,15 @@ export function AdminPage() {
     subscriptionType: "Lifetime",
   });
 
-  // Add Member validation state
-  const [memberErrors, setMemberErrors] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    nextDue: "",
-    lastPayment: "",
+  // Member validation state for red borders - progressive validation
+  const [memberFieldErrors, setMemberFieldErrors] = useState({
+    name: false,
+    email: false,
+    phone: false,
+    nextDue: false,
+    lastPayment: false,
   });
+  const [currentInvalidField, setCurrentInvalidField] = useState(null); // Track which field to highlight
 
   const [isMemberSubmitting, setIsMemberSubmitting] = useState(false);
 
@@ -221,7 +228,7 @@ export function AdminPage() {
         break;
 
       case "phone":
-        if (value && value.length < 8) {
+        if (value && value.length < 100) {
           error = "Phone number must be at least 8 digits.";
         }
         break;
@@ -249,26 +256,127 @@ export function AdminPage() {
     return error;
   };
 
+  // Progressive validation - validate one field at a time
   const validateMemberForm = () => {
-    const newErrors = {
-      name: validateMemberField("name", memberForm.name),
-      email: validateMemberField("email", memberForm.email),
-      phone: validateMemberField("phone", memberForm.phone),
-      nextDue: validateMemberField("nextDue", memberForm.nextDue),
-      lastPayment: validateMemberField("lastPayment", memberForm.lastPayment),
-    };
-
-    setMemberErrors(newErrors);
-
-    const hasError = Object.values(newErrors).some(Boolean);
-    return !hasError;
+    // Define field order for validation (only validate fields that exist in the form)
+    const fieldOrder = editingMember 
+      ? ["name", "email", "phone"] // Edit Member: no date fields
+      : ["name", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields
+    
+    // If we have a current invalid field, check if it's now valid
+    if (currentInvalidField) {
+      const error = validateMemberField(currentInvalidField, memberForm[currentInvalidField]);
+      if (!error) {
+        // Current field is now valid, clear it and move to next
+        setMemberFieldErrors(prev => ({ ...prev, [currentInvalidField]: false }));
+        setCurrentInvalidField(null);
+      } else {
+        // Still invalid, show error again
+        setMemberFieldErrors(prev => ({ ...prev, [currentInvalidField]: true }));
+        showToast(error, "error");
+        // Focus on invalid field
+        setTimeout(() => {
+          const fieldElement = document.querySelector(`input[name="${currentInvalidField}"], input[type="text"][value*=""], input[type="email"], input[type="date"], input[type="tel"]`);
+          if (fieldElement) {
+            const inputs = document.querySelectorAll('input[type="text"], input[type="email"], input[type="date"], input[type="tel"]');
+            const fieldIndex = fieldOrder.indexOf(currentInvalidField);
+            if (fieldIndex === 0) {
+              // Name field
+              const nameInput = document.querySelector('input[type="text"][required]');
+              if (nameInput) nameInput.focus();
+            } else if (fieldIndex === 1) {
+              // Email field
+              const emailInput = document.querySelector('input[type="email"]');
+              if (emailInput) emailInput.focus();
+            } else if (fieldIndex === 2) {
+              // Phone field - focus on phone input
+              const phoneInput = document.querySelector('input[type="tel"]');
+              if (phoneInput) phoneInput.focus();
+            } else if (fieldIndex === 3) {
+              // nextDue field
+              const dateInputs = document.querySelectorAll('input[type="date"]');
+              if (dateInputs[0]) dateInputs[0].focus();
+            } else if (fieldIndex === 4) {
+              // lastPayment field
+              const dateInputs = document.querySelectorAll('input[type="date"]');
+              if (dateInputs[1]) dateInputs[1].focus();
+            }
+          }
+        }, 100);
+        return false;
+      }
+    }
+    
+    // Find first invalid field
+    for (const field of fieldOrder) {
+      const error = validateMemberField(field, memberForm[field]);
+      if (error) {
+        // Clear all errors first
+        setMemberFieldErrors({
+          name: false,
+          email: false,
+          phone: false,
+          nextDue: false,
+          lastPayment: false,
+        });
+        // Set only this field as invalid
+        setMemberFieldErrors(prev => ({ ...prev, [field]: true }));
+        setCurrentInvalidField(field);
+        showToast(error, "error");
+        // Focus on invalid field
+        setTimeout(() => {
+          const formElement = document.querySelector('form.form-grid');
+          if (!formElement) return;
+          
+          const fieldIndex = fieldOrder.indexOf(field);
+          let targetInput = null;
+          
+          if (fieldIndex === 0) {
+            // Name field - first required text input
+            targetInput = formElement.querySelector('input[type="text"][required]');
+          } else if (fieldIndex === 1) {
+            // Email field
+            targetInput = formElement.querySelector('input[type="email"]');
+          } else if (fieldIndex === 2) {
+            // Phone field - focus on phone input
+            targetInput = formElement.querySelector('input[type="tel"]');
+          } else if (fieldIndex === 3) {
+            // nextDue field - first date input
+            const dateInputs = formElement.querySelectorAll('input[type="date"]');
+            targetInput = dateInputs[0];
+          } else if (fieldIndex === 4) {
+            // lastPayment field - second date input
+            const dateInputs = formElement.querySelectorAll('input[type="date"]');
+            targetInput = dateInputs[1];
+          }
+          
+          if (targetInput) {
+            targetInput.focus();
+            targetInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+        return false;
+      }
+    }
+    
+    // All fields valid
+    setMemberFieldErrors({
+      name: false,
+      email: false,
+      phone: false,
+      nextDue: false,
+      lastPayment: false,
+    });
+    setCurrentInvalidField(null);
+    return true;
   };
 
   const handleMemberFieldChange = (field, rawValue) => {
     let value = rawValue;
 
     if (field === "phone") {
-      value = rawValue.replace(/\D/g, "");
+      // PhoneInput already returns international format (+919876543210), so keep it as is
+      value = rawValue;
     } else if (field === "balance") {
       value = rawValue.replace(/\D/g, "");
     } else if (field === "subscriptionType") {
@@ -303,14 +411,10 @@ export function AdminPage() {
       value,
       field === "password" ? { editingMember } : {}
     );
-    setMemberErrors(prev => ({
-      ...prev,
-      [field]: error,
-    }));
+    // Errors are now shown via Notie, no need to store in state
   };
 
   const isMemberFormValid =
-    !Object.values(memberErrors).some(Boolean) &&
     memberForm.name.trim() &&
     memberForm.email.trim();
 
@@ -358,6 +462,17 @@ export function AdminPage() {
 
   const nextInvoiceId = useMemo(() => generateInvoiceId(), [invoices]);
 
+  // Donation form validation state for progressive validation
+  const [donationFieldErrors, setDonationFieldErrors] = useState({
+    donorName: false,
+    amount: false,
+    method: false,
+    date: false,
+    reference: false,
+    screenshot: false,
+  });
+  const [currentInvalidDonationField, setCurrentInvalidDonationField] = useState(null);
+
   const [showDonationForm, setShowDonationForm] = useState(false);
   const [donationForm, setDonationForm] = useState({
     donorName: "",
@@ -386,23 +501,23 @@ export function AdminPage() {
   </h2>
   <p>Dear {{member_name}},</p>
   <p>This is a friendly reminder about your outstanding subscription payments.</p>
-  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+  <div style="background: #f9fafb; padding: 15px; border-radius: 5px; margin: 20px 0;">
     <p><strong>Member ID:</strong> {{member_id}}</p>
     <p><strong>Email:</strong> {{member_email}}</p>
-    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">\${{total_due}}</span></p>
+    <p><strong>Total Outstanding:</strong> <span style="color: #ef4444; font-size: 18px; font-weight: bold;">\${{total_due}}</span></p>
   </div>
-  <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
+                            <h3 style="color: #1a1a1a;">Outstanding Invoices ({{invoice_count}}):</h3>
   <ul style="list-style: none; padding: 0;">
     {{invoice_list}}
   </ul>
-  <div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
+  <div style="background: #f8f9ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
     <p><strong>💳 Payment Methods Available:</strong></p>
     <ul>
       {{payment_methods}}
     </ul>
   </div>
   <p style="text-align: center; margin: 30px 0;">
-    <a href="{{portal_link}}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+    <a href="{{portal_link}}" style="background: #5a31ea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
       Access Member Portal
     </a>
   </p>
@@ -458,8 +573,12 @@ export function AdminPage() {
   const [pendingReminderAction, setPendingReminderAction] = useState(null); // { type: 'single'|'bulk', memberData?: member }
   const [selectedChannels, setSelectedChannels] = useState([]); // Track selected channels for bulk send (can be multiple)
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("All"); // All, Paid, Unpaid, Overdue, Pending
   const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
   const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
+  const [transactionsSearch, setTransactionsSearch] = useState("");
+  const [transactionsPage, setTransactionsPage] = useState(1);
+  const [transactionsPageSize, setTransactionsPageSize] = useState(10);
   const [memberSearchTerm, setMemberSearchTerm] = useState(""); // Search filter for members
   const [memberStatusFilter, setMemberStatusFilter] = useState("All"); // Status filter for members
   const [memberSortByOutstanding, setMemberSortByOutstanding] = useState("none"); // Sort by outstanding amount
@@ -480,6 +599,15 @@ export function AdminPage() {
   // Payment form state
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [editingPayment, setEditingPayment] = useState(null);
+  // Payment form validation state for progressive validation
+  const [paymentFieldErrors, setPaymentFieldErrors] = useState({
+    memberId: false,
+    amount: false,
+    method: false,
+    screenshot: false,
+  });
+  const [currentInvalidPaymentField, setCurrentInvalidPaymentField] = useState(null);
+
   const [paymentForm, setPaymentForm] = useState({
     memberId: "",
     member: "",
@@ -508,7 +636,7 @@ export function AdminPage() {
   const [remindersPageSize, setRemindersPageSize] = useState(10);
   const [invoicesPage, setInvoicesPage] = useState(1);
   const [invoicesPageSize, setInvoicesPageSize] = useState(10);
-  const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed
+  const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed, Pending
   const [remindersChannelFilter, setRemindersChannelFilter] = useState("All"); // All, Email, WhatsApp
 
   const navigate = useNavigate();
@@ -768,7 +896,7 @@ export function AdminPage() {
       return "Cash";
     }
     
-    // For online payment methods (Screenshot, Bank Transfer, FPS, PayMe, Alipay, Credit Card, etc.)
+    // For online payment methods (Screenshot, Bank Transfer, FPS, PayMe, etc.)
     // Show as "Online Payment"
     const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
     if (onlineMethods.includes(payment.method)) {
@@ -1244,6 +1372,69 @@ export function AdminPage() {
     }
   };
 
+  // Save all settings
+  const [savingAllSettings, setSavingAllSettings] = useState(false);
+  const handleSaveAllSettings = async () => {
+    setSavingAllSettings(true);
+    try {
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+      const errors = [];
+      
+      // Save email settings
+      try {
+        const emailResponse = await fetch(`${apiUrl}/api/email-settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(emailSettings),
+        });
+        if (!emailResponse.ok) {
+          const error = await emailResponse.json();
+          errors.push(error.error || 'Failed to save email settings');
+        } else {
+          setEmailConfigStatus(emailSettings.emailUser ? 'connected' : 'not_connected');
+        }
+      } catch (error) {
+        errors.push('Failed to save email settings');
+      }
+      
+      // Save reminder rules
+      try {
+        for (const rule of reminderRules) {
+          await updateReminderRule(rule.id, rule);
+        }
+      } catch (error) {
+        errors.push('Failed to save reminder rules');
+      }
+      
+      // Save payment methods
+      try {
+        for (const method of paymentMethods) {
+          await updatePaymentMethod(method.id, method);
+        }
+      } catch (error) {
+        errors.push('Failed to save payment methods');
+      }
+      
+      // Save organization info
+      try {
+        await updateOrganizationInfo(orgForm);
+      } catch (error) {
+        errors.push('Failed to save organization info');
+      }
+      
+      if (errors.length > 0) {
+        showToast(`Some settings failed to save: ${errors.join(', ')}`, 'error');
+      } else {
+        showToast('All settings saved successfully!', 'success');
+      }
+    } catch (error) {
+      console.error('Error saving all settings:', error);
+      showToast('Failed to save all settings', 'error');
+    } finally {
+      setSavingAllSettings(false);
+    }
+  };
+
   // Fetch email template from server
   const fetchEmailTemplate = async () => {
     try {
@@ -1260,23 +1451,23 @@ export function AdminPage() {
   </h2>
   <p>Dear {{member_name}},</p>
   <p>This is a friendly reminder about your outstanding subscription payments.</p>
-  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+  <div style="background: #f9fafb; padding: 15px; border-radius: 5px; margin: 20px 0;">
     <p><strong>Member ID:</strong> {{member_id}}</p>
     <p><strong>Email:</strong> {{member_email}}</p>
-    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">\${{total_due}}</span></p>
+    <p><strong>Total Outstanding:</strong> <span style="color: #ef4444; font-size: 18px; font-weight: bold;">\${{total_due}}</span></p>
   </div>
-  <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
+                            <h3 style="color: #1a1a1a;">Outstanding Invoices ({{invoice_count}}):</h3>
   <ul style="list-style: none; padding: 0;">
     {{invoice_list}}
   </ul>
-  <div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
+  <div style="background: #f8f9ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
     <p><strong>💳 Payment Methods Available:</strong></p>
     <ul>
       {{payment_methods}}
     </ul>
   </div>
   <p style="text-align: center; margin: 30px 0;">
-    <a href="{{portal_link}}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+    <a href="{{portal_link}}" style="background: #5a31ea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
       Access Member Portal
     </a>
   </p>
@@ -1314,24 +1505,23 @@ export function AdminPage() {
         <li style="margin-bottom: 10px;">
           <strong>January 2025</strong>: $100.00 
           <span style="color: #666;">(Due: 15 Jan 2025)</span> - 
-          <strong style="color: #d32f2f">Overdue</strong>
+          <strong style="color: #ef4444">Overdue</strong>
         </li>
         <li style="margin-bottom: 10px;">
           <strong>February 2025</strong>: $100.00 
           <span style="color: #666;">(Due: 15 Feb 2025)</span> - 
-          <strong style="color: #f57c00">Unpaid</strong>
+          <strong style="color: #ef4444">Unpaid</strong>
         </li>
         <li style="margin-bottom: 10px;">
           <strong>March 2025</strong>: $50.00 
           <span style="color: #666;">(Due: 15 Mar 2025)</span> - 
-          <strong style="color: #f57c00">Unpaid</strong>
+          <strong style="color: #ef4444">Unpaid</strong>
         </li>
       `)
       .replace(/\{\{payment_methods\}\}/g, `
         <li>FPS: ID 1234567</li>
         <li>PayMe: Scan QR code in portal</li>
         <li>Bank Transfer: HSBC 123-456789-001</li>
-        <li>Credit Card: Pay instantly online</li>
       `)
       .replace(/\{\{portal_link\}\}/g, `${window.location.origin}/member`);
   };
@@ -1537,20 +1727,96 @@ export function AdminPage() {
     }
   };
 
+  // Progressive validation for payment form
+  const validatePaymentForm = () => {
+    // Define field order for validation
+    const fieldOrder = ["memberId", "amount", "method", "screenshot"];
+    
+    // If we have a current invalid field, check if it's now valid
+    if (currentInvalidPaymentField) {
+      let isValid = true;
+      let errorMsg = "";
+      
+      if (currentInvalidPaymentField === "memberId" && !paymentForm.memberId) {
+        isValid = false;
+        errorMsg = "Member is required";
+      } else if (currentInvalidPaymentField === "amount" && (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0)) {
+        isValid = false;
+        errorMsg = "Amount must be a positive number";
+      } else if (currentInvalidPaymentField === "method" && !paymentForm.method) {
+        isValid = false;
+        errorMsg = "Payment method is required";
+      } else if (currentInvalidPaymentField === "screenshot" && paymentForm.method === "Cash" && !paymentForm.screenshot) {
+        isValid = false;
+        errorMsg = "Screenshot upload is required for Cash payments";
+      }
+      
+      if (isValid) {
+        setPaymentFieldErrors(prev => ({ ...prev, [currentInvalidPaymentField]: false }));
+        setCurrentInvalidPaymentField(null);
+      } else {
+        setPaymentFieldErrors(prev => ({ ...prev, [currentInvalidPaymentField]: true }));
+        showToast(errorMsg, "error");
+        return false;
+      }
+    }
+    
+    // Find first invalid field
+    for (const field of fieldOrder) {
+      let isValid = true;
+      let errorMsg = "";
+      
+      if (field === "memberId" && !paymentForm.memberId) {
+        isValid = false;
+        errorMsg = "Member is required";
+      } else if (field === "amount" && (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0)) {
+        isValid = false;
+        errorMsg = "Amount must be a positive number";
+      } else if (field === "method" && !paymentForm.method) {
+        isValid = false;
+        errorMsg = "Payment method is required";
+      } else if (field === "screenshot" && paymentForm.method === "Cash" && !paymentForm.screenshot) {
+        isValid = false;
+        errorMsg = "Screenshot upload is required for Cash payments";
+      }
+      
+      if (!isValid) {
+        // Clear all errors first
+        setPaymentFieldErrors({
+          memberId: false,
+          amount: false,
+          method: false,
+          screenshot: false,
+        });
+        // Set only this field as invalid
+        setPaymentFieldErrors(prev => ({ ...prev, [field]: true }));
+        setCurrentInvalidPaymentField(field);
+        showToast(errorMsg, "error");
+        return false;
+      }
+    }
+    
+    // All fields valid
+    setPaymentFieldErrors({
+      memberId: false,
+      amount: false,
+      method: false,
+      screenshot: false,
+    });
+    setCurrentInvalidPaymentField(null);
+    return true;
+  };
+
   // Payment CRUD handlers
   const handleAddPayment = async (e) => {
     e.preventDefault();
+    
+    if (!validatePaymentForm()) {
+      // Validation error already shown via Notie
+      return;
+    }
+    
     try {
-      if (!paymentForm.memberId || !paymentForm.amount) {
-        showToast("Please fill all required fields", "error");
-        return;
-      }
-
-      // Validate screenshot for Cash payments
-      if (paymentForm.method === "Cash" && !paymentForm.screenshot) {
-        showToast("Screenshot upload is required for Cash payments", "error");
-        return;
-      }
 
       await addPayment(paymentForm);
       showToast("Payment added successfully!");
@@ -1799,7 +2065,6 @@ ${invoiceList}
 • FPS: ID 1234567
 • PayMe: Scan QR code in portal
 • Bank Transfer: HSBC 123-456789-001
-• Credit Card: Pay instantly online
 
 *🔗 Member Portal:*
 ${window.location.origin}/member
@@ -1875,8 +2140,15 @@ Subscription Manager HK`;
       setPaymentsPage(1);
     } else if (activeSection === "donations") {
       setDonationsPage(1);
+    } else if (activeSection === "reports") {
+      setTransactionsPage(1);
     }
   }, [activeSection]);
+
+  // Reset transactions pagination when search or filters change
+  useEffect(() => {
+    setTransactionsPage(1);
+  }, [transactionsSearch, reportFilter, donorTypeFilter]);
 
   // Handle pagination bounds checking for members
   useEffect(() => {
@@ -2030,25 +2302,30 @@ Subscription Manager HK`;
   };
 
   const handleLogout = () => {
-    navigate("/login", { replace: true });
+    showToast("You have been logged out", "success");
+    setTimeout(() => {
+      navigate("/login", { replace: true });
+    }, 500);
   };
 
   const showToast = (message, type = "success") => {
-    setToast({ message, type });
+    setNotieMessage(message);
+    setNotieType(type);
+    setTimeout(() => setNotieMessage(null), 3000);
   };
 
   // Show confirmation dialog
-  const showConfirmation = (message, onConfirm, onCancel = null, confirmButtonText = "Delete") => {
+  const showConfirmation = (message, onConfirm, onCancel = null, confirmButtonText = "Confirm") => {
     setConfirmationDialog({
       isOpen: true,
       message,
       confirmButtonText,
       onConfirm: () => {
-        setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null, confirmButtonText: "Delete" });
+        setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null, confirmButtonText: "Confirm" });
         if (onConfirm) onConfirm();
       },
       onCancel: () => {
-        setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null, confirmButtonText: "Delete" });
+        setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null, confirmButtonText: "Confirm" });
         if (onCancel) onCancel();
       },
     });
@@ -2059,7 +2336,7 @@ Subscription Manager HK`;
     e.preventDefault();
 
     if (!validateMemberForm()) {
-      showToast("Please fix the errors in the form.", "error");
+      // Validation error already shown via Notie in validateMemberForm
       return;
     }
 
@@ -2077,6 +2354,15 @@ Subscription Manager HK`;
         lastPayment: "",
         subscriptionType: "Lifetime",
       });
+      // Clear validation state
+      setMemberFieldErrors({
+        name: false,
+        email: false,
+        phone: false,
+        nextDue: false,
+        lastPayment: false,
+      });
+      setCurrentInvalidField(null);
       setShowMemberForm(false);
       showToast("Member added successfully!", "success");
     } catch (error) {
@@ -2088,26 +2374,72 @@ Subscription Manager HK`;
   };
 
   const handleEditMember = (member) => {
+    // Clear validation state when opening edit form
+    setMemberFieldErrors({
+      name: false,
+      email: false,
+      phone: false,
+      nextDue: false,
+      lastPayment: false,
+    });
+    setCurrentInvalidField(null);
     setEditingMember(member);
-    const subscriptionType = member.subscriptionType || "Lifetime";
-    // Balance always matches subscription type amount (not the stored balance)
-    const balance = subscriptionType === "Yearly + Janaza Fund" ? "500" : "250";
+    // Show only existing member data - use actual values from member object
+    // Do NOT include subscription details in Edit Member popup
     setMemberForm({
-      ...member,
-      subscriptionType: subscriptionType,
-      balance: balance,
+      name: member.name || "",
+      email: member.email || "",
+      phone: member.phone || "",
+      status: member.status || "Active",
+      // Do not set subscriptionType, balance, nextDue, or lastPayment for editing - these are subscription details
     });
     setShowMemberForm(true);
   };
 
   const handleUpdateMember = async (e) => {
     e.preventDefault();
+    
+    if (!validateMemberForm()) {
+      // Validation error already shown via Notie in validateMemberForm
+      return;
+    }
+    
     try {
-      // Only include password in update if it's provided
-      const updateData = { ...memberForm };
-      if (!updateData.password || updateData.password.trim() === "") {
-        delete updateData.password; // Don't update password if empty
+      if (!editingMember) {
+        showToast("No member selected for editing.", "error");
+        return;
       }
+
+      // Only include fields that have actually changed
+      const updateData = {};
+      const originalMember = editingMember;
+      
+      // Compare each field and only include if changed
+      if (memberForm.name !== (originalMember.name || "")) {
+        updateData.name = memberForm.name;
+      }
+      if (memberForm.email !== (originalMember.email || "")) {
+        updateData.email = memberForm.email;
+      }
+      if (memberForm.phone !== (originalMember.phone || "")) {
+        updateData.phone = memberForm.phone;
+      }
+      if (memberForm.status !== (originalMember.status || "Active")) {
+        updateData.status = memberForm.status;
+      }
+      // Do not update nextDue, lastPayment, subscriptionType, or balance in Edit Member - these are subscription details
+      
+      // Only include password in update if it's provided
+      if (memberForm.password && memberForm.password.trim() !== "") {
+        updateData.password = memberForm.password;
+      }
+      
+      // Only send update if there are actual changes
+      if (Object.keys(updateData).length === 0) {
+        showToast("No changes to update.", "error");
+        return;
+      }
+      
       await updateMember(editingMember.id, updateData);
       setEditingMember(null);
       setMemberForm({
@@ -2121,6 +2453,15 @@ Subscription Manager HK`;
         lastPayment: "",
         subscriptionType: "Lifetime",
       });
+      // Clear validation state
+      setMemberFieldErrors({
+        name: false,
+        email: false,
+        phone: false,
+        nextDue: false,
+        lastPayment: false,
+      });
+      setCurrentInvalidField(null);
       setShowMemberForm(false);
       showToast("Member updated successfully!");
     } catch (error) {
@@ -2369,7 +2710,6 @@ ${invoiceList}
 • FPS: ID 1234567
 • PayMe: Scan QR code in portal
 • Bank Transfer: HSBC 123-456789-001
-• Credit Card: Pay instantly online
 
 *🔗 Member Portal:*
 ${window.location.origin}/member
@@ -2414,8 +2754,13 @@ Subscription Manager HK`;
   // Email Reminder (using nodemailer via API)
   // Show channel selection before sending reminder
   const handleRequestReminder = (memberData, isBulk = false, memberId = null) => {
+    // For bulk, don't open popup - channels are selected inline
+    if (isBulk) {
+      return; // Bulk sending is now handled inline with icon buttons
+    }
+    
     setPendingReminderAction({ 
-      type: isBulk ? 'bulk' : (memberId ? 'manual' : 'single'), 
+      type: memberId ? 'manual' : 'single', 
       memberData: memberData || null,
       memberId: memberId || null
     });
@@ -2447,10 +2792,7 @@ Subscription Manager HK`;
       return;
     }
     
-    setShowChannelSelection(false);
-    
     // Show confirmation for bulk send
-    const channelNames = selectedChannels.join(" and ");
     const confirmationMessage = selectedChannels.length === 2
       ? `Are you sure you want to send reminders via Email AND WhatsApp to ALL outstanding members?`
       : selectedChannels.includes('Email')
@@ -2475,7 +2817,6 @@ Subscription Manager HK`;
           }
           
           setSelectedChannels([]);
-          setPendingReminderAction(null);
         } catch (error) {
           console.error("Error sending bulk reminders:", error);
         }
@@ -2546,7 +2887,7 @@ Subscription Manager HK`;
           `<li style="margin-bottom: 10px;">
             <strong>${inv.period}</strong>: ${inv.amount} 
             <span style="color: #666;">(Due: ${inv.due})</span> - 
-            <strong style="color: ${inv.status === 'Overdue' ? '#d32f2f' : '#f57c00'}">${inv.status}</strong>
+            <strong style="color: ${inv.status === 'Overdue' ? '#ef4444' : '#ef4444'}">${inv.status}</strong>
           </li>`
       )
       .join("");
@@ -2570,7 +2911,7 @@ Subscription Manager HK`;
           invoiceCount: memberUnpaidInvoices.length,
           invoiceListText: invoiceListText,
           invoiceListHTML: invoiceListHTML,
-          paymentMethods: "FPS, PayMe, Bank Transfer, Alipay, or Credit Card",
+          paymentMethods: "FPS, PayMe, or Bank Transfer",
           portalLink: `${window.location.origin}/member`,
         }),
       });
@@ -2672,15 +3013,8 @@ Subscription Manager HK`;
     }
   };
 
-  // Show loading state
-  if (loading) {
-    return (
-      <div className="server-loading">
-        <div className="server-loading-spinner"></div>
-        <p className="server-loading-text">Loading admin data...</p>
-      </div>
-    );
-  }
+  // Don't block render with loading screen - show page immediately
+  // Data will load in background and update as it arrives
 
   return (
     <>
@@ -2713,6 +3047,7 @@ Subscription Manager HK`;
                 {confirmationDialog.message}
               </p>
             </div>
+            <div className="confirmation-dialog-divider"></div>
             <div className="confirmation-dialog-actions">
               <button
                 className="secondary-btn"
@@ -2723,8 +3058,14 @@ Subscription Manager HK`;
               <button
                 className="danger-btn"
                 onClick={confirmationDialog.onConfirm}
+                style={{
+                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  color: "#ffffff",
+                  border: "1px solid #10b981",
+                  boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)"
+                }}
               >
-                {confirmationDialog.confirmButtonText || "Delete"}
+                {confirmationDialog.confirmButtonText || "Confirm"}
               </button>
             </div>
           </div>
@@ -2783,8 +3124,8 @@ Subscription Manager HK`;
                   borderRadius: "4px",
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.background = "#f0f0f0";
-                  e.target.style.color = "#333";
+                  e.target.style.background = "#f3f4f6";
+                  e.target.style.color = "#1a1a1a";
                 }}
                 onMouseLeave={(e) => {
                   e.target.style.background = "transparent";
@@ -2872,8 +3213,8 @@ Subscription Manager HK`;
                   borderRadius: "4px",
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.background = "#f0f0f0";
-                  e.target.style.color = "#333";
+                  e.target.style.background = "#f3f4f6";
+                  e.target.style.color = "#1a1a1a";
                 }}
                 onMouseLeave={(e) => {
                   e.target.style.background = "transparent";
@@ -2933,9 +3274,9 @@ Subscription Manager HK`;
                       alignItems: "center",
                       justifyContent: "space-between",
                       gap: "12px",
-                      backgroundColor: selectedChannels.includes('WhatsApp') ? "#25D366" : "#25D366",
+                      backgroundColor: selectedChannels.includes('WhatsApp') ? "#5a31ea" : "#5a31ea",
                       color: "#ffffff",
-                      border: `2px solid ${selectedChannels.includes('WhatsApp') ? "#25D366" : "#25D366"}`,
+                      border: `2px solid ${selectedChannels.includes('WhatsApp') ? "#5a31ea" : "#5a31ea"}`,
                       cursor: "pointer",
                       transition: "all 0.2s ease"
                     }}
@@ -2957,7 +3298,7 @@ Subscription Manager HK`;
                       disabled={sendingToAll || sendingWhatsAppToAll}
                       style={{
                         padding: "16px 24px",
-                        borderRadius: "8px",
+                        borderRadius: "4px",
                         fontWeight: "600",
                         fontSize: "1rem",
                         display: "flex",
@@ -3027,8 +3368,8 @@ Subscription Manager HK`;
                       borderRadius: "8px",
                       fontWeight: "600",
                       fontSize: "1rem",
-                      backgroundColor: "#25D366",
-                      borderColor: "#25D366",
+                      backgroundColor: "#5a31ea",
+                      borderColor: "#5a31ea",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -3058,9 +3399,9 @@ Subscription Manager HK`;
       )}
 
       <Notie
-        message={toast?.message}
-        type={toast?.type || "success"}
-        onClose={() => setToast(null)}
+        message={notieMessage}
+        type={notieType}
+        onClose={() => setNotieMessage(null)}
         duration={3000}
       />
 
@@ -3171,7 +3512,7 @@ Subscription Manager HK`;
                         <i className="fas fa-users" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                         Total Members
                       </p>
-                      <h4>{members.length.toLocaleString("en-US")}</h4>
+                      <h4>{formatNumber(members.length)}</h4>
                       <small>Active members</small>
                     </button>
 
@@ -3188,14 +3529,14 @@ Subscription Manager HK`;
                       </p>
                       <h4>
                         $
-                        {dashboardMetrics.collectedMonth.toLocaleString("en-US", {
+                        {formatNumber(dashboardMetrics.collectedMonth, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </h4>
                       <small>
                         $
-                        {dashboardMetrics.collectedYear.toLocaleString("en-US", {
+                        {formatNumber(dashboardMetrics.collectedYear, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}{" "}
@@ -3211,19 +3552,19 @@ Subscription Manager HK`;
                       onClick={() => handleNavClick("members")}
                     >
                       <p>
-                        <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#f59e0b" }}></i>
+                        <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
                         Total Outstanding
                       </p>
-                      <h4 style={{ color: dashboardMetrics.outstanding > 0 ? "#f59e0b" : "#111827" }}>
+                      <h4 style={{ color: dashboardMetrics.outstanding > 0 ? "#ef4444" : "#1a1a1a" }}>
                         $
-                        {dashboardMetrics.outstanding.toLocaleString("en-US", {
+                        {formatNumber(dashboardMetrics.outstanding, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </h4>
                       <small>
                         Expected $
-                        {dashboardMetrics.expectedAnnual.toLocaleString("en-US", {
+                        {formatNumber(dashboardMetrics.expectedAnnual, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
@@ -3238,11 +3579,11 @@ Subscription Manager HK`;
                       onClick={() => handleNavClick("members")}
                     >
                       <p>
-                        <i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: dashboardMetrics.overdueMembers > 0 ? "#f59e0b" : "#6b7280" }}></i>
+                        <i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: dashboardMetrics.overdueMembers > 0 ? "#ef4444" : "#666" }}></i>
                         Overdue Members
                       </p>
-                      <h4 style={{ color: dashboardMetrics.overdueMembers > 0 ? "#f59e0b" : "#111827" }}>
-                        {dashboardMetrics.overdueMembers.toLocaleString("en-US")}
+                      <h4 style={{ color: dashboardMetrics.overdueMembers > 0 ? "#ef4444" : "#1a1a1a" }}>
+                        {formatNumber(dashboardMetrics.overdueMembers)}
                       </h4>
                       <small>Requires attention</small>
                     </button>
@@ -3348,7 +3689,7 @@ Subscription Manager HK`;
                             left: `${left}px`,
                             top: `${top}px`,
                             padding: "8px 12px",
-                            background: "#000",
+                            background: "#1a1a1a",
                             color: "#fff",
                             borderRadius: "6px",
                             fontSize: "0.875rem",
@@ -3404,12 +3745,12 @@ Subscription Manager HK`;
                     {(members || []).filter(m => m.status === 'Pending').length > 0 && (
                       <div style={{
                         padding: "10px 16px",
-                        background: "#fff3cd",
-                        borderRadius: "8px",
+                        background: "#fee2e2",
+                        borderRadius: "4px",
                         fontSize: "0.875rem",
                         fontWeight: "600",
-                        color: "#856404",
-                        border: "1px solid #ffc107"
+                        color: "#ef4444",
+                        border: "1px solid #ef4444"
                       }}>
                         ⏳ Pending Approval: {(members || []).filter(m => m.status === 'Pending').length}
                       </div>
@@ -3473,6 +3814,15 @@ Subscription Manager HK`;
                     }}
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
+                        // Clear validation state when closing
+                        setMemberFieldErrors({
+                          name: false,
+                          email: false,
+                          phone: false,
+                          nextDue: false,
+                          lastPayment: false,
+                        });
+                        setCurrentInvalidField(null);
                         setShowMemberForm(false);
                         setEditingMember(null);
                       }
@@ -3484,20 +3834,22 @@ Subscription Manager HK`;
                         maxWidth: "720px",
                         width: "100%",
                         maxHeight: "90vh",
-                        overflowY: "auto",
+                        display: "flex",
+                        flexDirection: "column",
                         background: "#f9fafb",
                         position: "relative",
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: "16px",
-                        }}
-                      >
+                      <div style={{ padding: "24px", paddingBottom: 0 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: "16px",
+                          }}
+                        >
                         <h4
                           style={{
                             display: "flex",
@@ -3513,10 +3865,40 @@ Subscription Manager HK`;
                           type="button"
                           className="ghost-btn"
                           onClick={() => {
+                            // Clear validation state when closing
+                            setMemberFieldErrors({
+                              name: false,
+                              email: false,
+                              phone: false,
+                              nextDue: false,
+                              lastPayment: false,
+                            });
+                            setCurrentInvalidField(null);
                             setShowMemberForm(false);
                             setEditingMember(null);
                           }}
-                          style={{ fontSize: "1.2rem", lineHeight: 1 }}
+                          style={{ 
+                            fontSize: "1.5rem", 
+                            lineHeight: 1,
+                            color: "#ef4444",
+                            fontWeight: "bold",
+                            width: "32px",
+                            height: "32px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            borderRadius: "4px",
+                            border: "1px solid #ef4444",
+                            background: "transparent",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.background = "#fee2e2";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.background = "transparent";
+                          }}
                           aria-label="Close add member form"
                         >
                           ×
@@ -3528,69 +3910,119 @@ Subscription Manager HK`;
                         onSubmit={editingMember ? handleUpdateMember : handleAddMember}
                         noValidate
                       >
-                      <label className={memberErrors.name ? "field-error--wrapper" : ""}>
+                      <label>
                         <span>
                           <i className="fas fa-user" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                        Name *
+                        Name <span style={{ color: "#ef4444" }}>*</span>
                         </span>
                         <input
                           type="text"
                           required
                           value={memberForm.name}
-                          onChange={(e) => handleMemberFieldChange("name", e.target.value)}
-                          aria-invalid={!!memberErrors.name}
-                          aria-describedby={memberErrors.name ? "member-name-error" : undefined}
+                          onChange={(e) => {
+                            handleMemberFieldChange("name", e.target.value);
+                            // Clear error when user starts typing
+                            if (memberFieldErrors.name || currentInvalidField === "name") {
+                              setMemberFieldErrors(prev => ({ ...prev, name: false }));
+                              if (currentInvalidField === "name") {
+                                setCurrentInvalidField(null);
+                              }
+                            }
+                          }}
+                          style={{
+                            borderColor: (memberFieldErrors.name && currentInvalidField === "name") ? "#ef4444" : undefined,
+                            borderWidth: (memberFieldErrors.name && currentInvalidField === "name") ? "2px" : undefined,
+                          }}
+                          aria-invalid={memberFieldErrors.name}
+                          onFocus={(e) => {
+                            if (memberFieldErrors.name && currentInvalidField === "name") {
+                              e.target.style.borderColor = "#ef4444";
+                              e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (memberFieldErrors.name && currentInvalidField === "name") {
+                              e.target.style.borderColor = "#ef4444";
+                            }
+                          }}
                         />
-                        {memberErrors.name && (
-                          <div id="member-name-error" className="field-error">
-                            <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
-                            <span>{memberErrors.name}</span>
-                          </div>
-                        )}
                       </label>
 
-                      <label className={memberErrors.email ? "field-error--wrapper" : ""}>
+                      <label>
                         <span>
                           <i className="fas fa-envelope" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                        Email *
+                        Email <span style={{ color: "#ef4444" }}>*</span>
                         </span>
                         <input
                           type="email"
                           required
                           value={memberForm.email}
-                          onChange={(e) => handleMemberFieldChange("email", e.target.value)}
-                          aria-invalid={!!memberErrors.email}
-                          aria-describedby={memberErrors.email ? "member-email-error" : undefined}
+                          onChange={(e) => {
+                            handleMemberFieldChange("email", e.target.value);
+                            // Clear error when user starts typing
+                            if (memberFieldErrors.email || currentInvalidField === "email") {
+                              setMemberFieldErrors(prev => ({ ...prev, email: false }));
+                              if (currentInvalidField === "email") {
+                                setCurrentInvalidField(null);
+                              }
+                            }
+                          }}
+                          style={{
+                            borderColor: (memberFieldErrors.email && currentInvalidField === "email") ? "#ef4444" : undefined,
+                            borderWidth: (memberFieldErrors.email && currentInvalidField === "email") ? "2px" : undefined,
+                            borderStyle: (memberFieldErrors.email && currentInvalidField === "email") ? "solid" : undefined,
+                            outline: (memberFieldErrors.email && currentInvalidField === "email") ? "none" : undefined,
+                            boxShadow: (memberFieldErrors.email && currentInvalidField === "email") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
+                          }}
+                          aria-invalid={memberFieldErrors.email}
+                          onFocus={(e) => {
+                            if (memberFieldErrors.email && currentInvalidField === "email") {
+                              e.target.style.borderColor = "#ef4444";
+                              e.target.style.outline = "none";
+                              e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (memberFieldErrors.email && currentInvalidField === "email") {
+                              e.target.style.borderColor = "#ef4444";
+                              e.target.style.outline = "none";
+                            }
+                          }}
                         />
-                        {memberErrors.email && (
-                          <div id="member-email-error" className="field-error">
-                            <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
-                            <span>{memberErrors.email}</span>
-                          </div>
-                        )}
                       </label>
 
-                      <label className={memberErrors.phone ? "field-error--wrapper" : ""}>
-                        <span>
-                          <i className="fas fa-phone" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                          WhatsApp Number
-                        </span>
-                        <input
-                          type="tel"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
+                      <div>
+                        <PhoneInput
+                          label={
+                            <span>
+                              <i className="fas fa-phone" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                              WhatsApp Number
+                            </span>
+                          }
                           value={memberForm.phone}
-                          onChange={(e) => handleMemberFieldChange("phone", e.target.value)}
-                          aria-invalid={!!memberErrors.phone}
-                          aria-describedby={memberErrors.phone ? "member-phone-error" : undefined}
+                          onChange={(e) => {
+                            handleMemberFieldChange("phone", e.target.value);
+                            // Clear error when user starts typing
+                            if (memberFieldErrors.phone || currentInvalidField === "phone") {
+                              setMemberFieldErrors(prev => ({ ...prev, phone: false }));
+                              if (currentInvalidField === "phone") {
+                                setCurrentInvalidField(null);
+                              }
+                            }
+                          }}
+                          onError={(error) => {
+                            showToast(error, "error");
+                            setMemberFieldErrors(prev => ({ ...prev, phone: true }));
+                            setCurrentInvalidField("phone");
+                          }}
+                          style={{
+                            border: (memberFieldErrors.phone && currentInvalidField === "phone") ? "2px solid #ef4444" : undefined,
+                            outline: (memberFieldErrors.phone && currentInvalidField === "phone") ? "none" : undefined,
+                            boxShadow: (memberFieldErrors.phone && currentInvalidField === "phone") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
+                          }}
+                          placeholder="Enter phone number"
                         />
-                        {memberErrors.phone && (
-                          <div id="member-phone-error" className="field-error">
-                            <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
-                            <span>{memberErrors.phone}</span>
-                        </div>
-                        )}
-                      </label>
+                      </div>
 
                       {/* Password removed from Add Member form as requested */}
                       <label>
@@ -3604,132 +4036,210 @@ Subscription Manager HK`;
                         >
                           <option>Active</option>
                           <option>Inactive</option>
+                          <option>Pending</option>
                         </select>
                       </label>
 
-                      <label>
-                        <span>
-                          <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                        Subscription Type
-                        </span>
-                        <select
-                          value={memberForm.subscriptionType || "Lifetime"}
-                          onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
-                        >
-                          <option value="Lifetime">Lifetime - $250/year</option>
-                          <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - $500/year</option>
-                        </select>
-                      </label>
+                      {!editingMember && (
+                        <label>
+                          <span>
+                            <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                          Subscription Type
+                          </span>
+                          <select
+                            value={memberForm.subscriptionType || "Lifetime"}
+                            onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
+                          >
+                            <option value="Lifetime">Lifetime - $250/year</option>
+                            <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - $500/year</option>
+                          </select>
+                        </label>
+                      )}
 
-                      <label>
-                        <span>
-                          <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                          Balance
-                        </span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={memberForm.balance}
-                          readOnly
-                          style={{
-                            background: "#f5f5f5",
-                            cursor: "not-allowed",
-                            color: "#666"
-                          }}
-                          title="Balance is automatically set based on subscription type"
-                        />
-                      </label>
+                      {!editingMember && (
+                        <label>
+                          <span>
+                            <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                            Balance
+                          </span>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={memberForm.balance}
+                            readOnly
+                            style={{
+                              background: "#f9fafb",
+                              cursor: "not-allowed",
+                              color: "#666"
+                            }}
+                          />
+                        </label>
+                      )}
 
-                      <label className={memberErrors.nextDue ? "field-error--wrapper" : ""}>
-                        <span>
-                          <i className="fas fa-calendar-day" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                          Start Date *
-                        </span>
-                        <input
-                          type="date"
-                          value={memberForm.nextDue}
-                          onChange={(e) => {
-                            const selectedDate = e.target.value;
-                            if (selectedDate) {
-                              const year = new Date(selectedDate).getFullYear();
-                              // Validate year range: 1900 to 2100
-                              if (year < 1900 || year > 2100) {
-                                showToast("Please select a valid date between 1900 and 2100", "error");
-                                return;
+                      {!editingMember && (
+                        <label>
+                          <span>
+                            <i className="fas fa-calendar-day" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                            Start Date <span style={{ color: "#ef4444" }}>*</span>
+                          </span>
+                          <input
+                            type="date"
+                            value={memberForm.nextDue}
+                            onChange={(e) => {
+                              const selectedDate = e.target.value;
+                              handleMemberFieldChange("nextDue", selectedDate);
+                              // Clear error when user starts typing
+                              if (memberFieldErrors.nextDue || currentInvalidField === "nextDue") {
+                                setMemberFieldErrors(prev => ({ ...prev, nextDue: false }));
+                                if (currentInvalidField === "nextDue") {
+                                  setCurrentInvalidField(null);
+                                }
                               }
-                            }
-                            handleMemberFieldChange("nextDue", selectedDate);
-                          }}
-                          min="1900-01-01"
-                          max="2100-12-31"
-                          onFocus={(e) => {
-                            // Allow manual typing - don't auto-open picker
-                            e.currentTarget.select();
-                          }}
-                          aria-invalid={!!memberErrors.nextDue}
-                          aria-describedby={memberErrors.nextDue ? "member-nextDue-error" : undefined}
-                        />
-                        {memberErrors.nextDue && (
-                          <div id="member-nextDue-error" className="field-error">
-                            <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
-                            <span>{memberErrors.nextDue}</span>
-                          </div>
-                        )}
-                      </label>
-
-                      <label className={memberErrors.lastPayment ? "field-error--wrapper" : ""}>
-                        <span>
-                          <i className="fas fa-receipt" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                          End Date (optional)
-                        </span>
-                        <input
-                          type="date"
-                          value={memberForm.lastPayment}
-                          onChange={(e) => {
-                            const selectedDate = e.target.value;
-                            if (selectedDate) {
-                              const year = new Date(selectedDate).getFullYear();
-                              // Validate year range: 1900 to 2100
-                              if (year < 1900 || year > 2100) {
-                                showToast("Please select a valid date between 1900 and 2100", "error");
-                                return;
+                            }}
+                            onBlur={(e) => {
+                              const dateValue = e.target.value;
+                              if (dateValue) {
+                                const date = new Date(dateValue);
+                                if (isNaN(date.getTime())) {
+                                  showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
+                                  return;
+                                }
+                                // Validate date components
+                                const [year, month, day] = dateValue.split('-').map(Number);
+                                if (month < 1 || month > 12) {
+                                  showToast("Invalid month. Please enter a month between 01 and 12", "error");
+                                  return;
+                                }
+                                if (day < 1 || day > 31) {
+                                  showToast("Invalid day. Please enter a valid day for the selected month", "error");
+                                  return;
+                                }
+                                // Check if day is valid for the month
+                                const daysInMonth = new Date(year, month, 0).getDate();
+                                if (day > daysInMonth) {
+                                  showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
+                                  return;
+                                }
                               }
-                            }
-                            handleMemberFieldChange("lastPayment", selectedDate);
-                          }}
-                          min="1900-01-01"
-                          max="2100-12-31"
-                          onFocus={(e) => {
-                            // Allow manual typing - don't auto-open picker
-                            e.currentTarget.select();
-                          }}
-                          aria-invalid={!!memberErrors.lastPayment}
-                          aria-describedby={memberErrors.lastPayment ? "member-lastPayment-error" : undefined}
-                        />
-                        {memberErrors.lastPayment && (
-                          <div id="member-lastPayment-error" className="field-error">
-                            <i className="fas fa-exclamation-circle" aria-hidden="true"></i>
-                            <span>{memberErrors.lastPayment}</span>
-                          </div>
-                        )}
-                      </label>
+                            }}
+                            style={{
+                              borderRadius: "4px",
+                              width: "100%",
+                              borderColor: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "#ef4444" : undefined,
+                              borderWidth: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "2px" : undefined,
+                              borderStyle: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "solid" : undefined,
+                              outline: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "none" : undefined,
+                              boxShadow: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
+                            }}
+                            aria-invalid={memberFieldErrors.nextDue}
+                            onFocus={(e) => {
+                              if (memberFieldErrors.nextDue && currentInvalidField === "nextDue") {
+                                e.target.style.borderColor = "#ef4444";
+                                e.target.style.outline = "none";
+                                e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                              }
+                            }}
+                          />
+                        </label>
+                      )}
+
+                      {!editingMember && (
+                        <label>
+                          <span>
+                            <i className="fas fa-calendar-day" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                            End Date (optional)
+                          </span>
+                          <input
+                            type="date"
+                            value={memberForm.lastPayment}
+                            onChange={(e) => {
+                              const selectedDate = e.target.value;
+                              handleMemberFieldChange("lastPayment", selectedDate);
+                              // Clear error when user starts typing
+                              if (memberFieldErrors.lastPayment || currentInvalidField === "lastPayment") {
+                                setMemberFieldErrors(prev => ({ ...prev, lastPayment: false }));
+                                if (currentInvalidField === "lastPayment") {
+                                  setCurrentInvalidField(null);
+                                }
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const dateValue = e.target.value;
+                              if (dateValue) {
+                                const date = new Date(dateValue);
+                                if (isNaN(date.getTime())) {
+                                  showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
+                                  return;
+                                }
+                                // Validate date components
+                                const [year, month, day] = dateValue.split('-').map(Number);
+                                if (month < 1 || month > 12) {
+                                  showToast("Invalid month. Please enter a month between 01 and 12", "error");
+                                  return;
+                                }
+                                if (day < 1 || day > 31) {
+                                  showToast("Invalid day. Please enter a valid day for the selected month", "error");
+                                  return;
+                                }
+                                // Check if day is valid for the month
+                                const daysInMonth = new Date(year, month, 0).getDate();
+                                if (day > daysInMonth) {
+                                  showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
+                                  return;
+                                }
+                              }
+                            }}
+                            style={{
+                              borderRadius: "4px",
+                              width: "100%",
+                              borderColor: (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") ? "#ef4444" : undefined,
+                              borderWidth: (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") ? "2px" : undefined,
+                              borderStyle: (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") ? "solid" : undefined,
+                              outline: (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") ? "none" : undefined,
+                              boxShadow: (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
+                            }}
+                            aria-invalid={memberFieldErrors.lastPayment && currentInvalidField === "lastPayment"}
+                            onFocus={(e) => {
+                              if (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") {
+                                e.target.style.borderColor = "#ef4444";
+                                e.target.style.outline = "none";
+                                e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                              }
+                            }}
+                          />
+                        </label>
+                      )}
 
                       <div className="form-actions">
                         <button
                           type="button"
                           className="ghost-btn"
-                          onClick={() => {
-                            setShowMemberForm(false);
-                            setEditingMember(null);
-                          }}
-                        >
-                          Cancel
-                        </button>
+                            onClick={() => {
+                              // Clear validation state when closing
+                              setMemberFieldErrors({
+                                name: false,
+                                email: false,
+                                phone: false,
+                                nextDue: false,
+                                lastPayment: false,
+                              });
+                              setCurrentInvalidField(null);
+                              setShowMemberForm(false);
+                              setEditingMember(null);
+                            }}
+                          >
+                            Cancel
+                          </button>
                         <button
                           type="submit"
                           className="primary-btn"
-                          disabled={!isMemberFormValid || isMemberSubmitting}
+                          disabled={isMemberSubmitting}
+                          style={{
+                            position: "sticky",
+                            bottom: 0,
+                            backgroundColor: "#5a31ea",
+                            zIndex: 1,
+                          }}
                         >
                           {isMemberSubmitting
                             ? "Saving..."
@@ -3739,6 +4249,7 @@ Subscription Manager HK`;
                         </button>
                       </div>
                     </form>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -3746,8 +4257,8 @@ Subscription Manager HK`;
                 {/* Pending Members Section */}
                 {members.filter(m => m.status === 'Pending').length > 0 && (
                   <div style={{
-                    background: "#fff3cd",
-                    border: "2px solid #ffc107",
+                    background: "#fee2e2",
+                    border: "2px solid #ef4444",
                     borderRadius: "12px",
                     padding: "24px",
                     marginBottom: "24px"
@@ -3758,7 +4269,7 @@ Subscription Manager HK`;
                       justifyContent: "space-between",
                       marginBottom: "16px"
                     }}>
-                      <h4 style={{ margin: 0, color: "#856404", display: "flex", alignItems: "center", gap: "8px" }}>
+                      <h4 style={{ margin: 0, color: "#ef4444", display: "flex", alignItems: "center", gap: "8px" }}>
                         ⏳ Pending Approval ({members.filter(m => m.status === 'Pending').length})
                       </h4>
                     </div>
@@ -3774,8 +4285,8 @@ Subscription Manager HK`;
                               justifyContent: "space-between",
                               padding: "16px",
                               background: "#fff",
-                              borderRadius: "8px",
-                              border: "1px solid #ffc107",
+                              borderRadius: "4px",
+                              border: "1px solid #ef4444",
                               flexWrap: "wrap",
                               gap: "12px"
                             }}
@@ -3790,7 +4301,7 @@ Subscription Manager HK`;
                               <div style={{ fontSize: "0.875rem", color: "#666", marginBottom: "4px" }}>
                                 📱 {member.phone || "No phone"}
                               </div>
-                              <div style={{ fontSize: "0.8125rem", color: "#856404", marginTop: "8px" }}>
+                              <div style={{ fontSize: "0.8125rem", color: "#ef4444", marginTop: "8px" }}>
                                 📅 Subscription: {member.subscriptionType || 'Lifetime'}
                               </div>
                             </div>
@@ -3800,7 +4311,7 @@ Subscription Manager HK`;
                                 onClick={() => handleApproveMember(member.id)}
                                 style={{
                                   padding: "10px 20px",
-                                  borderRadius: "8px",
+                                  borderRadius: "4px",
                                   fontWeight: "600",
                                   fontSize: "0.875rem"
                                 }}
@@ -3812,7 +4323,7 @@ Subscription Manager HK`;
                                 onClick={() => handleViewMemberDetail(member)}
                                 style={{
                                   padding: "10px 20px",
-                                  borderRadius: "8px",
+                                  borderRadius: "4px",
                                   fontWeight: "600",
                                   fontSize: "0.875rem"
                                 }}
@@ -3840,7 +4351,7 @@ Subscription Manager HK`;
                           flex: "1",
                           padding: "10px 16px",
                           border: "1px solid #e0e0e0",
-                          borderRadius: "8px",
+                          borderRadius: "4px",
                           fontSize: "0.875rem",
                           outline: "none",
                           transition: "border-color 0.2s"
@@ -3855,9 +4366,9 @@ Subscription Manager HK`;
                         onClick={() => setMemberSearchTerm("")}
                         style={{
                           padding: "10px 16px",
-                          background: "#f5f5f5",
+                          background: "#f9fafb",
                           border: "1px solid #e0e0e0",
-                          borderRadius: "8px",
+                          borderRadius: "4px",
                           cursor: "pointer",
                           fontSize: "0.875rem",
                           color: "#666"
@@ -3939,26 +4450,59 @@ Subscription Manager HK`;
                           <>
                             {/* Filters above table */}
                             <div style={{ marginBottom: "16px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                              <label style={{ fontSize: "0.875rem", color: "#666" }}>
-                                Status:&nbsp;
-                                <select
-                                  value={memberStatusFilter}
-                                  onChange={(e) => setMemberStatusFilter(e.target.value)}
-                                  style={{
-                                    padding: "8px 12px",
-                                    borderRadius: "6px",
-                                    border: "1px solid #e5e7eb",
-                                    background: "#ffffff",
-                                    fontSize: "0.875rem",
-                                  }}
-                                >
-                                  <option value="All">All</option>
-                                  <option value="Active">Active</option>
-                                  <option value="Overdue">Overdue</option>
-                                  <option value="Inactive">Inactive</option>
-                                  <option value="Pending">Pending</option>
-                                </select>
-                              </label>
+                              <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
+                              <div style={{ 
+                                display: "flex", 
+                                gap: "4px", 
+                                background: "#f3f4f6", 
+                                padding: "4px", 
+                                borderRadius: "4px",
+                                flexWrap: "wrap"
+                              }}>
+                                {[
+                                  { value: "All", label: "All" },
+                                  { value: "Active", label: "Active" },
+                                  { value: "Overdue", label: "Overdue" },
+                                  { value: "Inactive", label: "Inactive" },
+                                  { value: "Pending", label: "Pending" }
+                                ].map((option) => (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => setMemberStatusFilter(option.value)}
+                                    style={{
+                                      padding: "8px 16px",
+                                      borderRadius: "4px",
+                                      border: "none",
+                                      fontSize: "0.875rem",
+                                      fontWeight: "500",
+                                      cursor: "pointer",
+                                      transition: "all 0.2s ease",
+                                      background: memberStatusFilter === option.value
+                                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                        : "transparent",
+                                      color: memberStatusFilter === option.value ? "#ffffff" : "#6b7280",
+                                      boxShadow: memberStatusFilter === option.value
+                                        ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                        : "none",
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (memberStatusFilter !== option.value) {
+                                        e.target.style.background = "#e5e7eb";
+                                        e.target.style.color = "#374151";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (memberStatusFilter !== option.value) {
+                                        e.target.style.background = "transparent";
+                                        e.target.style.color = "#6b7280";
+                                      }
+                                    }}
+                                  >
+                                    {option.label}
+                                  </button>
+                                ))}
+                              </div>
                               <label style={{ fontSize: "0.875rem", color: "#666" }}>
                                 Sort by Outstanding:&nbsp;
                                 <select
@@ -3966,7 +4510,7 @@ Subscription Manager HK`;
                                   onChange={(e) => setMemberSortByOutstanding(e.target.value)}
                                   style={{
                                     padding: "8px 12px",
-                                    borderRadius: "6px",
+                                    borderRadius: "4px",
                                     border: "1px solid #e5e7eb",
                                     background: "#ffffff",
                                     fontSize: "0.875rem",
@@ -4028,13 +4572,13 @@ Subscription Manager HK`;
                                               numericOutstanding > 0
                                                 ? derivedStatus === "Overdue"
                                                   ? "#ef4444"
-                                                  : "#f59e0b"
+                                                  : "#ef4444"
                                                 : "#111827",
                                             fontWeight: numericOutstanding > 0 ? 600 : 500,
                                           }}
                                         >
                                           $
-                                          {numericOutstanding.toLocaleString("en-US", {
+                                          {formatNumber(numericOutstanding, {
                                             minimumFractionDigits: 2,
                                             maximumFractionDigits: 2,
                                           })}
@@ -4071,10 +4615,11 @@ Subscription Manager HK`;
                                                 () => handleDeleteMember(member.id)
                                               );
                                             }}
-                                            title="Delete member"
                                             aria-label="Delete member"
                                           >
-                                            <i className="fas fa-trash" aria-hidden="true"></i>
+                                            <Tooltip text="Delete member" position="top">
+                                              <i className="fas fa-trash" aria-hidden="true"></i>
+                                            </Tooltip>
                                           </button>
                                         )}
                                       </div>
@@ -4111,24 +4656,47 @@ Subscription Manager HK`;
                     <p>360º view with invoices, payment history, communications.</p>
                   </div>
                 </header>
-                <div className="card member-detail">
-                  <div className="member-header">
-                    <div>
-                      <span className="avatar">
+                <div className="card dashboard-card">
+                  {/* Member Header */}
+                  <div style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "24px",
+                    paddingBottom: "20px",
+                    borderBottom: "1px solid #e5e7eb",
+                    flexWrap: "wrap",
+                    gap: "16px"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+                      <div style={{
+                        width: "64px",
+                        height: "64px",
+                        borderRadius: "12px",
+                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#fff",
+                        fontSize: "1.5rem",
+                        fontWeight: "700",
+                        flexShrink: 0
+                      }}>
                         {selectedMember.name
                           .split(" ")
                           .map((n) => n[0])
                           .join("")}
-                      </span>
+                      </div>
                       <div>
-                        <h4>{selectedMember.name}</h4>
-                        <p>
-                          Member ID {selectedMember.id} · {selectedMember.email} · WhatsApp{" "}
-                          {selectedMember.phone}
+                        <h4 style={{ margin: "0 0 4px 0", fontSize: "1.5rem", fontWeight: "700", color: "#1a1a1a" }}>
+                          {selectedMember.name}
+                        </h4>
+                        <p style={{ margin: 0, fontSize: "0.875rem", color: "#666" }}>
+                          Member ID {selectedMember.id} · {selectedMember.email} · WhatsApp {selectedMember.phone}
                         </p>
                       </div>
                     </div>
-                    <div className="header-actions">
+                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                       {!isViewer && (
                         <>
                           <button
@@ -4144,6 +4712,10 @@ Subscription Manager HK`;
                             className="primary-btn"
                             onClick={() => handleRequestReminder(selectedMember, false)}
                             title="Send reminder"
+                            style={{
+                              padding: "12px 20px",
+                              fontSize: "0.875rem"
+                            }}
                           >
                             📨 Send Reminder
                           </button>
@@ -4152,9 +4724,12 @@ Subscription Manager HK`;
                     </div>
                   </div>
 
-                  <div className="summary-grid">
-                    <div className="summary-card">
-                      <p>Outstanding Balance</p>
+                  <div className="kpi-grid">
+                    <div className="card kpi">
+                      <p>
+                        <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                        Outstanding Balance
+                      </p>
                       <h4>
                         {(() => {
                           const memberInvoices = getMemberInvoices(selectedMember.id);
@@ -4170,16 +4745,25 @@ Subscription Manager HK`;
                         })()}
                       </h4>
                     </div>
-                    <div className="summary-card">
-                      <p>Next Due Date</p>
+                    <div className="card kpi">
+                      <p>
+                        <i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                        Next Due Date
+                      </p>
                       <h4>{selectedMember.nextDue}</h4>
                     </div>
-                    <div className="summary-card">
-                      <p>Last Payment</p>
+                    <div className="card kpi">
+                      <p>
+                        <i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#10b981" }}></i>
+                        Last Payment
+                      </p>
                       <h4>{selectedMember.lastPayment}</h4>
                     </div>
-                    <div className="summary-card">
-                      <p>Status</p>
+                    <div className="card kpi">
+                      <p>
+                        <i className="fas fa-info-circle" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                        Status
+                      </p>
                       <h4>{selectedMember.status}</h4>
                     </div>
                   </div>
@@ -4200,27 +4784,27 @@ Subscription Manager HK`;
                     return (
                       <div
                         style={{
-                          marginTop: "16px",
-                          padding: "12px 16px",
+                          marginTop: "20px",
+                          padding: "16px 20px",
                           borderRadius: "8px",
                           background:
                             "linear-gradient(135deg, rgba(248, 113, 113, 0.1) 0%, rgba(239, 68, 68, 0.12) 100%)",
                           border: "1px solid rgba(239, 68, 68, 0.4)",
-                          color: "#b91c1c",
+                          color: "#ef4444",
                           fontSize: "0.875rem",
                           display: "flex",
                           alignItems: "center",
-                          gap: "8px",
+                          gap: "12px",
                         }}
                       >
-                        <i className="fas fa-exclamation-triangle" aria-hidden="true"></i>
+                        <i className="fas fa-exclamation-triangle" aria-hidden="true" style={{ fontSize: "1.125rem" }}></i>
                         <span>
                           This member has{" "}
                           <strong>{overdueInvoices.length} overdue invoice{overdueInvoices.length > 1 ? "s" : ""}</strong>{" "}
                           totaling{" "}
                           <strong>
                             $
-                            {outstandingTotal.toLocaleString("en-US", {
+                            {formatNumber(outstandingTotal, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
                             })}
@@ -4346,7 +4930,7 @@ Subscription Manager HK`;
                                     newWindow.document.write(`
                                       <html>
                                         <head><title>Payment Screenshot - ${invoice.id}</title></head>
-                                        <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                        <body style="margin:0;padding:20px;background:#f9fafb;display:flex;justify-content:center;align-items:center;min-height:100vh;">
                                           <img src="${invoice.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
                                         </body>
                                       </html>
@@ -4358,7 +4942,7 @@ Subscription Manager HK`;
                                   background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
                                   color: "#ffffff",
                                   border: "none",
-                                  borderRadius: "6px",
+                                  borderRadius: "4px",
                                   fontSize: "0.85rem",
                                   cursor: "pointer",
                                   transition: "all 0.2s ease",
@@ -4386,9 +4970,22 @@ Subscription Manager HK`;
                                       style={{ 
                                         padding: "4px 10px", 
                                         fontSize: "0.85rem",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: "4px"
+                                        background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                                        border: "none",
+                                        color: "#ffffff",
+                                        fontWeight: "600",
+                                        borderRadius: "4px",
+                                        cursor: "pointer",
+                                        transition: "all 0.2s ease",
+                                        boxShadow: "0 2px 4px rgba(16, 185, 129, 0.3)"
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.target.style.background = "linear-gradient(135deg, #059669 0%, #047857 100%)";
+                                        e.target.style.boxShadow = "0 4px 8px rgba(16, 185, 129, 0.4)";
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.target.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+                                        e.target.style.boxShadow = "0 2px 4px rgba(16, 185, 129, 0.3)";
                                       }}
                                       onClick={() => {
                                         setPaymentModalInvoice(invoice);
@@ -4403,22 +5000,22 @@ Subscription Manager HK`;
                                         setShowPaymentModal(true);
                                       }}
                                     >
-                                      <i className="fas fa-money-bill-wave"></i>
                                       Pay
                                     </button>
                                 )}
                                   {!isPaid && !isViewer && (
                                     <button
-                                      className="ghost-btn"
-                                      style={{ padding: "4px 10px", fontSize: "0.85rem", color: "#ef4444" }}
+                                      className="ghost-btn icon-btn icon-btn--delete"
                                       onClick={() => {
                                         showConfirmation(
                                           `Delete invoice ${invoice.id}? This cannot be undone.`,
                                           () => handleDeleteInvoice(invoice.id)
                                         );
                                       }}
+                                      title="Delete Invoice"
+                                      aria-label="Delete Invoice"
                                     >
-                                      Delete
+                                      <i className="fas fa-trash" aria-hidden="true"></i>
                                     </button>
                                   )}
                               </div>
@@ -4611,7 +5208,7 @@ Subscription Manager HK`;
                                         style={{
                                           width: "60px",
                                           height: "60px",
-                                          borderRadius: "8px",
+                                          borderRadius: "4px",
                                           overflow: "hidden",
                                           border: "2px solid #e0e0e0",
                                           flexShrink: 0,
@@ -4694,7 +5291,7 @@ Subscription Manager HK`;
                                 flexWrap: "wrap",
                                 gap: "12px",
                                 padding: "12px 16px",
-                                borderRadius: "8px",
+                                borderRadius: "4px",
                                 background: "#f9fafb",
                                 border: "1px solid #e5e7eb",
                               }}
@@ -5010,7 +5607,7 @@ Subscription Manager HK`;
                   </div>
                 )}
                 
-                <form className="card form-grid" onSubmit={handleAddInvoice} style={{ padding: "40px", background: "linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
+                <form className="card form-grid" onSubmit={handleAddInvoice} noValidate style={{ padding: "40px", background: "linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
                   <label style={{ marginBottom: "24px" }}>
                     <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}>
                       <i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
@@ -5026,7 +5623,7 @@ Subscription Manager HK`;
                   </label>
 
                   <label style={{ marginBottom: "24px" }}>
-                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member *</span>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member <span style={{ color: "#ef4444" }}>*</span></span>
                     <div style={{ position: "relative" }} data-member-dropdown>
                       <div
                         onClick={() => setShowMemberDropdown(!showMemberDropdown)}
@@ -5105,7 +5702,7 @@ Subscription Manager HK`;
                                   width: "100%",
                                   padding: "12px 36px 12px 16px",
                                   border: "none",
-                                  borderRadius: "8px",
+                                  borderRadius: "4px",
                                   fontSize: "0.875rem",
                                   outline: "none",
                                   background: "#ffffff",
@@ -5223,14 +5820,14 @@ Subscription Manager HK`;
                       )}
                     </div>
                     {!invoiceForm.memberId && (
-                      <span style={{ fontSize: "0.75rem", color: "#d32f2f", marginTop: "4px", display: "none" }}>
+                      <span style={{ fontSize: "0.75rem", color: "#ef4444", marginTop: "4px", display: "none" }}>
                         Please select a member
                       </span>
                     )}
                   </label>
 
                   <label style={{ marginBottom: "24px" }}>
-                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-tag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice Type *</span>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-id-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice Type <span style={{ color: "#ef4444" }}>*</span></span>
                     <select
                       required
                       value={invoiceForm.invoiceType}
@@ -5261,32 +5858,54 @@ Subscription Manager HK`;
                   </label>
 
                   <label style={{ marginBottom: "24px" }}>
-                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Period *</span>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Period <span style={{ color: "#ef4444" }}>*</span></span>
                     <input
                       type="month"
                       required
                       value={invoiceForm.period ? (() => {
-                        // Convert "MMM YYYY" format (e.g., "Nov 2025") to "YYYY-MM" for month input
-                        if (invoiceForm.period.match(/^[A-Za-z]{3} \d{4}$/)) {
-                          const date = new Date(invoiceForm.period + " 01");
-                          if (!isNaN(date.getTime())) {
-                            const year = date.getFullYear();
-                            const month = String(date.getMonth() + 1).padStart(2, "0");
-                            return `${year}-${month}`;
+                        try {
+                          // Convert "MMM YYYY" format (e.g., "Nov 2025") to "YYYY-MM" for month input
+                          if (invoiceForm.period.match(/^[A-Za-z]{3} \d{4}$/)) {
+                            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                            const parts = invoiceForm.period.split(' ');
+                            const monthName = parts[0];
+                            const year = parseInt(parts[1], 10);
+                            const monthIndex = monthNames.findIndex(m => m.toLowerCase() === monthName.toLowerCase());
+                            
+                            if (monthIndex !== -1 && !isNaN(year) && year > 0) {
+                              const month = String(monthIndex + 1).padStart(2, "0");
+                              return `${year}-${month}`;
+                            }
                           }
-                        }
-                        // If already in YYYY-MM format, return as is
-                        if (invoiceForm.period.match(/^\d{4}-\d{2}$/)) {
-                          return invoiceForm.period;
+                          // If already in YYYY-MM format, return as is
+                          if (invoiceForm.period.match(/^\d{4}-\d{2}$/)) {
+                            return invoiceForm.period;
+                          }
+                        } catch (error) {
+                          console.error("Error parsing period:", error);
                         }
                         return "";
                       })() : ""}
                       onChange={(e) => {
                         // Convert "YYYY-MM" to "MMM YYYY" format (e.g., "Nov 2025")
-                        const date = new Date(e.target.value + "-01");
-                        if (!isNaN(date.getTime())) {
-                          const formatted = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                          setInvoiceForm({ ...invoiceForm, period: formatted });
+                        const dateValue = e.target.value;
+                        if (dateValue && dateValue.match(/^\d{4}-\d{2}$/)) {
+                          try {
+                            const date = new Date(dateValue + "-01");
+                            if (!isNaN(date.getTime())) {
+                              const formatted = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                              setInvoiceForm({ ...invoiceForm, period: formatted });
+                            } else {
+                              // If date is invalid, clear the period
+                              setInvoiceForm({ ...invoiceForm, period: "" });
+                            }
+                          } catch (error) {
+                            console.error("Error formatting period:", error);
+                            setInvoiceForm({ ...invoiceForm, period: "" });
+                          }
+                        } else if (!dateValue) {
+                          // If input is cleared, clear the period
+                          setInvoiceForm({ ...invoiceForm, period: "" });
                         }
                       }}
                       onFocus={(e) => {
@@ -5299,11 +5918,10 @@ Subscription Manager HK`;
                   </label>
 
                   <label style={{ marginBottom: "24px" }}>
-                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount ($) *</span>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount ($) <span style={{ color: "#ef4444" }}>*</span></span>
                     <input
                       type="number"
                       inputMode="numeric"
-                      pattern="[0-9]*"
                       required
                       value={invoiceForm.amount}
                       onChange={(e) => {
@@ -5316,33 +5934,43 @@ Subscription Manager HK`;
                   </label>
 
                   <label style={{ marginBottom: "24px" }}>
-                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar-check" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Due Date *</span>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar-check" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Due Date <span style={{ color: "#ef4444" }}>*</span></span>
                     <input
                       type="date"
                       required
                       value={invoiceForm.due}
                       onChange={(e) => {
                         const selectedDate = e.target.value;
-                        if (selectedDate) {
-                          const year = new Date(selectedDate).getFullYear();
-                          // Validate year range: 1900 to 2100
-                          if (year < 1900 || year > 2100) {
-                            showToast("Please select a valid date between 1900 and 2100", "error");
+                        setInvoiceForm({ ...invoiceForm, due: selectedDate });
+                      }}
+                      onBlur={(e) => {
+                        const dateValue = e.target.value;
+                        if (dateValue) {
+                          const date = new Date(dateValue);
+                          if (isNaN(date.getTime())) {
+                            showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
+                            return;
+                          }
+                          // Validate date components
+                          const [year, month, day] = dateValue.split('-').map(Number);
+                          if (month < 1 || month > 12) {
+                            showToast("Invalid month. Please enter a month between 01 and 12", "error");
+                            return;
+                          }
+                          if (day < 1 || day > 31) {
+                            showToast("Invalid day. Please enter a valid day for the selected month", "error");
+                            return;
+                          }
+                          // Check if day is valid for the month
+                          const daysInMonth = new Date(year, month, 0).getDate();
+                          if (day > daysInMonth) {
+                            showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
                             return;
                           }
                         }
-                        setInvoiceForm({ ...invoiceForm, due: selectedDate });
-                      }}
-                      min="1900-01-01"
-                      max="2100-12-31"
-                      onClick={(e) => {
-                        e.currentTarget.focus();
-                        if (e.currentTarget.showPicker) {
-                          e.currentTarget.showPicker();
-                        }
                       }}
                       className="mono-input"
-                      style={{ color: "#1a1a1a" }}
+                      style={{ color: "#1a1a1a", borderRadius: "4px", width: "100%" }}
                     />
                   </label>
 
@@ -5513,7 +6141,7 @@ Subscription Manager HK`;
                               invoiceCount: allUnpaidInvoices.length,
                               invoiceListText: invoiceListText,
                               invoiceListHTML: invoiceListHTML,
-                              paymentMethods: "FPS, PayMe, Bank Transfer, Alipay, or Credit Card",
+                              paymentMethods: "FPS, PayMe, or Bank Transfer",
                               portalLink: `${window.location.origin}/member`,
                             }),
                           });
@@ -5598,7 +6226,6 @@ Subscription Manager HK`;
                   borderRadius: "12px",
                   padding: "clamp(24px, 4vw, 32px)",
                   border: "none",
-                  boxShadow: "0 2px 8px rgba(90, 49, 234, 0.1)",
                   marginTop: "24px",
                   boxShadow: "0 4px 12px rgba(0,0,0,0.08)"
                 }}>
@@ -5688,8 +6315,7 @@ Subscription Manager HK`;
                           height: "clamp(34px, 5vw, 40px)",
                           borderRadius: "999px",
                           border: "none",
-                          background: automationEnabled ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" : "#f0f0f0",
-                          boxShadow: automationEnabled ? "0 2px 8px rgba(90, 49, 234, 0.3)" : "0 2px 4px rgba(0,0,0,0.05)",
+                          background: automationEnabled ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" : "#f3f4f6",
                           cursor: "pointer",
                           transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                           outline: "none",
@@ -5763,22 +6389,127 @@ Subscription Manager HK`;
                     <div style={{
                       display: "flex",
                       gap: "12px",
-                      flexWrap: "wrap"
+                      flexWrap: "wrap",
+                      alignItems: "center"
                     }}>
+                      {/* Email Channel Button - Icon Only */}
                       <button
-                        className="primary-btn"
-                        onClick={() => handleRequestReminder(null, true)}
+                        type="button"
+                        onClick={() => {
+                          if (selectedChannels.includes('Email')) {
+                            setSelectedChannels(prev => prev.filter(c => c !== 'Email'));
+                          } else {
+                            setSelectedChannels(prev => [...prev, 'Email']);
+                          }
+                        }}
                         disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                        title="Email"
                         style={{
-                          padding: "12px 24px",
+                          padding: "12px",
                           borderRadius: "8px",
                           fontWeight: "600",
+                          fontSize: "1.25rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
+                          transition: "all 0.2s ease",
+                          background: selectedChannels.includes('Email')
+                            ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                            : "#ffffff",
+                          color: selectedChannels.includes('Email') ? "#ffffff" : "#6b7280",
+                          border: selectedChannels.includes('Email') ? "2px solid #5a31ea" : "2px solid #e5e7eb",
+                          boxShadow: selectedChannels.includes('Email')
+                            ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                            : "none",
                           opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
-                          cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer"
+                          width: "48px",
+                          height: "48px",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
+                            e.target.style.background = "#f3f4f6";
+                            e.target.style.color = "#374151";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
+                            e.target.style.background = "#ffffff";
+                            e.target.style.color = "#6b7280";
+                          }
                         }}
                       >
-                        {sendingToAll || sendingWhatsAppToAll ? "Sending..." : "Send All"}
+                        <i className="fas fa-envelope"></i>
                       </button>
+                      
+                      {/* WhatsApp Channel Button - Icon Only with Green Background */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedChannels.includes('WhatsApp')) {
+                            setSelectedChannels(prev => prev.filter(c => c !== 'WhatsApp'));
+                          } else {
+                            setSelectedChannels(prev => [...prev, 'WhatsApp']);
+                          }
+                        }}
+                        disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                        title="WhatsApp"
+                        style={{
+                          padding: "12px",
+                          borderRadius: "8px",
+                          fontWeight: "600",
+                          fontSize: "1.25rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
+                          transition: "all 0.2s ease",
+                          background: selectedChannels.includes('WhatsApp')
+                            ? "linear-gradient(135deg, #25D366 0%, #128C7E 100%)"
+                            : "#ffffff",
+                          color: selectedChannels.includes('WhatsApp') ? "#ffffff" : "#25D366",
+                          border: selectedChannels.includes('WhatsApp') ? "2px solid #25D366" : "2px solid #25D366",
+                          boxShadow: selectedChannels.includes('WhatsApp')
+                            ? "0 2px 8px rgba(37, 211, 102, 0.3)"
+                            : "none",
+                          opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                          width: "48px",
+                          height: "48px",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
+                            e.target.style.background = "#dcfce7";
+                            e.target.style.color = "#16a34a";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
+                            e.target.style.background = "#ffffff";
+                            e.target.style.color = "#25D366";
+                          }
+                        }}
+                      >
+                        <i className="fab fa-whatsapp"></i>
+                      </button>
+                      
+                      {/* Send All Button - shown when at least one channel is selected */}
+                      {selectedChannels.length > 0 && (
+                        <button
+                          className="primary-btn"
+                          onClick={handleSendAllWithSelectedChannels}
+                          disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                          style={{
+                            padding: "12px 20px",
+                            borderRadius: "4px",
+                            fontWeight: "600",
+                            fontSize: "0.875rem",
+                            opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                            cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer"
+                          }}
+                        >
+                          {sendingToAll || sendingWhatsAppToAll ? "Sending..." : "Send All"}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -5819,7 +6550,7 @@ Subscription Manager HK`;
                               justifyContent: "space-between",
                               padding: "16px",
                               background: "#f9f9f9",
-                              borderRadius: "8px",
+                              borderRadius: "4px",
                               border: "1px solid #e0e0e0",
                               gap: "16px",
                               flexWrap: "wrap"
@@ -5851,12 +6582,12 @@ Subscription Manager HK`;
                                   <strong style={{ color: "#000" }}>${totalDue.toFixed(2)}</strong> outstanding
                                 </span>
                                 {overdueCount > 0 && (
-                                  <span style={{ color: "#d32f2f", fontWeight: "600" }}>
+                                  <span style={{ color: "#ef4444", fontWeight: "600" }}>
                                     {overdueCount} overdue
                                   </span>
                                 )}
                                 {unpaidCount > 0 && (
-                                  <span style={{ color: "#f57c00", fontWeight: "600" }}>
+                                  <span style={{ color: "#ef4444", fontWeight: "600" }}>
                                     {unpaidCount} unpaid
                                   </span>
                                 )}
@@ -5872,8 +6603,8 @@ Subscription Manager HK`;
                                 onClick={() => handleRequestReminder(member, false)}
                                 disabled={isSending || sendingWhatsApp[member.id]}
                                 style={{
-                                  padding: "10px 20px",
-                                  borderRadius: "8px",
+                                  padding: "12px 20px",
+                                  borderRadius: "4px",
                                   fontWeight: "600",
                                   fontSize: "0.875rem",
                                   opacity: (isSending || sendingWhatsApp[member.id]) ? 0.5 : 1,
@@ -5942,7 +6673,7 @@ Subscription Manager HK`;
                           width: "100%",
                           padding: "12px",
                           border: "1.5px solid #e0e0e0",
-                          borderRadius: "8px",
+                          borderRadius: "4px",
                           fontSize: "0.9375rem",
                           fontFamily: "inherit"
                         }}
@@ -5994,7 +6725,7 @@ Subscription Manager HK`;
                         marginTop: "12px",
                         padding: "12px",
                         background: "#f8f9fa",
-                        borderRadius: "8px",
+                        borderRadius: "4px",
                         fontSize: "0.75rem",
                         color: "#666"
                       }}>
@@ -6022,7 +6753,7 @@ Subscription Manager HK`;
                         onClick={handlePreviewTemplate}
                         style={{
                           padding: "12px 24px",
-                          borderRadius: "8px",
+                          borderRadius: "4px",
                           fontWeight: "600"
                         }}
                       >
@@ -6033,7 +6764,7 @@ Subscription Manager HK`;
                         onClick={handleSaveEmailTemplate}
                         style={{
                           padding: "12px 24px",
-                          borderRadius: "8px",
+                          borderRadius: "4px",
                           fontWeight: "600"
                         }}
                       >
@@ -6083,7 +6814,7 @@ Subscription Manager HK`;
                             width: "100%",
                             padding: "12px",
                             border: "1.5px solid #e0e0e0",
-                            borderRadius: "8px",
+                            borderRadius: "4px",
                             fontSize: "0.9375rem",
                             fontFamily: "inherit"
                           }}
@@ -6102,7 +6833,7 @@ Subscription Manager HK`;
                           color: "#333",
                           marginBottom: "8px"
                         }}>
-                          Email Address *
+                          Email Address <span style={{ color: "#ef4444" }}>*</span>
                         </label>
                         <input
                           type="email"
@@ -6113,7 +6844,7 @@ Subscription Manager HK`;
                             width: "100%",
                             padding: "12px",
                             border: "1.5px solid #e0e0e0",
-                            borderRadius: "8px",
+                            borderRadius: "4px",
                             fontSize: "0.9375rem",
                             fontFamily: "inherit"
                           }}
@@ -6127,7 +6858,7 @@ Subscription Manager HK`;
                           color: "#333",
                           marginBottom: "8px"
                         }}>
-                          App Password *
+                          App Password <span style={{ color: "#ef4444" }}>*</span>
                         </label>
                         <div style={{ position: "relative" }}>
                           <input
@@ -6140,7 +6871,7 @@ Subscription Manager HK`;
                               padding: "12px",
                               paddingRight: "45px",
                               border: "1.5px solid #e0e0e0",
-                              borderRadius: "8px",
+                              borderRadius: "4px",
                               fontSize: "0.9375rem",
                               fontFamily: "inherit"
                             }}
@@ -6211,7 +6942,7 @@ Subscription Manager HK`;
                               flex: 1,
                               padding: "12px",
                               border: "1.5px solid #e0e0e0",
-                              borderRadius: "8px",
+                              borderRadius: "4px",
                               fontSize: "0.9375rem",
                               fontFamily: "inherit"
                             }}
@@ -6241,7 +6972,7 @@ Subscription Manager HK`;
                             style={{
                               padding: "12px 16px",
                               border: "1.5px solid #e0e0e0",
-                              borderRadius: "8px",
+                              borderRadius: "4px",
                               fontSize: "0.9375rem",
                               fontFamily: "inherit",
                               background: "white",
@@ -6282,7 +7013,7 @@ Subscription Manager HK`;
                             width: "100%",
                             padding: "12px",
                             border: "1.5px solid #e0e0e0",
-                            borderRadius: "8px",
+                            borderRadius: "4px",
                             fontSize: "0.9375rem",
                             fontFamily: "inherit"
                           }}
@@ -6309,7 +7040,7 @@ Subscription Manager HK`;
                         disabled={testingEmail || !emailSettings.emailUser || !emailSettings.emailPassword}
                         style={{
                           padding: "12px 24px",
-                          borderRadius: "8px",
+                          borderRadius: "4px",
                           fontWeight: "600",
                           opacity: (testingEmail || !emailSettings.emailUser || !emailSettings.emailPassword) ? 0.5 : 1,
                           cursor: (testingEmail || !emailSettings.emailUser || !emailSettings.emailPassword) ? "not-allowed" : "pointer"
@@ -6322,7 +7053,7 @@ Subscription Manager HK`;
                         onClick={handleSaveEmailSettings}
                         style={{
                           padding: "12px 24px",
-                          borderRadius: "8px",
+                          borderRadius: "4px",
                           fontWeight: "600"
                         }}
                       >
@@ -6336,27 +7067,42 @@ Subscription Manager HK`;
                 <div style={{ marginTop: "32px", display: "flex", justifyContent: "flex-end" }}>
                   <button
                     className="primary-btn"
+                    onClick={handleSaveAllSettings}
+                    disabled={savingAllSettings}
                     style={{ 
-                      padding: "14px 32px",
-                      fontSize: "1rem",
-                      fontWeight: "700",
-                      borderRadius: "10px",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                      transition: "all 0.2s ease"
-                    }}
-                    onClick={() => {
-                      showToast("All automation settings saved!");
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.transform = "translateY(-2px)";
-                      e.target.style.boxShadow = "0 6px 16px rgba(0,0,0,0.2)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.transform = "translateY(0)";
-                      e.target.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+                      padding: "12px 24px",
+                      fontSize: "0.9375rem",
+                      fontWeight: "600",
+                      borderRadius: "4px",
+                      color: "#ffffff",
+                      opacity: savingAllSettings ? 0.6 : 1,
+                      cursor: savingAllSettings ? "not-allowed" : "pointer"
                     }}
                   >
-                    💾 Save All Settings
+                    {savingAllSettings ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: "8px", color: "#ffffff" }}>
+                        <svg 
+                          style={{ 
+                            animation: "spin 1s linear infinite",
+                            width: "16px",
+                            height: "16px"
+                          }} 
+                          viewBox="0 0 24 24" 
+                          fill="none" 
+                          stroke="currentColor" 
+                          strokeWidth="2"
+                        >
+                          <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
+                          <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"></path>
+                        </svg>
+                        Saving...
+                      </span>
+                    ) : (
+                      <span style={{ display: "flex", alignItems: "center", gap: "8px", color: "#ffffff" }}>
+                        <i className="fas fa-save"></i>
+                        Save All Settings
+                      </span>
+                    )}
                   </button>
                 </div>
               </article>
@@ -6373,7 +7119,212 @@ Subscription Manager HK`;
                   </div>
                 </header>
 
-                <div className="card" style={{ marginTop: "20px" }}>
+                {/* Summary Cards */}
+                {(() => {
+                    // Build combined list for summary stats (unfiltered):
+                  const emailItems = (reminderLogs || []).map((log) => {
+                    // Normalize status - handle all status variations and ensure consistent format
+                    const logStatus = log.status ? String(log.status).trim() : "";
+                    const lowerStatus = logStatus.toLowerCase();
+                    let normalizedStatus = "Delivered"; // default
+                    if (lowerStatus === "failed") normalizedStatus = "Failed";
+                    else if (lowerStatus === "pending") normalizedStatus = "Pending";
+                    else if (logStatus) normalizedStatus = logStatus; // preserve original if valid
+                    return { status: normalizedStatus };
+                  });
+
+                  const whatsappItems = (communicationLog || [])
+                    .filter((c) => c.channel === "WhatsApp")
+                    .map((c) => {
+                      // Normalize status - preserve original status values
+                      const cStatus = c.status ? String(c.status).trim() : "";
+                      return { status: cStatus || "Delivered" };
+                    });
+
+                  const allItemsForSummary = [...emailItems, ...whatsappItems];
+                  const total = allItemsForSummary.length;
+                  const emailCount = emailItems.length;
+                  const whatsappCount = whatsappItems.length;
+                  const deliveredCount = allItemsForSummary.filter(item => item.status === "Delivered").length;
+                  const failedCount = allItemsForSummary.filter(item => item.status === "Failed").length;
+                  const pendingCount = allItemsForSummary.filter(item => item.status === "Pending").length;
+
+                  return (
+                    <div className="kpi-grid" style={{ marginBottom: "24px" }}>
+                      <div className="card kpi">
+                        <p>
+                          <i className="fas fa-bell" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                          Total Reminders
+                        </p>
+                        <h4>{formatNumber(total)}</h4>
+                      </div>
+                      <div className="card kpi">
+                        <p>
+                          <i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                          Email Reminders
+                        </p>
+                        <h4>{formatNumber(emailCount)}</h4>
+                      </div>
+                      <div className="card kpi">
+                        <p>
+                          <i className="fab fa-whatsapp" style={{ marginRight: "8px", color: "#25D366" }}></i>
+                          WhatsApp Reminders
+                        </p>
+                        <h4>{formatNumber(whatsappCount)}</h4>
+                      </div>
+                      <div className="card kpi">
+                        <p>
+                          <i className="fas fa-check-circle" style={{ marginRight: "8px", color: "#10b981" }}></i>
+                          Delivered
+                        </p>
+                        <h4 style={{ color: "#10b981" }}>{formatNumber(deliveredCount)}</h4>
+                      </div>
+                      {failedCount > 0 && (
+                        <div className="card kpi" style={{
+                          background: "linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)",
+                          border: "1px solid #ef4444",
+                        }}>
+                          <p style={{ color: "#ef4444" }}>
+                            <i className="fas fa-times-circle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                            Failed
+                          </p>
+                          <h4 style={{ color: "#ef4444" }}>{formatNumber(failedCount)}</h4>
+                        </div>
+                      )}
+                      {pendingCount > 0 && (
+                        <div className="card kpi" style={{
+                          background: "linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)",
+                          border: "1px solid #ef4444",
+                        }}>
+                          <p style={{ color: "#ef4444" }}>
+                            <i className="fas fa-clock" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                            Pending
+                          </p>
+                          <h4 style={{ color: "#ef4444" }}>{formatNumber(pendingCount)}</h4>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="card">
+                  {/* Filters - Always visible */}
+                  <div style={{ marginBottom: "20px", display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                      <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
+                      <div style={{ 
+                        display: "flex", 
+                        gap: "4px", 
+                        background: "#f3f4f6", 
+                        padding: "4px", 
+                        borderRadius: "4px",
+                        flexWrap: "wrap"
+                      }}>
+                        {[
+                          { value: "All", label: "All" },
+                          { value: "Delivered", label: "Delivered" },
+                          { value: "Failed", label: "Failed" },
+                          { value: "Pending", label: "Pending" }
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              setRemindersStatusFilter(option.value);
+                              setRemindersPage(1);
+                            }}
+                            style={{
+                              padding: "8px 16px",
+                              borderRadius: "4px",
+                              border: "none",
+                              fontSize: "0.875rem",
+                              fontWeight: "500",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              background: remindersStatusFilter === option.value
+                                ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                : "transparent",
+                              color: remindersStatusFilter === option.value ? "#ffffff" : "#6b7280",
+                              boxShadow: remindersStatusFilter === option.value
+                                ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                : "none",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (remindersStatusFilter !== option.value) {
+                                e.target.style.background = "#e5e7eb";
+                                e.target.style.color = "#374151";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (remindersStatusFilter !== option.value) {
+                                e.target.style.background = "transparent";
+                                e.target.style.color = "#6b7280";
+                              }
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                      <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Channel:</label>
+                      <div style={{ 
+                        display: "flex", 
+                        gap: "4px", 
+                        background: "#f3f4f6", 
+                        padding: "4px", 
+                        borderRadius: "4px",
+                        flexWrap: "wrap"
+                      }}>
+                        {[
+                          { value: "All", label: "All" },
+                          { value: "Email", label: "Email" },
+                          { value: "WhatsApp", label: "WhatsApp" }
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              setRemindersChannelFilter(option.value);
+                              setRemindersPage(1);
+                            }}
+                            style={{
+                              padding: "8px 16px",
+                              borderRadius: "4px",
+                              border: "none",
+                              fontSize: "0.875rem",
+                              fontWeight: "500",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              background: remindersChannelFilter === option.value
+                                ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                : "transparent",
+                              color: remindersChannelFilter === option.value ? "#ffffff" : "#6b7280",
+                              boxShadow: remindersChannelFilter === option.value
+                                ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                : "none",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (remindersChannelFilter !== option.value) {
+                                e.target.style.background = "#e5e7eb";
+                                e.target.style.color = "#374151";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (remindersChannelFilter !== option.value) {
+                                e.target.style.background = "transparent";
+                                e.target.style.color = "#6b7280";
+                              }
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
                   {(() => {
                     // Build combined list:
                     // - Email reminders from backend reminderLogs (automatic + manual)
@@ -6403,7 +7354,14 @@ Subscription Manager HK`;
                               year: "numeric",
                             })
                           : "N/A",
-                        status: log.status === "failed" ? "Failed" : "Delivered",
+                        status: (() => {
+                          // Normalize status - handle case variations and ensure consistent format
+                          const logStatus = log.status ? String(log.status).trim() : "";
+                          const lowerStatus = logStatus.toLowerCase();
+                          if (lowerStatus === "failed") return "Failed";
+                          if (lowerStatus === "pending") return "Pending";
+                          return logStatus || "Delivered";
+                        })(),
                         rawDate: log.sentAt || null,
                         raw: log,
                       };
@@ -6411,29 +7369,47 @@ Subscription Manager HK`;
 
                     const whatsappItems = (communicationLog || [])
                       .filter((c) => c.channel === "WhatsApp")
-                      .map((c) => ({
-                        memberName: c.memberName || c.member || "N/A",
-                        memberId: c.memberId,
-                        channel: "WhatsApp",
-                        type: c.type || "Manual Outstanding Reminder",
-                        message: c.message,
-                        date: c.date,
-                        status: c.status || "Delivered",
-                        rawDate: c.timestamp || null,
-                        raw: c,
-                      }));
+                      .map((c) => {
+                        // Normalize status - preserve original status values
+                        const cStatus = c.status ? String(c.status).trim() : "";
+                        const normalizedStatus = cStatus || "Delivered";
+                        return {
+                          memberName: c.memberName || c.member || "N/A",
+                          memberId: c.memberId,
+                          channel: "WhatsApp",
+                          type: c.type || "Manual Outstanding Reminder",
+                          message: c.message,
+                          date: c.date,
+                          status: normalizedStatus,
+                          rawDate: c.timestamp || null,
+                          raw: c,
+                        };
+                      });
 
                     let allItems = [...emailItems, ...whatsappItems];
 
                     // Apply filters
                     allItems = allItems.filter((item) => {
-                      const statusOk =
-                        remindersStatusFilter === "All" ||
-                        (remindersStatusFilter === "Delivered" && item.status === "Delivered") ||
-                        (remindersStatusFilter === "Failed" && item.status === "Failed");
+                      // Normalize status for comparison (handle case variations)
+                      const normalizedStatus = item.status ? String(item.status).trim() : "Delivered";
+                      
+                      // Status filter check - case-insensitive comparison
+                      let statusOk = false;
+                      if (remindersStatusFilter === "All") {
+                        statusOk = true;
+                      } else {
+                        // Case-insensitive comparison to handle status variations
+                        const filterStatusLower = remindersStatusFilter.toLowerCase();
+                        const itemStatusLower = normalizedStatus.toLowerCase();
+                        statusOk = filterStatusLower === itemStatusLower;
+                      }
+                      
+                      // Channel filter check
+                      const normalizedChannel = item.channel ? String(item.channel).trim() : "";
                       const channelOk =
                         remindersChannelFilter === "All" ||
-                        item.channel === remindersChannelFilter;
+                        normalizedChannel === remindersChannelFilter;
+                      
                       return statusOk && channelOk;
                     });
 
@@ -6445,100 +7421,57 @@ Subscription Manager HK`;
                     });
 
                     const total = allItems.length;
-                    const emailCount = emailItems.length;
-                    const whatsappCount = whatsappItems.length;
 
                     if (total === 0) {
+                      // Build unfiltered list to check if there are any reminders at all
+                      const allEmailItems = (reminderLogs || []).map((log) => {
+                        const logStatus = log.status ? String(log.status).trim() : "";
+                        const lowerStatus = logStatus.toLowerCase();
+                        let normalizedStatus = "Delivered";
+                        if (lowerStatus === "failed") normalizedStatus = "Failed";
+                        else if (lowerStatus === "pending") normalizedStatus = "Pending";
+                        else if (logStatus) normalizedStatus = logStatus;
+                        return { status: normalizedStatus, channel: "Email" };
+                      });
+                      const allWhatsappItems = (communicationLog || [])
+                        .filter((c) => c.channel === "WhatsApp")
+                        .map((c) => ({ status: c.status || "Delivered", channel: "WhatsApp" }));
+                      const totalUnfiltered = allEmailItems.length + allWhatsappItems.length;
+                      
+                      let message = "No reminders have been sent yet.";
+                      if (totalUnfiltered > 0) {
+                        // There are reminders, but they don't match the current filter
+                        if (remindersStatusFilter !== "All" && remindersChannelFilter !== "All") {
+                          message = `No ${remindersStatusFilter.toLowerCase()} ${remindersChannelFilter.toLowerCase()} reminders found.`;
+                        } else if (remindersStatusFilter !== "All") {
+                          message = `No ${remindersStatusFilter.toLowerCase()} reminders found.`;
+                        } else if (remindersChannelFilter !== "All") {
+                          message = `No ${remindersChannelFilter.toLowerCase()} reminders found.`;
+                        }
+                      }
+                      
                       return (
                         <div style={{ padding: "32px 20px", textAlign: "center", color: "#666" }}>
-                          <p style={{ margin: 0 }}>No reminders have been sent yet.</p>
+                          <p style={{ margin: 0 }}>{message}</p>
                         </div>
                       );
                     }
 
                     return (
                       <>
-                        <div
-                          style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: "12px",
-                            marginBottom: "16px",
-                          }}
-                        >
-                          <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>
-                            Summary:
-                          </span>
-                          <span className="badge badge-paid">Total: {total}</span>
-                          <span className="badge badge-unpaid">Email: {emailCount}</span>
-                          <span className="badge badge-pending">WhatsApp: {whatsappCount}</span>
-                        </div>
+                            {/* Paginate results - minimum 10 per page */}
+                            {(() => {
+                              const pageSize = Math.max(remindersPageSize, 10);
+                              const totalPages = Math.max(1, Math.ceil(total / pageSize));
+                              const currentPage = Math.min(remindersPage, totalPages);
+                              const start = (currentPage - 1) * pageSize;
+                              const end = start + pageSize;
+                              const pageItems = allItems.slice(start, end);
 
-                        {/* Paginate results - minimum 10 per page */}
-                        {(() => {
-                          const pageSize = Math.max(remindersPageSize, 10);
-                          const totalPages = Math.max(1, Math.ceil(total / pageSize));
-                          const currentPage = Math.min(remindersPage, totalPages);
-                          const start = (currentPage - 1) * pageSize;
-                          const end = start + pageSize;
-                          const pageItems = allItems.slice(start, end);
-
-                        return (
-                          <>
-                            {/* Filters */}
-                            <div
-                              style={{
-                                display: "flex",
-                                flexWrap: "wrap",
-                                gap: "12px",
-                                marginBottom: "12px",
-                                alignItems: "center",
-                              }}
-                            >
-                              <label style={{ fontSize: "0.875rem", color: "#555" }}>
-                                Status:&nbsp;
-                                <select
-                                  value={remindersStatusFilter}
-                                  onChange={(e) => {
-                                    setRemindersStatusFilter(e.target.value);
-                                    setRemindersPage(1);
-                                  }}
-                                  style={{
-                                    padding: "6px 10px",
-                                    borderRadius: "6px",
-                                    border: "1px solid #e5e7eb",
-                                    fontSize: "0.85rem",
-                                  }}
-                                >
-                                  <option value="All">All</option>
-                                  <option value="Delivered">Delivered</option>
-                                  <option value="Failed">Failed</option>
-                                </select>
-                              </label>
-                              <label style={{ fontSize: "0.875rem", color: "#555" }}>
-                                Channel:&nbsp;
-                                <select
-                                  value={remindersChannelFilter}
-                                  onChange={(e) => {
-                                    setRemindersChannelFilter(e.target.value);
-                                    setRemindersPage(1);
-                                  }}
-                                  style={{
-                                    padding: "6px 10px",
-                                    borderRadius: "6px",
-                                    border: "1px solid #e5e7eb",
-                                    fontSize: "0.85rem",
-                                  }}
-                                >
-                                  <option value="All">All</option>
-                                  <option value="Email">Email</option>
-                                  <option value="WhatsApp">WhatsApp</option>
-                                </select>
-                              </label>
-                            </div>
-
-                            <div style={{ overflowX: "auto" }}>
-                              <table className="table">
+                              return (
+                                <>
+                                  <div style={{ overflowX: "auto" }}>
+                                    <table className="table">
                                 <thead>
                                   <tr>
                                     <th>Member</th>
@@ -6687,9 +7620,9 @@ Subscription Manager HK`;
                                   </button>
                                 </div>
                               </div>
-                            </>
-                          );
-                        })()}
+                                </>
+                              );
+                            })()}
 
                         {/* Old non-paginated table kept for reference (now replaced by paginated view)
                         <div style={{ overflowX: "auto" }}>
@@ -6767,13 +7700,12 @@ Subscription Manager HK`;
                 }}>
                   {paymentMethods
                     .filter((method) => 
-                      method.name === "Alipay" || 
                       method.name === "PayMe" || 
                       method.name === "FPS" || 
                       method.name === "Direct Bank Transfer"
                     )
                     .map((method) => {
-                      const isQRMethod = method.name === "Alipay" || method.name === "PayMe";
+                      const isQRMethod = method.name === "PayMe";
                       const handleQRUpload = async (e, methodName) => {
                         const file = e.target.files[0];
                         if (!file) return;
@@ -6913,15 +7845,13 @@ Subscription Manager HK`;
                             gap: "18px",
                             marginBottom: "4px",
                             paddingBottom: "20px",
-                            borderBottom: "1px solid #f0f0f0"
+                            borderBottom: "1px solid #e5e7eb"
                           }}>
                             <div style={{
                               width: "64px",
                               height: "64px",
                               borderRadius: "16px",
-                              background: method.name === "Alipay" 
-                                ? "linear-gradient(135deg, #1677FF 0%, #0958d9 100%)"
-                                : method.name === "PayMe" 
+                              background: method.name === "PayMe" 
                                 ? "linear-gradient(135deg, #00C300 0%, #009900 100%)"
                                 : method.name === "FPS" 
                                 ? "linear-gradient(135deg, #0066CC 0%, #004499 100%)"
@@ -6935,8 +7865,7 @@ Subscription Manager HK`;
                               boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
                               position: "relative"
                             }}>
-                              {method.name === "Alipay" ? "A" 
-                                : method.name === "PayMe" ? "P"
+                              {method.name === "PayMe" ? "P"
                                 : method.name === "FPS" ? "F"
                                 : "B"}
                               {method.visible && (
@@ -6974,18 +7903,17 @@ Subscription Manager HK`;
                                 color: "#666",
                                 fontWeight: "500"
                               }}>
-                                {method.name === "Alipay" ? "Alipay HK" 
-                                  : method.name === "PayMe" ? "PayMe by HSBC"
+                                {method.name === "PayMe" ? "PayMe by HSBC"
                                   : method.name === "FPS" ? "Faster Payment System"
                                   : "Direct Bank Transfer"}
                               </p>
                             </div>
                           </div>
 
-                          {/* QR Code Display Section for Alipay/PayMe OR Payment Details for FPS/Bank Transfer */}
+                          {/* QR Code Display Section for PayMe OR Payment Details for FPS/Bank Transfer */}
                           {isQRMethod ? (
                             <div style={{
-                              background: "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)",
+                              background: "linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)",
                               borderRadius: "16px",
                               padding: "28px",
                               border: method.qrImageUrl ? "1px solid #e0e0e0" : "2px dashed #d0d0d0",
@@ -7015,7 +7943,7 @@ Subscription Manager HK`;
                                         maxHeight: "260px",
                                         width: "100%",
                                         height: "auto",
-                                        borderRadius: "8px",
+                                        borderRadius: "4px",
                                         display: "block",
                                         objectFit: "contain"
                                       }}
@@ -7035,7 +7963,7 @@ Subscription Manager HK`;
                                       background: "#fff",
                                       border: "none",
                                       boxShadow: "0 2px 8px rgba(90, 49, 234, 0.1)",
-                                      borderRadius: "8px",
+                                      borderRadius: "4px",
                                       fontSize: "0.875rem",
                                       fontWeight: "600",
                                       cursor: uploadingQR[method.name] ? "not-allowed" : "pointer",
@@ -7069,7 +7997,7 @@ Subscription Manager HK`;
                                     width: "100px",
                                     height: "100px",
                                     borderRadius: "50%",
-                                    background: "linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%)",
+                                    background: "linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)",
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
@@ -7102,7 +8030,7 @@ Subscription Manager HK`;
                                   <label
                                     style={{
                                       padding: "12px 24px",
-                                      background: "linear-gradient(135deg, #000 0%, #333 100%)",
+                                      background: "linear-gradient(135deg, #1a1a1a 0%, #374151 100%)",
                                       color: "#fff",
                                       borderRadius: "10px",
                                       fontSize: "0.875rem",
@@ -7140,7 +8068,7 @@ Subscription Manager HK`;
                             </div>
                           ) : (
                             <div style={{
-                              background: "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)",
+                              background: "linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)",
                               borderRadius: "16px",
                               padding: "24px",
                               border: "1px solid #e0e0e0"
@@ -7209,8 +8137,8 @@ Subscription Manager HK`;
                               justifyContent: "space-between",
                               padding: "18px 20px",
                               background: method.visible 
-                                ? "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)" 
-                                : "#fafafa",
+                                ? "linear-gradient(135deg, #f8f9ff 0%, #e8f0ff 100%)" 
+                                : "#f9fafb",
                               borderRadius: "12px",
                               border: `2px solid ${method.visible ? "#2196F3" : "#e0e0e0"}`,
                               cursor: "pointer",
@@ -7220,13 +8148,13 @@ Subscription Manager HK`;
                             onMouseEnter={(e) => {
                               e.currentTarget.style.background = method.visible 
                                 ? "linear-gradient(135deg, #bbdefb 0%, #90caf9 100%)" 
-                                : "#f0f0f0";
+                                : "#f3f4f6";
                               e.currentTarget.style.borderColor = method.visible ? "#1976D2" : "#ccc";
                               e.currentTarget.style.transform = "scale(1.01)";
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = method.visible 
-                                ? "linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)" 
+                                ? "linear-gradient(135deg, #f8f9ff 0%, #e8f0ff 100%)" 
                                 : "#fafafa";
                               e.currentTarget.style.borderColor = method.visible ? "#2196F3" : "#e0e0e0";
                               e.currentTarget.style.transform = "scale(1)";
@@ -7322,7 +8250,7 @@ Subscription Manager HK`;
                         gap: "4px", 
                         background: "#f3f4f6", 
                         padding: "4px", 
-                        borderRadius: "8px",
+                        borderRadius: "4px",
                         flexWrap: "wrap"
                       }}>
                         {[
@@ -7337,7 +8265,7 @@ Subscription Manager HK`;
                             onClick={() => setPaymentStatusFilter(option.value)}
                             style={{
                               padding: "8px 16px",
-                              borderRadius: "6px",
+                              borderRadius: "4px",
                               border: "none",
                               fontSize: "0.875rem",
                               fontWeight: "500",
@@ -7370,12 +8298,12 @@ Subscription Manager HK`;
                       </div>
                       <div style={{
                         padding: "10px 16px",
-                        background: "#fff3cd",
-                        borderRadius: "8px",
+                        background: "#fee2e2",
+                        borderRadius: "4px",
                         fontSize: "0.875rem",
                         fontWeight: "600",
-                        color: "#856404",
-                        border: "1px solid #ffc107"
+                        color: "#ef4444",
+                        border: "1px solid #ef4444"
                       }}>
                         ⏳ Pending: {(payments || []).filter(p => p.status === 'Pending').length}
                       </div>
@@ -7433,6 +8361,14 @@ Subscription Manager HK`;
                           className="ghost-btn"
                           type="button"
                           onClick={() => {
+                            // Clear validation state when closing
+                            setPaymentFieldErrors({
+                              memberId: false,
+                              amount: false,
+                              method: false,
+                              screenshot: false,
+                            });
+                            setCurrentInvalidPaymentField(null);
                             setShowPaymentForm(false);
                             setEditingPayment(null);
                             setPaymentForm({
@@ -7452,6 +8388,28 @@ Subscription Manager HK`;
                               notes: "",
                             });
                           }}
+                          style={{ 
+                            fontSize: "1.5rem", 
+                            lineHeight: 1,
+                            color: "#ef4444",
+                            fontWeight: "bold",
+                            width: "32px",
+                            height: "32px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            borderRadius: "4px",
+                            border: "1px solid #ef4444",
+                            background: "transparent",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.background = "#fee2e2";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.background = "transparent";
+                          }}
                         >
                           ×
                         </button>
@@ -7459,9 +8417,10 @@ Subscription Manager HK`;
                       <form
                         className="form-grid"
                         onSubmit={editingPayment ? handleUpdatePayment : handleAddPayment}
+                        noValidate
                       >
                         <label>
-                          Member *
+                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member <span style={{ color: "#ef4444" }}>*</span></span>
                           <select
                             value={paymentForm.memberId}
                             onChange={(e) => {
@@ -7485,7 +8444,7 @@ Subscription Manager HK`;
                           </select>
                         </label>
                         <label>
-                          Invoice ID
+                          <span><i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice ID</span>
                           <input
                             type="text"
                             value={paymentForm.invoiceId}
@@ -7499,7 +8458,7 @@ Subscription Manager HK`;
                           />
                         </label>
                         <label>
-                          Amount *
+                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="text"
                             value={paymentForm.amount}
@@ -7514,7 +8473,7 @@ Subscription Manager HK`;
                           />
                         </label>
                         <label>
-                          Payment Method *
+                          <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
                           <select
                             value={paymentForm.method}
                             onChange={(e) =>
@@ -7529,13 +8488,11 @@ Subscription Manager HK`;
                             <option value="Bank Transfer">Bank Transfer</option>
                             <option value="FPS">FPS</option>
                             <option value="PayMe">PayMe</option>
-                            <option value="Alipay">Alipay</option>
-                            <option value="Credit Card">Credit Card</option>
                             <option value="Cash">Cash</option>
                           </select>
                         </label>
                         <label>
-                          Reference Number
+                          <span><i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Reference Number</span>
                           <input
                             type="text"
                             value={paymentForm.reference}
@@ -7549,7 +8506,7 @@ Subscription Manager HK`;
                           />
                         </label>
                         <label>
-                          Date
+                          <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date</span>
                           <input
                             type="text"
                             value={paymentForm.date}
@@ -7563,7 +8520,7 @@ Subscription Manager HK`;
                           />
                         </label>
                         <label>
-                          Status *
+                          <span><i className="fas fa-toggle-on" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Status <span style={{ color: "#ef4444" }}>*</span></span>
                           <select
                             value={paymentForm.status}
                             onChange={(e) =>
@@ -7580,10 +8537,10 @@ Subscription Manager HK`;
                           </select>
                         </label>
                         <label>
-                          Screenshot URL{" "}
+                          <span><i className="fas fa-image" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Screenshot URL{" "}
                           {paymentForm.method === "Cash" && (
                             <span style={{ color: "#ef4444" }}>*</span>
-                          )}
+                          )}</span>
                           <input
                             type="text"
                             value={paymentForm.screenshot}
@@ -7611,7 +8568,7 @@ Subscription Manager HK`;
                             )}
                         </label>
                         <label style={{ gridColumn: "1 / -1" }}>
-                          Notes
+                          <span><i className="fas fa-sticky-note" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Notes</span>
                           <textarea
                             value={paymentForm.notes}
                             onChange={(e) =>
@@ -7772,7 +8729,7 @@ Subscription Manager HK`;
                                         // Check if paid by admin (cash payment)
                                         const isPaidByAdmin = payment.paidToAdmin || payment.paidToAdminName;
                                         // Check if paid online
-                                        const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
+                                        const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Online Payment"];
                                         const isPaidOnline = onlineMethods.includes(payment.method);
                                         
                                         if (isPaidByAdmin) {
@@ -7885,51 +8842,77 @@ Subscription Manager HK`;
                   </div>
                 </header>
                 
-                {/* Summary Cards */}
+                {/* Summary Cards - 2 Mini Cards */}
                 {(() => {
-                  const totalInvoices = invoices.length;
-                  const unpaidInvoices = invoices.filter(inv => {
-                    const status = inv.status || "Unpaid";
+                  const invoicesList = invoices || [];
+                  const totalInvoices = invoicesList.length;
+                  const unpaidInvoices = invoicesList.filter(inv => {
+                    const status = inv?.status || "Unpaid";
                     return status !== "Paid" && status !== "Completed";
                   });
+                  const paidInvoices = invoicesList.filter(inv => {
+                    const status = inv?.status || "Unpaid";
+                    return status === "Paid" || status === "Completed";
+                  });
+                  const overdueInvoices = invoicesList.filter(inv => inv?.status === "Overdue");
                   const totalUnpaidAmount = unpaidInvoices.reduce((sum, inv) => {
-                    const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
+                    const amount = parseFloat((inv?.amount || "0").replace(/[^0-9.]/g, '') || 0);
+                    return sum + amount;
+                  }, 0);
+                  const totalPaidAmount = paidInvoices.reduce((sum, inv) => {
+                    const amount = parseFloat((inv?.amount || "0").replace(/[^0-9.]/g, '') || 0);
                     return sum + amount;
                   }, 0);
                   
                   return (
-                    <div style={{ 
-                      display: "grid", 
-                      gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
-                      gap: "16px", 
-                      marginBottom: "24px" 
-                    }}>
-                      <div style={{
-                        background: "#ffffff",
-                        border: "none",
-                        borderRadius: "8px",
-                        padding: "20px",
-                        boxShadow: "0 2px 8px rgba(90, 49, 234, 0.1)",
-                      }}>
-                        <p style={{ margin: "0 0 8px 0", fontSize: "0.875rem", color: "#666", fontWeight: "500" }}>
+                    <div className="kpi-grid" style={{ marginBottom: "24px" }}>
+                      <div className="card kpi">
+                        <p>
+                          <i className="fas fa-file-invoice" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                           Total Invoices
                         </p>
-                        <h4 style={{ margin: "0", fontSize: "1.75rem", fontWeight: "700", color: "#1a1a1a" }}>
-                          {totalInvoices.toLocaleString("en-US")}
+                        <h4>{formatNumber(totalInvoices)}</h4>
+                      </div>
+                      <div className="card kpi">
+                        <p>
+                          <i className="fas fa-check-circle" style={{ marginRight: "8px", color: "#57BF57" }}></i>
+                          Paid
+                        </p>
+                        <h4 style={{ color: "#57BF57" }}>{formatNumber(paidInvoices.length)}</h4>
+                      </div>
+                      <div className="card kpi">
+                        <p>
+                          <i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                          Unpaid
+                        </p>
+                        <h4 style={{ color: "#ef4444" }}>{formatNumber(unpaidInvoices.length)}</h4>
+                      </div>
+                      <div className="card kpi">
+                        <p>
+                          <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                          Overdue
+                        </p>
+                        <h4 style={{ color: "#ef4444" }}>{formatNumber(overdueInvoices.length)}</h4>
+                      </div>
+                      <div className="card kpi">
+                        <p>
+                          <i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                          Total Unpaid
+                        </p>
+                        <h4 style={{ color: "#ef4444" }}>
+                          ${formatNumber(totalUnpaidAmount, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
                         </h4>
                       </div>
-                      <div style={{
-                        background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)",
-                        border: "1px solid #f59e0b",
-                        borderRadius: "8px",
-                        padding: "20px",
-                        boxShadow: "0 2px 8px rgba(245, 158, 11, 0.2)",
-                      }}>
-                        <p style={{ margin: "0 0 8px 0", fontSize: "0.875rem", color: "#92400e", fontWeight: "500" }}>
-                          Total Unpaid Amount
+                      <div className="card kpi">
+                        <p>
+                          <i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#57BF57" }}></i>
+                          Total Collected
                         </p>
-                        <h4 style={{ margin: "0", fontSize: "1.75rem", fontWeight: "700", color: "#92400e" }}>
-                          ${totalUnpaidAmount.toLocaleString("en-US", {
+                        <h4 style={{ color: "#57BF57" }}>
+                          ${formatNumber(totalPaidAmount, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
@@ -7942,89 +8925,159 @@ Subscription Manager HK`;
                 <div className="card">
                   <div className="table-wrapper">
                     {(() => {
+                      // Filter invoices by status
+                      let filteredInvoices = invoices || [];
+                      if (invoiceStatusFilter !== "All") {
+                        filteredInvoices = filteredInvoices.filter((invoice) => {
+                          const status = invoice.status || "Unpaid";
+                          if (invoiceStatusFilter === "Paid") {
+                            return status === "Paid" || status === "Completed";
+                          } else if (invoiceStatusFilter === "Unpaid") {
+                            return status !== "Paid" && status !== "Completed" && status !== "Overdue";
+                          } else {
+                            return status === invoiceStatusFilter;
+                          }
+                        });
+                      }
+                      
                       // Calculate pagination
                       const startIndex = (invoicesPage - 1) * invoicesPageSize;
                       const endIndex = startIndex + invoicesPageSize;
-                      const paginatedInvoices = invoices.slice(startIndex, endIndex);
-                      const totalPages = Math.ceil(invoices.length / invoicesPageSize);
+                      const paginatedInvoices = filteredInvoices.slice(startIndex, endIndex);
+                      const totalPages = Math.ceil(filteredInvoices.length / invoicesPageSize);
                       
                       return (
                         <>
-                          <Table
-                            columns={["Invoice ID", "Member", "Period", "Amount", "Due Date", "Status", "Actions"]}
-                            rows={paginatedInvoices.map((invoice) => {
-                              const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
-                              const isOverdue = invoice.status === "Overdue";
-                              const isUnpaid = !isPaid && !isOverdue && (invoice.status === "Unpaid" || !invoice.status);
-                              
-                              return {
-                                "Invoice ID": invoice.id || invoice.invoiceId || "N/A",
-                                Member: invoice.memberName || invoice.member || "Unknown",
-                                Period: invoice.period || "N/A",
-                                Amount: invoice.amount || "$0",
-                                "Due Date": invoice.due ? new Date(invoice.due).toLocaleDateString('en-GB', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric'
-                                }) : "N/A",
-                                Status: {
-                                  render: () => (
-                                    <span className={
-                                      invoice.status === "Paid" ? "badge badge-paid" :
-                                      invoice.status === "Overdue" ? "badge badge-overdue" :
-                                      invoice.status === "Pending" ? "badge badge-pending" :
-                                      "badge badge-unpaid"
-                                    }>
-                                      {invoice.status || "Unpaid"}
-                                    </span>
-                                  )
-                                },
-                                Actions: {
-                                  render: () => (
-                                    <div style={{ display: "flex", gap: "8px" }}>
-                                      <button
-                                        className="ghost-btn icon-btn icon-btn--edit"
-                                        onClick={() => {
-                                          const member = members.find(m => 
-                                            m.id === invoice.memberId || 
-                                            m.email === invoice.memberEmail ||
-                                            m.name === invoice.memberName
-                                          );
-                                          if (member) {
-                                            handleViewMemberDetail(member);
-                                            setActiveSection("member-detail");
-                                            setActiveTab("Invoices");
-                                          }
-                                        }}
-                                        title="View Invoice Details"
-                                      >
-                                        <i className="fas fa-eye" aria-hidden="true"></i>
-                                      </button>
-                                      {!isPaid && (
+                          {/* Invoice Status Filter - Segmented Buttons */}
+                          <div style={{ marginBottom: "20px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                            <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
+                            <div style={{ 
+                              display: "flex", 
+                              gap: "4px", 
+                              background: "#f3f4f6", 
+                              padding: "4px", 
+                              borderRadius: "4px",
+                              flexWrap: "wrap"
+                            }}>
+                              {[
+                                { value: "All", label: "All" },
+                                { value: "Paid", label: "Paid" },
+                                { value: "Unpaid", label: "Unpaid" },
+                                { value: "Overdue", label: "Overdue" },
+                                { value: "Pending", label: "Pending" }
+                              ].map((option) => (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => setInvoiceStatusFilter(option.value)}
+                                  style={{
+                                    padding: "8px 16px",
+                                    borderRadius: "4px",
+                                    border: "none",
+                                    fontSize: "0.875rem",
+                                    fontWeight: "500",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s ease",
+                                    background: invoiceStatusFilter === option.value
+                                      ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                      : "transparent",
+                                    color: invoiceStatusFilter === option.value ? "#ffffff" : "#6b7280",
+                                    boxShadow: invoiceStatusFilter === option.value
+                                      ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                      : "none",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (invoiceStatusFilter !== option.value) {
+                                      e.target.style.background = "#e5e7eb";
+                                      e.target.style.color = "#374151";
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (invoiceStatusFilter !== option.value) {
+                                      e.target.style.background = "transparent";
+                                      e.target.style.color = "#6b7280";
+                                    }
+                                  }}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Invoice Table */}
+                          <div className="table-wrapper">
+                            <Table
+                              columns={["Invoice ID", "Member", "Period", "Amount", "Due Date", "Status", "Actions"]}
+                              rows={paginatedInvoices.map((invoice) => {
+                                const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
+                                const isOverdue = invoice.status === "Overdue";
+                                
+                                return {
+                                  "Invoice ID": invoice.id || invoice.invoiceId || "N/A",
+                                  "Member": invoice.memberName || invoice.member || "Unknown",
+                                  "Period": invoice.period || "N/A",
+                                  "Amount": invoice.amount || "$0",
+                                  "Due Date": invoice.due ? new Date(invoice.due).toLocaleDateString('en-GB', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric'
+                                  }) : "N/A",
+                                  "Status": {
+                                    render: () => (
+                                      <span className={
+                                        invoice.status === "Paid" ? "badge badge-paid" :
+                                        invoice.status === "Overdue" ? "badge badge-overdue" :
+                                        invoice.status === "Pending" ? "badge badge-pending" :
+                                        "badge badge-unpaid"
+                                      }>
+                                        {invoice.status || "Unpaid"}
+                                      </span>
+                                    ),
+                                  },
+                                  "Actions": {
+                                    render: () => (
+                                      <div style={{ display: "flex", gap: "8px", justifyContent: "flex-start" }}>
                                         <button
-                                          className="ghost-btn icon-btn icon-btn--delete"
-                                          style={{ color: "#ef4444" }}
+                                          className="icon-btn icon-btn--view"
                                           onClick={() => {
-                                            if (invoice.id || invoice._id) {
-                                              handleDeleteInvoice(invoice.id || invoice._id);
+                                            const member = members.find(m => 
+                                              m.id === invoice.memberId || 
+                                              m.email === invoice.memberEmail ||
+                                              m.name === invoice.memberName
+                                            );
+                                            if (member) {
+                                              handleViewMemberDetail(member);
+                                              setActiveSection("member-detail");
+                                              setActiveTab("Invoices");
                                             }
                                           }}
-                                          title="Delete Invoice"
+                                          title="View Invoice Details"
+                                          aria-label="View Invoice Details"
                                         >
-                                          <i className="fas fa-trash" aria-hidden="true"></i>
+                                          <i className="fas fa-eye" aria-hidden="true"></i>
                                         </button>
-                                      )}
-                                    </div>
-                                  )
-                                },
-                                _rowStyle: isOverdue 
-                                  ? { background: "linear-gradient(135deg, rgba(254, 243, 199, 0.4) 0%, rgba(254, 226, 226, 0.4) 100%)", borderLeft: "4px solid #ef4444" }
-                                  : isUnpaid
-                                  ? { background: "rgba(254, 243, 199, 0.3)", borderLeft: "4px solid #f59e0b" }
-                                  : {}
-                              };
-                            })}
-                          />
+                                        {!isPaid && (
+                                          <button
+                                            className="icon-btn icon-btn--delete"
+                                            onClick={() => {
+                                              if (invoice.id || invoice._id) {
+                                                handleDeleteInvoice(invoice.id || invoice._id);
+                                              }
+                                            }}
+                                            title="Delete Invoice"
+                                            aria-label="Delete Invoice"
+                                          >
+                                            <i className="fas fa-trash" aria-hidden="true"></i>
+                                          </button>
+                                        )}
+                                      </div>
+                                    ),
+                                  },
+                                };
+                              })}
+                            />
+                          </div>
                           {totalPages > 0 && invoices.length > 0 && (
                             <Pagination
                               currentPage={invoicesPage}
@@ -8032,7 +9085,7 @@ Subscription Manager HK`;
                               onPageChange={setInvoicesPage}
                               pageSize={invoicesPageSize}
                               onPageSizeChange={setInvoicesPageSize}
-                              totalItems={invoices.length}
+                              totalItems={filteredInvoices.length}
                             />
                           )}
                         </>
@@ -8053,31 +9106,6 @@ Subscription Manager HK`;
                       <h3><i className="fas fa-credit-card" style={{ marginRight: "10px" }}></i>Payments</h3>
                       <p>View and manage all payment transactions.</p>
                     </div>
-                    <button
-                      className="secondary-btn"
-                      onClick={() => {
-                        setShowPaymentForm(true);
-                        setEditingPayment(null);
-                        setPaymentForm({
-                          memberId: "",
-                          member: "",
-                          invoiceId: "",
-                          amount: "",
-                          method: "",
-                          reference: "",
-                          date: new Date().toLocaleDateString("en-GB", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric"
-                          }),
-                          status: "Pending",
-                          screenshot: "",
-                          notes: "",
-                        });
-                      }}
-                    >
-                      <i className="fas fa-plus" style={{ marginRight: "8px" }}></i>Add Payment
-                    </button>
                   </div>
                 </header>
 
@@ -8173,8 +9201,8 @@ Subscription Manager HK`;
                             borderRadius: "4px",
                           }}
                           onMouseEnter={(e) => {
-                            e.target.style.background = "#f0f0f0";
-                            e.target.style.color = "#333";
+                            e.target.style.background = "#f3f4f6";
+                            e.target.style.color = "#1a1a1a";
                           }}
                           onMouseLeave={(e) => {
                             e.target.style.background = "transparent";
@@ -8184,9 +9212,9 @@ Subscription Manager HK`;
                           ×
                         </button>
                       </div>
-                      <form className="form-grid" onSubmit={editingPayment ? handleUpdatePayment : handleAddPayment}>
+                      <form className="form-grid" onSubmit={editingPayment ? handleUpdatePayment : handleAddPayment} noValidate>
                       <label>
-                        Member *
+                        <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member <span style={{ color: "#ef4444" }}>*</span></span>
                         <select
                           ref={(el) => {
                             if (el && editingPayment) {
@@ -8213,7 +9241,7 @@ Subscription Manager HK`;
                         </select>
                       </label>
                       <label>
-                        Invoice ID
+                        <span><i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice ID</span>
                         <input
                           type="text"
                           value={paymentForm.invoiceId}
@@ -8222,7 +9250,7 @@ Subscription Manager HK`;
                         />
                       </label>
                       <label>
-                        Amount *
+                        <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
                         <input
                           type="text"
                           value={paymentForm.amount}
@@ -8232,7 +9260,7 @@ Subscription Manager HK`;
                         />
                       </label>
                       <label>
-                        Payment Method *
+                        <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
                         <select
                           value={paymentForm.method}
                           onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })}
@@ -8248,7 +9276,7 @@ Subscription Manager HK`;
                         </select>
                       </label>
                       <label>
-                        Reference Number
+                        <span><i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Reference Number</span>
                         <input
                           type="text"
                           value={paymentForm.reference}
@@ -8257,7 +9285,7 @@ Subscription Manager HK`;
                         />
                       </label>
                       <label>
-                        Date
+                        <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date</span>
                         <input
                           type="text"
                           value={paymentForm.date}
@@ -8266,7 +9294,7 @@ Subscription Manager HK`;
                         />
                       </label>
                       <label>
-                        Status *
+                        <span><i className="fas fa-toggle-on" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Status <span style={{ color: "#ef4444" }}>*</span></span>
                         <select
                           value={paymentForm.status}
                           onChange={(e) => setPaymentForm({ ...paymentForm, status: e.target.value })}
@@ -8278,7 +9306,7 @@ Subscription Manager HK`;
                         </select>
                       </label>
                       <label>
-                        Screenshot URL {paymentForm.method === "Cash" && <span style={{ color: "#ef4444" }}>*</span>}
+                        <span><i className="fas fa-image" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Screenshot URL {paymentForm.method === "Cash" && <span style={{ color: "#ef4444" }}>*</span>}</span>
                         <input
                           type="text"
                           value={paymentForm.screenshot}
@@ -8293,7 +9321,7 @@ Subscription Manager HK`;
                         )}
                       </label>
                       <label style={{ gridColumn: "1 / -1" }}>
-                        Notes
+                        <span><i className="fas fa-sticky-note" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Notes</span>
                         <textarea
                           value={paymentForm.notes}
                           onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
@@ -8343,7 +9371,7 @@ Subscription Manager HK`;
                         gap: "4px", 
                         background: "#f3f4f6", 
                         padding: "4px", 
-                        borderRadius: "8px",
+                        borderRadius: "4px",
                         flexWrap: "wrap"
                       }}>
                         {[
@@ -8359,7 +9387,7 @@ Subscription Manager HK`;
                             onClick={() => setPaymentStatusFilter(option.value)}
                             style={{
                               padding: "8px 16px",
-                              borderRadius: "6px",
+                              borderRadius: "4px",
                               border: "none",
                               fontSize: "0.875rem",
                               fontWeight: "500",
@@ -8584,40 +9612,52 @@ Subscription Manager HK`;
                         <button
                           type="button"
                           onClick={() => {
-                          setShowDonationForm(false);
-                          setDonationForm({
-                            donorName: "",
-                            isMember: false,
-                            memberId: "",
-                            amount: "",
-                            method: "",
-                            date: "",
-                            notes: "",
-                            reference: "",
-                            screenshot: "",
-                          });
-                          setDonationImageFile(null);
-                          setDonationImagePreview(null);
-                          setDonationMemberSearch("");
-                          setShowDonationMemberDropdown(false);
+                            // Clear validation state when closing
+                            setDonationFieldErrors({
+                              donorName: false,
+                              amount: false,
+                              method: false,
+                              date: false,
+                              reference: false,
+                              screenshot: false,
+                            });
+                            setCurrentInvalidDonationField(null);
+                            setShowDonationForm(false);
+                            setDonationForm({
+                              donorName: "",
+                              isMember: false,
+                              memberId: "",
+                              amount: "",
+                              method: "",
+                              date: "",
+                              notes: "",
+                              reference: "",
+                              screenshot: "",
+                            });
+                            setDonationImageFile(null);
+                            setDonationImagePreview(null);
+                            setDonationMemberSearch("");
+                            setShowDonationMemberDropdown(false);
                           }}
                           style={{
                             background: "transparent",
-                            border: "none",
+                            border: "1px solid #ef4444",
                             fontSize: "1.5rem",
-                            color: "#666",
-                            cursor: "pointer",
-                            padding: "0",
+                            color: "#ef4444",
+                            fontWeight: "bold",
                             width: "32px",
                             height: "32px",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
                             borderRadius: "4px",
+                            cursor: "pointer",
+                            padding: "0",
+                            transition: "all 0.2s ease",
                           }}
                           onMouseEnter={(e) => {
-                            e.target.style.background = "#f0f0f0";
-                            e.target.style.color = "#333";
+                            e.target.style.background = "#f3f4f6";
+                            e.target.style.color = "#1a1a1a";
                           }}
                           onMouseLeave={(e) => {
                             e.target.style.background = "transparent";
@@ -8628,31 +9668,193 @@ Subscription Manager HK`;
                         </button>
                       </div>
                       <form
+                      noValidate
                       onSubmit={async (e) => {
                         e.preventDefault();
+                        
+                        // Progressive validation for donation form
+                        const validateDonationForm = () => {
+                          // Define field order for validation
+                          const fieldOrder = ["donorName", "amount", "method", "date", "reference", "screenshot"];
+                          
+                          // If we have a current invalid field, check if it's now valid
+                          if (currentInvalidDonationField) {
+                            let isValid = true;
+                            let errorMsg = "";
+                            
+                            if (currentInvalidDonationField === "donorName" && !donationForm.donorName) {
+                              isValid = false;
+                              errorMsg = "Donor name is required";
+                            } else if (currentInvalidDonationField === "amount") {
+                              if (!donationForm.amount) {
+                                isValid = false;
+                                errorMsg = "Amount is required";
+                              } else {
+                                const amountNum = parseFloat(donationForm.amount);
+                                if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
+                                  isValid = false;
+                                  errorMsg = "Amount must be a positive number";
+                                }
+                              }
+                            } else if (currentInvalidDonationField === "method" && !donationForm.method) {
+                              isValid = false;
+                              errorMsg = "Payment method is required";
+                            } else if (currentInvalidDonationField === "date" && !donationForm.date) {
+                              isValid = false;
+                              errorMsg = "Date is required";
+                            } else if (currentInvalidDonationField === "reference") {
+                              const onlineMethods = ["Bank Transfer", "FPS", "PayMe"];
+                              if (onlineMethods.includes(donationForm.method) && !donationForm.reference.trim()) {
+                                isValid = false;
+                                errorMsg = "Reference number is required for online payment methods";
+                              }
+                            } else if (currentInvalidDonationField === "screenshot") {
+                              if (donationForm.method === "Cash" && !donationForm.screenshot && !donationImageFile) {
+                                isValid = false;
+                                errorMsg = "Proof image is required";
+                              } else {
+                                const onlineMethods = ["Bank Transfer", "FPS", "PayMe"];
+                                if (onlineMethods.includes(donationForm.method) && !donationForm.screenshot && !donationImageFile) {
+                                  isValid = false;
+                                  errorMsg = "Proof image is required";
+                                }
+                              }
+                            }
+                            
+                            if (isValid) {
+                              setDonationFieldErrors(prev => ({ ...prev, [currentInvalidDonationField]: false }));
+                              setCurrentInvalidDonationField(null);
+                            } else {
+                              setDonationFieldErrors(prev => ({ ...prev, [currentInvalidDonationField]: true }));
+                              showToast(errorMsg, "error");
+                              return false;
+                            }
+                          }
+                          
+                          // Find first invalid field
+                          for (const field of fieldOrder) {
+                            let isValid = true;
+                            let errorMsg = "";
+                            
+                            if (field === "donorName" && !donationForm.donorName) {
+                              isValid = false;
+                              errorMsg = "Donor name is required";
+                            } else if (field === "amount") {
+                              if (!donationForm.amount) {
+                                isValid = false;
+                                errorMsg = "Amount is required";
+                              } else {
+                                const amountNum = parseFloat(donationForm.amount);
+                                if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
+                                  isValid = false;
+                                  errorMsg = "Amount must be a positive number";
+                                }
+                              }
+                            } else if (field === "method" && !donationForm.method) {
+                              isValid = false;
+                              errorMsg = "Payment method is required";
+                            } else if (field === "date" && !donationForm.date) {
+                              isValid = false;
+                              errorMsg = "Date is required";
+                            } else if (field === "reference") {
+                              const onlineMethods = ["Bank Transfer", "FPS", "PayMe"];
+                              if (onlineMethods.includes(donationForm.method) && !donationForm.reference.trim()) {
+                                isValid = false;
+                                errorMsg = "Reference number is required for online payment methods";
+                              }
+                            } else if (field === "screenshot") {
+                              if (donationForm.method === "Cash" && !donationForm.screenshot && !donationImageFile) {
+                                isValid = false;
+                                errorMsg = "Proof image is required";
+                              } else {
+                                const onlineMethods = ["Bank Transfer", "FPS", "PayMe"];
+                                if (onlineMethods.includes(donationForm.method) && !donationForm.screenshot && !donationImageFile) {
+                                  isValid = false;
+                                  errorMsg = "Proof image is required";
+                                }
+                              }
+                            }
+                            
+                            if (!isValid) {
+                              // Clear all errors first
+                              setDonationFieldErrors({
+                                donorName: false,
+                                amount: false,
+                                method: false,
+                                date: false,
+                                reference: false,
+                                screenshot: false,
+                              });
+                              // Set only this field as invalid
+                              setDonationFieldErrors(prev => ({ ...prev, [field]: true }));
+                              setCurrentInvalidDonationField(field);
+                              showToast(errorMsg, "error");
+                              
+                              // Focus on the invalid field
+                              setTimeout(() => {
+                                if (field === "donorName") {
+                                  const inputs = document.querySelectorAll('input[type="text"]');
+                                  const donorInput = Array.from(inputs).find(input => 
+                                    input.placeholder?.includes("donor name") || 
+                                    input.placeholder?.includes("Donor name")
+                                  );
+                                  donorInput?.focus();
+                                  donorInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                } else if (field === "amount") {
+                                  const input = document.querySelector('input[type="number"][inputmode="numeric"]');
+                                  input?.focus();
+                                  input?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                } else if (field === "method") {
+                                  const selects = document.querySelectorAll('select');
+                                  const methodSelect = Array.from(selects).find(select => 
+                                    select.options[0]?.text === "Select method"
+                                  );
+                                  methodSelect?.focus();
+                                  methodSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                } else if (field === "date") {
+                                  const input = document.querySelector('input[type="date"]');
+                                  input?.focus();
+                                  input?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                } else if (field === "reference") {
+                                  const inputs = document.querySelectorAll('input[type="text"]');
+                                  const refInput = Array.from(inputs).find(input => 
+                                    input.placeholder?.includes("Transaction reference") ||
+                                    input.placeholder?.includes("reference")
+                                  );
+                                  refInput?.focus();
+                                  refInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                } else if (field === "screenshot") {
+                                  const uploadAreas = document.querySelectorAll('[style*="border"]');
+                                  const screenshotArea = Array.from(uploadAreas).find(area => 
+                                    area.style.border.includes("dashed")
+                                  );
+                                  screenshotArea?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                }
+                              }, 100);
+                              
+                              return false;
+                            }
+                          }
+                          
+                          // All fields valid
+                          setDonationFieldErrors({
+                            donorName: false,
+                            amount: false,
+                            method: false,
+                            date: false,
+                            reference: false,
+                            screenshot: false,
+                          });
+                          setCurrentInvalidDonationField(null);
+                          return true;
+                        };
+                        
+                        if (!validateDonationForm()) {
+                          // Validation error already shown via Notie
+                          return;
+                        }
+                        
                         try {
-                          if (!donationForm.donorName) {
-                            showToast("Donor name is required", "error");
-                            return;
-                          }
-                          if (!donationForm.amount) {
-                            showToast("Amount is required", "error");
-                            return;
-                          }
-                          const amountNum = parseFloat(donationForm.amount);
-                          if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
-                            showToast("Amount must be a positive number", "error");
-                            return;
-                          }
-                          if (!donationForm.method) {
-                            showToast("Payment method is required", "error");
-                            return;
-                          }
-                          if (!donationForm.date) {
-                            showToast("Date is required", "error");
-                            return;
-                          }
-
                           // Upload image if file exists
                           let imageUrl = donationForm.screenshot;
                           if (donationImageFile) {
@@ -8682,25 +9884,6 @@ Subscription Manager HK`;
                               throw new Error("No URL returned from upload. Please try again.");
                             }
                             imageUrl = uploadData.url;
-                          }
-
-                          // Validate Cash payment method - requires proof image
-                          if (donationForm.method === "Cash" && !imageUrl) {
-                            showToast("Proof image is required for Cash payments", "error");
-                            return;
-                          }
-
-                          // Validate Online payment methods - requires reference number AND proof image
-                          const onlineMethods = ["Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card"];
-                          if (onlineMethods.includes(donationForm.method)) {
-                            if (!donationForm.reference.trim()) {
-                              showToast("Reference number is required for online payment methods", "error");
-                              return;
-                            }
-                            if (!imageUrl) {
-                              showToast("Proof image is required for online payment methods", "error");
-                              return;
-                            }
                           }
 
                           await addDonation({
@@ -8733,17 +9916,26 @@ Subscription Manager HK`;
                     >
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
                         <label>
-                          Donor Name *
+                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donor Name <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="text"
                             value={donationForm.donorName}
-                            onChange={(e) => setDonationForm({ ...donationForm, donorName: e.target.value })}
+                            onChange={(e) => {
+                              setDonationForm({ ...donationForm, donorName: e.target.value });
+                              if (donationFieldErrors.donorName) {
+                                setDonationFieldErrors(prev => ({ ...prev, donorName: false }));
+                                if (currentInvalidDonationField === "donorName") {
+                                  setCurrentInvalidDonationField(null);
+                                }
+                              }
+                            }}
                             required
                             placeholder={donationForm.isMember ? "Will be filled automatically when member is selected" : "Enter donor name"}
                             disabled={donationForm.isMember && donationForm.memberId ? true : false}
                             style={{
-                              background: donationForm.isMember && donationForm.memberId ? "#f5f5f5" : "#fff",
-                              cursor: donationForm.isMember && donationForm.memberId ? "not-allowed" : "text"
+                              background: donationForm.isMember && donationForm.memberId ? "#f9fafb" : "#fff",
+                              cursor: donationForm.isMember && donationForm.memberId ? "not-allowed" : "text",
+                              border: donationFieldErrors.donorName ? "2px solid #ef4444" : undefined
                             }}
                           />
                           {donationForm.isMember && donationForm.memberId && (
@@ -8753,18 +9945,26 @@ Subscription Manager HK`;
                           )}
                         </label>
                         <label>
-                          Amount *
+                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
                           <input
                             type="number"
                             inputMode="numeric"
-                            pattern="[0-9]*"
                             value={donationForm.amount}
                             onChange={(e) => {
                               const value = e.target.value.replace(/[^0-9.]/g, "");
                               setDonationForm({ ...donationForm, amount: value });
+                              if (donationFieldErrors.amount) {
+                                setDonationFieldErrors(prev => ({ ...prev, amount: false }));
+                                if (currentInvalidDonationField === "amount") {
+                                  setCurrentInvalidDonationField(null);
+                                }
+                              }
                             }}
                             placeholder="100"
                             required
+                            style={{
+                              border: donationFieldErrors.amount ? "2px solid #ef4444" : undefined
+                            }}
                           />
                         </label>
                       </div>
@@ -8790,7 +9990,7 @@ Subscription Manager HK`;
                               flex: "1",
                               minWidth: "150px",
                               padding: "14px 20px",
-                              borderRadius: "8px",
+                              borderRadius: "4px",
                               border: "none",
                               background: donationForm.isMember ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" : "#f8f9ff",
                               color: donationForm.isMember ? "#ffffff" : "#1a1a1a",
@@ -8827,7 +10027,7 @@ Subscription Manager HK`;
                               flex: "1",
                               minWidth: "150px",
                               padding: "14px 20px",
-                              borderRadius: "8px",
+                              borderRadius: "4px",
                               border: "none",
                               background: !donationForm.isMember ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" : "#f8f9ff",
                               color: !donationForm.isMember ? "#ffffff" : "#1a1a1a",
@@ -8862,14 +10062,14 @@ Subscription Manager HK`;
                       {donationForm.isMember && (
                         <div style={{ marginBottom: "16px" }}>
                           <label>
-                            Select Member *
+                            Select Member <span style={{ color: "#ef4444" }}>*</span>
                             <div style={{ position: "relative" }} data-donation-member-dropdown>
                               <div
                                 onClick={() => setShowDonationMemberDropdown(!showDonationMemberDropdown)}
                                 style={{
                                   padding: "10px 16px",
                                   border: "1px solid #e0e0e0",
-                                  borderRadius: "8px",
+                                  borderRadius: "4px",
                                   background: "#fff",
                                   cursor: "pointer",
                                   display: "flex",
@@ -8905,7 +10105,7 @@ Subscription Manager HK`;
                                     right: 0,
                                     background: "#fff",
                                     border: "1px solid #e0e0e0",
-                                    borderRadius: "8px",
+                                    borderRadius: "4px",
                                     marginTop: "4px",
                                     maxHeight: "300px",
                                     overflow: "hidden",
@@ -8932,7 +10132,7 @@ Subscription Manager HK`;
                                           width: "100%",
                                           padding: "10px 36px 10px 12px",
                                           border: "1px solid #e0e0e0",
-                                          borderRadius: "6px",
+                                          borderRadius: "4px",
                                           fontSize: "0.875rem",
                                           outline: "none",
                                           background: "#fff",
@@ -9017,8 +10217,8 @@ Subscription Manager HK`;
                                           style={{
                                             padding: "12px 16px",
                                             cursor: "pointer",
-                                            borderBottom: "1px solid #f0f0f0",
-                                            background: donationForm.memberId === member.id ? "#f5f5f5" : "#fff",
+                                            borderBottom: "1px solid #e5e7eb",
+                                            background: donationForm.memberId === member.id ? "#f9fafb" : "#fff",
                                             transition: "background 0.2s"
                                           }}
                                           onMouseEnter={(e) => {
@@ -9053,7 +10253,7 @@ Subscription Manager HK`;
                               )}
                             </div>
                             {!donationForm.memberId && (
-                              <span style={{ fontSize: "0.75rem", color: "#d32f2f", marginTop: "4px", display: "none" }}>
+                              <span style={{ fontSize: "0.75rem", color: "#ef4444", marginTop: "4px", display: "none" }}>
                                 Please select a member
                               </span>
                             )}
@@ -9061,38 +10261,53 @@ Subscription Manager HK`;
                         </div>
                       )}
                       <label>
-                        Payment Method *
+                        Payment Method <span style={{ color: "#ef4444" }}>*</span>
                         <select
                           value={donationForm.method}
-                          onChange={(e) => setDonationForm({ ...donationForm, method: e.target.value })}
+                          onChange={(e) => {
+                            setDonationForm({ ...donationForm, method: e.target.value });
+                            if (donationFieldErrors.method) {
+                              setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                              if (currentInvalidDonationField === "method") {
+                                setCurrentInvalidDonationField(null);
+                              }
+                            }
+                          }}
                           required
+                          style={{
+                            border: donationFieldErrors.method ? "2px solid #ef4444" : undefined
+                          }}
                         >
                           <option value="">Select method</option>
                           <option value="Cash">Cash</option>
                           <option value="Bank Transfer">Bank Transfer</option>
                           <option value="FPS">FPS</option>
                           <option value="PayMe">PayMe</option>
-                          <option value="Alipay">Alipay</option>
-                          <option value="Credit Card">Credit Card</option>
                         </select>
                       </label>
 
                       {/* Reference Number - Required for Online payment methods */}
-                      {["Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card"].includes(donationForm.method) && (
+                      {["Bank Transfer", "FPS", "PayMe"].includes(donationForm.method) && (
                         <label>
                           Reference Number <span style={{ color: "#ef4444" }}>*</span>
                           <input
                             type="text"
                             value={donationForm.reference}
-                            onChange={(e) => setDonationForm({ ...donationForm, reference: e.target.value })}
+                            onChange={(e) => {
+                              setDonationForm({ ...donationForm, reference: e.target.value });
+                              if (donationFieldErrors.reference) {
+                                setDonationFieldErrors(prev => ({ ...prev, reference: false }));
+                                if (currentInvalidDonationField === "reference") {
+                                  setCurrentInvalidDonationField(null);
+                                }
+                              }
+                            }}
                             placeholder="Transaction reference number"
                             required
+                            style={{
+                              border: donationFieldErrors.reference ? "2px solid #ef4444" : undefined
+                            }}
                           />
-                          {!donationForm.reference.trim() && (
-                            <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
-                              Reference number is required for online payment methods
-                            </small>
-                          )}
                         </label>
                       )}
 
@@ -9102,8 +10317,8 @@ Subscription Manager HK`;
                           Proof Image <span style={{ color: "#ef4444" }}>*</span>
                           <div
                             style={{
-                              border: "2px dashed #d0d0d0",
-                              borderRadius: "8px",
+                              border: donationFieldErrors.screenshot ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
+                              borderRadius: "4px",
                               padding: "24px",
                               textAlign: "center",
                               cursor: "pointer",
@@ -9111,11 +10326,13 @@ Subscription Manager HK`;
                               background: donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = "#5a31ea";
+                              if (!donationFieldErrors.screenshot) {
+                                e.currentTarget.style.borderColor = "#5a31ea";
+                              }
                               e.currentTarget.style.background = "#f8f9ff";
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = "#d0d0d0";
+                              e.currentTarget.style.borderColor = donationFieldErrors.screenshot ? "#ef4444" : "#d0d0d0";
                               e.currentTarget.style.background = donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa";
                             }}
                             onClick={() => {
@@ -9136,6 +10353,12 @@ Subscription Manager HK`;
                                 reader.onloadend = () => {
                                   setDonationImageFile(file);
                                   setDonationImagePreview(reader.result);
+                                  if (donationFieldErrors.screenshot) {
+                                    setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
+                                    if (currentInvalidDonationField === "screenshot") {
+                                      setCurrentInvalidDonationField(null);
+                                    }
+                                  }
                                 };
                                 reader.readAsDataURL(file);
                               };
@@ -9150,7 +10373,7 @@ Subscription Manager HK`;
                                   style={{ 
                                     maxWidth: "100%", 
                                     maxHeight: "200px", 
-                                    borderRadius: "8px",
+                                    borderRadius: "4px",
                                     marginBottom: "8px"
                                   }} 
                                 />
@@ -9161,6 +10384,12 @@ Subscription Manager HK`;
                                     setDonationImageFile(null);
                                     setDonationImagePreview(null);
                                     setDonationForm({ ...donationForm, screenshot: "" });
+                                    if (donationFieldErrors.screenshot) {
+                                      setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
+                                      if (currentInvalidDonationField === "screenshot") {
+                                        setCurrentInvalidDonationField(null);
+                                      }
+                                    }
                                   }}
                                   style={{
                                     position: "absolute",
@@ -9201,22 +10430,17 @@ Subscription Manager HK`;
                               </>
                             )}
                           </div>
-                          {!donationImagePreview && !donationForm.screenshot && (
-                            <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
-                              Proof image is required for Cash payments
-                            </small>
-                          )}
                         </label>
                       )}
 
                       {/* Proof Image - Also required for Online payment methods */}
-                      {["Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card"].includes(donationForm.method) && (
+                      {["Bank Transfer", "FPS", "PayMe"].includes(donationForm.method) && (
                         <label style={{ gridColumn: "1 / -1" }}>
                           Proof Image <span style={{ color: "#ef4444" }}>*</span>
                           <div
                             style={{
-                              border: "2px dashed #d0d0d0",
-                              borderRadius: "8px",
+                              border: donationFieldErrors.screenshot ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
+                              borderRadius: "4px",
                               padding: "24px",
                               textAlign: "center",
                               cursor: "pointer",
@@ -9224,11 +10448,13 @@ Subscription Manager HK`;
                               background: donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa",
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = "#5a31ea";
+                              if (!donationFieldErrors.screenshot) {
+                                e.currentTarget.style.borderColor = "#5a31ea";
+                              }
                               e.currentTarget.style.background = "#f8f9ff";
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = "#d0d0d0";
+                              e.currentTarget.style.borderColor = donationFieldErrors.screenshot ? "#ef4444" : "#d0d0d0";
                               e.currentTarget.style.background = donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa";
                             }}
                             onClick={() => {
@@ -9249,6 +10475,12 @@ Subscription Manager HK`;
                                 reader.onloadend = () => {
                                   setDonationImageFile(file);
                                   setDonationImagePreview(reader.result);
+                                  if (donationFieldErrors.screenshot) {
+                                    setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
+                                    if (currentInvalidDonationField === "screenshot") {
+                                      setCurrentInvalidDonationField(null);
+                                    }
+                                  }
                                 };
                                 reader.readAsDataURL(file);
                               };
@@ -9263,7 +10495,7 @@ Subscription Manager HK`;
                                   style={{ 
                                     maxWidth: "100%", 
                                     maxHeight: "200px", 
-                                    borderRadius: "8px",
+                                    borderRadius: "4px",
                                     marginBottom: "8px"
                                   }} 
                                 />
@@ -9274,6 +10506,12 @@ Subscription Manager HK`;
                                     setDonationImageFile(null);
                                     setDonationImagePreview(null);
                                     setDonationForm({ ...donationForm, screenshot: "" });
+                                    if (donationFieldErrors.screenshot) {
+                                      setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
+                                      if (currentInvalidDonationField === "screenshot") {
+                                        setCurrentInvalidDonationField(null);
+                                      }
+                                    }
                                   }}
                                   style={{
                                     position: "absolute",
@@ -9314,38 +10552,56 @@ Subscription Manager HK`;
                               </>
                             )}
                           </div>
-                          {!donationImagePreview && !donationForm.screenshot && (
-                            <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
-                              Proof image is required for online payment methods
-                            </small>
-                          )}
                         </label>
                       )}
 
                       <label>
-                        Date *
+                        <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date <span style={{ color: "#ef4444" }}>*</span></span>
                         <input
                           type="date"
                           value={donationForm.date}
                           onChange={(e) => {
                             const selectedDate = e.target.value;
-                            if (selectedDate) {
-                              const year = new Date(selectedDate).getFullYear();
-                              // Validate year range: 1900 to 2100
-                              if (year < 1900 || year > 2100) {
-                                showToast("Please select a valid date between 1900 and 2100", "error");
+                            setDonationForm({ ...donationForm, date: selectedDate });
+                            if (donationFieldErrors.date) {
+                              setDonationFieldErrors(prev => ({ ...prev, date: false }));
+                              if (currentInvalidDonationField === "date") {
+                                setCurrentInvalidDonationField(null);
+                              }
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const dateValue = e.target.value;
+                            if (dateValue) {
+                              const date = new Date(dateValue);
+                              if (isNaN(date.getTime())) {
+                                showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
+                                return;
+                              }
+                              // Validate date components
+                              const [year, month, day] = dateValue.split('-').map(Number);
+                              if (month < 1 || month > 12) {
+                                showToast("Invalid month. Please enter a month between 01 and 12", "error");
+                                return;
+                              }
+                              if (day < 1 || day > 31) {
+                                showToast("Invalid day. Please enter a valid day for the selected month", "error");
+                                return;
+                              }
+                              // Check if day is valid for the month
+                              const daysInMonth = new Date(year, month, 0).getDate();
+                              if (day > daysInMonth) {
+                                showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
                                 return;
                               }
                             }
-                            setDonationForm({ ...donationForm, date: selectedDate });
-                          }}
-                          min="1900-01-01"
-                          max="2100-12-31"
-                          onFocus={(e) => {
-                            // Allow manual typing - don't auto-open picker
-                            e.currentTarget.select();
                           }}
                           required
+                          style={{ 
+                            borderRadius: "4px", 
+                            width: "100%",
+                            border: donationFieldErrors.date ? "2px solid #ef4444" : undefined
+                          }}
                         />
                       </label>
 
@@ -9427,10 +10683,10 @@ Subscription Manager HK`;
                                 Total donations:{" "}
                                 <strong>
                                   $
-                                  {filteredDonations.reduce((sum, d) => {
+                                  {formatNumber(filteredDonations.reduce((sum, d) => {
                                     const val = parseFloat(d?.amount || 0);
                                     return sum + (isNaN(val) ? 0 : val);
-                                  }, 0).toLocaleString("en-US", {
+                                  }, 0), {
                                     minimumFractionDigits: 2,
                                     maximumFractionDigits: 2,
                                   })}
@@ -9518,7 +10774,7 @@ Subscription Manager HK`;
                                     <span className="badge badge-inactive">Non-Member</span>
                                   ),
                                   Amount: donation.amount
-                                    ? `$${Number(donation.amount).toLocaleString("en-US", {
+                                    ? `$${formatNumber(Number(donation.amount), {
                                         minimumFractionDigits: 2,
                                         maximumFractionDigits: 2,
                                       })}`
@@ -9528,8 +10784,7 @@ Subscription Manager HK`;
                                   Actions: {
                                     render: () => (
                                       <button
-                                        className="ghost-btn"
-                                        style={{ padding: "6px 12px", fontSize: "0.85rem", color: "#ef4444" }}
+                                        className="ghost-btn icon-btn icon-btn--delete"
                                         onClick={async () => {
                                           showConfirmation(
                                             "Are you sure you want to delete this donation?",
@@ -9545,8 +10800,10 @@ Subscription Manager HK`;
                                             }
                                           );
                                         }}
+                                        title="Delete Donation"
+                                        aria-label="Delete Donation"
                                       >
-                                        Delete
+                                        <i className="fas fa-trash" aria-hidden="true"></i>
                                       </button>
                                     ),
                                   },
@@ -9575,70 +10832,159 @@ Subscription Manager HK`;
             {/* REPORTS */}
             {activeSection === "reports" && (
               <article className="screen-card" id="reports">
-                <header className="screen-card__header">
+                <header className="screen-card__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
                   <div>
                     {renderBreadcrumb("reports")}
-                    <h3>Reports</h3>
-                    <p>Financial overview and payment analytics.</p>
+                    <h3><i className="fas fa-chart-line" style={{ marginRight: "10px" }}></i>Financial Reports</h3>
+                    <p>Comprehensive financial overview and payment analytics.</p>
                   </div>
+                  {isFinanceRole && (
+                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                      <button
+                        type="button"
+                        onClick={handleSecureExportCSV}
+                        title="Export CSV"
+                        style={{
+                          padding: "12px",
+                          borderRadius: "8px",
+                          fontWeight: "600",
+                          fontSize: "1.25rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                          background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
+                          color: "#5a31ea",
+                          border: "2px solid #e5e7eb",
+                          boxShadow: "none",
+                          width: "48px",
+                          height: "48px",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                          e.target.style.color = "#ffffff";
+                          e.target.style.border = "2px solid #5a31ea";
+                          e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.background = "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)";
+                          e.target.style.color = "#5a31ea";
+                          e.target.style.border = "2px solid #e5e7eb";
+                          e.target.style.boxShadow = "none";
+                        }}
+                      >
+                        <i className="fas fa-file-csv"></i>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSecureExportPDF}
+                        title="Export PDF"
+                        style={{
+                          padding: "12px",
+                          borderRadius: "8px",
+                          fontWeight: "600",
+                          fontSize: "1.25rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          transition: "all 0.2s ease",
+                          background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
+                          color: "#5a31ea",
+                          border: "2px solid #e5e7eb",
+                          boxShadow: "none",
+                          width: "48px",
+                          height: "48px",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                          e.target.style.color = "#ffffff";
+                          e.target.style.border = "2px solid #5a31ea";
+                          e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.background = "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)";
+                          e.target.style.color = "#5a31ea";
+                          e.target.style.border = "2px solid #e5e7eb";
+                          e.target.style.boxShadow = "none";
+                        }}
+                      >
+                        <i className="fas fa-file-pdf"></i>
+                      </button>
+                    </div>
+                  )}
                 </header>
-                <div className="card reports">
-                  <div className="reports-header">
-                    <label>
-                      Date From
+
+                {/* Date Range Selector - Modern Design */}
+                <div className="card" style={{ marginBottom: "24px", padding: "20px", background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)" }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "flex-end" }}>
+                    <div style={{ flex: "1", minWidth: "200px" }}>
+                      <label style={{ display: "block", marginBottom: "8px", fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>
+                        <i className="fas fa-calendar-alt" style={{ marginRight: "6px", color: "#5a31ea" }}></i>
+                        Date From
+                      </label>
                       <input
                         type="date"
                         value={dateRange.from}
                         onChange={(e) => {
                           const selectedDate = e.target.value;
-                          if (selectedDate) {
-                            const year = new Date(selectedDate).getFullYear();
-                            // Validate year range: 1900 to 2100
-                            if (year < 1900 || year > 2100) {
-                              showToast("Please select a valid date between 1900 and 2100", "error");
-                              return;
-                            }
-                          }
                           setDateRange({ ...dateRange, from: selectedDate });
                         }}
-                        min="1900-01-01"
-                        max="2100-12-31"
+                        style={{
+                          width: "100%",
+                          padding: "12px 16px",
+                          borderRadius: "8px",
+                          border: "2px solid #e5e7eb",
+                          fontSize: "0.9375rem",
+                          background: "#ffffff",
+                          transition: "all 0.2s ease"
+                        }}
                         onFocus={(e) => {
-                          // Allow manual typing - don't auto-open picker
-                          e.currentTarget.select();
+                          e.target.style.borderColor = "#5a31ea";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = "#e5e7eb";
+                          e.target.style.boxShadow = "none";
                         }}
                       />
-                    </label>
-                    <label>
-                      Date To
+                    </div>
+                    <div style={{ flex: "1", minWidth: "200px" }}>
+                      <label style={{ display: "block", marginBottom: "8px", fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>
+                        <i className="fas fa-calendar-check" style={{ marginRight: "6px", color: "#5a31ea" }}></i>
+                        Date To
+                      </label>
                       <input
                         type="date"
                         value={dateRange.to}
                         onChange={(e) => {
                           const selectedDate = e.target.value;
-                          if (selectedDate) {
-                            const year = new Date(selectedDate).getFullYear();
-                            // Validate year range: 1900 to 2100
-                            if (year < 1900 || year > 2100) {
-                              showToast("Please select a valid date between 1900 and 2100", "error");
-                              return;
-                            }
-                          }
                           setDateRange({ ...dateRange, to: selectedDate });
                         }}
-                        min="1900-01-01"
-                        max="2100-12-31"
+                        style={{
+                          width: "100%",
+                          padding: "12px 16px",
+                          borderRadius: "8px",
+                          border: "2px solid #e5e7eb",
+                          fontSize: "0.9375rem",
+                          background: "#ffffff",
+                          transition: "all 0.2s ease"
+                        }}
                         onFocus={(e) => {
-                          // Allow manual typing - don't auto-open picker
-                          e.currentTarget.select();
+                          e.target.style.borderColor = "#5a31ea";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = "#e5e7eb";
+                          e.target.style.boxShadow = "none";
                         }}
                       />
-                    </label>
-                    <div className="chip-group">
+                    </div>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                       {["This Year", "This Quarter", "This Month"].map((period) => (
                         <button
                           key={period}
-                          className={`chip ${selectedPeriod === period ? "active" : ""}`}
                           onClick={() => {
                             setSelectedPeriod(period);
                             const today = new Date();
@@ -9660,7 +11006,34 @@ Subscription Manager HK`;
                                 to: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-31`,
                               });
                             }
-                            showToast(`Period set to ${period}`);
+                          }}
+                          style={{
+                            padding: "12px 20px",
+                            borderRadius: "8px",
+                            fontSize: "0.875rem",
+                            fontWeight: "600",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                            background: selectedPeriod === period
+                              ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                              : "#ffffff",
+                            color: selectedPeriod === period ? "#ffffff" : "#6b7280",
+                            border: selectedPeriod === period ? "none" : "2px solid #e5e7eb",
+                            boxShadow: selectedPeriod === period
+                              ? "0 4px 12px rgba(90, 49, 234, 0.3)"
+                              : "none"
+                          }}
+                          onMouseEnter={(e) => {
+                            if (selectedPeriod !== period) {
+                              e.target.style.background = "#f3f4f6";
+                              e.target.style.borderColor = "#d1d5db";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (selectedPeriod !== period) {
+                              e.target.style.background = "#ffffff";
+                              e.target.style.borderColor = "#e5e7eb";
+                            }
                           }}
                         >
                           {period}
@@ -9668,92 +11041,153 @@ Subscription Manager HK`;
                       ))}
                     </div>
                   </div>
+                </div>
 
-                 
-
-                  <div className="kpi-grid" style={{ marginTop: "20px" }}>
-                    <div className="card kpi">
-                      <p>Collected vs Expected</p>
-                      <h4>
-                        ${reportStats.collected.toLocaleString()} / $
-                        {reportStats.expected.toLocaleString()}
-                      </h4>
-                      <small>
-                        {Math.round((reportStats.collected / reportStats.expected) * 100)}% of goal
-                      </small>
-                    </div>
-                    <div className="card kpi">
-                      <p>Avg per Member</p>
-                      <h4>${reportStats.averagePerMember}</h4>
-                      <small>Goal $800</small>
-                    </div>
-                    <div className="card kpi">
-                      <p>Total Transactions</p>
-                      <h4>{reportStats.transactionCount}</h4>
-                      <small>In selected period</small>
-                    </div>
-                    <div className="card kpi">
-                      <p>Outstanding</p>
-                      <h4>${dashboardMetrics.outstanding.toLocaleString()}</h4>
-                      <small>Pending collection</small>
-                    </div>
+                {/* Key Metrics - Clean Minimal KPI Cards */}
+                <div className="kpi-grid" style={{ marginBottom: "24px" }}>
+                  <div className="card kpi">
+                    <p>
+                      <i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                      Total Collected
+                    </p>
+                    <h4>
+                      ${reportStats.collected.toLocaleString()}
+                    </h4>
+                    <small>
+                      {Math.round((reportStats.collected / reportStats.expected) * 100)}% of ${reportStats.expected.toLocaleString()} expected
+                    </small>
                   </div>
+                  <div className="card kpi">
+                    <p>
+                      <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                      Outstanding
+                    </p>
+                    <h4>
+                      ${formatNumber(dashboardMetrics.outstanding)}
+                    </h4>
+                    <small>Pending collection</small>
+                  </div>
+                  <div className="card kpi">
+                    <p>
+                      <i className="fas fa-users" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                      Avg per Member
+                    </p>
+                    <h4>
+                      ${reportStats.averagePerMember}
+                    </h4>
+                    <small>Goal: $800</small>
+                  </div>
+                  <div className="card kpi">
+                    <p>
+                      <i className="fas fa-exchange-alt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                      Transactions
+                    </p>
+                    <h4>
+                      {reportStats.transactionCount}
+                    </h4>
+                    <small>In selected period</small>
+                  </div>
+                </div>
 
-                  {/* Charts Section */}
-                  <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "24px" }}>
-                    {/* Collected vs Outstanding Chart */}
-                    <div className="card" style={{ padding: "24px" }}>
-                      <h4 style={{ marginBottom: "20px", fontSize: "1.125rem", fontWeight: "600" }}>Collected vs Outstanding</h4>
-                      <div style={{ position: "relative", height: "200px", display: "flex", alignItems: "flex-end", gap: "20px", justifyContent: "center" }}>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", flex: 1 }}>
-                          <div
-                            style={{
-                              width: "100%",
-                              background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                              borderRadius: "8px 8px 0 0",
-                              minHeight: "40px",
-                              height: `${Math.max(10, Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 180) || 0)}px`,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              color: "#fff",
-                              fontWeight: "600",
-                              fontSize: "0.875rem",
-                              boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)",
-                            }}
-                          >
-                            ${reportStats.collected.toLocaleString()}
-                          </div>
-                          <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#10b981" }}>Collected</span>
+                {/* Charts Section - Clean Design */}
+                <div style={{ marginBottom: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "24px" }}>
+                  {/* Collected vs Outstanding Chart */}
+                  <div className="card dashboard-card">
+                    <div style={{ marginBottom: "24px" }}>
+                      <h4 style={{ margin: "0 0 4px 0", fontSize: "1.125rem", fontWeight: "600", color: "#1a1a1a" }}>
+                        Collected vs Outstanding
+                      </h4>
+                      <p style={{ margin: 0, fontSize: "0.875rem", color: "#666" }}>
+                        Financial overview for selected period
+                      </p>
+                    </div>
+                    <div style={{ position: "relative", height: "280px", display: "flex", alignItems: "flex-end", gap: "32px", justifyContent: "center", padding: "0 24px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", flex: 1, maxWidth: "200px" }}>
+                        <div
+                          style={{
+                            width: "100%",
+                            background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                            borderRadius: "8px 8px 0 0",
+                            minHeight: "60px",
+                            height: `${Math.max(60, Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 200) || 0)}px`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#fff",
+                            fontWeight: "700",
+                            fontSize: "1.125rem",
+                            transition: "all 0.2s ease",
+                            cursor: "pointer",
+                            boxShadow: "0 2px 8px rgba(16, 185, 129, 0.2)"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.transform = "translateY(-4px)";
+                            e.target.style.boxShadow = "0 4px 12px rgba(16, 185, 129, 0.3)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.transform = "translateY(0)";
+                            e.target.style.boxShadow = "0 2px 8px rgba(16, 185, 129, 0.2)";
+                          }}
+                        >
+                          ${formatNumber(reportStats.collected)}
                         </div>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", flex: 1 }}>
-                          <div
-                            style={{
-                              width: "100%",
-                              background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
-                              borderRadius: "8px 8px 0 0",
-                              minHeight: "40px",
-                              height: `${Math.max(10, Math.round((dashboardMetrics.outstanding / (reportStats.collected + dashboardMetrics.outstanding)) * 180) || 0)}px`,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              color: "#fff",
-                              fontWeight: "600",
-                              fontSize: "0.875rem",
-                              boxShadow: "0 2px 8px rgba(239, 68, 68, 0.3)",
-                            }}
-                          >
-                            ${dashboardMetrics.outstanding.toLocaleString()}
-                          </div>
-                          <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#ef4444" }}>Outstanding</span>
+                        <div style={{ textAlign: "center", width: "100%" }}>
+                          <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#1a1a1a", display: "block", marginBottom: "4px" }}>Collected</span>
+                          <span style={{ fontSize: "0.75rem", color: "#666" }}>
+                            {Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", flex: 1, maxWidth: "200px" }}>
+                        <div
+                          style={{
+                            width: "100%",
+                            background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+                            borderRadius: "8px 8px 0 0",
+                            minHeight: "60px",
+                            height: `${Math.max(60, Math.round((dashboardMetrics.outstanding / (reportStats.collected + dashboardMetrics.outstanding)) * 200) || 0)}px`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#fff",
+                            fontWeight: "700",
+                            fontSize: "1.125rem",
+                            transition: "all 0.2s ease",
+                            cursor: "pointer",
+                            boxShadow: "0 2px 8px rgba(239, 68, 68, 0.2)"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.transform = "translateY(-4px)";
+                            e.target.style.boxShadow = "0 4px 12px rgba(239, 68, 68, 0.3)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.transform = "translateY(0)";
+                            e.target.style.boxShadow = "0 2px 8px rgba(239, 68, 68, 0.2)";
+                          }}
+                        >
+                          ${dashboardMetrics.outstanding.toLocaleString()}
+                        </div>
+                        <div style={{ textAlign: "center", width: "100%" }}>
+                          <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#1a1a1a", display: "block", marginBottom: "4px" }}>Outstanding</span>
+                          <span style={{ fontSize: "0.75rem", color: "#666" }}>
+                            {Math.round((dashboardMetrics.outstanding / (reportStats.collected + dashboardMetrics.outstanding)) * 100)}%
+                          </span>
                         </div>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Payments Over Time Chart */}
-                    <div className="card" style={{ padding: "24px" }}>
-                      <h4 style={{ marginBottom: "20px", fontSize: "1.125rem", fontWeight: "600" }}>Payments Over Time</h4>
-                      <div style={{ position: "relative", height: "200px" }}>
+                  {/* Payments Over Time Chart */}
+                  <div className="card dashboard-card">
+                    <div style={{ marginBottom: "24px" }}>
+                      <h4 style={{ margin: "0 0 4px 0", fontSize: "1.125rem", fontWeight: "600", color: "#1a1a1a" }}>
+                        Payments Over Time
+                      </h4>
+                      <p style={{ margin: 0, fontSize: "0.875rem", color: "#666" }}>
+                        Payment trends for selected period
+                      </p>
+                    </div>
+                      <div style={{ position: "relative", height: "240px", padding: "0 16px" }}>
                         {(() => {
                           // Group payments by week (or day if less than 7 days)
                           const paymentsByPeriod = {};
@@ -9791,49 +11225,49 @@ Subscription Manager HK`;
                           const maxAmount = Math.max(...periods.map(p => paymentsByPeriod[p]), 1);
 
                           return (
-                            <div style={{ display: "flex", alignItems: "flex-end", gap: "4px", height: "100%", justifyContent: "space-between", padding: "0 8px" }}>
+                            <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", height: "100%", justifyContent: "space-between" }}>
                               {periods.length > 0 ? periods.map((period, index) => {
                                 const amount = paymentsByPeriod[period];
-                                const height = Math.max(20, (amount / maxAmount) * 160);
+                                const height = Math.max(30, (amount / maxAmount) * 180);
                                 return (
-                                  <div key={`${period}-${index}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", flex: 1, minWidth: "40px" }}>
+                                  <div key={`${period}-${index}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", flex: 1, minWidth: "50px" }}>
                                     <div
                                       style={{
                                         width: "100%",
                                         background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
-                                        borderRadius: "4px 4px 0 0",
+                                        borderRadius: "6px 6px 0 0",
                                         height: `${height}px`,
-                                        minHeight: "20px",
+                                        minHeight: "30px",
                                         display: "flex",
                                         alignItems: "flex-end",
                                         justifyContent: "center",
-                                        paddingBottom: "4px",
+                                        paddingBottom: "6px",
                                         color: "#fff",
-                                        fontSize: "0.7rem",
+                                        fontSize: "0.75rem",
                                         fontWeight: "600",
-                                        boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)",
+                                        boxShadow: "0 2px 8px rgba(90, 49, 234, 0.15)",
                                         cursor: "pointer",
                                         transition: "all 0.2s ease",
                                       }}
                                       title={`${period}: $${amount.toFixed(2)}`}
                                       onMouseEnter={(e) => {
-                                        e.currentTarget.style.transform = "scaleY(1.05)";
-                                        e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.4)";
+                                        e.currentTarget.style.transform = "translateY(-4px)";
+                                        e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.25)";
                                       }}
                                       onMouseLeave={(e) => {
-                                        e.currentTarget.style.transform = "scaleY(1)";
-                                        e.currentTarget.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
+                                        e.currentTarget.style.transform = "translateY(0)";
+                                        e.currentTarget.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.15)";
                                       }}
                                     >
-                                      {height > 35 && `$${Math.round(amount)}`}
+                                      {height > 40 && `$${Math.round(amount)}`}
                                     </div>
-                                    <span style={{ fontSize: "0.65rem", color: "#666", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
-                                      {period.length > 8 ? period.substring(0, 6) + '...' : period}
+                                    <span style={{ fontSize: "0.75rem", color: "#666", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", fontWeight: "500" }}>
+                                      {period.length > 10 ? period.substring(0, 8) + '...' : period}
                                     </span>
                                   </div>
                                 );
                               }) : (
-                                <div style={{ width: "100%", textAlign: "center", color: "#999", padding: "40px 0" }}>
+                                <div style={{ width: "100%", textAlign: "center", color: "#999", padding: "60px 0", fontSize: "0.875rem" }}>
                                   No payment data in selected period
                                 </div>
                               )}
@@ -9844,53 +11278,221 @@ Subscription Manager HK`;
                     </div>
                   </div>
 
-                  {/* Payment Method Breakdown */}
-                  <div className="card" style={{ marginTop: "24px", padding: "24px" }}>
-                    <h4 style={{ marginBottom: "16px", fontSize: "1.125rem", fontWeight: "600" }}>Payment Method Breakdown</h4>
-                    <ul className="donut-legend" style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                      {reportStats.methodMix.map((item) => (
-                        <li key={item.label} style={{ marginBottom: "12px", display: "flex", alignItems: "center", gap: "12px" }}>
-                          <span
-                            className={`legend-dot ${item.label
-                              .toLowerCase()
-                              .replace(/[^a-z]/g, "")}`}
-                            style={{ flexShrink: 0 }}
-                          ></span>
-                          <span style={{ flex: 1, fontSize: "0.875rem" }}>{item.label}</span>
-                          <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#1a1a1a" }}>{item.value}</span>
-                        </li>
-                      ))}
-                    </ul>
+                {/* Payment Method Breakdown - Enhanced */}
+                <div className="card" style={{ 
+                  marginBottom: "24px", 
+                  padding: "24px",
+                  background: "linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)",
+                  border: "1px solid #e5e7eb"
+                }}>
+                  <h4 style={{ marginBottom: "20px", fontSize: "1.25rem", fontWeight: "700", color: "#1a1a1a" }}>
+                    <i className="fas fa-credit-card" style={{ marginRight: "10px", color: "#5a31ea" }}></i>
+                    Payment Method Breakdown
+                  </h4>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
+                    {reportStats.methodMix.map((item) => {
+                      const colors = {
+                        'FPS': '#10b981',
+                        'PayMe': '#25D366',
+                        'Bank Transfer': '#3b82f6',
+                        'Cash': '#f59e0b',
+                        'Other': '#6b7280'
+                      };
+                      const color = colors[item.label] || '#6b7280';
+                      return (
+                        <div
+                          key={item.label}
+                          style={{
+                            padding: "16px",
+                            borderRadius: "12px",
+                            background: "#ffffff",
+                            border: `2px solid ${color}`,
+                            boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+                            transition: "all 0.2s ease"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "translateY(-2px)";
+                            e.currentTarget.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.12)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.08)";
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
+                            <div
+                              style={{
+                                width: "12px",
+                                height: "12px",
+                                borderRadius: "50%",
+                                background: color,
+                                flexShrink: 0
+                              }}
+                            ></div>
+                            <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#1a1a1a", flex: 1 }}>
+                              {item.label}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: "1.25rem", fontWeight: "700", color: color, marginLeft: "24px" }}>
+                            {item.value}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
+                </div>
 
-                   {/* Filters */}
-                  <div style={{ display: "flex", gap: "12px", marginTop: "20px", flexWrap: "wrap", alignItems: "center" }}>
-                    <select
-                      value={reportFilter}
-                      onChange={(e) => setReportFilter(e.target.value)}
-                      style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #e0e0e0", fontSize: "0.875rem", background: "#fff", cursor: "pointer" }}
-                    >
-                      <option value="all">All (Payments + Donations)</option>
-                      <option value="payments">Payments Only</option>
-                      <option value="donations">Donations Only</option>
-                    </select>
+                {/* Filters and Transactions Section */}
+                <div className="card" style={{ 
+                  padding: "24px",
+                  background: "linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)",
+                  border: "1px solid #e5e7eb"
+                }}>
+                  {/* Filters */}
+                  <div style={{ marginBottom: "24px", display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                      <label style={{ fontWeight: "600", color: "#1a1a1a", fontSize: "0.9375rem" }}>
+                        <i className="fas fa-filter" style={{ marginRight: "6px", color: "#5a31ea" }}></i>
+                        Filter by Type:
+                      </label>
+                      <div style={{ 
+                        display: "flex", 
+                        gap: "4px", 
+                        background: "#f3f4f6", 
+                        padding: "4px", 
+                        borderRadius: "8px",
+                        flexWrap: "wrap"
+                      }}>
+                        {[
+                          { value: "all", label: "All" },
+                          { value: "payments", label: "Payments" },
+                          { value: "donations", label: "Donations" }
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setReportFilter(option.value)}
+                            style={{
+                              padding: "8px 16px",
+                              borderRadius: "6px",
+                              border: "none",
+                              fontSize: "0.875rem",
+                              fontWeight: "500",
+                              cursor: "pointer",
+                              transition: "all 0.2s ease",
+                              background: reportFilter === option.value
+                                ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                : "transparent",
+                              color: reportFilter === option.value ? "#ffffff" : "#6b7280",
+                              boxShadow: reportFilter === option.value
+                                ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                : "none",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (reportFilter !== option.value) {
+                                e.target.style.background = "#e5e7eb";
+                                e.target.style.color = "#374151";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (reportFilter !== option.value) {
+                                e.target.style.background = "transparent";
+                                e.target.style.color = "#6b7280";
+                              }
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     {reportFilter === "donations" && (
-                      <select
-                        value={donorTypeFilter}
-                        onChange={(e) => setDonorTypeFilter(e.target.value)}
-                        style={{ padding: "10px 16px", borderRadius: "8px", border: "1px solid #e0e0e0", fontSize: "0.875rem", background: "#fff", cursor: "pointer" }}
-                      >
-                        <option value="all">All Donors</option>
-                        <option value="member">Members Only</option>
-                        <option value="non-member">Non-Members Only</option>
-                      </select>
+                      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                        <label style={{ fontWeight: "600", color: "#1a1a1a", fontSize: "0.9375rem" }}>
+                          Filter by Donor Type:
+                        </label>
+                        <div style={{ 
+                          display: "flex", 
+                          gap: "4px", 
+                          background: "#f3f4f6", 
+                          padding: "4px", 
+                          borderRadius: "8px",
+                          flexWrap: "wrap"
+                        }}>
+                          {[
+                            { value: "all", label: "All" },
+                            { value: "member", label: "Members" },
+                            { value: "non-member", label: "Non-Members" }
+                          ].map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => setDonorTypeFilter(option.value)}
+                              style={{
+                                padding: "8px 16px",
+                                borderRadius: "6px",
+                                border: "none",
+                                fontSize: "0.875rem",
+                                fontWeight: "500",
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                                background: donorTypeFilter === option.value
+                                  ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                  : "transparent",
+                                color: donorTypeFilter === option.value ? "#ffffff" : "#6b7280",
+                                boxShadow: donorTypeFilter === option.value
+                                  ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                  : "none",
+                              }}
+                              onMouseEnter={(e) => {
+                                if (donorTypeFilter !== option.value) {
+                                  e.target.style.background = "#e5e7eb";
+                                  e.target.style.color = "#374151";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (donorTypeFilter !== option.value) {
+                                  e.target.style.background = "transparent";
+                                  e.target.style.color = "#6b7280";
+                                }
+                              }}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
 
                   {/* Transactions Table */}
-                  <div style={{ marginTop: "24px" }}>
-                    <h4 style={{ marginBottom: "16px", fontSize: "1.125rem", fontWeight: "600" }}>Transactions</h4>
-                    <div className="card" style={{ overflow: "hidden" }}>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
+                      <h4 style={{ margin: 0, fontSize: "1.25rem", fontWeight: "700", color: "#1a1a1a" }}>
+                        <i className="fas fa-list" style={{ marginRight: "10px", color: "#5a31ea" }}></i>
+                        Transactions
+                      </h4>
+                      <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                        <input
+                          type="text"
+                          placeholder="Search transactions..."
+                          value={transactionsSearch}
+                          onChange={(e) => {
+                            setTransactionsSearch(e.target.value);
+                            setTransactionsPage(1);
+                          }}
+                          style={{
+                            padding: "10px 16px",
+                            borderRadius: "8px",
+                            border: "1px solid #e5e7eb",
+                            fontSize: "0.9375rem",
+                            minWidth: "250px",
+                            background: "#ffffff"
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ overflow: "hidden", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
                       <div className="table-wrapper" style={{ overflowX: "auto", width: "100%", maxWidth: "100%" }}>
                         <Table
                           columns={[
@@ -9949,7 +11551,7 @@ Subscription Manager HK`;
                             });
 
                             // Apply filters
-                            const filteredTransactions = allTransactions.filter(t => {
+                            let filteredTransactions = allTransactions.filter(t => {
                               if (reportFilter === "payments" && t.type !== "Payment") return false;
                               if (reportFilter === "donations" && t.type !== "Donation") return false;
                               if (t.type === "Donation") {
@@ -9959,7 +11561,29 @@ Subscription Manager HK`;
                               return true;
                             });
 
-                            const rows = filteredTransactions.map((transaction) => {
+                            // Apply search filter
+                            if (transactionsSearch.trim()) {
+                              const searchLower = transactionsSearch.toLowerCase();
+                              filteredTransactions = filteredTransactions.filter(t => {
+                                return (
+                                  (t.source && t.source.toLowerCase().includes(searchLower)) ||
+                                  (t.invoiceId && t.invoiceId.toString().toLowerCase().includes(searchLower)) ||
+                                  (t.amount && t.amount.toString().toLowerCase().includes(searchLower)) ||
+                                  (t.method && t.method.toLowerCase().includes(searchLower)) ||
+                                  (t.status && t.status.toLowerCase().includes(searchLower)) ||
+                                  (t.date && t.date.toLowerCase().includes(searchLower))
+                                );
+                              });
+                            }
+
+                            // Apply pagination
+                            const totalTransactions = filteredTransactions.length;
+                            const totalPages = Math.ceil(totalTransactions / transactionsPageSize);
+                            const startIndex = (transactionsPage - 1) * transactionsPageSize;
+                            const endIndex = startIndex + transactionsPageSize;
+                            const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
+
+                            const rows = paginatedTransactions.map((transaction) => {
                               const transactionId = transaction._id || transaction.id;
                               
                               return {
@@ -10048,36 +11672,92 @@ Subscription Manager HK`;
                           })()}
                         />
                       </div>
-                    </div>
-                  </div>
+                      {(() => {
+                        const allTransactions = [
+                          ...(reportStats.paymentsInRange || []).map(p => ({
+                            ...p,
+                            type: 'Payment',
+                            source: p.member || 'Unknown',
+                            amount: p.amount,
+                            method: p.method,
+                            screenshot: p.screenshot,
+                            status: p.status || 'Completed',
+                            invoiceId: p.invoiceId,
+                            period: p.period,
+                            date: p.date || (p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            }) : "N/A"),
+                            createdAt: p.createdAt || new Date(p.date || 0),
+                          })),
+                          ...(reportStats.donationsInRange || []).map(d => ({
+                            ...d,
+                            type: 'Donation',
+                            source: d.donorName,
+                            amount: d.amount,
+                            method: d.method || 'N/A',
+                            screenshot: d.screenshot || null,
+                            status: 'Completed',
+                            invoiceId: null,
+                            period: null,
+                            date: d.date || (d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            }) : "N/A"),
+                            createdAt: d.createdAt || new Date(d.date || 0),
+                            isMember: d.isMember,
+                          }))
+                        ].sort((a, b) => {
+                          const dateA = a.createdAt ? new Date(a.createdAt) : new Date(a.date || 0);
+                          const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.date || 0);
+                          return dateB - dateA;
+                        });
 
-                  <div style={{ display: "flex", gap: "12px", marginTop: "24px", flexWrap: "wrap" }}>
-                    <button
-                      className="secondary-btn"
-                      onClick={handleSecureExportCSV}
-                      disabled={!isFinanceRole}
-                      title={isFinanceRole ? "Export CSV" : "Export allowed only for finance roles"}
-                    >
-                      📥 Export CSV
-                    </button>
-                    <button
-                      className="ghost-btn"
-                      onClick={handleSecureExportPDF}
-                      disabled={!isFinanceRole}
-                      title={isFinanceRole ? "Export PDF" : "Export allowed only for finance roles"}
-                    >
-                      📄 Export PDF
-                    </button>
-                    <button
-                      className="ghost-btn"
-                      onClick={() => {
-                        // Force re-render by updating date range slightly
-                        setDateRange({ ...dateRange });
-                        showToast("Report refreshed with latest data");
-                      }}
-                    >
-                      🔄 Refresh Data
-                    </button>
+                        let filteredTransactions = allTransactions.filter(t => {
+                          if (reportFilter === "payments" && t.type !== "Payment") return false;
+                          if (reportFilter === "donations" && t.type !== "Donation") return false;
+                          if (t.type === "Donation") {
+                            if (donorTypeFilter === "member" && !t.isMember) return false;
+                            if (donorTypeFilter === "non-member" && t.isMember) return false;
+                          }
+                          return true;
+                        });
+
+                        if (transactionsSearch.trim()) {
+                          const searchLower = transactionsSearch.toLowerCase();
+                          filteredTransactions = filteredTransactions.filter(t => {
+                            return (
+                              (t.source && t.source.toLowerCase().includes(searchLower)) ||
+                              (t.invoiceId && t.invoiceId.toString().toLowerCase().includes(searchLower)) ||
+                              (t.amount && t.amount.toString().toLowerCase().includes(searchLower)) ||
+                              (t.method && t.method.toLowerCase().includes(searchLower)) ||
+                              (t.status && t.status.toLowerCase().includes(searchLower)) ||
+                              (t.date && t.date.toLowerCase().includes(searchLower))
+                            );
+                          });
+                        }
+
+                        const totalTransactions = filteredTransactions.length;
+                        const totalPages = Math.ceil(totalTransactions / transactionsPageSize);
+                        const currentPage = Math.min(transactionsPage, totalPages || 1);
+
+                        return (
+                          <Pagination
+                            currentPage={currentPage}
+                            totalPages={totalPages || 1}
+                            onPageChange={setTransactionsPage}
+                            pageSize={transactionsPageSize}
+                            onPageSizeChange={(size) => {
+                              setTransactionsPageSize(size);
+                              setTransactionsPage(1);
+                            }}
+                            totalItems={totalTransactions}
+                          />
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
               </article>
@@ -10103,15 +11783,24 @@ Subscription Manager HK`;
                     </div>
 
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-                      <div className="card" style={{ padding: "20px", background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)" }}>
-                        <h4 style={{ marginBottom: "8px", fontSize: "1rem" }}>📥 CSV Export</h4>
-                        <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
-                          Export all transactions as a CSV file for Excel or spreadsheet applications.
-                        </p>
+                      <div className="card" style={{ 
+                        padding: "20px", 
+                        background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                        minHeight: "180px"
+                      }}>
+                        <div>
+                          <h4 style={{ marginBottom: "8px", fontSize: "1rem" }}>📥 CSV Export</h4>
+                          <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
+                            Export all transactions as a CSV file for Excel or spreadsheet applications.
+                          </p>
+                        </div>
                         <button
                           className="secondary-btn"
                           onClick={handleSecureExportCSV}
-                          style={{ width: "100%" }}
+                          style={{ width: "100%", marginTop: "auto" }}
                           disabled={!isFinanceRole}
                           title={isFinanceRole ? "Export CSV" : "Export allowed only for finance roles"}
                         >
@@ -10120,15 +11809,24 @@ Subscription Manager HK`;
                         </button>
                       </div>
 
-                      <div className="card" style={{ padding: "20px", background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)" }}>
-                        <h4 style={{ marginBottom: "8px", fontSize: "1rem" }}>📄 PDF Export</h4>
-                        <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
-                          Generate a formatted PDF report with charts and summaries.
-                        </p>
+                      <div className="card" style={{ 
+                        padding: "20px", 
+                        background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                        minHeight: "180px"
+                      }}>
+                        <div>
+                          <h4 style={{ marginBottom: "8px", fontSize: "1rem" }}>📄 PDF Export</h4>
+                          <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
+                            Generate a formatted PDF report with charts and summaries.
+                          </p>
+                        </div>
                         <button
                           className="secondary-btn"
                           onClick={handleSecureExportPDF}
-                          style={{ width: "100%" }}
+                          style={{ width: "100%", marginTop: "auto" }}
                           disabled={!isFinanceRole}
                           title={isFinanceRole ? "Export PDF" : "Export allowed only for finance roles"}
                         >
@@ -10300,6 +11998,7 @@ Subscription Manager HK`;
                       <p className="settings-card__subtitle">Update your organization's contact information</p>
                     </div>
                     <form
+                      noValidate
                       onSubmit={(e) => {
                         e.preventDefault();
                         updateOrganizationInfo(orgForm);
@@ -10354,6 +12053,37 @@ Subscription Manager HK`;
                             rows={3}
                           />
                         </label>
+                      </div>
+                      <div className="settings-form__group">
+                        <label className="settings-form__label">
+                          <i className="fas fa-globe" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Number Format Locale <span style={{ color: "#ef4444" }}>*</span>
+                        </label>
+                        <select
+                            className="settings-form__input"
+                            value={userLocale}
+                            onChange={(e) => {
+                              updateUserLocale(e.target.value);
+                              showToast("Number format locale updated! Numbers will refresh automatically.", "success");
+                            }}
+                            style={{
+                              padding: "12px",
+                              border: "1px solid #e5e7eb",
+                              borderRadius: "4px",
+                              fontSize: "0.875rem",
+                              color: "#1a1a1a",
+                              backgroundColor: "#ffffff",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {getAvailableLocales().map((locale) => (
+                              <option key={locale.value} value={locale.value}>
+                                {locale.label}
+                              </option>
+                            ))}
+                          </select>
+                        <p style={{ margin: "8px 0 0 0", fontSize: "0.75rem", color: "#666" }}>
+                          Choose your preferred number format. Example: {formatNumber(1234567.89, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
                       </div>
                       <div className="settings-form__actions">
                         <button type="submit" className="primary-btn">
@@ -10449,7 +12179,7 @@ Subscription Manager HK`;
                                 )}
                                 {(user.role || 'Viewer') !== "Admin" && (
                                   <button
-                                    className="ghost-btn settings-table__action-btn settings-table__action-btn--danger"
+                                    className="ghost-btn icon-btn icon-btn--delete"
                                     onClick={async () => {
                                       showConfirmation(
                                         `Remove ${user.name} from admin users?`,
@@ -10464,8 +12194,10 @@ Subscription Manager HK`;
                                         }
                                       );
                                     }}
+                                    title="Remove Admin"
+                                    aria-label="Remove Admin"
                                   >
-                                    Remove
+                                    <i className="fas fa-trash" aria-hidden="true"></i>
                                   </button>
                                 )}
                               </div>
@@ -10531,7 +12263,28 @@ Subscription Manager HK`;
                           type="button"
                           className="ghost-btn"
                           onClick={() => setShowAdminForm(false)}
-                          style={{ fontSize: "1.2rem", lineHeight: 1 }}
+                          style={{ 
+                            fontSize: "1.5rem", 
+                            lineHeight: 1,
+                            color: "#ef4444",
+                            fontWeight: "bold",
+                            width: "32px",
+                            height: "32px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            borderRadius: "4px",
+                            border: "1px solid #ef4444",
+                            background: "transparent",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.background = "#fee2e2";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.background = "transparent";
+                          }}
                           aria-label="Close add admin form"
                         >
                           ×
@@ -10539,6 +12292,7 @@ Subscription Manager HK`;
                       </div>
 
                       <form
+                        noValidate
                         onSubmit={async (e) => {
                           e.preventDefault();
                           if (!adminForm.name) {
@@ -10713,8 +12467,8 @@ Subscription Manager HK`;
                   borderRadius: "4px",
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.background = "#f0f0f0";
-                  e.target.style.color = "#333";
+                  e.target.style.background = "#f3f4f6";
+                  e.target.style.color = "#1a1a1a";
                 }}
                 onMouseLeave={(e) => {
                   e.target.style.background = "transparent";
@@ -10875,11 +12629,6 @@ Subscription Manager HK`;
                       }
                     }}
                   />
-                  {paymentModalErrors.reference && (
-                    <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
-                      Reference number is required
-                    </small>
-                  )}
                 </div>
               )}
 
@@ -10961,7 +12710,7 @@ Subscription Manager HK`;
                         style={{ 
                           maxWidth: "100%", 
                           maxHeight: "200px", 
-                          borderRadius: "8px",
+                          borderRadius: "4px",
                           marginBottom: "8px"
                         }} 
                       />
@@ -11014,11 +12763,6 @@ Subscription Manager HK`;
                     </>
                   )}
                 </div>
-                {paymentModalErrors.image && (
-                  <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "8px", display: "block" }}>
-                    Image has not been uploaded. Please upload an image attachment.
-                  </small>
-                )}
               </div>
               )}
 
@@ -11051,21 +12795,23 @@ Subscription Manager HK`;
                     disabled={uploadingPaymentModal}
                     onClick={async () => {
                     // Validate required fields before showing confirmation
-                    const hasImage = paymentModalData.imageFile || paymentModalData.imageUrl || paymentModalInvoice?.screenshot;
+                    // Check reference number first (only for Online payments)
                     const hasReference = paymentModalData.paymentMethod === "Online" 
                       ? paymentModalData.reference.trim() 
                       : true;
 
-                    // Show specific error messages and set error states
-                    if (!hasImage) {
-                      setPaymentModalErrors({ ...paymentModalErrors, image: true });
-                      showToast("Image has not been uploaded. Please upload an image attachment.", "error");
+                    // First check reference number for Online payments
+                    if (paymentModalData.paymentMethod === "Online" && !hasReference) {
+                      setPaymentModalErrors({ ...paymentModalErrors, reference: true });
+                      showToast("Reference number not entered. Please enter a reference number for online payments.", "warning");
                       return;
                     }
 
-                    if (paymentModalData.paymentMethod === "Online" && !hasReference) {
-                      setPaymentModalErrors({ ...paymentModalErrors, reference: true });
-                      showToast("Reference number not entered. Please enter a reference number for online payments.", "error");
+                    // Only check image attachment if reference number is present (for Online payments)
+                    const hasImage = paymentModalData.imageFile || paymentModalData.imageUrl || paymentModalInvoice?.screenshot;
+                    if (!hasImage) {
+                      setPaymentModalErrors({ ...paymentModalErrors, image: true });
+                      showToast("Image has not been uploaded. Please upload an image attachment.", "warning");
                       return;
                     }
 
@@ -11234,8 +12980,8 @@ Subscription Manager HK`;
                   borderRadius: "4px",
                 }}
                 onMouseEnter={(e) => {
-                  e.target.style.background = "#f0f0f0";
-                  e.target.style.color = "#333";
+                  e.target.style.background = "#f3f4f6";
+                  e.target.style.color = "#1a1a1a";
                 }}
                 onMouseLeave={(e) => {
                   e.target.style.background = "transparent";
@@ -11414,7 +13160,7 @@ Subscription Manager HK`;
                           newWindow.document.write(`
                             <html>
                               <head><title>Payment Screenshot</title></head>
-                              <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                              <body style="margin:0;padding:20px;background:#f9fafb;display:flex;justify-content:center;align-items:center;min-height:100vh;">
                                 <img src="${selectedPaymentDetails.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
                               </body>
                             </html>
@@ -11431,7 +13177,7 @@ Subscription Manager HK`;
                         newWindow.document.write(`
                           <html>
                             <head><title>Payment Screenshot</title></head>
-                            <body style="margin:0;padding:20px;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                            <body style="margin:0;padding:20px;background:#f9fafb;display:flex;justify-content:center;align-items:center;min-height:100vh;">
                               <img src="${selectedPaymentDetails.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
                             </body>
                           </html>

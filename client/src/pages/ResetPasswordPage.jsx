@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
+import { AlertModal } from "../components/AlertModal.jsx";
+import { Notie } from "../components/Notie.jsx";
 
 export function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -13,6 +15,8 @@ export function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [passwordReset, setPasswordReset] = useState(false);
   const [errors, setErrors] = useState({ password: "", confirmPassword: "" });
+  const [notieMessage, setNotieMessage] = useState(null);
+  const [notieType, setNotieType] = useState("error");
   const navigate = useNavigate();
 
   const token = searchParams.get("token");
@@ -52,6 +56,11 @@ export function ResetPasswordPage() {
     });
 
     if (passwordError || confirmPasswordError) {
+      // Show first error in Notie
+      const errorToShow = passwordError || confirmPasswordError;
+      setNotieMessage(errorToShow);
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
       return;
     }
 
@@ -137,7 +146,7 @@ export function ResetPasswordPage() {
             </div>
 
             {!passwordReset ? (
-              <form onSubmit={handleSubmit}>
+              <form onSubmit={handleSubmit} noValidate>
                 <label className="mono-label">
                   <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>New Password <span style={{ color: "#ef4444" }}>*</span></span>
                   <div style={{ position: "relative" }}>
@@ -151,8 +160,15 @@ export function ResetPasswordPage() {
                         }
                       }}
                       onBlur={() => {
-                        setErrors({ ...errors, password: validatePassword(password) });
+                        const error = validatePassword(password);
+                        setErrors({ ...errors, password: error });
+                        if (error) {
+                          setNotieMessage(error);
+                          setNotieType("error");
+                          setTimeout(() => setNotieMessage(null), 3000);
+                        }
                       }}
+                      onInvalid={(e) => e.preventDefault()}
                       placeholder="Enter new password"
                       className={`mono-input ${errors.password ? "input-error" : ""}`}
                       style={{ paddingRight: "45px" }}
@@ -192,19 +208,6 @@ export function ResetPasswordPage() {
                       )}
                     </button>
                   </div>
-                  {errors.password && (
-                    <div className="field-error" style={{ 
-                      marginTop: "4px", 
-                      fontSize: "0.875rem", 
-                      color: "#ef4444",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px"
-                    }}>
-                      <i className="fas fa-exclamation-circle" style={{ fontSize: "0.75rem" }}></i>
-                      {errors.password}
-                    </div>
-                  )}
                 </label>
 
                 <label className="mono-label">
@@ -224,7 +227,13 @@ export function ResetPasswordPage() {
                           ? "Passwords do not match" 
                           : validatePassword(confirmPassword);
                         setErrors({ ...errors, confirmPassword: error });
+                        if (error) {
+                          setNotieMessage(error);
+                          setNotieType("error");
+                          setTimeout(() => setNotieMessage(null), 3000);
+                        }
                       }}
+                      onInvalid={(e) => e.preventDefault()}
                       placeholder="Confirm new password"
                       className={`mono-input ${errors.confirmPassword ? "input-error" : ""}`}
                       style={{ paddingRight: "45px" }}
@@ -264,19 +273,6 @@ export function ResetPasswordPage() {
                       )}
                     </button>
                   </div>
-                  {errors.confirmPassword && (
-                    <div className="field-error" style={{ 
-                      marginTop: "4px", 
-                      fontSize: "0.875rem", 
-                      color: "#ef4444",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px"
-                    }}>
-                      <i className="fas fa-exclamation-circle" style={{ fontSize: "0.75rem" }}></i>
-                      {errors.confirmPassword}
-                    </div>
-                  )}
                 </label>
 
                 <div className="login-buttons">
@@ -365,12 +361,18 @@ export function ResetPasswordPage() {
               </div>
             )}
 
-            {message && (
-              <div className={`alert ${message.type === "success" ? "alert-success" : "alert-error"}`} style={{ marginTop: "20px" }}>
-                <i className={`fas ${message.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`} style={{ marginRight: "8px" }}></i>
-                {message.text}
-              </div>
-            )}
+            <AlertModal
+              isOpen={!!message}
+              message={message?.text}
+              type={message?.type || "error"}
+              onClose={() => setMessage(null)}
+            />
+            <Notie
+              message={notieMessage}
+              type={notieType}
+              onClose={() => setNotieMessage(null)}
+              duration={3000}
+            />
           </div>
         </div>
       </main>

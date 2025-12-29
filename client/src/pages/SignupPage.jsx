@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
+import { AlertModal } from "../components/AlertModal.jsx";
+import { Notie } from "../components/Notie.jsx";
+import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
 
 export function SignupPage() {
@@ -14,12 +17,19 @@ export function SignupPage() {
     confirmPassword: "",
     subscriptionType: "Lifetime",
   });
-  const [error, setError] = useState(null);
-  const [emailError, setEmailError] = useState(null);
-  const [success, setSuccess] = useState(null);
+  // All errors now use Notie
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [notieMessage, setNotieMessage] = useState(null);
+  const [notieType, setNotieType] = useState("error");
+  const [fieldErrors, setFieldErrors] = useState({
+    name: false,
+    email: false,
+    phone: false,
+    password: false,
+    confirmPassword: false,
+  });
   const navigate = useNavigate();
 
   // Fetch members on component mount to check for existing emails
@@ -30,7 +40,6 @@ export function SignupPage() {
   // Check if email already exists
   const checkEmailExists = (email) => {
     if (!email) {
-      setEmailError(null);
       return false;
     }
 
@@ -40,23 +49,18 @@ export function SignupPage() {
     );
 
     if (emailExists) {
-      setEmailError("This email has already been registered. Please use a different email or try logging in.");
+      setNotieMessage("This email has already been registered. Please use a different email or try logging in.");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
       return true;
-    } else {
-      setEmailError(null);
-      return false;
     }
+    return false;
   };
 
   // Handle email input change
   const handleEmailChange = (e) => {
     const emailValue = e.target.value;
     setForm({ ...form, email: emailValue });
-    
-    // Clear email error when user starts typing
-    if (emailError) {
-      setEmailError(null);
-    }
   };
 
   // Handle email blur - check when user leaves the field
@@ -69,32 +73,99 @@ export function SignupPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    setEmailError(null);
+
+    // Reset errors
+    const newErrors = {
+      name: false,
+      email: false,
+      phone: false,
+      password: false,
+      confirmPassword: false,
+    };
 
     // Validation
-    if (!form.name || !form.email || !form.phone || !form.password || !form.subscriptionType) {
-      setError("Please fill in all required fields");
+    if (!form.name || !form.name.trim()) {
+      newErrors.name = true;
+      setNotieMessage("Name is required");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
+      setFieldErrors(newErrors);
+      return;
+    }
+
+    if (!form.email || !form.email.trim()) {
+      newErrors.email = true;
+      setNotieMessage("Email is required");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
+      setFieldErrors(newErrors);
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      newErrors.email = true;
+      setNotieMessage("Please enter a valid email address");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
+      setFieldErrors(newErrors);
       return;
     }
 
     // Check if email already exists before submitting
     const emailExists = checkEmailExists(form.email);
     if (emailExists) {
-      setError("This email has already been registered. Please use a different email or try logging in.");
+      newErrors.email = true;
+      setNotieMessage("This email has already been registered. Please use a different email or try logging in.");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
+      setFieldErrors(newErrors);
       return;
     }
 
-    if (form.password !== form.confirmPassword) {
-      setError("Passwords do not match");
+    if (!form.phone || !form.phone.trim()) {
+      newErrors.phone = true;
+      setNotieMessage("Phone number is required");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
+      setFieldErrors(newErrors);
+      return;
+    }
+
+    if (!form.password) {
+      newErrors.password = true;
+      setNotieMessage("Password is required");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
+      setFieldErrors(newErrors);
       return;
     }
 
     if (form.password.length < 6) {
-      setError("Password must be at least 6 characters long");
+      newErrors.password = true;
+      setNotieMessage("Password must be at least 6 characters long");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
+      setFieldErrors(newErrors);
       return;
     }
+
+    if (form.password !== form.confirmPassword) {
+      newErrors.confirmPassword = true;
+      setNotieMessage("Passwords do not match");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
+      setFieldErrors(newErrors);
+      return;
+    }
+
+    // Clear errors if validation passes
+    setFieldErrors({
+      name: false,
+      email: false,
+      phone: false,
+      password: false,
+      confirmPassword: false,
+    });
 
     setLoading(true);
 
@@ -128,13 +199,14 @@ export function SignupPage() {
         if (errorMessage.toLowerCase().includes('email') || 
             errorMessage.toLowerCase().includes('already exists') ||
             errorMessage.toLowerCase().includes('duplicate')) {
-          setEmailError("This email has already been registered. Please use a different email or try logging in.");
           throw new Error("This email has already been registered. Please use a different email or try logging in.");
         }
         throw new Error(errorMessage);
       }
 
-      setSuccess("Account created successfully! Your account is pending approval. You will be able to login once an admin approves your account.");
+      setNotieMessage("Account created successfully! Your account is pending approval. You will be able to login once an admin approves your account.");
+      setNotieType("success");
+      setTimeout(() => setNotieMessage(null), 3000);
       
       // Redirect to login after 3 seconds
       setTimeout(() => {
@@ -148,7 +220,9 @@ export function SignupPage() {
       }, 3000);
     } catch (error) {
       console.error("Signup error:", error);
-      setError(error.message || "Failed to create account. Please try again.");
+      setNotieMessage(error.message || "Failed to create account. Please try again.");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
     } finally {
       setLoading(false);
     }
@@ -180,63 +254,79 @@ export function SignupPage() {
               </p>
             </div>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} noValidate>
               <label className="mono-label">
-                <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Full Name *</span>
+                <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Full Name <span style={{ color: "#ef4444" }}>*</span></span>
                 <input
                   type="text"
                   required
+                  onInvalid={(e) => e.preventDefault()}
                   value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  onChange={(e) => {
+                    setForm({ ...form, name: e.target.value });
+                    if (fieldErrors.name) {
+                      setFieldErrors(prev => ({ ...prev, name: false }));
+                    }
+                  }}
+                  style={{
+                    borderColor: fieldErrors.name ? "#ef4444" : undefined,
+                    borderWidth: fieldErrors.name ? "2px" : undefined,
+                  }}
                   placeholder="Enter your full name"
                   className="mono-input"
                 />
               </label>
 
               <label className="mono-label">
-                <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email *</span>
+                <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
                 <input
                   type="email"
                   required
+                  onInvalid={(e) => e.preventDefault()}
                   value={form.email}
-                  onChange={handleEmailChange}
+                  onChange={(e) => {
+                    handleEmailChange(e);
+                    if (fieldErrors.email) {
+                      setFieldErrors(prev => ({ ...prev, email: false }));
+                    }
+                  }}
                   onBlur={handleEmailBlur}
+                  style={{
+                    borderColor: fieldErrors.email ? "#ef4444" : undefined,
+                    borderWidth: fieldErrors.email ? "2px" : undefined,
+                  }}
                   placeholder="Enter your email address"
                   className="mono-input"
-                  style={{
-                    border: emailError ? "2px solid #ef4444" : "none",
-                    boxShadow: emailError ? "0 0 0 3px rgba(239, 68, 68, 0.1), 0 4px 12px rgba(239, 68, 68, 0.12)" : undefined
-                  }}
                 />
-                {emailError && (
-                  <div style={{
-                    fontSize: "0.875rem",
-                    color: "#ef4444",
-                    marginTop: "4px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px"
-                  }}>
-                    <i className="fas fa-exclamation-circle"></i>
-                    {emailError}
-                  </div>
-                )}
               </label>
 
-              <label className="mono-label">
-                <span><i className="fas fa-phone" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Phone Number *</span>
-                <input
-                  type="tel"
-                  required
+              <div className="mono-label">
+                <PhoneInput
+                  label={<span><i className="fas fa-phone" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Phone Number <span style={{ color: "#ef4444" }}>*</span></span>}
                   value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  onChange={(e) => {
+                    setForm({ ...form, phone: e.target.value });
+                    if (fieldErrors.phone) {
+                      setFieldErrors(prev => ({ ...prev, phone: false }));
+                    }
+                  }}
+                  onError={(error) => {
+                    setNotieMessage(error);
+                    setNotieType("error");
+                    setTimeout(() => setNotieMessage(null), 3000);
+                    setFieldErrors(prev => ({ ...prev, phone: true }));
+                  }}
+                  style={{
+                    border: fieldErrors.phone ? "2px solid #ef4444" : undefined,
+                  }}
                   placeholder="Enter your phone number"
+                  required
                   className="mono-input"
                 />
-              </label>
+              </div>
 
               <label className="mono-label">
-                <span><i className="fas fa-calendar-alt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Subscription Type *</span>
+                <span><i className="fas fa-id-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Subscription Type <span style={{ color: "#ef4444" }}>*</span></span>
                 <div style={{ 
                   display: "grid", 
                   gridTemplateColumns: "1fr 1fr", 
@@ -291,11 +381,12 @@ export function SignupPage() {
               </label>
 
               <label className="mono-label">
-                <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password *</span>
+                <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password <span style={{ color: "#ef4444" }}>*</span></span>
                 <div style={{ position: "relative" }}>
                   <input
                     type={showPassword ? "text" : "password"}
                     required
+                    onInvalid={(e) => e.preventDefault()}
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     placeholder="Create a password (min. 6 characters)"
@@ -338,17 +429,27 @@ export function SignupPage() {
               </label>
 
               <label className="mono-label">
-                <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Confirm Password *</span>
+                <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Confirm Password <span style={{ color: "#ef4444" }}>*</span></span>
                 <div style={{ position: "relative" }}>
                   <input
                     type={showConfirmPassword ? "text" : "password"}
                     required
+                    onInvalid={(e) => e.preventDefault()}
                     value={form.confirmPassword}
-                    onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                    onChange={(e) => {
+                      setForm({ ...form, confirmPassword: e.target.value });
+                      if (fieldErrors.confirmPassword) {
+                        setFieldErrors(prev => ({ ...prev, confirmPassword: false }));
+                      }
+                    }}
+                    style={{
+                      paddingRight: "45px",
+                      borderColor: fieldErrors.confirmPassword ? "#ef4444" : undefined,
+                      borderWidth: fieldErrors.confirmPassword ? "2px" : undefined,
+                    }}
                     placeholder="Confirm your password"
                     className="mono-input"
                     minLength={6}
-                    style={{ paddingRight: "45px" }}
                   />
                   <button
                     type="button"
@@ -384,19 +485,7 @@ export function SignupPage() {
                 </div>
               </label>
 
-              {error && (
-                <div className="alert alert-error" style={{ marginTop: "16px" }}>
-                  <i className="fas fa-exclamation-circle" style={{ marginRight: "8px" }}></i>
-                  {error}
-                </div>
-              )}
-
-              {success && (
-                <div className="alert alert-success" style={{ marginTop: "16px" }}>
-                  <i className="fas fa-check-circle" style={{ marginRight: "8px" }}></i>
-                  {success}
-                </div>
-              )}
+              {/* Alerts are now handled by AlertModal */}
 
               <button
                 type="submit"
@@ -407,6 +496,27 @@ export function SignupPage() {
                 {loading ? "Creating Account..." : "Create Account"}
               </button>
             </form>
+
+            <AlertModal
+              isOpen={!!error}
+              message={error}
+              type="error"
+              onClose={() => setError(null)}
+            />
+
+            <AlertModal
+              isOpen={!!success}
+              message={success}
+              type="success"
+              onClose={() => setSuccess(null)}
+            />
+
+            <Notie
+              message={notieMessage}
+              type={notieType}
+              onClose={() => setNotieMessage(null)}
+              duration={3000}
+            />
           </div>
         </div>
       </main>

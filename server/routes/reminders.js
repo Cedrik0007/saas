@@ -106,9 +106,20 @@ router.post("/send", async (req, res) => {
             reminderType: unpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming',
             amount: `$${totalDue}`,
             invoiceCount: unpaidInvoices.length,
+            status: "Delivered",
           });
           results.sent++;
         } else {
+          // Log failed reminder attempt
+          await ReminderLogModel.create({
+            memberId: member.id,
+            memberEmail: member.email,
+            sentAt: new Date(),
+            reminderType: unpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming',
+            amount: `$${totalDue}`,
+            invoiceCount: unpaidInvoices.length,
+            status: "Failed",
+          });
           results.failed++;
         }
       }

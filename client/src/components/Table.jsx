@@ -110,6 +110,75 @@ export function Table({ columns, rows }) {
     return columns.includes("Actions") && row["Actions"] !== null && row["Actions"] !== undefined;
   };
 
+  // Helper functions for sorting (must be defined before conditional return)
+  const getAlignmentForColumn = (col) => {
+    const numericColumns = [
+      "Amount",
+      "Balance",
+      "Outstanding",
+      "Total",
+      "Collected",
+      "Expected",
+      "Avg per Member",
+      "Transactions",
+      "Donation",
+      "Donations",
+      "Invoice #",
+    ];
+
+    if (col === "Status" || col === "Actions") return "center";
+    if (numericColumns.includes(col)) return "right";
+    return "left";
+  };
+
+  const getComparableValue = (value) => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      // Try numeric (strip currency symbols/commas)
+      const numeric = parseFloat(value.replace(/[^0-9.-]/g, "") || "NaN");
+      if (!isNaN(numeric)) return numeric;
+      return value.toLowerCase();
+    }
+    return value;
+  };
+
+  const handleSort = (column) => {
+    setSortConfig((prev) => {
+      if (prev.column === column) {
+        return { column, direction: prev.direction === "asc" ? "desc" : "asc" };
+      }
+      return { column, direction: "asc" };
+    });
+  };
+
+  // Sort rows - MUST be called before any conditional return
+  const sortedRows = useMemo(() => {
+    if (!sortConfig.column) return rows;
+    const col = sortConfig.column;
+    const dir = sortConfig.direction === "asc" ? 1 : -1;
+
+    return [...rows].sort((a, b) => {
+      const aValRaw = a[col];
+      const bValRaw = b[col];
+
+      // For custom renderers, don't attempt to sort (keep original order)
+      if (
+        (typeof aValRaw === "object" && aValRaw !== null && aValRaw.render) ||
+        (typeof bValRaw === "object" && bValRaw !== null && bValRaw.render)
+      ) {
+        return 0;
+      }
+
+      const aVal = getComparableValue(aValRaw);
+      const bVal = getComparableValue(bValRaw);
+
+      if (aVal < bVal) return -1 * dir;
+      if (aVal > bVal) return 1 * dir;
+      return 0;
+    });
+  }, [rows, sortConfig]);
+
   // Helper function to render modal content
   const renderModalContent = (row, rowIndex, columns, onCloseModal) => {
     const name = getName(row, columns);
@@ -200,12 +269,12 @@ export function Table({ columns, rows }) {
 
   // Mobile card layout with modal popup
   if (isMobile) {
-    const selectedRow = selectedCardIndex !== null ? rows[selectedCardIndex] : null;
+    const selectedRow = selectedCardIndex !== null ? sortedRows[selectedCardIndex] : null;
     
     return (
       <>
         <div className="mobile-table-cards">
-          {rows.map((row, rowIndex) => {
+          {sortedRows.map((row, rowIndex) => {
             const name = getName(row, columns) || "View Details";
             const statusInfo = getStatusInfo(row, columns);
             const keyMetric = getKeyMetric(row, columns);
@@ -292,73 +361,6 @@ export function Table({ columns, rows }) {
     );
   }
 
-  const getAlignmentForColumn = (col) => {
-    const numericColumns = [
-      "Amount",
-      "Balance",
-      "Outstanding",
-      "Total",
-      "Collected",
-      "Expected",
-      "Avg per Member",
-      "Transactions",
-      "Donation",
-      "Donations",
-      "Invoice #",
-    ];
-
-    if (col === "Status" || col === "Actions") return "center";
-    if (numericColumns.includes(col)) return "right";
-    return "left";
-  };
-
-  const getComparableValue = (value) => {
-    if (value === null || value === undefined) return "";
-    if (typeof value === "number") return value;
-    if (typeof value === "string") {
-      // Try numeric (strip currency symbols/commas)
-      const numeric = parseFloat(value.replace(/[^0-9.-]/g, "") || "NaN");
-      if (!isNaN(numeric)) return numeric;
-      return value.toLowerCase();
-    }
-    return value;
-  };
-
-  const handleSort = (column) => {
-    setSortConfig((prev) => {
-      if (prev.column === column) {
-        return { column, direction: prev.direction === "asc" ? "desc" : "asc" };
-      }
-      return { column, direction: "asc" };
-    });
-  };
-
-  const sortedRows = useMemo(() => {
-    if (!sortConfig.column) return rows;
-    const col = sortConfig.column;
-    const dir = sortConfig.direction === "asc" ? 1 : -1;
-
-    return [...rows].sort((a, b) => {
-      const aValRaw = a[col];
-      const bValRaw = b[col];
-
-      // For custom renderers, don't attempt to sort (keep original order)
-      if (
-        (typeof aValRaw === "object" && aValRaw !== null && aValRaw.render) ||
-        (typeof bValRaw === "object" && bValRaw !== null && bValRaw.render)
-      ) {
-        return 0;
-      }
-
-      const aVal = getComparableValue(aValRaw);
-      const bVal = getComparableValue(bValRaw);
-
-      if (aVal < bVal) return -1 * dir;
-      if (aVal > bVal) return 1 * dir;
-      return 0;
-    });
-  }, [rows, sortConfig]);
-
   // Desktop table layout
   return (
     <table className="data-table">
@@ -388,44 +390,86 @@ export function Table({ columns, rows }) {
         </tr>
       </thead>
       <tbody>
-        {sortedRows.map((row, rowIndex) => (
-          <tr 
-            key={`${row.id ?? rowIndex}-${rowIndex}`}
-            style={row._rowStyle || {}}
-          >
-            {columns.map((col) => {
-              const value = row[col];
-              const align = getAlignmentForColumn(col);
+        {sortedRows.map((row, rowIndex) => {
+          // Check if row has red status pills
+          let hasRedStatus = false;
+          const statusValue = row["Status"];
+          
+          if (statusValue) {
+            if (typeof statusValue === "object" && statusValue !== null && statusValue.render) {
+              const renderedStatus = statusValue.render();
+              if (typeof renderedStatus === "object" && renderedStatus?.props) {
+                const className = renderedStatus.props.className || "";
+                const children = renderedStatus.props.children;
+                hasRedStatus = className.includes("badge-overdue") || 
+                              className.includes("badge-unpaid") ||
+                              (typeof children === "string" && (
+                                children.toLowerCase().includes("overdue") ||
+                                children.toLowerCase().includes("unpaid") ||
+                                children.toLowerCase().includes("rejected")
+                              ));
+              }
+            } else if (typeof statusValue === "string") {
+              hasRedStatus = statusValue === "Overdue" || 
+                            statusValue === "Unpaid" || 
+                            statusValue === "Rejected" ||
+                            statusClass[statusValue]?.includes("badge-overdue") ||
+                            statusClass[statusValue]?.includes("badge-unpaid");
+            }
+          }
+          
+          return (
+            <tr 
+              key={`${row.id ?? rowIndex}-${rowIndex}`}
+              style={{
+                ...(row._rowStyle || {}),
+                background: hasRedStatus ? "#fef2f2" : undefined
+              }}
+            >
+              {columns.map((col) => {
+                const value = row[col];
+                const align = getAlignmentForColumn(col);
 
-              if (typeof value === "object" && value !== null && value.render) {
+                if (typeof value === "object" && value !== null && value.render) {
+                  const renderedValue = value.render();
+                  
+                  return (
+                    <td
+                      key={`${col}-render-${rowIndex}`}
+                      data-label={col}
+                      style={{ 
+                        textAlign: align, 
+                        verticalAlign: "middle"
+                      }}
+                    >
+                      {renderedValue}
+                    </td>
+                  );
+                }
+                
+                const isStatus =
+                  typeof value === "string" && statusClass[value] && col === "Status";
+                
                 return (
                   <td
-                    key={`${col}-render-${rowIndex}`}
+                    key={`${col}-${rowIndex}`}
                     data-label={col}
-                    style={{ textAlign: align, verticalAlign: "middle" }}
+                    style={{ 
+                      textAlign: align, 
+                      verticalAlign: "middle"
+                    }}
                   >
-                    {value.render()}
+                    {isStatus ? (
+                      <span className={statusClass[value]}>{value}</span>
+                    ) : (
+                      value
+                    )}
                   </td>
                 );
-              }
-              const isStatus =
-                typeof value === "string" && statusClass[value] && col === "Status";
-              return (
-                <td
-                  key={`${col}-${rowIndex}`}
-                  data-label={col}
-                  style={{ textAlign: align, verticalAlign: "middle" }}
-                >
-                  {isStatus ? (
-                    <span className={statusClass[value]}>{value}</span>
-                  ) : (
-                    value
-                  )}
-                </td>
-              );
-            })}
-          </tr>
-        ))}
+              })}
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

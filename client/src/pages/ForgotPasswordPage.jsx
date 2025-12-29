@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
+import { AlertModal } from "../components/AlertModal.jsx";
+import { Notie } from "../components/Notie.jsx";
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -10,6 +12,8 @@ export function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [emailError, setEmailError] = useState("");
+  const [notieMessage, setNotieMessage] = useState(null);
+  const [notieType, setNotieType] = useState("error");
   const navigate = useNavigate();
 
   // Email validation function
@@ -27,11 +31,17 @@ export function ForgotPasswordPage() {
     
     if (!email.trim()) {
       setEmailError("Email is required");
+      setNotieMessage("Email is required");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
       return;
     }
 
     if (!validateEmail(email.trim())) {
       setEmailError("Please enter a valid email address");
+      setNotieMessage("Please enter a valid email address");
+      setNotieType("error");
+      setTimeout(() => setNotieMessage(null), 3000);
       return;
     }
 
@@ -51,7 +61,18 @@ export function ForgotPasswordPage() {
         }),
       });
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (jsonError) {
+        console.error("Failed to parse response:", jsonError);
+        setMessage({
+          type: "error",
+          text: "Server returned an invalid response. Please try again.",
+        });
+        setLoading(false);
+        return;
+      }
 
       if (!response.ok || !data.success) {
         // Show error in field error style if it's email-related, otherwise in message
@@ -79,7 +100,7 @@ export function ForgotPasswordPage() {
       console.error("Forgot password error:", error);
       setMessage({
         type: "error",
-        text: "Unable to connect. Please check your connection and try again.",
+        text: error.message || "Unable to connect. Please check your connection and try again.",
       });
       setLoading(false);
     }
@@ -109,7 +130,7 @@ export function ForgotPasswordPage() {
             </div>
 
             {!emailSent ? (
-              <form onSubmit={handleSubmit}>
+              <form onSubmit={handleSubmit} noValidate>
                 <label className="mono-label">
                   <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
                   <input
@@ -126,30 +147,24 @@ export function ForgotPasswordPage() {
                       // Validate on blur
                       if (email.trim() && !validateEmail(email.trim())) {
                         setEmailError("Please enter a valid email address");
+                        setNotieMessage("Please enter a valid email address");
+                        setNotieType("error");
+                        setTimeout(() => setNotieMessage(null), 3000);
                       } else if (!email.trim()) {
                         setEmailError("Email is required");
+                        setNotieMessage("Email is required");
+                        setNotieType("error");
+                        setTimeout(() => setNotieMessage(null), 3000);
                       } else {
                         setEmailError("");
                       }
                     }}
+                    onInvalid={(e) => e.preventDefault()}
                     placeholder="Enter your email address"
                     className={`mono-input ${emailError ? "input-error" : ""}`}
                     disabled={loading}
                     required
                   />
-                  {emailError && (
-                    <div className="field-error" style={{ 
-                      marginTop: "4px", 
-                      fontSize: "0.875rem", 
-                      color: "#ef4444",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px"
-                    }}>
-                      <i className="fas fa-exclamation-circle" style={{ fontSize: "0.75rem" }}></i>
-                      {emailError}
-                    </div>
-                  )}
                 </label>
 
                 <div className="login-buttons">
@@ -238,12 +253,18 @@ export function ForgotPasswordPage() {
               </div>
             )}
 
-            {message && (
-              <div className={`alert ${message.type === "success" ? "alert-success" : "alert-error"}`} style={{ marginTop: "20px" }}>
-                <i className={`fas ${message.type === "success" ? "fa-check-circle" : "fa-exclamation-circle"}`} style={{ marginRight: "8px" }}></i>
-                {message.text}
-              </div>
-            )}
+            <AlertModal
+              isOpen={!!message}
+              message={message?.text}
+              type={message?.type || "error"}
+              onClose={() => setMessage(null)}
+            />
+            <Notie
+              message={notieMessage}
+              type={notieType}
+              onClose={() => setNotieMessage(null)}
+              duration={3000}
+            />
           </div>
         </div>
       </main>

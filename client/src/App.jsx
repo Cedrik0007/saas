@@ -11,7 +11,11 @@ import { AppProvider } from "./context/AppContext.jsx";
 function App() {
   return (
     <AppProvider>
-      <BrowserRouter>
+      <BrowserRouter
+        future={{
+          v7_startTransition: true,
+        }}
+      >
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginPage />} />
