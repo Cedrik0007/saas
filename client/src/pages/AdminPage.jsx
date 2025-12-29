@@ -228,9 +228,8 @@ export function AdminPage() {
         break;
 
       case "phone":
-        if (value && value.length < 100) {
-          error = "Phone number must be at least 8 digits.";
-        }
+        // Phone validation is handled by PhoneInput component
+        // No additional validation needed - supports international numbers with country codes
         break;
 
       case "nextDue": {
