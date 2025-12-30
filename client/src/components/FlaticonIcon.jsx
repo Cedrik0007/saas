@@ -163,3 +163,5 @@ export function getFlaticonNameFromFontAwesome(faClass) {
   return mapping[cleanClass] || mapping[faClass] || null;
 }
 
+
+

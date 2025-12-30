@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { SiteHeader } from "../components/SiteHeader.jsx";
-import { SiteFooter } from "../components/SiteFooter.jsx";
 import { AlertModal } from "../components/AlertModal.jsx";
 import { Notie } from "../components/Notie.jsx";
 import { loginPresets } from "../data";
@@ -27,6 +25,19 @@ export function LoginPage() {
         text: "Session expired due to inactivity. Please login again.",
       });
     }
+  }, []);
+
+  // Disable body scroll on login page (100vh, overflow hidden)
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    const originalHeight = document.body.style.height;
+    document.body.style.overflow = 'hidden';
+    document.body.style.height = '100vh';
+    
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.height = originalHeight;
+    };
   }, []);
 
   // Email validation function
@@ -200,7 +211,6 @@ export function LoginPage() {
 
   return (
     <>
-      <SiteHeader showCTA={false} />
       <main className="login-main">
         <div className="login-shell">
           <aside className="login-menu">
@@ -243,29 +253,6 @@ export function LoginPage() {
                   if (errors.email) {
                     setErrors({ ...errors, email: "" });
                   }
-                  // Clear password error if email becomes invalid
-                  const emailValue = e.target.value.trim();
-                  if (!emailValue || !validateEmail(emailValue)) {
-                    if (errors.password) {
-                      setErrors({ ...errors, password: "" });
-                    }
-                  }
-                }}
-                onBlur={() => {
-                  // Validate on blur
-                  if (form.email.trim() && !validateEmail(form.email.trim())) {
-                    setErrors({ ...errors, email: "Please enter a valid email address", password: "" });
-                    setNotieMessage("Please enter a valid email address");
-                    setNotieType("error");
-                    setTimeout(() => setNotieMessage(null), 3000);
-                  } else if (!form.email.trim()) {
-                    setErrors({ ...errors, email: "Email is required", password: "" });
-                    setNotieMessage("Email is required");
-                    setNotieType("error");
-                    setTimeout(() => setNotieMessage(null), 3000);
-                  } else {
-                    setErrors({ ...errors, email: "" });
-                  }
                 }}
                 placeholder="Enter your email address"
                 className={`mono-input ${errors.email ? "input-error" : ""}`}
@@ -293,25 +280,6 @@ export function LoginPage() {
                     // Clear error when user starts typing
                     if (errors.password) {
                       setErrors({ ...errors, password: "" });
-                    }
-                  }}
-                  onBlur={() => {
-                    // Only validate password on blur if email is valid
-                    const emailValid = form.email.trim() && validateEmail(form.email.trim());
-                    if (emailValid) {
-                      if (!form.password) {
-                        setErrors({ ...errors, password: "Password is required" });
-                        setNotieMessage("Password is required");
-                        setNotieType("error");
-                        setTimeout(() => setNotieMessage(null), 3000);
-                      } else {
-                        setErrors({ ...errors, password: "" });
-                      }
-                    } else {
-                      // Clear password error if email is invalid
-                      if (errors.password) {
-                        setErrors({ ...errors, password: "" });
-                      }
                     }
                   }}
                   placeholder="Enter your password"
@@ -555,7 +523,6 @@ export function LoginPage() {
           </div>
         </div>
       </main>
-      <SiteFooter />
     </>
   );
 }
