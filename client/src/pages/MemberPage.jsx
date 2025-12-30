@@ -1415,7 +1415,7 @@ export function MemberPage() {
                           style={{
                             width: "100%",
                             padding: "12px",
-                          background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                          background: "#5a31ea",
                           color: "#fff",
                           border: "none",
                           borderRadius: "8px",
@@ -1426,11 +1426,11 @@ export function MemberPage() {
                           boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)"
                         }}
                           onMouseEnter={(e) => {
-                            e.target.style.background = "linear-gradient(135deg, #4a28d0 0%, #6b3fff 100%)";
+                            e.target.style.background = "#4a28d0";
                             e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.4)";
                           }}
                           onMouseLeave={(e) => {
-                            e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                            e.target.style.background = "#5a31ea";
                             e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
                           }}
                         >
@@ -1457,7 +1457,7 @@ export function MemberPage() {
                       onClick={() => setViewingInvoice(null)}
                       style={{
                         padding: "10px 20px",
-                          background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                          background: "#5a31ea",
                           color: "#fff",
                           border: "none",
                           borderRadius: "8px",
@@ -1468,11 +1468,11 @@ export function MemberPage() {
                           boxShadow: "0 2px 8px rgba(90, 49, 234, 0.3)"
                         }}
                           onMouseEnter={(e) => {
-                            e.target.style.background = "linear-gradient(135deg, #4a28d0 0%, #6b3fff 100%)";
+                            e.target.style.background = "#4a28d0";
                             e.target.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.4)";
                           }}
                           onMouseLeave={(e) => {
-                            e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                            e.target.style.background = "#5a31ea";
                             e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
                           }}
                     >
@@ -1695,7 +1695,7 @@ export function MemberPage() {
                                       style={{
                                         width: "100%",
                                         padding: "8px 12px",
-                                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                        background: "#5a31ea",
                                         color: "#ffffff",
                                         border: "none",
                                         borderRadius: "8px",
@@ -1739,7 +1739,7 @@ export function MemberPage() {
                                 borderRadius: "8px",
                                 background: safeCurrentPage === 1 
                                   ? "#f3f4f6" 
-                                  : "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                  : "#5a31ea",
                                 color: safeCurrentPage === 1 ? "#999" : "#ffffff",
                                 fontSize: "0.875rem",
                                 fontWeight: "600",
@@ -1803,7 +1803,7 @@ export function MemberPage() {
                                       border: "none",
                                       borderRadius: "8px",
                                       background: safeCurrentPage === pageNum
-                                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                        ? "#5a31ea"
                                         : "#f8f9ff",
                                       color: safeCurrentPage === pageNum ? "#ffffff" : "#1a1a1a",
                                       fontSize: "0.875rem",
@@ -1843,7 +1843,7 @@ export function MemberPage() {
                                 borderRadius: "8px",
                                 background: safeCurrentPage === totalPages
                                   ? "#f3f4f6"
-                                  : "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                  : "#5a31ea",
                                 color: safeCurrentPage === totalPages ? "#999" : "#ffffff",
                                 fontSize: "0.875rem",
                                 fontWeight: "600",
@@ -1911,7 +1911,7 @@ export function MemberPage() {
                   <div className="card" style={{
                     padding: "24px",
                     marginBottom: "24px",
-                    background: "linear-gradient(135deg, #f8f8f8 0%, #ffffff 100%)",
+                    background: "#ffffff",
                     border: "1px solid #e0e0e0",
                     borderRadius: "12px"
                   }}>
@@ -1925,7 +1925,7 @@ export function MemberPage() {
                         width: "80px",
                         height: "80px",
                         borderRadius: "50%",
-                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                        background: "#5a31ea",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -1950,8 +1950,8 @@ export function MemberPage() {
                       <div style={{
                         padding: "8px 16px",
                         background: currentMember?.status === "Active" 
-                          ? "linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)" 
-                          : "linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)",
+                          ? "#d1fae5" 
+                          : "#fee2e2",
                         color: currentMember?.status === "Active" ? "#065f46" : "#991b1b",
                         borderRadius: "20px",
                         fontSize: "0.875rem",

@@ -63,13 +63,13 @@
 
 /* Success (Green) - Positive notification */
 .alert-modal--success .alert-modal-icon {
-  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  background: #d1fae5;
   color: #065f46;
 }
 
 /* Error (Red) - Negative notification */
 .alert-modal--error .alert-modal-icon {
-  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  background: #fee2e2;
   color: #991b1b;
 }
 

@@ -125,7 +125,7 @@ export function AdminPage() {
       ]
     },
     {
-      id: "reports",
+      id: "reports-group",
       label: "Reports",
       icon: "fa-chart-bar",
       items: [
@@ -425,7 +425,6 @@ export function AdminPage() {
     amount: false,
     method: false,
     date: false,
-    reference: false,
     screenshot: false,
   });
   const [currentInvalidDonationField, setCurrentInvalidDonationField] = useState(null);
@@ -510,12 +509,17 @@ export function AdminPage() {
     imagePreview: null,
     imageUrl: "",
     reference: "", // Reference number for online payments
+    selectedAdminId: "", // Selected admin ID for cash payment
+    adminMobile: "", // Mobile number for selected admin
   });
   const [uploadingPaymentModal, setUploadingPaymentModal] = useState(false);
   const [paymentModalErrors, setPaymentModalErrors] = useState({
     image: false,
     reference: false,
+    selectedAdminId: false,
+    adminMobile: false,
   });
+  const [currentInvalidPaymentModalField, setCurrentInvalidPaymentModalField] = useState(null);
   const [showPaymentDetailsModal, setShowPaymentDetailsModal] = useState(false);
   const [selectedPaymentDetails, setSelectedPaymentDetails] = useState(null);
   const [hoveredMonth, setHoveredMonth] = useState(null);
@@ -3100,7 +3104,9 @@ Subscription Manager HK`;
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
               <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
-                <i className="fas fa-paper-plane" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle", display: "inline-block" }}>
+                  <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#5a31ea"/>
+                </svg>
                 Select Channel
               </h3>
               <button
@@ -3151,11 +3157,15 @@ Subscription Manager HK`;
                     onClick={() => handleSelectChannel('Email')}
                   >
                     <div className="admin-channel-button-content">
-                      <i className="fas fa-envelope admin-channel-button-icon-white"></i>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                        <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="#ffffff"/>
+                      </svg>
                       <span className="admin-channel-button-text-white">Email</span>
                     </div>
                     {selectedChannels.includes('Email') && (
-                      <i className="fas fa-check-circle admin-channel-button-check-white"></i>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginLeft: "8px" }}>
+                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#ffffff"/>
+                      </svg>
                     )}
                   </button>
                   <button
@@ -3167,7 +3177,9 @@ Subscription Manager HK`;
                       <span className="admin-channel-button-text-white">WhatsApp</span>
                     </div>
                     {selectedChannels.includes('WhatsApp') && (
-                      <i className="fas fa-check-circle admin-channel-button-check-white"></i>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginLeft: "8px" }}>
+                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#ffffff"/>
+                      </svg>
                     )}
                   </button>
                   
@@ -3194,7 +3206,9 @@ Subscription Manager HK`;
                         </>
                       ) : (
                         <>
-                          <i className="fas fa-paper-plane admin-channel-action-icon-large"></i>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                            <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#ffffff"/>
+                          </svg>
                           Send
                         </>
                       )}
@@ -3208,7 +3222,9 @@ Subscription Manager HK`;
                     className="admin-channel-action-button"
                     onClick={() => handleSelectChannel('Email')}
                   >
-                    <i className="fas fa-envelope admin-channel-action-icon-large"></i>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                      <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor"/>
+                    </svg>
                     Email
                   </button>
                   <button
@@ -4242,7 +4258,7 @@ Subscription Manager HK`;
                                         cursor: "pointer",
                                         transition: "all 0.2s ease",
                                         background: memberStatusFilter === option.value
-                                          ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                          ? "#5a31ea"
                                           : "transparent",
                                         color: memberStatusFilter === option.value ? "#ffffff" : "#6b7280",
                                         boxShadow: memberStatusFilter === option.value
@@ -4469,7 +4485,10 @@ Subscription Manager HK`;
                             onClick={() => handleRequestReminder(selectedMember, false)}
                             title="Send reminder"
                           >
-                            📨 Send Reminder
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                              <path d="M12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.89 22 12 22ZM18 16V11C18 7.93 16.36 5.36 13.5 4.68V4C13.5 3.17 12.83 2.5 12 2.5C11.17 2.5 10.5 3.17 10.5 4V4.68C7.63 5.36 6 7.92 6 11V16L4 18V19H20V18L18 16Z" fill="#ffffff"/>
+                            </svg>
+                            Send Reminder
                           </button>
                         </>
                       )}
@@ -4540,7 +4559,7 @@ Subscription Manager HK`;
                           padding: "16px 20px",
                           borderRadius: "8px",
                           background:
-                            "linear-gradient(135deg, rgba(248, 113, 113, 0.1) 0%, rgba(239, 68, 68, 0.12) 100%)",
+                            "rgba(239, 68, 68, 0.1)",
                           border: "1px solid rgba(239, 68, 68, 0.4)",
                           color: "#ef4444",
                           fontSize: "0.875rem",
@@ -4691,7 +4710,7 @@ Subscription Manager HK`;
                                 }}
                                 style={{
                                   padding: "4px 10px",
-                                  background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                  background: "#5a31ea",
                                   color: "#ffffff",
                                   border: "none",
                                   borderRadius: "4px",
@@ -4701,11 +4720,11 @@ Subscription Manager HK`;
                                   boxShadow: "0 2px 4px rgba(90, 49, 234, 0.3)"
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.target.style.background = "linear-gradient(135deg, #4a28d0 0%, #6b3fff 100%)";
+                                  e.target.style.background = "#4a28d0";
                                   e.target.style.boxShadow = "0 4px 8px rgba(90, 49, 234, 0.4)";
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                                  e.target.style.background = "#5a31ea";
                                   e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.3)";
                                 }}
                               >
@@ -4722,7 +4741,7 @@ Subscription Manager HK`;
                                       style={{ 
                                         padding: "4px 10px", 
                                         fontSize: "0.85rem",
-                                        background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                                        background: "#10b981",
                                         border: "none",
                                         color: "#ffffff",
                                         fontWeight: "600",
@@ -4732,11 +4751,11 @@ Subscription Manager HK`;
                                         boxShadow: "0 2px 4px rgba(16, 185, 129, 0.3)"
                                       }}
                                       onMouseEnter={(e) => {
-                                        e.target.style.background = "linear-gradient(135deg, #059669 0%, #047857 100%)";
+                                        e.target.style.background = "#059669";
                                         e.target.style.boxShadow = "0 4px 8px rgba(16, 185, 129, 0.4)";
                                       }}
                                       onMouseLeave={(e) => {
-                                        e.target.style.background = "linear-gradient(135deg, #10b981 0%, #059669 100%)";
+                                        e.target.style.background = "#10b981";
                                         e.target.style.boxShadow = "0 2px 4px rgba(16, 185, 129, 0.3)";
                                       }}
                                       onClick={() => {
@@ -4747,8 +4766,11 @@ Subscription Manager HK`;
                                           imagePreview: null,
                                           imageUrl: invoice.screenshot || "",
                                           reference: "",
+                                          selectedAdminId: "",
+                                          adminMobile: "",
                                         });
-                                        setPaymentModalErrors({ image: false, reference: false });
+                                        setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                    setCurrentInvalidPaymentModalField(null);
                                         setShowPaymentModal(true);
                                       }}
                                     >
@@ -5249,7 +5271,7 @@ Subscription Manager HK`;
                   <div style={{
                     marginBottom: "24px",
                     padding: "24px",
-                    background: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)",
+                    background: "#f0f9ff",
                     borderRadius: "12px",
                     border: "2px solid #5a31ea",
                     boxShadow: "0 4px 12px rgba(90, 49, 234, 0.15)"
@@ -5265,7 +5287,7 @@ Subscription Manager HK`;
                           width: "48px",
                           height: "48px",
                           borderRadius: "50%",
-                          background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                          background: "#5a31ea",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -5341,7 +5363,9 @@ Subscription Manager HK`;
                         }}
                         style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
                       >
-                        <i className="fas fa-envelope" style={{ marginRight: "8px" }}></i>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                          <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor"/>
+                        </svg>
                         Send Reminder
                       </button>
                       
@@ -5359,7 +5383,7 @@ Subscription Manager HK`;
                   </div>
                 )}
                 
-                <form className="card form-grid" onSubmit={handleAddInvoice} noValidate style={{ padding: "40px", background: "linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
+                <form className="card form-grid" onSubmit={handleAddInvoice} noValidate style={{ padding: "40px", background: "#ffffff", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
                   <label style={{ marginBottom: "24px" }}>
                     <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}>
                       <i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
@@ -5438,7 +5462,7 @@ Subscription Manager HK`;
                           <div style={{ 
                             padding: "12px", 
                             borderBottom: "none",
-                            background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
+                            background: "#ffffff",
                             boxShadow: "0 2px 4px rgba(90, 49, 234, 0.05)"
                           }}>
                             <div style={{ position: "relative" }}>
@@ -5536,7 +5560,7 @@ Subscription Manager HK`;
                                     padding: "14px 16px",
                                     cursor: "pointer",
                                     borderBottom: "none",
-                                    background: invoiceForm.memberId === member.id ? "linear-gradient(135deg, #f0f4ff 0%, #e8f0ff 100%)" : "#fff",
+                                    background: invoiceForm.memberId === member.id ? "#f0f4ff" : "#fff",
                                     transition: "all 0.2s",
                                     boxShadow: invoiceForm.memberId === member.id ? "0 2px 4px rgba(90, 49, 234, 0.1)" : "none"
                                   }}
@@ -6067,7 +6091,7 @@ Subscription Manager HK`;
                           height: "clamp(34px, 5vw, 40px)",
                           borderRadius: "999px",
                           border: "none",
-                          background: automationEnabled ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" : "#f3f4f6",
+                          background: automationEnabled ? "#5a31ea" : "#f3f4f6",
                           cursor: "pointer",
                           transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                           outline: "none",
@@ -6091,7 +6115,7 @@ Subscription Manager HK`;
                           width: "clamp(26px, 4vw, 30px)",
                           height: "clamp(26px, 4vw, 30px)",
                           borderRadius: "50%",
-                          background: automationEnabled ? "#ffffff" : "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                          background: automationEnabled ? "#ffffff" : "#5a31ea",
                           transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                           left: automationEnabled ? "auto" : "4px",
                           right: automationEnabled ? "4px" : "auto",
@@ -6167,7 +6191,7 @@ Subscription Manager HK`;
                           cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
                           transition: "all 0.2s ease",
                           background: selectedChannels.includes('Email')
-                            ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                            ? "#5a31ea"
                             : "#ffffff",
                           color: selectedChannels.includes('Email') ? "#ffffff" : "#6b7280",
                           border: selectedChannels.includes('Email') ? "2px solid #5a31ea" : "2px solid #e5e7eb",
@@ -6217,7 +6241,7 @@ Subscription Manager HK`;
                           cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
                           transition: "all 0.2s ease",
                           background: selectedChannels.includes('WhatsApp')
-                            ? "linear-gradient(135deg, #25D366 0%, #128C7E 100%)"
+                            ? "#25D366"
                             : "#ffffff",
                           color: selectedChannels.includes('WhatsApp') ? "#ffffff" : "#25D366",
                           border: selectedChannels.includes('WhatsApp') ? "2px solid #25D366" : "2px solid #25D366",
@@ -6363,7 +6387,16 @@ Subscription Manager HK`;
                                   cursor: (isSending || sendingWhatsApp[member.id]) ? "not-allowed" : "pointer"
                                 }}
                               >
-                                {(isSending || sendingWhatsApp[member.id]) ? "Sending..." : "📨 Send Reminder"}
+                                {(isSending || sendingWhatsApp[member.id]) ? (
+                                  "Sending..."
+                                ) : (
+                                  <>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                                      <path d="M12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.89 22 12 22ZM18 16V11C18 7.93 16.36 5.36 13.5 4.68V4C13.5 3.17 12.83 2.5 12 2.5C11.17 2.5 10.5 3.17 10.5 4V4.68C7.63 5.36 6 7.92 6 11V16L4 18V19H20V18L18 16Z" fill="#5a31ea"/>
+                                    </svg>
+                                    Send Reminder
+                                  </>
+                                )}
                               </button>
                             </div>
                           </div>
@@ -6509,7 +6542,10 @@ Subscription Manager HK`;
                           fontWeight: "600"
                         }}
                       >
-                        👁️ Preview Template
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                          <path d="M12 4.5C7 4.5 2.73 7.61 1 12C2.73 16.39 7 19.5 12 19.5C17 19.5 21.27 16.39 23 12C21.27 7.61 17 4.5 12 4.5ZM12 17C9.24 17 7 14.76 7 12C7 9.24 9.24 7 12 7C14.76 7 17 9.24 17 12C17 14.76 14.76 17 12 17ZM12 9C10.34 9 9 10.34 9 12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12C15 10.34 13.66 9 12 9Z" fill="currentColor"/>
+                        </svg>
+                        Preview Template
                       </button>
                       <button
                         className="primary-btn"
@@ -6520,7 +6556,10 @@ Subscription Manager HK`;
                           fontWeight: "600"
                         }}
                       >
-                        💾 Save Email Template
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                          <path d="M17 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V7L17 3ZM19 19H5V5H16.17L19 7.83V19ZM12 12C10.34 12 9 13.34 9 15S10.34 18 12 18 15 16.66 15 15 13.66 12 12 12ZM6 6H15V10H6V6Z" fill="#ffffff"/>
+                        </svg>
+                        Save Email Template
                       </button>
                     </div>
                   </div>
@@ -6798,7 +6837,16 @@ Subscription Manager HK`;
                           cursor: (testingEmail || !emailSettings.emailUser || !emailSettings.emailPassword) ? "not-allowed" : "pointer"
                         }}
                       >
-                        {testingEmail ? "Sending..." : "📧 Test Email"}
+                        {testingEmail ? (
+                          "Sending..."
+                        ) : (
+                          <>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                              <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor"/>
+                            </svg>
+                            Test Email
+                          </>
+                        )}
                       </button>
                       <button
                         className="primary-btn"
@@ -6809,7 +6857,10 @@ Subscription Manager HK`;
                           fontWeight: "600"
                         }}
                       >
-                        💾 Save Email Settings
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                          <path d="M17 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V7L17 3ZM19 19H5V5H16.17L19 7.83V19ZM12 12C10.34 12 9 13.34 9 15S10.34 18 12 18 15 16.66 15 15 13.66 12 12 12ZM6 6H15V10H6V6Z" fill="#ffffff"/>
+                        </svg>
+                        Save Email Settings
                       </button>
                     </div>
                   </div>
@@ -6988,7 +7039,7 @@ Subscription Manager HK`;
                               cursor: "pointer",
                               transition: "all 0.2s ease",
                               background: remindersStatusFilter === option.value
-                                ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                ? "#5a31ea"
                                 : "transparent",
                               color: remindersStatusFilter === option.value ? "#ffffff" : "#6b7280",
                               boxShadow: remindersStatusFilter === option.value
@@ -7044,7 +7095,7 @@ Subscription Manager HK`;
                               cursor: "pointer",
                               transition: "all 0.2s ease",
                               background: remindersChannelFilter === option.value
-                                ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                ? "#5a31ea"
                                 : "transparent",
                               color: remindersChannelFilter === option.value ? "#ffffff" : "#6b7280",
                               boxShadow: remindersChannelFilter === option.value
@@ -7557,7 +7608,7 @@ Subscription Manager HK`;
                               fontSize: "0.7rem",
                               fontWeight: "700",
                               background: method.visible 
-                                ? "linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)" 
+                                ? "#e8f5e9" 
                                 : "#f5f5f5",
                               color: method.visible ? "#1b5e20" : "#757575",
                               textTransform: "uppercase",
@@ -7598,10 +7649,10 @@ Subscription Manager HK`;
                               height: "64px",
                               borderRadius: "16px",
                               background: method.name === "PayMe" 
-                                ? "linear-gradient(135deg, #00C300 0%, #009900 100%)"
+                                ? "#00C300"
                                 : method.name === "FPS" 
-                                ? "linear-gradient(135deg, #0066CC 0%, #004499 100%)"
-                                : "linear-gradient(135deg, #E60012 0%, #CC0011 100%)",
+                                ? "#0066CC"
+                                : "#E60012",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
@@ -7659,7 +7710,7 @@ Subscription Manager HK`;
                           {/* QR Code Display Section for PayMe OR Payment Details for FPS/Bank Transfer */}
                           {isQRMethod ? (
                             <div style={{
-                              background: "linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)",
+                              background: "#f9fafb",
                               borderRadius: "16px",
                               padding: "28px",
                               border: method.qrImageUrl ? "1px solid #e0e0e0" : "2px dashed #d0d0d0",
@@ -7743,7 +7794,7 @@ Subscription Manager HK`;
                                     width: "100px",
                                     height: "100px",
                                     borderRadius: "50%",
-                                    background: "linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)",
+                                    background: "#f3f4f6",
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
@@ -7776,7 +7827,7 @@ Subscription Manager HK`;
                                   <label
                                     style={{
                                       padding: "12px 24px",
-                                      background: "linear-gradient(135deg, #1a1a1a 0%, #374151 100%)",
+                                      background: "#1a1a1a",
                                       color: "#fff",
                                       borderRadius: "10px",
                                       fontSize: "0.875rem",
@@ -7814,7 +7865,7 @@ Subscription Manager HK`;
                             </div>
                           ) : (
                             <div style={{
-                              background: "linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)",
+                              background: "#f9fafb",
                               borderRadius: "16px",
                               padding: "24px",
                               border: "1px solid #e0e0e0"
@@ -7883,7 +7934,7 @@ Subscription Manager HK`;
                               justifyContent: "space-between",
                               padding: "18px 20px",
                               background: method.visible 
-                                ? "linear-gradient(135deg, #f8f9ff 0%, #e8f0ff 100%)" 
+                                ? "#f8f9ff" 
                                 : "#f9fafb",
                               borderRadius: "12px",
                               border: `2px solid ${method.visible ? "#2196F3" : "#e0e0e0"}`,
@@ -7893,14 +7944,14 @@ Subscription Manager HK`;
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.background = method.visible 
-                                ? "linear-gradient(135deg, #bbdefb 0%, #90caf9 100%)" 
+                                ? "#bbdefb" 
                                 : "#f3f4f6";
                               e.currentTarget.style.borderColor = method.visible ? "#1976D2" : "#ccc";
                               e.currentTarget.style.transform = "scale(1.01)";
                             }}
                             onMouseLeave={(e) => {
                               e.currentTarget.style.background = method.visible 
-                                ? "linear-gradient(135deg, #f8f9ff 0%, #e8f0ff 100%)" 
+                                ? "#f8f9ff" 
                                 : "#fafafa";
                               e.currentTarget.style.borderColor = method.visible ? "#2196F3" : "#e0e0e0";
                               e.currentTarget.style.transform = "scale(1)";
@@ -8018,7 +8069,7 @@ Subscription Manager HK`;
                               cursor: "pointer",
                               transition: "all 0.2s ease",
                               background: paymentStatusFilter === option.value
-                                ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                ? "#5a31ea"
                                 : "transparent",
                               color: paymentStatusFilter === option.value ? "#ffffff" : "#6b7280",
                               boxShadow: paymentStatusFilter === option.value
@@ -8534,7 +8585,6 @@ Subscription Manager HK`;
                                       </button>
                                       <button
                                       className="ghost-btn icon-btn icon-btn--delete"
-                                      style={{ color: "#ef4444" }}
                                         onClick={() => {
                                           if (paymentIdString) handleDeletePayment(paymentIdString);
                                         }}
@@ -8725,7 +8775,7 @@ Subscription Manager HK`;
                                     cursor: "pointer",
                                     transition: "all 0.2s ease",
                                     background: invoiceStatusFilter === option.value
-                                      ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                      ? "#5a31ea"
                                       : "transparent",
                                     color: invoiceStatusFilter === option.value ? "#ffffff" : "#6b7280",
                                     boxShadow: invoiceStatusFilter === option.value
@@ -9153,7 +9203,7 @@ Subscription Manager HK`;
                               cursor: "pointer",
                               transition: "all 0.2s ease",
                               background: paymentStatusFilter === option.value
-                                ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                ? "#5a31ea"
                                 : "transparent",
                               color: paymentStatusFilter === option.value ? "#ffffff" : "#6b7280",
                               boxShadow: paymentStatusFilter === option.value
@@ -9276,7 +9326,6 @@ Subscription Manager HK`;
                                       </button>
                                       <button
                                         className="ghost-btn icon-btn icon-btn--delete"
-                                        style={{ color: "#ef4444" }}
                                         onClick={() => {
                                           if (paymentIdString) handleDeletePayment(paymentIdString);
                                         }}
@@ -9389,7 +9438,6 @@ Subscription Manager HK`;
                               amount: false,
                               method: false,
                               date: false,
-                              reference: false,
                               screenshot: false,
                             });
                             setCurrentInvalidDonationField(null);
@@ -9446,7 +9494,7 @@ Subscription Manager HK`;
                         // Progressive validation for donation form
                         const validateDonationForm = () => {
                           // Define field order for validation
-                          const fieldOrder = ["donorName", "amount", "method", "date", "reference", "screenshot"];
+                          const fieldOrder = ["donorName", "amount", "method", "date", "screenshot"];
                           
                           // If we have a current invalid field, check if it's now valid
                           if (currentInvalidDonationField) {
@@ -9473,22 +9521,13 @@ Subscription Manager HK`;
                             } else if (currentInvalidDonationField === "date" && !donationForm.date) {
                               isValid = false;
                               errorMsg = "Date is required";
-                            } else if (currentInvalidDonationField === "reference") {
-                              const onlineMethods = ["Bank Transfer", "FPS", "PayMe"];
-                              if (onlineMethods.includes(donationForm.method) && !donationForm.reference.trim()) {
-                                isValid = false;
-                                errorMsg = "Reference number is required for online payment methods";
-                              }
                             } else if (currentInvalidDonationField === "screenshot") {
-                              if (donationForm.method === "Cash" && !donationForm.screenshot && !donationImageFile) {
+                              if (donationForm.method === "Cash Payment" && !donationForm.screenshot && !donationImageFile) {
                                 isValid = false;
                                 errorMsg = "Proof image is required";
-                              } else {
-                                const onlineMethods = ["Bank Transfer", "FPS", "PayMe"];
-                                if (onlineMethods.includes(donationForm.method) && !donationForm.screenshot && !donationImageFile) {
-                                  isValid = false;
-                                  errorMsg = "Proof image is required";
-                                }
+                              } else if (donationForm.method === "Online Payment" && !donationForm.screenshot && !donationImageFile) {
+                                isValid = false;
+                                errorMsg = "Proof image is required";
                               }
                             }
                             
@@ -9527,22 +9566,13 @@ Subscription Manager HK`;
                             } else if (field === "date" && !donationForm.date) {
                               isValid = false;
                               errorMsg = "Date is required";
-                            } else if (field === "reference") {
-                              const onlineMethods = ["Bank Transfer", "FPS", "PayMe"];
-                              if (onlineMethods.includes(donationForm.method) && !donationForm.reference.trim()) {
-                                isValid = false;
-                                errorMsg = "Reference number is required for online payment methods";
-                              }
                             } else if (field === "screenshot") {
-                              if (donationForm.method === "Cash" && !donationForm.screenshot && !donationImageFile) {
+                              if (donationForm.method === "Cash Payment" && !donationForm.screenshot && !donationImageFile) {
                                 isValid = false;
                                 errorMsg = "Proof image is required";
-                              } else {
-                                const onlineMethods = ["Bank Transfer", "FPS", "PayMe"];
-                                if (onlineMethods.includes(donationForm.method) && !donationForm.screenshot && !donationImageFile) {
-                                  isValid = false;
-                                  errorMsg = "Proof image is required";
-                                }
+                              } else if (donationForm.method === "Online Payment" && !donationForm.screenshot && !donationImageFile) {
+                                isValid = false;
+                                errorMsg = "Proof image is required";
                               }
                             }
                             
@@ -9553,7 +9583,6 @@ Subscription Manager HK`;
                                 amount: false,
                                 method: false,
                                 date: false,
-                                reference: false,
                                 screenshot: false,
                               });
                               // Set only this field as invalid
@@ -9586,14 +9615,6 @@ Subscription Manager HK`;
                                   const input = document.querySelector('input[type="date"]');
                                   input?.focus();
                                   input?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                } else if (field === "reference") {
-                                  const inputs = document.querySelectorAll('input[type="text"]');
-                                  const refInput = Array.from(inputs).find(input => 
-                                    input.placeholder?.includes("Transaction reference") ||
-                                    input.placeholder?.includes("reference")
-                                  );
-                                  refInput?.focus();
-                                  refInput?.scrollIntoView({ behavior: "smooth", block: "center" });
                                 } else if (field === "screenshot") {
                                   const uploadAreas = document.querySelectorAll('[style*="border"]');
                                   const screenshotArea = Array.from(uploadAreas).find(area => 
@@ -9613,7 +9634,6 @@ Subscription Manager HK`;
                             amount: false,
                             method: false,
                             date: false,
-                            reference: false,
                             screenshot: false,
                           });
                           setCurrentInvalidDonationField(null);
@@ -9763,7 +9783,7 @@ Subscription Manager HK`;
                               padding: "14px 20px",
                               borderRadius: "4px",
                               border: "none",
-                              background: donationForm.isMember ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" : "#f8f9ff",
+                              background: donationForm.isMember ? "#5a31ea" : "#f8f9ff",
                               color: donationForm.isMember ? "#ffffff" : "#1a1a1a",
                               boxShadow: donationForm.isMember ? "0 4px 12px rgba(90, 49, 234, 0.3)" : "0 2px 4px rgba(90, 49, 234, 0.08)",
                               fontWeight: "600",
@@ -9800,7 +9820,7 @@ Subscription Manager HK`;
                               padding: "14px 20px",
                               borderRadius: "4px",
                               border: "none",
-                              background: !donationForm.isMember ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" : "#f8f9ff",
+                              background: !donationForm.isMember ? "#5a31ea" : "#f8f9ff",
                               color: !donationForm.isMember ? "#ffffff" : "#1a1a1a",
                               boxShadow: !donationForm.isMember ? "0 4px 12px rgba(90, 49, 234, 0.3)" : "0 2px 4px rgba(90, 49, 234, 0.08)",
                               fontWeight: "600",
@@ -10050,40 +10070,13 @@ Subscription Manager HK`;
                           }}
                         >
                           <option value="">Select method</option>
-                          <option value="Cash">Cash</option>
-                          <option value="Bank Transfer">Bank Transfer</option>
-                          <option value="FPS">FPS</option>
-                          <option value="PayMe">PayMe</option>
+                          <option value="Online Payment">Online Payment</option>
+                          <option value="Cash Payment">Cash Payment</option>
                         </select>
                       </label>
 
-                      {/* Reference Number - Required for Online payment methods */}
-                      {["Bank Transfer", "FPS", "PayMe"].includes(donationForm.method) && (
-                        <label>
-                          Reference Number <span style={{ color: "#ef4444" }}>*</span>
-                          <input
-                            type="text"
-                            value={donationForm.reference}
-                            onChange={(e) => {
-                              setDonationForm({ ...donationForm, reference: e.target.value });
-                              if (donationFieldErrors.reference) {
-                                setDonationFieldErrors(prev => ({ ...prev, reference: false }));
-                                if (currentInvalidDonationField === "reference") {
-                                  setCurrentInvalidDonationField(null);
-                                }
-                              }
-                            }}
-                            placeholder="Transaction reference number"
-                            required
-                            style={{
-                              border: donationFieldErrors.reference ? "2px solid #ef4444" : undefined
-                            }}
-                          />
-                        </label>
-                      )}
-
-                      {/* Proof Image - Required for Cash payment method */}
-                      {donationForm.method === "Cash" && (
+                      {/* Proof Image - Required for Cash Payment */}
+                      {donationForm.method === "Cash Payment" && (
                         <label style={{ gridColumn: "1 / -1" }}>
                           Proof Image <span style={{ color: "#ef4444" }}>*</span>
                           <div
@@ -10204,8 +10197,8 @@ Subscription Manager HK`;
                         </label>
                       )}
 
-                      {/* Proof Image - Also required for Online payment methods */}
-                      {["Bank Transfer", "FPS", "PayMe"].includes(donationForm.method) && (
+                      {/* Proof Image - Also required for Online Payment */}
+                      {donationForm.method === "Online Payment" && (
                         <label style={{ gridColumn: "1 / -1" }}>
                           Proof Image <span style={{ color: "#ef4444" }}>*</span>
                           <div
@@ -10625,7 +10618,7 @@ Subscription Manager HK`;
                           justifyContent: "center",
                           cursor: "pointer",
                           transition: "all 0.2s ease",
-                          background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
+                          background: "#ffffff",
                           color: "#5a31ea",
                           border: "2px solid #e5e7eb",
                           boxShadow: "none",
@@ -10633,13 +10626,13 @@ Subscription Manager HK`;
                           height: "48px",
                         }}
                         onMouseEnter={(e) => {
-                          e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                          e.target.style.background = "#5a31ea";
                           e.target.style.color = "#ffffff";
                           e.target.style.border = "2px solid #5a31ea";
                           e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
                         }}
                         onMouseLeave={(e) => {
-                          e.target.style.background = "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)";
+                          e.target.style.background = "#ffffff";
                           e.target.style.color = "#5a31ea";
                           e.target.style.border = "2px solid #e5e7eb";
                           e.target.style.boxShadow = "none";
@@ -10661,7 +10654,7 @@ Subscription Manager HK`;
                           justifyContent: "center",
                           cursor: "pointer",
                           transition: "all 0.2s ease",
-                          background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
+                          background: "#ffffff",
                           color: "#5a31ea",
                           border: "2px solid #e5e7eb",
                           boxShadow: "none",
@@ -10669,13 +10662,13 @@ Subscription Manager HK`;
                           height: "48px",
                         }}
                         onMouseEnter={(e) => {
-                          e.target.style.background = "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)";
+                          e.target.style.background = "#5a31ea";
                           e.target.style.color = "#ffffff";
                           e.target.style.border = "2px solid #5a31ea";
                           e.target.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.3)";
                         }}
                         onMouseLeave={(e) => {
-                          e.target.style.background = "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)";
+                          e.target.style.background = "#ffffff";
                           e.target.style.color = "#5a31ea";
                           e.target.style.border = "2px solid #e5e7eb";
                           e.target.style.boxShadow = "none";
@@ -10688,7 +10681,7 @@ Subscription Manager HK`;
                 </header>
 
                 {/* Date Range Selector - Modern Design */}
-                <div className="card" style={{ marginBottom: "24px", padding: "20px", background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)" }}>
+                <div className="card" style={{ marginBottom: "24px", padding: "20px", background: "#ffffff" }}>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "flex-end" }}>
                     <div style={{ flex: "1", minWidth: "200px" }}>
                       <label style={{ display: "block", marginBottom: "8px", fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>
@@ -10786,7 +10779,7 @@ Subscription Manager HK`;
                             cursor: "pointer",
                             transition: "all 0.2s ease",
                             background: selectedPeriod === period
-                              ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                              ? "#5a31ea"
                               : "#ffffff",
                             color: selectedPeriod === period ? "#ffffff" : "#6b7280",
                             border: selectedPeriod === period ? "none" : "2px solid #e5e7eb",
@@ -10877,7 +10870,7 @@ Subscription Manager HK`;
                         <div
                           style={{
                             width: "100%",
-                            background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                            background: "#10b981",
                             borderRadius: "8px 8px 0 0",
                             minHeight: "60px",
                             height: `${Math.max(60, Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 200) || 0)}px`,
@@ -10913,7 +10906,7 @@ Subscription Manager HK`;
                         <div
                           style={{
                             width: "100%",
-                            background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+                            background: "#ef4444",
                             borderRadius: "8px 8px 0 0",
                             minHeight: "60px",
                             height: `${Math.max(60, Math.round((dashboardMetrics.outstanding / (reportStats.collected + dashboardMetrics.outstanding)) * 200) || 0)}px`,
@@ -11005,7 +10998,7 @@ Subscription Manager HK`;
                                     <div
                                       style={{
                                         width: "100%",
-                                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
+                                        background: "#5a31ea",
                                         borderRadius: "6px 6px 0 0",
                                         height: `${height}px`,
                                         minHeight: "30px",
@@ -11053,7 +11046,7 @@ Subscription Manager HK`;
                 <div className="card" style={{ 
                   marginBottom: "24px", 
                   padding: "24px",
-                  background: "linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)",
+                  background: "#ffffff",
                   border: "1px solid #e5e7eb"
                 }}>
                   <h4 style={{ marginBottom: "20px", fontSize: "1.25rem", fontWeight: "700", color: "#1a1a1a" }}>
@@ -11116,7 +11109,7 @@ Subscription Manager HK`;
                 {/* Filters and Transactions Section */}
                 <div className="card" style={{ 
                   padding: "24px",
-                  background: "linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)",
+                  background: "#ffffff",
                   border: "1px solid #e5e7eb"
                 }}>
                   {/* Filters */}
@@ -11152,7 +11145,7 @@ Subscription Manager HK`;
                               cursor: "pointer",
                               transition: "all 0.2s ease",
                               background: reportFilter === option.value
-                                ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                ? "#5a31ea"
                                 : "transparent",
                               color: reportFilter === option.value ? "#ffffff" : "#6b7280",
                               boxShadow: reportFilter === option.value
@@ -11208,7 +11201,7 @@ Subscription Manager HK`;
                                 cursor: "pointer",
                                 transition: "all 0.2s ease",
                                 background: donorTypeFilter === option.value
-                                  ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                  ? "#5a31ea"
                                   : "transparent",
                                 color: donorTypeFilter === option.value ? "#ffffff" : "#6b7280",
                                 boxShadow: donorTypeFilter === option.value
@@ -11556,14 +11549,17 @@ Subscription Manager HK`;
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "16px", marginBottom: "24px" }}>
                       <div className="card" style={{ 
                         padding: "20px", 
-                        background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
+                        background: "#ffffff",
                         display: "flex",
                         flexDirection: "column",
                         justifyContent: "space-between",
                         minHeight: "180px"
                       }}>
                         <div>
-                          <h4 style={{ marginBottom: "8px", fontSize: "1rem" }}>📥 CSV Export</h4>
+                          <h4 style={{ marginBottom: "8px", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px" }}>
+                            <i className="fas fa-file-csv" style={{ color: "#5a31ea" }}></i>
+                            CSV Export
+                          </h4>
                           <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
                             Export all transactions as a CSV file for Excel or spreadsheet applications.
                           </p>
@@ -11582,14 +11578,17 @@ Subscription Manager HK`;
 
                       <div className="card" style={{ 
                         padding: "20px", 
-                        background: "linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%)",
+                        background: "#ffffff",
                         display: "flex",
                         flexDirection: "column",
                         justifyContent: "space-between",
                         minHeight: "180px"
                       }}>
                         <div>
-                          <h4 style={{ marginBottom: "8px", fontSize: "1rem" }}>📄 PDF Export</h4>
+                          <h4 style={{ marginBottom: "8px", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px" }}>
+                            <i className="fas fa-file-pdf" style={{ color: "#5a31ea" }}></i>
+                            PDF Export
+                          </h4>
                           <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
                             Generate a formatted PDF report with charts and summaries.
                           </p>
@@ -12191,6 +12190,9 @@ Subscription Manager HK`;
                 imageFile: null,
                 imagePreview: null,
                 imageUrl: "",
+                reference: "",
+                selectedAdminId: "",
+                adminMobile: "",
               });
             }
           }}
@@ -12297,7 +12299,7 @@ Subscription Manager HK`;
                       borderRadius: "8px",
                       border: "none",
                       background: paymentModalData.paymentMethod === "Admin" 
-                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" 
+                        ? "#5a31ea" 
                         : "#f8f9ff",
                       color: paymentModalData.paymentMethod === "Admin" ? "#ffffff" : "#1a1a1a",
                       boxShadow: paymentModalData.paymentMethod === "Admin" 
@@ -12314,7 +12316,7 @@ Subscription Manager HK`;
                     }}
                   >
                     <i className="fas fa-user-shield"></i>
-                    Paid to Admin
+                    Paid Cash
                   </button>
                   <button
                     type="button"
@@ -12329,7 +12331,7 @@ Subscription Manager HK`;
                       borderRadius: "8px",
                       border: "none",
                       background: paymentModalData.paymentMethod === "Online" 
-                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" 
+                        ? "#5a31ea" 
                         : "#f8f9ff",
                       color: paymentModalData.paymentMethod === "Online" ? "#ffffff" : "#1a1a1a",
                       boxShadow: paymentModalData.paymentMethod === "Online" 
@@ -12351,55 +12353,98 @@ Subscription Manager HK`;
                 </div>
               </div>
 
-              {/* Reference Number Field - Only shown for Online payments */}
-              {paymentModalData.paymentMethod === "Online" && (
-                <div>
-                  <label style={{ 
-                    display: "block", 
-                    fontSize: "0.875rem", 
-                    fontWeight: "600", 
-                    color: "#333", 
-                    marginBottom: "8px" 
-                  }}>
-                    Reference Number <span style={{ color: "#ef4444" }}>*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={paymentModalData.reference}
-                    onChange={(e) => {
-                      setPaymentModalData({
-                        ...paymentModalData,
-                        reference: e.target.value
-                      });
-                      // Clear error when user starts typing
-                      if (paymentModalErrors.reference) {
-                        setPaymentModalErrors({ ...paymentModalErrors, reference: false });
+              {/* Admin Selection - Shown for both Paid Cash and Paid Online */}
+              {(paymentModalData.paymentMethod === "Admin" || paymentModalData.paymentMethod === "Online") && (
+                <div style={{ marginBottom: "20px" }}>
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ 
+                      display: "block", 
+                      fontSize: "0.875rem", 
+                      fontWeight: "600", 
+                      color: "#333", 
+                      marginBottom: "8px" 
+                    }}>
+                      Choose Admin <span style={{ color: "#ef4444" }}>*</span>
+                    </label>
+                    <select
+                      value={paymentModalData.selectedAdminId}
+                      onChange={(e) => {
+                        setPaymentModalData({ ...paymentModalData, selectedAdminId: e.target.value });
+                        if (paymentModalErrors.selectedAdminId || currentInvalidPaymentModalField === "selectedAdminId") {
+                          setPaymentModalErrors(prev => ({ ...prev, selectedAdminId: false }));
+                          if (currentInvalidPaymentModalField === "selectedAdminId") {
+                            setCurrentInvalidPaymentModalField(null);
+                          }
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        border: paymentModalErrors.selectedAdminId && currentInvalidPaymentModalField === "selectedAdminId" ? "2px solid #ef4444" : "1px solid #e0e0e0",
+                        borderRadius: "8px",
+                        fontSize: "0.875rem",
+                        background: "#fff",
+                        outline: "none",
+                        cursor: "pointer",
+                        transition: "border-color 0.2s"
+                      }}
+                      onFocus={(e) => {
+                        if (!paymentModalErrors.selectedAdminId || currentInvalidPaymentModalField !== "selectedAdminId") {
+                          e.target.style.borderColor = "#5a31ea";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                        }
+                      }}
+                      onBlur={(e) => {
+                        if (paymentModalErrors.selectedAdminId && currentInvalidPaymentModalField === "selectedAdminId") {
+                          e.target.style.borderColor = "#ef4444";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                        } else {
+                          e.target.style.borderColor = "#e0e0e0";
+                          e.target.style.boxShadow = "none";
+                        }
+                      }}
+                    >
+                      <option value="">Select an admin</option>
+                      {admins.filter(admin => admin.status === "Active").map((admin) => (
+                        <option key={admin.id} value={admin.id}>
+                          {admin.name} ({admin.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <PhoneInput
+                      label={
+                        <span style={{ 
+                          display: "block", 
+                          fontSize: "0.875rem", 
+                          fontWeight: "600", 
+                          color: "#333", 
+                          marginBottom: "8px" 
+                        }}>
+                          Mobile Number <span style={{ color: "#ef4444" }}>*</span>
+                        </span>
                       }
-                    }}
-                    placeholder="Enter payment reference number"
-                    style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      border: paymentModalErrors.reference ? "2px solid #ef4444" : "1px solid #e0e0e0",
-                      borderRadius: "8px",
-                      fontSize: "0.875rem",
-                      outline: "none",
-                      transition: "border-color 0.2s",
-                      boxShadow: paymentModalErrors.reference ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
-                    }}
-                    onFocus={(e) => {
-                      if (!paymentModalErrors.reference) {
-                        e.target.style.borderColor = "#5a31ea";
-                        e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                      }
-                    }}
-                    onBlur={(e) => {
-                      if (!paymentModalErrors.reference) {
-                        e.target.style.borderColor = "#e0e0e0";
-                        e.target.style.boxShadow = "none";
-                      }
-                    }}
-                  />
+                      value={paymentModalData.adminMobile}
+                      onChange={(e) => {
+                        setPaymentModalData({ ...paymentModalData, adminMobile: e.target.value });
+                        if (paymentModalErrors.adminMobile || currentInvalidPaymentModalField === "adminMobile") {
+                          setPaymentModalErrors(prev => ({ ...prev, adminMobile: false }));
+                          if (currentInvalidPaymentModalField === "adminMobile") {
+                            setCurrentInvalidPaymentModalField(null);
+                          }
+                        }
+                      }}
+                      onError={(error) => {
+                        showToast(error, "error");
+                        setPaymentModalErrors(prev => ({ ...prev, adminMobile: true }));
+                        setCurrentInvalidPaymentModalField("adminMobile");
+                      }}
+                      required={true}
+                      className={paymentModalErrors.adminMobile && currentInvalidPaymentModalField === "adminMobile" ? "admin-phone-input-error" : ""}
+                      placeholder="Enter mobile number"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -12551,8 +12596,11 @@ Subscription Manager HK`;
                       imagePreview: null,
                       imageUrl: "",
                       reference: "",
+                      selectedAdminId: "",
+                      adminMobile: "",
                     });
-                    setPaymentModalErrors({ image: false, reference: false });
+                    setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                    setCurrentInvalidPaymentModalField(null);
                   }}
                   disabled={uploadingPaymentModal}
                 >
@@ -12565,29 +12613,115 @@ Subscription Manager HK`;
                     className="primary-btn"
                     disabled={uploadingPaymentModal}
                     onClick={async () => {
-                    // Validate required fields before showing confirmation
-                    // Check reference number first (only for Online payments)
-                    const hasReference = paymentModalData.paymentMethod === "Online" 
-                      ? paymentModalData.reference.trim() 
-                      : true;
-
-                    // First check reference number for Online payments
-                    if (paymentModalData.paymentMethod === "Online" && !hasReference) {
-                      setPaymentModalErrors({ ...paymentModalErrors, reference: true });
-                      showToast("Reference number not entered. Please enter a reference number for online payments.", "warning");
+                    // Progressive validation for payment modal
+                    const validatePaymentModal = () => {
+                      // Define field order for validation - both methods need admin and mobile
+                      const fieldOrder = ["selectedAdminId", "adminMobile", "image"];
+                      
+                      // If we have a current invalid field, check if it's now valid
+                      if (currentInvalidPaymentModalField) {
+                        let isValid = true;
+                        let errorMsg = "";
+                        
+                        if (currentInvalidPaymentModalField === "selectedAdminId" && !paymentModalData.selectedAdminId) {
+                          isValid = false;
+                          errorMsg = "Please select an admin";
+                        } else if (currentInvalidPaymentModalField === "adminMobile" && !paymentModalData.adminMobile.trim()) {
+                          isValid = false;
+                          errorMsg = "Mobile number is required";
+                        } else if (currentInvalidPaymentModalField === "image") {
+                          const hasImage = paymentModalData.imageFile || paymentModalData.imageUrl || paymentModalInvoice?.screenshot;
+                          if (!hasImage) {
+                            isValid = false;
+                            errorMsg = "Image has not been uploaded. Please upload an image attachment.";
+                          }
+                        }
+                        
+                        if (isValid) {
+                          setPaymentModalErrors(prev => ({ ...prev, [currentInvalidPaymentModalField]: false }));
+                          setCurrentInvalidPaymentModalField(null);
+                        } else {
+                          setPaymentModalErrors(prev => ({ ...prev, [currentInvalidPaymentModalField]: true }));
+                          showToast(errorMsg, "error");
+                          return false;
+                        }
+                      }
+                      
+                      // Find first invalid field
+                      for (const field of fieldOrder) {
+                        let isValid = true;
+                        let errorMsg = "";
+                        
+                        if (field === "selectedAdminId" && !paymentModalData.selectedAdminId) {
+                          isValid = false;
+                          errorMsg = "Please select an admin";
+                        } else if (field === "adminMobile" && !paymentModalData.adminMobile.trim()) {
+                          isValid = false;
+                          errorMsg = "Mobile number is required";
+                        } else if (field === "image") {
+                          const hasImage = paymentModalData.imageFile || paymentModalData.imageUrl || paymentModalInvoice?.screenshot;
+                          if (!hasImage) {
+                            isValid = false;
+                            errorMsg = "Image has not been uploaded. Please upload an image attachment.";
+                          }
+                        }
+                        
+                        if (!isValid) {
+                          // Clear all errors first
+                          setPaymentModalErrors({
+                            image: false,
+                            reference: false,
+                            selectedAdminId: false,
+                            adminMobile: false,
+                          });
+                          // Set only this field as invalid
+                          setPaymentModalErrors(prev => ({ ...prev, [field]: true }));
+                          setCurrentInvalidPaymentModalField(field);
+                          showToast(errorMsg, "error");
+                          
+                          // Focus on the invalid field
+                          setTimeout(() => {
+                            if (field === "selectedAdminId") {
+                              const selects = document.querySelectorAll('select');
+                              const adminSelect = Array.from(selects).find(select => 
+                                select.options[0]?.text === "Select an admin"
+                              );
+                              adminSelect?.focus();
+                              adminSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            } else if (field === "adminMobile") {
+                              const phoneInputs = document.querySelectorAll('.phone-input-field');
+                              const mobileInput = Array.from(phoneInputs).find(input => 
+                                input.placeholder?.includes("mobile number")
+                              );
+                              mobileInput?.focus();
+                              mobileInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            } else if (field === "image") {
+                              const uploadAreas = document.querySelectorAll('[style*="border"]');
+                              const imageArea = Array.from(uploadAreas).find(area => 
+                                area.style.border.includes("dashed")
+                              );
+                              imageArea?.scrollIntoView({ behavior: "smooth", block: "center" });
+                            }
+                          }, 100);
+                          
+                          return false;
+                        }
+                      }
+                      
+                      // All fields valid
+                      setPaymentModalErrors({
+                        image: false,
+                        reference: false,
+                        selectedAdminId: false,
+                        adminMobile: false,
+                      });
+                      setCurrentInvalidPaymentModalField(null);
+                      return true;
+                    };
+                    
+                    if (!validatePaymentModal()) {
                       return;
                     }
-
-                    // Only check image attachment if reference number is present (for Online payments)
-                    const hasImage = paymentModalData.imageFile || paymentModalData.imageUrl || paymentModalInvoice?.screenshot;
-                    if (!hasImage) {
-                      setPaymentModalErrors({ ...paymentModalErrors, image: true });
-                      showToast("Image has not been uploaded. Please upload an image attachment.", "warning");
-                      return;
-                    }
-
-                    // Clear errors if validation passes
-                    setPaymentModalErrors({ image: false, reference: false });
 
                     // Show confirmation dialog
                     showConfirmation(
@@ -12635,10 +12769,6 @@ Subscription Manager HK`;
                             throw new Error("Image upload is required for all payments");
                           }
 
-                          if (paymentModalData.paymentMethod === "Online" && !paymentModalData.reference.trim()) {
-                            throw new Error("Reference number is required for online payments");
-                          }
-
                           // Update invoice with screenshot if image was uploaded
                           if (imageUrl && imageUrl !== paymentModalInvoice.screenshot) {
                             await updateInvoice(paymentModalInvoice.id, {
@@ -12646,12 +12776,9 @@ Subscription Manager HK`;
                             });
                           }
 
-                          // Mark invoice as paid with reference number
+                          // Mark invoice as paid
                           const paymentMethod = paymentModalData.paymentMethod === "Admin" ? "Cash" : "Online";
-                          const referenceNumber = paymentModalData.paymentMethod === "Online" 
-                            ? paymentModalData.reference.trim() 
-                            : null;
-                          await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl, referenceNumber);
+                          await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl, null);
 
                           // Close modal and reset
                           setShowPaymentModal(false);
@@ -12662,8 +12789,11 @@ Subscription Manager HK`;
                             imagePreview: null,
                             imageUrl: "",
                             reference: "",
+                            selectedAdminId: "",
+                            adminMobile: "",
                           });
-                          setPaymentModalErrors({ image: false, reference: false });
+                          setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                    setCurrentInvalidPaymentModalField(null);
 
                           showToast(`Invoice #${paymentModalInvoice.id} marked as paid!`, "success");
                         } catch (error) {
