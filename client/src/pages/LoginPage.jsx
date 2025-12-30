@@ -57,7 +57,6 @@ export function LoginPage() {
       setErrors(newErrors);
       setNotieMessage("Email is required");
       setNotieType("error");
-      setTimeout(() => setNotieMessage(null), 3000);
       return false;
     }
     
@@ -66,7 +65,6 @@ export function LoginPage() {
       setErrors(newErrors);
       setNotieMessage("Please enter a valid email address");
       setNotieType("error");
-      setTimeout(() => setNotieMessage(null), 3000);
       return false;
     }
 
@@ -76,7 +74,6 @@ export function LoginPage() {
       setErrors(newErrors);
       setNotieMessage("Password is required");
       setNotieType("error");
-      setTimeout(() => setNotieMessage(null), 3000);
       return false;
     }
 
@@ -91,6 +88,11 @@ export function LoginPage() {
   const handleLogin = async (role) => {
     // Handle both admin and member login via MongoDB API
     if (role === "admin" || role === "member") {
+      // Prevent multiple clicks - return early if already loading
+      if (loadingRole !== null) {
+        return;
+      }
+
       // Validate form before submitting
       if (!validateForm()) {
         return;
@@ -99,6 +101,7 @@ export function LoginPage() {
       setLoadingRole(role);
       setAuthMessage(null);
       setErrors({ email: "", password: "" });
+      setNotieMessage(null);
 
       try {
         // In development, use empty string to use Vite proxy (localhost:4000)
@@ -121,10 +124,8 @@ export function LoginPage() {
           data = await response.json();
         } catch (jsonError) {
           console.error("JSON parse error:", jsonError);
-          setAuthMessage({
-            type: "error",
-            text: "Invalid response from server. Please try again.",
-          });
+          setNotieMessage("Invalid response from server. Please try again.");
+          setNotieType("error");
           setLoadingRole(null);
           return;
         }
@@ -132,17 +133,12 @@ export function LoginPage() {
         if (!response.ok || !data.success) {
           // Check if account is locked
           if (data.locked) {
-            setAuthMessage({
-              type: "error",
-              text: data.message || "Account temporarily locked due to multiple failed login attempts. Please try again later.",
-            });
+            setNotieMessage(data.message || "Account temporarily locked due to multiple failed login attempts. Please try again later.");
           } else {
             // Show generic error message for security (no specific details)
-            setAuthMessage({
-              type: "error",
-              text: data.message || "Invalid email or password. Please check your credentials and try again.",
-            });
+            setNotieMessage(data.message || "Invalid email or password. Please check your credentials and try again.");
           }
+          setNotieType("error");
           setLoadingRole(null);
           return;
         }
@@ -200,10 +196,8 @@ export function LoginPage() {
       } catch (error) {
         console.error("Login error:", error);
         // Show generic error message for security
-        setAuthMessage({
-          type: "error",
-          text: "Unable to connect. Please check your connection and try again.",
-        });
+        setNotieMessage("Unable to connect. Please check your connection and try again.");
+        setNotieType("error");
         setLoadingRole(null);
       }
     }
