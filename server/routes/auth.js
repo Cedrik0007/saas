@@ -2,8 +2,9 @@ import express from "express";
 import { ensureConnection } from "../config/database.js";
 import AdminModel from "../models/Admin.js";
 import UserModel from "../models/User.js";
-import { getTransporter, setTransporter } from "../config/email.js";
+import { getTransporter, setTransporter, generateUniqueMessageId } from "../config/email.js";
 import EmailSettingsModel from "../models/EmailSettings.js";
+import PasswordResetRequestLogModel from "../models/PasswordResetRequestLog.js";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
 
@@ -223,9 +224,9 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// POST /api/auth/forgot-password - Request password reset
+// POST /api/auth/forgot-password - Request password reset (manual approval)
 router.post("/auth/forgot-password", async (req, res) => {
-  const { email, role } = req.body ?? {};
+  const { email } = req.body ?? {};
   
   if (!email) {
     return res.status(400).json({ 
@@ -238,103 +239,122 @@ router.post("/auth/forgot-password", async (req, res) => {
     await ensureConnection();
     const emailLower = email.trim().toLowerCase();
     
+    // Check if user exists (admin or member) to determine role
     let user = null;
+    let userRole = null;
     let userName = "";
     
-    // Check based on role
-    if (role === "admin" || role === "Admin") {
-      user = await AdminModel.findOne({ email: emailLower });
-      if (user) {
-        userName = user.name;
-      }
-    } else if (role === "member" || role === "Member") {
+    // Check admin database first
+    user = await AdminModel.findOne({ email: emailLower });
+    if (user) {
+      userRole = "admin";
+      userName = user.name || "";
+    } else {
+      // Check member database
       const escapedEmail = emailLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       user = await UserModel.findOne({ 
         email: { $regex: `^${escapedEmail}$`, $options: 'i' }
       });
       if (user) {
-        userName = user.name;
+        userRole = "member";
+        userName = user.name || "";
       }
     }
 
-    // Always return success message for security (don't reveal if email exists)
-    // But only send email if user exists
-    if (user) {
-      // Generate reset token
-      const resetToken = crypto.randomBytes(32).toString('hex');
-      const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour from now
-      
-      // Store token
-      resetTokens.set(resetToken, {
-        email: emailLower,
-        role: role,
-        expiresAt: expiresAt
+    // Log the password reset request (always log, regardless of whether user exists)
+    try {
+      await PasswordResetRequestLogModel.create({
+        userEmail: emailLower,
+        userRole: userRole || "unknown",
+        requestedAt: new Date(),
+        status: "Pending"
+      });
+      console.log(`✓ Password reset request logged for ${emailLower}`);
+    } catch (logError) {
+      console.error(`✗ Failed to log password reset request:`, logError);
+      // Continue even if logging fails
+    }
+
+    // Get email settings
+    const emailSettings = await EmailSettingsModel.findOne({});
+    
+    if (emailSettings && emailSettings.emailUser && emailSettings.emailPassword) {
+      // Update transporter with saved settings
+      const transporter = nodemailer.createTransport({
+        service: emailSettings.emailService || 'gmail',
+        auth: {
+          user: emailSettings.emailUser,
+          pass: emailSettings.emailPassword,
+        },
+      });
+      setTransporter(transporter);
+
+      // Super Admin email
+      const superAdminEmail = "0741sanjai@gmail.com";
+      const requestDate = new Date().toLocaleString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
       });
 
-      // Get email settings
-      const emailSettings = await EmailSettingsModel.findOne({});
-      
-      if (emailSettings && emailSettings.emailUser && emailSettings.emailPassword) {
-        // Update transporter with saved settings
-        const transporter = nodemailer.createTransport({
-          service: emailSettings.emailService || 'gmail',
-          auth: {
-            user: emailSettings.emailUser,
-            pass: emailSettings.emailPassword,
-          },
-        });
-        setTransporter(transporter);
-
-        // Create reset link
-        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-        const resetLink = `${baseUrl}/reset-password?token=${resetToken}&role=${role}`;
-
-        // Send email
-        const mailOptions = {
-          from: emailSettings.emailUser,
-          to: emailLower,
-          subject: "Password Reset Request - Subscription Manager HK",
-          html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      // Send email to Super Admin
+      const mailOptions = {
+        from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
+        to: superAdminEmail,
+        subject: `Password Reset Request - ${emailLower}`,
+        html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <h2 style="color: #333; border-bottom: 2px solid #5a31ea; padding-bottom: 10px;">
     Password Reset Request
   </h2>
-  <p>Dear ${userName || 'User'},</p>
-  <p>We received a request to reset your password for your ${role} account.</p>
-  <p>Click the button below to reset your password:</p>
-  <div style="text-align: center; margin: 30px 0;">
-    <a href="${resetLink}" style="background: #5a31ea; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: 600;">
-      Reset Password
-    </a>
+  <p>Dear Administrator,</p>
+  <p>A user has requested a password reset for the Subscription Manager HK system.</p>
+  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    <p><strong>User Email:</strong> ${emailLower}</p>
+    <p><strong>User Name:</strong> ${userName || 'Not available'}</p>
+    <p><strong>Account Type:</strong> ${userRole ? (userRole === "admin" ? "Admin" : "Member") : "User not found"}</p>
+    <p><strong>Request Date & Time:</strong> ${requestDate}</p>
   </div>
-  <p style="color: #666; font-size: 0.875rem;">Or copy and paste this link into your browser:</p>
-  <p style="color: #666; font-size: 0.875rem; word-break: break-all;">${resetLink}</p>
-  <p style="color: #666; font-size: 0.875rem; margin-top: 20px;">
-    <strong>This link will expire in 1 hour.</strong>
+  <p style="color: #d32f2f; font-weight: bold; margin-top: 20px;">
+    User has requested a password reset. Please generate a new password manually.
   </p>
-  <p style="color: #666; font-size: 0.875rem;">
-    If you didn't request this password reset, please ignore this email. Your password will remain unchanged.
-  </p>
+  <p>After creating a new password, please share it securely with the user via email or internal communication.</p>
   <p style="margin-top: 30px;">Best regards,<br><strong>Subscription Manager HK</strong></p>
 </div>`,
-        };
+        text: `Password Reset Request
 
-        try {
-          await transporter.sendMail(mailOptions);
-          console.log(`✓ Password reset email sent to ${emailLower}`);
-        } catch (emailError) {
-          console.error(`✗ Failed to send password reset email to ${emailLower}:`, emailError);
-          // Still continue and return success for security (don't reveal email sending failures)
-        }
-      } else {
-        console.warn(`⚠️ Email not configured. Cannot send password reset email to ${emailLower}`);
-        // Still return success for security, but log the issue
+User Email: ${emailLower}
+User Name: ${userName || 'Not available'}
+Account Type: ${userRole ? (userRole === "admin" ? "Admin" : "Member") : "User not found"}
+Request Date & Time: ${requestDate}
+
+User has requested a password reset. Please generate a new password manually.
+
+After creating a new password, please share it securely with the user via email or internal communication.`,
+        messageId: generateUniqueMessageId(),
+        headers: {
+          'X-Entity-Ref-ID': `password-reset-request-${Date.now()}`,
+        },
+      };
+
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log(`✓ Password reset request notification sent to Super Admin for ${emailLower}`);
+      } catch (emailError) {
+        console.error(`✗ Failed to send password reset request notification:`, emailError);
+        // Still continue and return success for security (don't reveal email sending failures)
       }
+    } else {
+      console.warn(`⚠️ Email not configured. Cannot send password reset request notification`);
+      // Still return success for security, but log the issue
     }
 
-    // Always return success message (security best practice)
+    // Always return success message (security best practice - don't reveal if email exists)
     return res.json({
       success: true,
-      message: "If an account with that email exists, a password reset link has been sent to your email.",
+      message: "Your request has been sent to the administrator. You will receive your new password after verification.",
     });
   } catch (error) {
     console.error("Forgot password error:", error);

@@ -567,32 +567,11 @@ export function MemberPage() {
   // Also wait for currentMember to be found if memberEmail/memberId exists
   if (loading || ((memberEmail || memberId) && !currentMember && members.length === 0)) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        flexDirection: 'column',
-        gap: '16px',
-        background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)'
-      }}>
-        <div style={{
-          width: '48px',
-          height: '48px',
-          border: '4px solid #e5e7eb',
-          borderTop: '4px solid #5a31ea',
-          borderRadius: '50%',
-          animation: 'spin 1s linear infinite'
-        }}></div>
-        <p style={{ color: '#1a1a1a', fontSize: '1rem', fontWeight: '500' }}>
+      <div className="member-loading-container">
+        <div className="member-loading-spinner"></div>
+        <p className="member-loading-text">
           {loading ? 'Loading data from server...' : 'Loading member information...'}
         </p>
-        <style>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}</style>
       </div>
     );
   }
@@ -600,25 +579,12 @@ export function MemberPage() {
   // Check if memberEmail/memberId exists but currentMember is not found after loading
   if ((memberEmail || memberId) && !loading && members.length > 0 && !currentMember) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        flexDirection: 'column',
-        gap: '16px',
-        background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)',
-        padding: '20px'
-      }}>
-        <div style={{
-          fontSize: '3rem',
-          color: '#ef4444',
-          marginBottom: '16px'
-        }}>⚠️</div>
-        <p style={{ color: '#1a1a1a', fontSize: '1.125rem', fontWeight: '600', marginBottom: '8px' }}>
+      <div className="member-not-found-container">
+        <div className="member-not-found-icon">⚠️</div>
+        <p className="member-not-found-title">
           Member Not Found
         </p>
-        <p style={{ color: '#666', fontSize: '0.875rem', textAlign: 'center', marginBottom: '24px' }}>
+        <p className="member-not-found-text">
           We couldn't find your member account. Please contact support or try logging in again.
         </p>
         <button 
@@ -626,8 +592,7 @@ export function MemberPage() {
             sessionStorage.clear();
             navigate('/login');
           }}
-          className="primary-btn"
-          style={{ padding: '12px 24px' }}
+          className="primary-btn member-not-found-button"
         >
           Return to Login
         </button>
@@ -694,7 +659,7 @@ export function MemberPage() {
               <article className="screen-card" id="dashboard">
                 <header className="screen-card__header">
                   <div>
-                    <h3><i className="fas fa-chart-line" style={{ marginRight: "10px" }}></i>Dashboard</h3>
+                    <h3><i className="fas fa-chart-line member-dashboard-icon"></i>Dashboard</h3>
                     <p>Welcome back, {currentMember?.name?.split(' ')[0] || "Member"}. Here's an overview of your membership account.</p>
                   </div>
                   {/* <button className="primary-btn" onClick={() => handleNavClick("pay")}>
@@ -705,7 +670,7 @@ export function MemberPage() {
                 <div className="card dashboard-card">
                   {/* Alert Banner */}
                   {stats.outstanding > 0 && !isAlertDismissed && (
-                    <div className="alert-banner alert-warning" style={{ marginBottom: "24px" }}>
+                    <div className="alert-banner alert-warning member-alert-banner">
                       <div className="alert-content">
                         <strong>Payment Due Soon</strong>
                         <p>
@@ -714,9 +679,8 @@ export function MemberPage() {
                         </p>
                       </div>
                       <button 
-                        className="alert-dismiss" 
+                        className="alert-dismiss member-alert-dismiss" 
                         onClick={() => setIsAlertDismissed(true)}
-                        style={{ cursor: "pointer" }}
                       >
                         ×
                       </button>

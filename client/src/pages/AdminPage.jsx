@@ -10,8 +10,6 @@ import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import { useAutoLogout } from "../hooks/useAutoLogout.js";
 import jsPDF from "jspdf";
-import {
-} from "../data";
 import { statusClass } from "../statusClasses";
 import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
 
@@ -229,7 +227,10 @@ export function AdminPage() {
 
       case "phone":
         // Phone validation is handled by PhoneInput component
-        // No additional validation needed - supports international numbers with country codes
+        // Required validation
+        if (!value || value.trim() === "") {
+          error = "WhatsApp number is required.";
+        }
         break;
 
       case "nextDue": {
@@ -255,69 +256,26 @@ export function AdminPage() {
     return error;
   };
 
-  // Progressive validation - validate one field at a time
+  // Progressive validation - validate one field at a time, starting from name
   const validateMemberForm = () => {
     // Define field order for validation (only validate fields that exist in the form)
     const fieldOrder = editingMember 
       ? ["name", "email", "phone"] // Edit Member: no date fields
       : ["name", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields
     
-    // If we have a current invalid field, check if it's now valid
-    if (currentInvalidField) {
-      const error = validateMemberField(currentInvalidField, memberForm[currentInvalidField]);
-      if (!error) {
-        // Current field is now valid, clear it and move to next
-        setMemberFieldErrors(prev => ({ ...prev, [currentInvalidField]: false }));
-        setCurrentInvalidField(null);
-      } else {
-        // Still invalid, show error again
-        setMemberFieldErrors(prev => ({ ...prev, [currentInvalidField]: true }));
-        showToast(error, "error");
-        // Focus on invalid field
-        setTimeout(() => {
-          const fieldElement = document.querySelector(`input[name="${currentInvalidField}"], input[type="text"][value*=""], input[type="email"], input[type="date"], input[type="tel"]`);
-          if (fieldElement) {
-            const inputs = document.querySelectorAll('input[type="text"], input[type="email"], input[type="date"], input[type="tel"]');
-            const fieldIndex = fieldOrder.indexOf(currentInvalidField);
-            if (fieldIndex === 0) {
-              // Name field
-              const nameInput = document.querySelector('input[type="text"][required]');
-              if (nameInput) nameInput.focus();
-            } else if (fieldIndex === 1) {
-              // Email field
-              const emailInput = document.querySelector('input[type="email"]');
-              if (emailInput) emailInput.focus();
-            } else if (fieldIndex === 2) {
-              // Phone field - focus on phone input
-              const phoneInput = document.querySelector('input[type="tel"]');
-              if (phoneInput) phoneInput.focus();
-            } else if (fieldIndex === 3) {
-              // nextDue field
-              const dateInputs = document.querySelectorAll('input[type="date"]');
-              if (dateInputs[0]) dateInputs[0].focus();
-            } else if (fieldIndex === 4) {
-              // lastPayment field
-              const dateInputs = document.querySelectorAll('input[type="date"]');
-              if (dateInputs[1]) dateInputs[1].focus();
-            }
-          }
-        }, 100);
-        return false;
-      }
-    }
+    // Clear all errors first
+    setMemberFieldErrors({
+      name: false,
+      email: false,
+      phone: false,
+      nextDue: false,
+      lastPayment: false,
+    });
     
-    // Find first invalid field
+    // Find first invalid field starting from the beginning
     for (const field of fieldOrder) {
       const error = validateMemberField(field, memberForm[field]);
       if (error) {
-        // Clear all errors first
-        setMemberFieldErrors({
-          name: false,
-          email: false,
-          phone: false,
-          nextDue: false,
-          lastPayment: false,
-        });
         // Set only this field as invalid
         setMemberFieldErrors(prev => ({ ...prev, [field]: true }));
         setCurrentInvalidField(field);
@@ -2211,12 +2169,13 @@ Subscription Manager HK`;
       return [{ id: "dashboard", label: "Dashboard" }];
     }
     
-    // Find the section in navigation groups
+    // Find the section in navigation groups and include parent group
     for (const group of navigationGroups) {
       const item = group.items.find(item => item.id === sectionId);
       if (item) {
         return [
           { id: "dashboard", label: "Dashboard" },
+          { id: group.id, label: group.label },
           { id: sectionId, label: item.label }
         ];
       }
@@ -2234,43 +2193,52 @@ Subscription Manager HK`;
     return [{ id: "dashboard", label: "Dashboard" }];
   };
 
-  // Render breadcrumb component
+  // Render breadcrumb component with tab-like navigation
   const renderBreadcrumb = (sectionId) => {
     const breadcrumbPath = getBreadcrumbPath(sectionId);
-    if (breadcrumbPath.length === 1) {
-      return null; // Don't show breadcrumb for dashboard
-    }
+    
+    // Get parent group for tab navigation
+    const parentGroup = navigationGroups.find(group => 
+      group.items.some(item => item.id === sectionId)
+    );
     
     return (
-      <div style={{ 
-        display: "flex", 
-        alignItems: "center", 
-        gap: "8px", 
-        marginBottom: "8px",
-        fontSize: "0.875rem",
-        color: "#6b7280"
-      }}>
-        {breadcrumbPath.map((item, index) => (
-          <span key={item.id}>
-            {index > 0 && <span style={{ margin: "0 4px" }}> &gt; </span>}
-            {index === breadcrumbPath.length - 1 ? (
-              <span style={{ color: "#111827", fontWeight: "500" }}>{item.label}</span>
-            ) : (
-              <span 
+      <div className="admin-breadcrumb-tabs-container">
+        {/* Breadcrumb path - only show if not dashboard */}
+        {breadcrumbPath.length > 1 && (
+          <div className="admin-breadcrumb-container admin-breadcrumb-container--small">
+            {breadcrumbPath.map((item, index) => (
+              <span key={item.id}>
+                {index > 0 && <span className="admin-breadcrumb-separator"> &gt; </span>}
+                {index === breadcrumbPath.length - 1 ? (
+                  <span className="admin-breadcrumb-current">{item.label}</span>
+                ) : (
+                  <span 
+                    onClick={() => handleNavClick(item.id)}
+                    className="admin-breadcrumb-link--inline"
+                  >
+                    {item.label}
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+        
+        {/* Tab navigation for sibling sections in the same group */}
+        {parentGroup && parentGroup.items.length > 1 && (
+          <div className="admin-breadcrumb-tabs">
+            {parentGroup.items.map((item) => (
+              <button
+                key={item.id}
+                className={`admin-breadcrumb-tab ${sectionId === item.id ? "admin-breadcrumb-tab--active" : ""}`}
                 onClick={() => handleNavClick(item.id)}
-                style={{ 
-                  cursor: "pointer",
-                  color: "#5a31ea",
-                  fontWeight: "500"
-                }}
-                onMouseEnter={(e) => e.target.style.textDecoration = "underline"}
-                onMouseLeave={(e) => e.target.style.textDecoration = "none"}
               >
                 {item.label}
-              </span>
-            )}
-          </span>
-        ))}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -3055,14 +3023,8 @@ Subscription Manager HK`;
                 Cancel
               </button>
               <button
-                className="danger-btn"
+                className="danger-btn admin-confirmation-button-success"
                 onClick={confirmationDialog.onConfirm}
-                style={{
-                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
-                  color: "#ffffff",
-                  border: "1px solid #10b981",
-                  boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)"
-                }}
               >
                 {confirmationDialog.confirmButtonText || "Confirm"}
               </button>
@@ -3074,77 +3036,32 @@ Subscription Manager HK`;
       {/* Template Preview Modal */}
       {showTemplatePreview && (
         <div 
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10001,
-            padding: "20px",
-          }}
+          className="admin-modal-overlay"
+          style={{ zIndex: 10001 }}
           onClick={() => setShowTemplatePreview(false)}
         >
           <div 
-            className="card"
-            style={{
-              maxWidth: "800px",
-              width: "100%",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              position: "relative",
-            }}
+            className="admin-modal-container"
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
-              <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
-                <i className="fas fa-eye" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+            <div className="admin-modal-header">
+              <h3 className="admin-modal-title">
+                <i className="fas fa-eye admin-icon"></i>
                 Email Template Preview
               </h3>
               <button
                 type="button"
+                className="admin-modal-close-button"
                 onClick={() => setShowTemplatePreview(false)}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  fontSize: "1.5rem",
-                  color: "#666",
-                  cursor: "pointer",
-                  padding: "0",
-                  width: "32px",
-                  height: "32px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: "4px",
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.background = "#f3f4f6";
-                  e.target.style.color = "#1a1a1a";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = "transparent";
-                  e.target.style.color = "#666";
-                }}
               >
                 ×
               </button>
             </div>
             <div 
+              className="admin-modal-content"
               dangerouslySetInnerHTML={{ __html: getPreviewTemplate() }}
-              style={{
-                border: "1px solid #e0e0e0",
-                borderRadius: "8px",
-                padding: "24px",
-                background: "#fff",
-                minHeight: "200px"
-              }}
             />
-            <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+            <div className="admin-modal-actions">
               <button
                 className="secondary-btn"
                 onClick={() => setShowTemplatePreview(false)}
@@ -3178,12 +3095,7 @@ Subscription Manager HK`;
           }}
         >
           <div 
-            className="card"
-            style={{
-              maxWidth: "500px",
-              width: "100%",
-              position: "relative",
-            }}
+            className="admin-modal-card admin-modal-card--small"
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
@@ -3230,96 +3142,46 @@ Subscription Manager HK`;
                     : "Select one or both channels to send reminders to all outstanding members:")
                 : `Select the channel to send reminder to ${pendingReminderAction?.memberData?.name || 'member'}:`}
             </p>
-            <div style={{ display: "flex", gap: "12px", flexDirection: "column" }}>
+            <div className="admin-channel-buttons-container">
               {/* Channel selection buttons - always visible for bulk */}
               {pendingReminderAction?.type === 'bulk' ? (
                 <>
                   <button
-                    className={`primary-btn ${selectedChannels.includes('Email') ? 'active' : ''}`}
+                    className={`admin-channel-button ${selectedChannels.includes('Email') ? 'admin-channel-button--selected' : ''}`}
                     onClick={() => handleSelectChannel('Email')}
-                    style={{
-                      padding: "16px 24px",
-                      borderRadius: "8px",
-                      fontWeight: "600",
-                      fontSize: "1rem",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "12px",
-                      backgroundColor: selectedChannels.includes('Email') ? "#5a31ea" : "#ffffff",
-                      color: "#ffffff",
-                      border: `2px solid ${selectedChannels.includes('Email') ? "#5a31ea" : "#5a31ea"}`,
-                      cursor: "pointer",
-                      transition: "all 0.2s ease"
-                    }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                      <i className="fas fa-envelope" style={{ fontSize: "1.25rem", color: "#ffffff" }}></i>
-                      <span style={{ color: "#ffffff" }}>Email</span>
+                    <div className="admin-channel-button-content">
+                      <i className="fas fa-envelope admin-channel-button-icon-white"></i>
+                      <span className="admin-channel-button-text-white">Email</span>
                     </div>
                     {selectedChannels.includes('Email') && (
-                      <i className="fas fa-check-circle" style={{ fontSize: "1.125rem", color: "#ffffff" }}></i>
+                      <i className="fas fa-check-circle admin-channel-button-check-white"></i>
                     )}
                   </button>
                   <button
-                    className={`primary-btn ${selectedChannels.includes('WhatsApp') ? 'active' : ''}`}
+                    className={`admin-channel-button ${selectedChannels.includes('WhatsApp') ? 'admin-channel-button--selected' : ''}`}
                     onClick={() => handleSelectChannel('WhatsApp')}
-                    style={{
-                      padding: "16px 24px",
-                      borderRadius: "8px",
-                      fontWeight: "600",
-                      fontSize: "1rem",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "12px",
-                      backgroundColor: selectedChannels.includes('WhatsApp') ? "#5a31ea" : "#5a31ea",
-                      color: "#ffffff",
-                      border: `2px solid ${selectedChannels.includes('WhatsApp') ? "#5a31ea" : "#5a31ea"}`,
-                      cursor: "pointer",
-                      transition: "all 0.2s ease"
-                    }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                      <i className="fab fa-whatsapp" style={{ fontSize: "1.25rem", color: "#ffffff" }}></i>
-                      <span style={{ color: "#ffffff" }}>WhatsApp</span>
+                    <div className="admin-channel-button-content">
+                      <i className="fab fa-whatsapp admin-channel-button-icon-white"></i>
+                      <span className="admin-channel-button-text-white">WhatsApp</span>
                     </div>
                     {selectedChannels.includes('WhatsApp') && (
-                      <i className="fas fa-check-circle" style={{ fontSize: "1.125rem", color: "#ffffff" }}></i>
+                      <i className="fas fa-check-circle admin-channel-button-check-white"></i>
                     )}
                   </button>
                   
                   {/* Send All button - shown when at least one channel is selected */}
                   {selectedChannels.length > 0 && (
                     <button
-                      className="primary-btn"
+                      className={`admin-channel-send-button ${(sendingToAll || sendingWhatsAppToAll) ? 'admin-channel-send-button-loading' : ''}`}
                       onClick={handleSendAllWithSelectedChannels}
                       disabled={sendingToAll || sendingWhatsAppToAll}
-                      style={{
-                        padding: "16px 24px",
-                        borderRadius: "4px",
-                        fontWeight: "600",
-                        fontSize: "1rem",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: "12px",
-                        marginTop: "8px",
-                        opacity: (sendingToAll || sendingWhatsAppToAll) ? 0.5 : 1,
-                        cursor: (sendingToAll || sendingWhatsAppToAll) ? "not-allowed" : "pointer",
-                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
-                        border: "none",
-                        color: "#ffffff"
-                      }}
                     >
                       {sendingToAll || sendingWhatsAppToAll ? (
                         <>
                           <svg 
-                            style={{ 
-                              animation: "spin 1s linear infinite",
-                              width: "16px",
-                              height: "16px"
-                            }} 
+                            className="login-btn-spinner"
                             viewBox="0 0 24 24" 
                             fill="none" 
                             stroke="currentColor" 
@@ -3332,7 +3194,7 @@ Subscription Manager HK`;
                         </>
                       ) : (
                         <>
-                          <i className="fas fa-paper-plane" style={{ fontSize: "1.25rem" }}></i>
+                          <i className="fas fa-paper-plane admin-channel-action-icon-large"></i>
                           Send
                         </>
                       )}
@@ -3343,45 +3205,23 @@ Subscription Manager HK`;
                 // Single member - send immediately
                 <>
                   <button
-                    className="primary-btn"
+                    className="admin-channel-action-button"
                     onClick={() => handleSelectChannel('Email')}
-                    style={{
-                      padding: "16px 24px",
-                      borderRadius: "8px",
-                      fontWeight: "600",
-                      fontSize: "1rem",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "12px"
-                    }}
                   >
-                    <i className="fas fa-envelope" style={{ fontSize: "1.25rem" }}></i>
+                    <i className="fas fa-envelope admin-channel-action-icon-large"></i>
                     Email
                   </button>
                   <button
-                    className="primary-btn"
+                    className="admin-channel-action-button"
                     onClick={() => handleSelectChannel('WhatsApp')}
-                    style={{
-                      padding: "16px 24px",
-                      borderRadius: "8px",
-                      fontWeight: "600",
-                      fontSize: "1rem",
-                      backgroundColor: "#5a31ea",
-                      borderColor: "#5a31ea",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "12px"
-                    }}
                   >
-                    <i className="fab fa-whatsapp" style={{ fontSize: "1.25rem" }}></i>
+                    <i className="fab fa-whatsapp admin-channel-action-icon-large"></i>
                     WhatsApp
                   </button>
                 </>
               )}
             </div>
-            <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end" }}>
+            <div className="admin-modal-footer">
               <button
                 className="secondary-btn"
                 onClick={() => {
@@ -3431,7 +3271,7 @@ Subscription Manager HK`;
                     setIsMobileMenuOpen(false);
                   }}
                 >
-                  <i className="fas fa-chart-line" style={{ marginRight: "8px" }}></i>
+                  <i className="fas fa-chart-line admin-nav-icon"></i>
                   Dashboard
                 </button>
               </div>
@@ -3462,11 +3302,10 @@ Subscription Manager HK`;
                     }}
                     type="button"
                   >
-                    <i className={`fas ${group.icon}`} style={{ marginRight: "8px", fontSize: "0.875rem", color: "#666" }}></i>
+                    <i className={`fas ${group.icon} admin-nav-icon`}></i>
                     <span className="nav-group-label">{group.label}</span>
                     <i 
-                      className={`fas fa-chevron-down nav-group-chevron ${expandedGroups[group.id] ? 'expanded' : ''}`}
-                      style={{ marginLeft: "auto", fontSize: "0.7rem", color: "#9ca3af", transition: "transform 0.2s ease" }}
+                      className={`fas fa-chevron-down nav-group-chevron admin-nav-chevron ${expandedGroups[group.id] ? 'expanded' : ''}`}
                     ></i>
                   </button>
                   <div 
@@ -3495,45 +3334,46 @@ Subscription Manager HK`;
             {activeSection === "dashboard" && (
               <article className="screen-card" id="dashboard">
                 <header className="screen-card__header">
-                  <h3><i className="fas fa-chart-line" style={{ marginRight: "10px" }}></i>Dashboard</h3>
-                  <p>Key KPIs, monthly collections, recent payments.</p>
+                  <div>
+                    {renderBreadcrumb("dashboard")}
+                    <h3><i className="fas fa-chart-line admin-section-icon"></i>Dashboard</h3>
+                    <p>Key KPIs, monthly collections, recent payments.</p>
+                  </div>
                 </header>
-                <div className="card dashboard-card">
+                <div className="admin-dashboard-main-card">
                   <div className="kpi-grid">
                     {/* Total Members */}
                     <button
                       type="button"
-                      className="card kpi"
-                      style={{ textAlign: "left", cursor: "pointer" }}
+                      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
                       onClick={() => handleNavClick("members")}
                     >
-                      <p>
-                        <i className="fas fa-users" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                      <p className="admin-dashboard-kpi-label">
+                        <i className="fas fa-users admin-dashboard-kpi-icon"></i>
                         Total Members
                       </p>
-                      <h4>{formatNumber(members.length)}</h4>
-                      <small>Active members</small>
+                      <h4 className="admin-dashboard-kpi-value">{formatNumber(members.length)}</h4>
+                      <small className="admin-dashboard-kpi-description">Active members</small>
                     </button>
 
                     {/* Total Collected */}
                     <button
                       type="button"
-                      className="card kpi"
-                      style={{ textAlign: "left", cursor: "pointer" }}
+                      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
                       onClick={() => handleNavClick("payments")}
                     >
-                      <p>
-                        <i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#10b981" }}></i>
+                      <p className="admin-dashboard-kpi-label">
+                        <i className="fas fa-dollar-sign admin-dashboard-kpi-icon--green"></i>
                         Total Collected
                       </p>
-                      <h4>
+                      <h4 className="admin-dashboard-kpi-value">
                         $
                         {formatNumber(dashboardMetrics.collectedMonth, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </h4>
-                      <small>
+                      <small className="admin-dashboard-kpi-description">
                         $
                         {formatNumber(dashboardMetrics.collectedYear, {
                           minimumFractionDigits: 2,
@@ -3546,22 +3386,21 @@ Subscription Manager HK`;
                     {/* Outstanding */}
                     <button
                       type="button"
-                      className="card kpi"
-                      style={{ textAlign: "left", cursor: "pointer" }}
+                      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
                       onClick={() => handleNavClick("members")}
                     >
-                      <p>
-                        <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                      <p className="admin-dashboard-kpi-label">
+                        <i className="fas fa-exclamation-triangle admin-dashboard-kpi-icon--red"></i>
                         Total Outstanding
                       </p>
-                      <h4 style={{ color: dashboardMetrics.outstanding > 0 ? "#ef4444" : "#1a1a1a" }}>
+                      <h4 className={`admin-dashboard-kpi-value ${dashboardMetrics.outstanding > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}`}>
                         $
                         {formatNumber(dashboardMetrics.outstanding, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </h4>
-                      <small>
+                      <small className="admin-dashboard-kpi-description">
                         Expected $
                         {formatNumber(dashboardMetrics.expectedAnnual, {
                           minimumFractionDigits: 2,
@@ -3573,37 +3412,35 @@ Subscription Manager HK`;
                     {/* Overdue Members */}
                     <button
                       type="button"
-                      className="card kpi"
-                      style={{ textAlign: "left", cursor: "pointer" }}
+                      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
                       onClick={() => handleNavClick("members")}
                     >
-                      <p>
-                        <i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: dashboardMetrics.overdueMembers > 0 ? "#ef4444" : "#666" }}></i>
+                      <p className="admin-dashboard-kpi-label">
+                        <i className={`fas fa-exclamation-circle ${dashboardMetrics.overdueMembers > 0 ? "admin-dashboard-kpi-icon--red" : "admin-dashboard-kpi-icon--gray"}`}></i>
                         Overdue Members
                       </p>
-                      <h4 style={{ color: dashboardMetrics.overdueMembers > 0 ? "#ef4444" : "#1a1a1a" }}>
+                      <h4 className={`admin-dashboard-kpi-value ${dashboardMetrics.overdueMembers > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}`}>
                         {formatNumber(dashboardMetrics.overdueMembers)}
                       </h4>
-                      <small>Requires attention</small>
+                      <small className="admin-dashboard-kpi-description">Requires attention</small>
                     </button>
                   </div>
 
                   {/* Last updated timestamp */}
-                  <div style={{ marginTop: "12px", fontSize: "0.75rem", color: "#6b7280" }}>
+                  <div className="admin-dashboard-last-updated">
                     Last updated: {dashboardLastUpdated}
                   </div>
 
-                  <div className="card chart-card">
+                  <div className="admin-dashboard-chart-card">
                     <div className="card-header">
                       <div>
-                        <h4><i className="fas fa-chart-bar" style={{ marginRight: "8px" }}></i>Monthly Collections · Last 12 Months</h4>
+                        <h4><i className="fas fa-chart-bar admin-dashboard-chart-header-icon"></i>Monthly Collections · Last 12 Months</h4>
                         <p>Expected contribution is $800 per member per year</p>
                       </div>
                     </div>
                     <div 
                       ref={chartContainerRef}
-                      className="chart" 
-                      style={{ position: "relative", overflow: "visible" }}
+                      className="chart admin-dashboard-chart-container" 
                       onMouseMove={(e) => {
                         if (hoveredMonth && chartContainerRef.current) {
                           const rect = chartContainerRef.current.getBoundingClientRect();
@@ -3617,11 +3454,8 @@ Subscription Manager HK`;
                       {monthlyCollectionsData.map((item) => (
                         <div
                           key={item.monthKey}
-                          style={{ 
-                            height: `${item.percentage}%`,
-                            position: "relative",
-                            cursor: "pointer"
-                          }}
+                          className="admin-dashboard-chart-bar"
+                          style={{ height: `${item.percentage}%` }}
                           data-month={item.month}
                           onMouseEnter={(e) => {
                             setHoveredMonth(item);
@@ -3683,21 +3517,13 @@ Subscription Manager HK`;
                         }
                         
                         return (
-                          <div style={{
-                            position: "absolute",
-                            left: `${left}px`,
-                            top: `${top}px`,
-                            padding: "8px 12px",
-                            background: "#1a1a1a",
-                            color: "#fff",
-                            borderRadius: "6px",
-                            fontSize: "0.875rem",
-                            whiteSpace: "nowrap",
-                            zIndex: 1000,
-                            pointerEvents: "none",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-                            maxWidth: "250px"
-                          }}>
+                          <div 
+                            className="admin-dashboard-chart-tooltip"
+                            style={{
+                              left: `${left}px`,
+                              top: `${top}px`
+                            }}
+                          >
                             {hoveredMonth.month} {new Date().getFullYear()}: ${hoveredMonth.value.toFixed(2)}
                             {hoveredMonth.count > 0 && ` (${hoveredMonth.count} payment${hoveredMonth.count > 1 ? 's' : ''})`}
                           </div>
@@ -3706,9 +3532,9 @@ Subscription Manager HK`;
                     </div>
                   </div>
 
-                  <div className="card table-card">
+                  <div className="admin-dashboard-payments-card">
                     <div className="card-header">
-                      <h4><i className="fas fa-clock" style={{ marginRight: "8px" }}></i>Recent Payments</h4>
+                      <h4><i className="fas fa-clock admin-icon"></i>Recent Payments</h4>
                       <button className="text-btn" onClick={() => handleNavClick("members")}>
                         View all
                       </button>
@@ -3798,19 +3624,7 @@ Subscription Manager HK`;
                 {/* Member Form - now as popup/modal */}
                 {showMemberForm && (
                   <div
-                    style={{
-                      position: "fixed",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: "rgba(0, 0, 0, 0.4)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      zIndex: 10000,
-                      padding: "20px",
-                    }}
+                    className="admin-members-form-overlay"
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
                         // Clear validation state when closing
@@ -3828,41 +3642,18 @@ Subscription Manager HK`;
                     }}
                   >
                     <div
-                      className="card"
-                      style={{
-                        maxWidth: "720px",
-                        width: "100%",
-                        maxHeight: "90vh",
-                        display: "flex",
-                        flexDirection: "column",
-                        background: "#f9fafb",
-                        position: "relative",
-                      }}
+                      className="card admin-members-form-container"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div style={{ padding: "24px", paddingBottom: 0 }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: "16px",
-                          }}
-                        >
-                        <h4
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            margin: 0,
-                          }}
-                        >
+                      <div className="admin-members-form-header">
+                        <div className="admin-members-form-header-top">
+                        <h4 className="admin-members-form-title">
                           <i className="fas fa-user-plus" aria-hidden="true"></i>
                           {editingMember ? "Edit Member" : "Add New Member"}
                         </h4>
                         <button
                           type="button"
-                          className="ghost-btn"
+                          className="admin-members-form-close"
                           onClick={() => {
                             // Clear validation state when closing
                             setMemberFieldErrors({
@@ -3875,28 +3666,6 @@ Subscription Manager HK`;
                             setCurrentInvalidField(null);
                             setShowMemberForm(false);
                             setEditingMember(null);
-                          }}
-                          style={{ 
-                            fontSize: "1.5rem", 
-                            lineHeight: 1,
-                            color: "#ef4444",
-                            fontWeight: "bold",
-                            width: "32px",
-                            height: "32px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            borderRadius: "4px",
-                            border: "1px solid #ef4444",
-                            background: "transparent",
-                            cursor: "pointer",
-                            transition: "all 0.2s ease",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.target.style.background = "#fee2e2";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.background = "transparent";
                           }}
                           aria-label="Close add member form"
                         >
@@ -3911,8 +3680,8 @@ Subscription Manager HK`;
                       >
                       <label>
                         <span>
-                          <i className="fas fa-user" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                        Name <span style={{ color: "#ef4444" }}>*</span>
+                          <i className="fas fa-user admin-members-form-icon" aria-hidden="true"></i>
+                        Name <span className="admin-members-form-required">*</span>
                         </span>
                         <input
                           type="text"
@@ -3928,10 +3697,7 @@ Subscription Manager HK`;
                               }
                             }
                           }}
-                          style={{
-                            borderColor: (memberFieldErrors.name && currentInvalidField === "name") ? "#ef4444" : undefined,
-                            borderWidth: (memberFieldErrors.name && currentInvalidField === "name") ? "2px" : undefined,
-                          }}
+                          className={(memberFieldErrors.name && currentInvalidField === "name") ? "admin-members-form-input-error" : ""}
                           aria-invalid={memberFieldErrors.name}
                           onFocus={(e) => {
                             if (memberFieldErrors.name && currentInvalidField === "name") {
@@ -3993,9 +3759,9 @@ Subscription Manager HK`;
                       <div>
                         <PhoneInput
                           label={
-                            <span>
-                              <i className="fas fa-phone" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                              WhatsApp Number
+                            <span className="admin-phone-input-label">
+                              <i className="fas fa-phone admin-phone-input-label-icon" aria-hidden="true"></i>
+                              WhatsApp Number <span className="admin-phone-input-required">*</span>
                             </span>
                           }
                           value={memberForm.phone}
@@ -4014,11 +3780,8 @@ Subscription Manager HK`;
                             setMemberFieldErrors(prev => ({ ...prev, phone: true }));
                             setCurrentInvalidField("phone");
                           }}
-                          style={{
-                            border: (memberFieldErrors.phone && currentInvalidField === "phone") ? "2px solid #ef4444" : undefined,
-                            outline: (memberFieldErrors.phone && currentInvalidField === "phone") ? "none" : undefined,
-                            boxShadow: (memberFieldErrors.phone && currentInvalidField === "phone") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
-                          }}
+                          required={true}
+                          className={memberFieldErrors.phone && currentInvalidField === "phone" ? "admin-phone-input-error" : ""}
                           placeholder="Enter phone number"
                         />
                       </div>
@@ -4337,10 +4100,10 @@ Subscription Manager HK`;
                 )}
 
                 {/* Search Filter */}
-                <div className="card" style={{ marginBottom: "20px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: "8px", flex: "1 1 300px", minWidth: "250px" }}>
-                      <span style={{ fontSize: "0.875rem", fontWeight: "500", color: "#666" }}>🔍 Search Members:</span>
+                <div className="admin-members-search-card">
+                  <div className="admin-members-search-container">
+                    <label className="admin-members-search-label">
+                      <span className="admin-members-search-label-text">🔍 Search Members:</span>
                       <input
                         type="text"
                         placeholder="Search by member name..."
@@ -4388,7 +4151,7 @@ Subscription Manager HK`;
                   </div>
                 </div>
 
-                  <div className="card">
+                  <div className="admin-members-table-card">
                     <div className="table-wrapper">
                       {(() => {
                         // Filter members based on search term and status (using derived status)
@@ -4448,59 +4211,61 @@ Subscription Manager HK`;
                         return (
                           <>
                             {/* Filters above table */}
-                            <div style={{ marginBottom: "16px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                              <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
-                              <div style={{ 
-                                display: "flex", 
-                                gap: "4px", 
-                                background: "#f3f4f6", 
-                                padding: "4px", 
-                                borderRadius: "4px",
-                                flexWrap: "wrap"
-                              }}>
-                                {[
-                                  { value: "All", label: "All" },
-                                  { value: "Active", label: "Active" },
-                                  { value: "Overdue", label: "Overdue" },
-                                  { value: "Inactive", label: "Inactive" },
-                                  { value: "Pending", label: "Pending" }
-                                ].map((option) => (
-                                  <button
-                                    key={option.value}
-                                    type="button"
-                                    onClick={() => setMemberStatusFilter(option.value)}
-                                    style={{
-                                      padding: "8px 16px",
-                                      borderRadius: "4px",
-                                      border: "none",
-                                      fontSize: "0.875rem",
-                                      fontWeight: "500",
-                                      cursor: "pointer",
-                                      transition: "all 0.2s ease",
-                                      background: memberStatusFilter === option.value
-                                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
-                                        : "transparent",
-                                      color: memberStatusFilter === option.value ? "#ffffff" : "#6b7280",
-                                      boxShadow: memberStatusFilter === option.value
-                                        ? "0 2px 8px rgba(90, 49, 234, 0.3)"
-                                        : "none",
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      if (memberStatusFilter !== option.value) {
-                                        e.target.style.background = "#e5e7eb";
-                                        e.target.style.color = "#374151";
-                                      }
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      if (memberStatusFilter !== option.value) {
-                                        e.target.style.background = "transparent";
-                                        e.target.style.color = "#6b7280";
-                                      }
-                                    }}
-                                  >
-                                    {option.label}
-                                  </button>
-                                ))}
+                            <div style={{ marginBottom: "16px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+                              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                                <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
+                                <div style={{ 
+                                  display: "flex", 
+                                  gap: "4px", 
+                                  background: "#f3f4f6", 
+                                  padding: "4px", 
+                                  borderRadius: "4px",
+                                  flexWrap: "wrap"
+                                }}>
+                                  {[
+                                    { value: "All", label: "All" },
+                                    { value: "Active", label: "Active" },
+                                    { value: "Overdue", label: "Overdue" },
+                                    { value: "Inactive", label: "Inactive" },
+                                    { value: "Pending", label: "Pending" }
+                                  ].map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => setMemberStatusFilter(option.value)}
+                                      style={{
+                                        padding: "8px 16px",
+                                        borderRadius: "4px",
+                                        border: "none",
+                                        fontSize: "0.875rem",
+                                        fontWeight: "500",
+                                        cursor: "pointer",
+                                        transition: "all 0.2s ease",
+                                        background: memberStatusFilter === option.value
+                                          ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)"
+                                          : "transparent",
+                                        color: memberStatusFilter === option.value ? "#ffffff" : "#6b7280",
+                                        boxShadow: memberStatusFilter === option.value
+                                          ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                          : "none",
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (memberStatusFilter !== option.value) {
+                                          e.target.style.background = "#e5e7eb";
+                                          e.target.style.color = "#374151";
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (memberStatusFilter !== option.value) {
+                                          e.target.style.background = "transparent";
+                                          e.target.style.color = "#6b7280";
+                                        }
+                                      }}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
                               <label style={{ fontSize: "0.875rem", color: "#666" }}>
                                 Sort by Outstanding:&nbsp;
@@ -4522,120 +4287,133 @@ Subscription Manager HK`;
                               </label>
                             </div>
 
-                            <Table
-                              columns={[
-                                "Member Name",
-                                "Status",
-                                "Outstanding",
-                                "Actions",
-                              ]}
-                              rows={paginatedMembers.map((member) => {
-                                // Derive outstanding numeric amount
-                                const balanceStr = member.balance?.toString() || "";
-                                const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0) || 0;
+                            {/* Empty State */}
+                            {sortedMembers.length === 0 ? (
+                              <div className="admin-empty-state">
+                                <p className="admin-empty-state-message">
+                                  {memberStatusFilter !== "All" 
+                                    ? `No ${memberStatusFilter.toLowerCase()} members found.`
+                                    : "No members found."}
+                                </p>
+                              </div>
+                            ) : (
+                              <>
+                                <Table
+                                  columns={[
+                                    "Member Name",
+                                    "Status",
+                                    "Outstanding",
+                                    "Actions",
+                                  ]}
+                                  rows={paginatedMembers.map((member) => {
+                                    // Derive outstanding numeric amount
+                                    const balanceStr = member.balance?.toString() || "";
+                                    const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0) || 0;
 
-                                // Derive status: Active / Overdue / Inactive / Pending
-                                const derivedStatus =
-                                  member.status === "Inactive"
-                                    ? "Inactive"
-                                    : member.status === "Pending"
-                                    ? "Pending"
-                                    : balanceStr.toLowerCase().includes("overdue") || numericOutstanding > 0
-                                    ? "Overdue"
-                                    : "Active";
+                                    // Derive status: Active / Overdue / Inactive / Pending
+                                    const derivedStatus =
+                                      member.status === "Inactive"
+                                        ? "Inactive"
+                                        : member.status === "Pending"
+                                        ? "Pending"
+                                        : balanceStr.toLowerCase().includes("overdue") || numericOutstanding > 0
+                                        ? "Overdue"
+                                        : "Active";
 
-                                const statusBadgeClass =
-                                  derivedStatus === "Active"
-                                    ? "badge badge-active"
-                                    : derivedStatus === "Overdue"
-                                    ? "badge badge-overdue"
-                                    : derivedStatus === "Inactive"
-                                    ? "badge badge-inactive"
-                                    : "badge badge-pending";
+                                    const statusBadgeClass =
+                                      derivedStatus === "Active"
+                                        ? "badge badge-active"
+                                        : derivedStatus === "Overdue"
+                                        ? "badge badge-overdue"
+                                        : derivedStatus === "Inactive"
+                                        ? "badge badge-inactive"
+                                        : "badge badge-pending";
 
-                                return {
-                                  "Member Name": member.name,
-                                  Status: {
-                                    render: () => (
-                                      <span className={statusBadgeClass}>
-                                        {derivedStatus}
-                                      </span>
-                                    ),
-                                  },
-                                  Outstanding: {
-                                    render: () => (
-                                      <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                                        <span
-                                          style={{
-                                            color:
-                                              numericOutstanding > 0
-                                                ? derivedStatus === "Overdue"
-                                                  ? "#ef4444"
-                                                  : "#ef4444"
-                                                : "#111827",
-                                            fontWeight: numericOutstanding > 0 ? 600 : 500,
-                                          }}
-                                        >
-                                          $
-                                          {formatNumber(numericOutstanding, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                          })}
-                                        </span>
-                                      </div>
-                                    ),
-                                  },
-                                  Actions: {
-                                    render: () => (
-                                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                                        <button
-                                          className="ghost-btn icon-btn icon-btn--view"
-                                          onClick={() => handleViewMemberDetail(member)}
-                                          title="View member"
-                                          aria-label="View member"
-                                        >
-                                          <i className="fas fa-eye" aria-hidden="true"></i>
-                                        </button>
-                                        <button
-                                          className="secondary-btn icon-btn icon-btn--edit"
-                                          onClick={() => handleEditMember(member)}
-                                          title="Edit member"
-                                          aria-label="Edit member"
-                                        >
-                                          <i className="fas fa-pen" aria-hidden="true"></i>
-                                        </button>
-                                        {isOwner && (
-                                          <button
-                                            className="ghost-btn icon-btn icon-btn--delete"
-                                            style={{ color: "#ef4444" }}
-                                            onClick={() => {
-                                              showConfirmation(
-                                                `Delete member ${member.name}? This cannot be undone.`,
-                                                () => handleDeleteMember(member.id)
-                                              );
-                                            }}
-                                            aria-label="Delete member"
-                                          >
-                                            <Tooltip text="Delete member" position="top">
-                                              <i className="fas fa-trash" aria-hidden="true"></i>
-                                            </Tooltip>
-                                          </button>
-                                        )}
-                                      </div>
-                                    ),
-                                  },
-                                };
-                              })}
-                            />
-                            {totalPages > 0 && sortedMembers.length > 0 && (
-                              <Pagination
-                                currentPage={currentPage}
-                                totalPages={totalPages}
-                                onPageChange={setMembersPage}
-                                pageSize={membersPageSize}
-                                onPageSizeChange={setMembersPageSize}
-                                totalItems={sortedMembers.length}
-                              />
+                                    return {
+                                      "Member Name": member.name,
+                                      Status: {
+                                        render: () => (
+                                          <span className={statusBadgeClass}>
+                                            {derivedStatus}
+                                          </span>
+                                        ),
+                                      },
+                                      Outstanding: {
+                                        render: () => (
+                                          <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                            <span
+                                              style={{
+                                                color:
+                                                  numericOutstanding > 0
+                                                    ? derivedStatus === "Overdue"
+                                                      ? "#ef4444"
+                                                      : "#ef4444"
+                                                    : "#111827",
+                                                fontWeight: numericOutstanding > 0 ? 600 : 500,
+                                              }}
+                                            >
+                                              $
+                                              {formatNumber(numericOutstanding, {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                              })}
+                                            </span>
+                                          </div>
+                                        ),
+                                      },
+                                      Actions: {
+                                        render: () => (
+                                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                            <button
+                                              className="ghost-btn icon-btn icon-btn--view"
+                                              onClick={() => handleViewMemberDetail(member)}
+                                              title="View member"
+                                              aria-label="View member"
+                                            >
+                                              <i className="fas fa-eye" aria-hidden="true"></i>
+                                            </button>
+                                            <button
+                                              className="secondary-btn icon-btn icon-btn--edit"
+                                              onClick={() => handleEditMember(member)}
+                                              title="Edit member"
+                                              aria-label="Edit member"
+                                            >
+                                              <i className="fas fa-pen" aria-hidden="true"></i>
+                                            </button>
+                                            {isOwner && (
+                                              <button
+                                                className="ghost-btn icon-btn icon-btn--delete"
+                                                style={{ color: "#ef4444" }}
+                                                onClick={() => {
+                                                  showConfirmation(
+                                                    `Delete member ${member.name}? This cannot be undone.`,
+                                                    () => handleDeleteMember(member.id)
+                                                  );
+                                                }}
+                                                aria-label="Delete member"
+                                              >
+                                                <Tooltip text="Delete member" position="top">
+                                                  <i className="fas fa-trash" aria-hidden="true"></i>
+                                                </Tooltip>
+                                              </button>
+                                            )}
+                                          </div>
+                                        ),
+                                      },
+                                    };
+                                  })}
+                                />
+                                {totalPages > 0 && sortedMembers.length > 0 && (
+                                  <Pagination
+                                    currentPage={currentPage}
+                                    totalPages={totalPages}
+                                    onPageChange={setMembersPage}
+                                    pageSize={membersPageSize}
+                                    onPageSizeChange={setMembersPageSize}
+                                    totalItems={sortedMembers.length}
+                                  />
+                                )}
+                              </>
                             )}
                           </>
                         );
@@ -4655,47 +4433,26 @@ Subscription Manager HK`;
                     <p>360º view with invoices, payment history, communications.</p>
                   </div>
                 </header>
-                <div className="card dashboard-card">
+                <div className="admin-members-detail-card">
                   {/* Member Header */}
-                  <div style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "24px",
-                    paddingBottom: "20px",
-                    borderBottom: "1px solid #e5e7eb",
-                    flexWrap: "wrap",
-                    gap: "16px"
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-                      <div style={{
-                        width: "64px",
-                        height: "64px",
-                        borderRadius: "12px",
-                        background: "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#fff",
-                        fontSize: "1.5rem",
-                        fontWeight: "700",
-                        flexShrink: 0
-                      }}>
+                  <div className="admin-members-detail-header">
+                    <div className="admin-members-detail-header-info">
+                      <div className="admin-members-detail-avatar">
                         {selectedMember.name
                           .split(" ")
                           .map((n) => n[0])
                           .join("")}
                       </div>
                       <div>
-                        <h4 style={{ margin: "0 0 4px 0", fontSize: "1.5rem", fontWeight: "700", color: "#1a1a1a" }}>
+                        <h4 className="admin-members-detail-name">
                           {selectedMember.name}
                         </h4>
-                        <p style={{ margin: 0, fontSize: "0.875rem", color: "#666" }}>
+                        <p className="admin-members-detail-meta">
                           Member ID {selectedMember.id} · {selectedMember.email} · WhatsApp {selectedMember.phone}
                         </p>
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                    <div className="admin-members-detail-header-actions">
                       {!isViewer && (
                         <>
                           <button
@@ -4708,13 +4465,9 @@ Subscription Manager HK`;
                             Create Invoice
                           </button>
                           <button
-                            className="primary-btn"
+                            className="primary-btn admin-members-detail-reminder-btn"
                             onClick={() => handleRequestReminder(selectedMember, false)}
                             title="Send reminder"
-                            style={{
-                              padding: "12px 20px",
-                              fontSize: "0.875rem"
-                            }}
                           >
                             📨 Send Reminder
                           </button>
@@ -4724,12 +4477,12 @@ Subscription Manager HK`;
                   </div>
 
                   <div className="kpi-grid">
-                    <div className="card kpi">
-                      <p>
-                        <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                    <div className="admin-dashboard-kpi-card">
+                      <p className="admin-dashboard-kpi-label">
+                        <i className="fas fa-exclamation-triangle admin-dashboard-kpi-icon--red"></i>
                         Outstanding Balance
                       </p>
-                      <h4>
+                      <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">
                         {(() => {
                           const memberInvoices = getMemberInvoices(selectedMember.id);
                           const unpaidInvoices = memberInvoices.filter(inv => {
@@ -4744,26 +4497,26 @@ Subscription Manager HK`;
                         })()}
                       </h4>
                     </div>
-                    <div className="card kpi">
-                      <p>
-                        <i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                    <div className="admin-dashboard-kpi-card">
+                      <p className="admin-dashboard-kpi-label">
+                        <i className="fas fa-calendar-day admin-dashboard-kpi-icon"></i>
                         Next Due Date
                       </p>
-                      <h4>{selectedMember.nextDue}</h4>
+                      <h4 className="admin-dashboard-kpi-value">{selectedMember.nextDue}</h4>
                     </div>
-                    <div className="card kpi">
-                      <p>
-                        <i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#10b981" }}></i>
+                    <div className="admin-dashboard-kpi-card">
+                      <p className="admin-dashboard-kpi-label">
+                        <i className="fas fa-dollar-sign admin-dashboard-kpi-icon--green"></i>
                         Last Payment
                       </p>
-                      <h4>{selectedMember.lastPayment}</h4>
+                      <h4 className="admin-dashboard-kpi-value">{selectedMember.lastPayment}</h4>
                     </div>
-                    <div className="card kpi">
-                      <p>
-                        <i className="fas fa-info-circle" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                    <div className="admin-dashboard-kpi-card">
+                      <p className="admin-dashboard-kpi-label">
+                        <i className="fas fa-info-circle admin-dashboard-kpi-icon"></i>
                         Status
                       </p>
-                      <h4>{selectedMember.status}</h4>
+                      <h4 className="admin-dashboard-kpi-value">{selectedMember.status}</h4>
                     </div>
                   </div>
 
@@ -7150,65 +6903,59 @@ Subscription Manager HK`;
 
                   return (
                     <div className="kpi-grid" style={{ marginBottom: "24px" }}>
-                      <div className="card kpi">
-                        <p>
-                          <i className="fas fa-bell" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                      <div className="admin-dashboard-kpi-card">
+                        <p className="admin-dashboard-kpi-label">
+                          <i className="fas fa-bell admin-dashboard-kpi-icon"></i>
                           Total Reminders
                         </p>
-                        <h4>{formatNumber(total)}</h4>
+                        <h4 className="admin-dashboard-kpi-value">{formatNumber(total)}</h4>
                       </div>
-                      <div className="card kpi">
-                        <p>
-                          <i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                      <div className="admin-dashboard-kpi-card">
+                        <p className="admin-dashboard-kpi-label">
+                          <i className="fas fa-envelope admin-dashboard-kpi-icon"></i>
                           Email Reminders
                         </p>
-                        <h4>{formatNumber(emailCount)}</h4>
+                        <h4 className="admin-dashboard-kpi-value">{formatNumber(emailCount)}</h4>
                       </div>
-                      <div className="card kpi">
-                        <p>
-                          <i className="fab fa-whatsapp" style={{ marginRight: "8px", color: "#25D366" }}></i>
+                      <div className="admin-dashboard-kpi-card">
+                        <p className="admin-dashboard-kpi-label">
+                          <i className="fab fa-whatsapp admin-dashboard-kpi-icon--green"></i>
                           WhatsApp Reminders
                         </p>
-                        <h4>{formatNumber(whatsappCount)}</h4>
+                        <h4 className="admin-dashboard-kpi-value">{formatNumber(whatsappCount)}</h4>
                       </div>
-                      <div className="card kpi">
-                        <p>
-                          <i className="fas fa-check-circle" style={{ marginRight: "8px", color: "#10b981" }}></i>
+                      <div className="admin-dashboard-kpi-card">
+                        <p className="admin-dashboard-kpi-label">
+                          <i className="fas fa-check-circle admin-dashboard-kpi-icon--green"></i>
                           Delivered
                         </p>
-                        <h4 style={{ color: "#10b981" }}>{formatNumber(deliveredCount)}</h4>
+                        <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--green">{formatNumber(deliveredCount)}</h4>
                       </div>
                       {failedCount > 0 && (
-                        <div className="card kpi" style={{
-                          background: "linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)",
-                          border: "1px solid #ef4444",
-                        }}>
-                          <p style={{ color: "#ef4444" }}>
-                            <i className="fas fa-times-circle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                        <div className="admin-dashboard-kpi-card admin-dashboard-kpi-card--error">
+                          <p className="admin-dashboard-kpi-label admin-dashboard-kpi-label--error">
+                            <i className="fas fa-times-circle admin-dashboard-kpi-icon--red"></i>
                             Failed
                           </p>
-                          <h4 style={{ color: "#ef4444" }}>{formatNumber(failedCount)}</h4>
+                          <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">{formatNumber(failedCount)}</h4>
                         </div>
                       )}
                       {pendingCount > 0 && (
-                        <div className="card kpi" style={{
-                          background: "linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)",
-                          border: "1px solid #ef4444",
-                        }}>
-                          <p style={{ color: "#ef4444" }}>
-                            <i className="fas fa-clock" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                        <div className="admin-dashboard-kpi-card admin-dashboard-kpi-card--error">
+                          <p className="admin-dashboard-kpi-label admin-dashboard-kpi-label--error">
+                            <i className="fas fa-clock admin-dashboard-kpi-icon--red"></i>
                             Pending
                           </p>
-                          <h4 style={{ color: "#ef4444" }}>{formatNumber(pendingCount)}</h4>
+                          <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">{formatNumber(pendingCount)}</h4>
                         </div>
                       )}
                     </div>
                   );
                 })()}
 
-                <div className="card">
+                <div className="admin-communications-filter-card">
                   {/* Filters - Always visible */}
-                  <div style={{ marginBottom: "20px", display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center" }}>
+                  <div className="admin-communications-filters-container">
                     <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                       <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
                       <div style={{ 
@@ -8865,52 +8612,52 @@ Subscription Manager HK`;
                   
                   return (
                     <div className="kpi-grid" style={{ marginBottom: "24px" }}>
-                      <div className="card kpi">
-                        <p>
-                          <i className="fas fa-file-invoice" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                      <div className="admin-dashboard-kpi-card">
+                        <p className="admin-dashboard-kpi-label">
+                          <i className="fas fa-file-invoice admin-dashboard-kpi-icon"></i>
                           Total Invoices
                         </p>
-                        <h4>{formatNumber(totalInvoices)}</h4>
+                        <h4 className="admin-dashboard-kpi-value">{formatNumber(totalInvoices)}</h4>
                       </div>
-                      <div className="card kpi">
-                        <p>
-                          <i className="fas fa-check-circle" style={{ marginRight: "8px", color: "#57BF57" }}></i>
+                      <div className="admin-dashboard-kpi-card">
+                        <p className="admin-dashboard-kpi-label">
+                          <i className="fas fa-check-circle admin-dashboard-kpi-icon--green"></i>
                           Paid
                         </p>
-                        <h4 style={{ color: "#57BF57" }}>{formatNumber(paidInvoices.length)}</h4>
+                        <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--green">{formatNumber(paidInvoices.length)}</h4>
                       </div>
-                      <div className="card kpi">
-                        <p>
-                          <i className="fas fa-exclamation-circle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                      <div className="admin-dashboard-kpi-card">
+                        <p className="admin-dashboard-kpi-label">
+                          <i className="fas fa-exclamation-circle admin-dashboard-kpi-icon--red"></i>
                           Unpaid
                         </p>
-                        <h4 style={{ color: "#ef4444" }}>{formatNumber(unpaidInvoices.length)}</h4>
+                        <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">{formatNumber(unpaidInvoices.length)}</h4>
                       </div>
-                      <div className="card kpi">
-                        <p>
-                          <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                      <div className="admin-dashboard-kpi-card">
+                        <p className="admin-dashboard-kpi-label">
+                          <i className="fas fa-exclamation-triangle admin-dashboard-kpi-icon--red"></i>
                           Overdue
                         </p>
-                        <h4 style={{ color: "#ef4444" }}>{formatNumber(overdueInvoices.length)}</h4>
+                        <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">{formatNumber(overdueInvoices.length)}</h4>
                       </div>
-                      <div className="card kpi">
-                        <p>
-                          <i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                      <div className="admin-dashboard-kpi-card">
+                        <p className="admin-dashboard-kpi-label">
+                          <i className="fas fa-dollar-sign admin-dashboard-kpi-icon--red"></i>
                           Total Unpaid
                         </p>
-                        <h4 style={{ color: "#ef4444" }}>
+                        <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">
                           ${formatNumber(totalUnpaidAmount, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
                         </h4>
                       </div>
-                      <div className="card kpi">
-                        <p>
-                          <i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#57BF57" }}></i>
+                      <div className="admin-dashboard-kpi-card">
+                        <p className="admin-dashboard-kpi-label">
+                          <i className="fas fa-dollar-sign admin-dashboard-kpi-icon--green"></i>
                           Total Collected
                         </p>
-                        <h4 style={{ color: "#57BF57" }}>
+                        <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--green">
                           ${formatNumber(totalPaidAmount, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
@@ -9004,9 +8751,20 @@ Subscription Manager HK`;
                             </div>
                           </div>
 
-                          {/* Invoice Table */}
-                          <div className="table-wrapper">
-                            <Table
+                          {/* Empty State */}
+                          {filteredInvoices.length === 0 ? (
+                            <div className="admin-empty-state">
+                              <p className="admin-empty-state-message">
+                                {invoiceStatusFilter !== "All" 
+                                  ? `No ${invoiceStatusFilter.toLowerCase()} invoices found.`
+                                  : "No invoices found."}
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Invoice Table */}
+                              <div className="table-wrapper">
+                                <Table
                               columns={["Invoice ID", "Member", "Period", "Amount", "Due Date", "Status", "Actions"]}
                               rows={paginatedInvoices.map((invoice) => {
                                 const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
@@ -9076,16 +8834,18 @@ Subscription Manager HK`;
                                 };
                               })}
                             />
-                          </div>
-                          {totalPages > 0 && invoices.length > 0 && (
-                            <Pagination
-                              currentPage={invoicesPage}
-                              totalPages={totalPages}
-                              onPageChange={setInvoicesPage}
-                              pageSize={invoicesPageSize}
-                              onPageSizeChange={setInvoicesPageSize}
-                              totalItems={filteredInvoices.length}
-                            />
+                              </div>
+                              {totalPages > 0 && invoices.length > 0 && (
+                                <Pagination
+                                  currentPage={invoicesPage}
+                                  totalPages={totalPages}
+                                  onPageChange={setInvoicesPage}
+                                  pageSize={invoicesPageSize}
+                                  onPageSizeChange={setInvoicesPageSize}
+                                  totalItems={filteredInvoices.length}
+                                />
+                              )}
+                            </>
                           )}
                         </>
                       );
@@ -9440,6 +9200,18 @@ Subscription Manager HK`;
                       const startIndex = (currentPage - 1) * paymentsPageSize;
                       const endIndex = startIndex + paymentsPageSize;
                       const paginatedPayments = filteredPayments.slice(startIndex, endIndex);
+                      
+                      if (filteredPayments.length === 0) {
+                        return (
+                          <div className="admin-empty-state">
+                            <p className="admin-empty-state-message">
+                              {paymentStatusFilter !== "All" 
+                                ? `No ${paymentStatusFilter.toLowerCase()} payments found.`
+                                : "No payments found."}
+                            </p>
+                          </div>
+                        );
+                      }
                       
                       return (
                         <>
@@ -11089,14 +10861,14 @@ Subscription Manager HK`;
                 </div>
 
                 {/* Charts Section - Clean Design */}
-                <div style={{ marginBottom: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "24px" }}>
+                <div className="admin-reports-charts-grid">
                   {/* Collected vs Outstanding Chart */}
-                  <div className="card dashboard-card">
-                    <div style={{ marginBottom: "24px" }}>
-                      <h4 style={{ margin: "0 0 4px 0", fontSize: "1.125rem", fontWeight: "600", color: "#1a1a1a" }}>
+                  <div className="admin-reports-chart-card--collected">
+                    <div className="admin-settings-section-header">
+                      <h4 className="admin-settings-section-title">
                         Collected vs Outstanding
                       </h4>
-                      <p style={{ margin: 0, fontSize: "0.875rem", color: "#666" }}>
+                      <p className="admin-settings-section-description">
                         Financial overview for selected period
                       </p>
                     </div>
@@ -11177,12 +10949,12 @@ Subscription Manager HK`;
                   </div>
 
                   {/* Payments Over Time Chart */}
-                  <div className="card dashboard-card">
-                    <div style={{ marginBottom: "24px" }}>
-                      <h4 style={{ margin: "0 0 4px 0", fontSize: "1.125rem", fontWeight: "600", color: "#1a1a1a" }}>
+                  <div className="admin-settings-users-card">
+                    <div className="admin-settings-section-header">
+                      <h4 className="admin-settings-section-title">
                         Payments Over Time
                       </h4>
-                      <p style={{ margin: 0, fontSize: "0.875rem", color: "#666" }}>
+                      <p className="admin-settings-section-description">
                         Payment trends for selected period
                       </p>
                     </div>

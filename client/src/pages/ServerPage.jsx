@@ -42,7 +42,8 @@ export function ServerPage() {
   const [activeTab, setActiveTab] = useState("members");
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
-  const [toast, setToast] = useState(null);
+  const [notieMessage, setNotieMessage] = useState(null);
+  const [notieType, setNotieType] = useState("success");
 
   // Form states
   const [memberForm, setMemberForm] = useState({
@@ -106,7 +107,6 @@ export function ServerPage() {
   const showToast = (message, type = "success") => {
     setNotieMessage(message);
     setNotieType(type);
-    setTimeout(() => setNotieMessage(null), 3000);
   };
 
   const handleLogout = () => {
@@ -599,7 +599,7 @@ export function ServerPage() {
                       </h4>
                       <form className="server-form-grid" onSubmit={editingItem ? handleUpdateMember : handleAddMember} noValidate>
                         <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Name <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-user server-form-icon"></i>Name <span className="server-form-required">*</span></span>
                           <input
                             type="text"
                             required
@@ -609,7 +609,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-envelope server-form-icon"></i>Email <span className="server-form-required">*</span></span>
                           <input
                             type="email"
                             required
@@ -620,7 +620,7 @@ export function ServerPage() {
                         </label>
                         <div>
                           <PhoneInput
-                            label={<span><i className="fas fa-phone" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Phone</span>}
+                            label={<span><i className="fas fa-phone server-form-icon"></i>Phone</span>}
                             value={memberForm.phone}
                             onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })}
                             onError={(error) => {
@@ -631,35 +631,26 @@ export function ServerPage() {
                           />
                         </div>
                         <label>
-                          <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password {editingItem ? "(leave blank to keep current)" : <span style={{ color: "#ef4444" }}>*</span>}</span>
-                          <div style={{ position: "relative" }}>
+                          <span><i className="fas fa-lock server-form-icon"></i>Password {editingItem ? "(leave blank to keep current)" : <span className="server-form-required">*</span>}</span>
+                          <div className="server-form-input-wrapper">
                             <input
                               type={showMemberPassword ? "text" : "password"}
                               required={!editingItem}
                               value={memberForm.password}
                               onChange={(e) => setMemberForm({ ...memberForm, password: e.target.value })}
-                              className="mono-input"
+                              className="mono-input login-input--with-icon"
                             />
                             <button
                               type="button"
                               onClick={() => setShowMemberPassword(!showMemberPassword)}
-                              style={{
-                                position: "absolute",
-                                right: "12px",
-                                top: "50%",
-                                transform: "translateY(-50%)",
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                color: "#666"
-                              }}
+                              className="login-password-toggle"
                             >
                               <i className={`fas ${showMemberPassword ? "fa-eye-slash" : "fa-eye"}`}></i>
                             </button>
                           </div>
                         </label>
                         <label>
-                          <span><i className="fas fa-toggle-on" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Status</span>
+                          <span><i className="fas fa-toggle-on server-form-icon"></i>Status</span>
                           <select
                             value={memberForm.status}
                             onChange={(e) => setMemberForm({ ...memberForm, status: e.target.value })}
@@ -671,7 +662,7 @@ export function ServerPage() {
                           </select>
                         </label>
                         <label>
-                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Balance</span>
+                          <span><i className="fas fa-dollar-sign server-form-icon"></i>Balance</span>
                           <input
                             type="text"
                             value={memberForm.balance}
@@ -680,7 +671,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Next Due</span>
+                          <span><i className="fas fa-calendar server-form-icon"></i>Next Due</span>
                           <input
                             type="text"
                             value={memberForm.nextDue}
@@ -689,7 +680,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-calendar-check" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Last Payment</span>
+                          <span><i className="fas fa-calendar-check server-form-icon"></i>Last Payment</span>
                           <input
                             type="text"
                             value={memberForm.lastPayment}
@@ -698,7 +689,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-id-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Subscription Type</span>
+                          <span><i className="fas fa-id-card server-form-icon"></i>Subscription Type</span>
                           <select
                             value={memberForm.subscriptionType}
                             onChange={(e) => setMemberForm({ ...memberForm, subscriptionType: e.target.value })}
@@ -742,7 +733,7 @@ export function ServerPage() {
                       Balance: member.balance || "$0",
                       Actions: {
                         render: () => (
-                          <div style={{ display: "flex", gap: "8px" }}>
+                          <div className="server-action-buttons">
                             <button
                               className="server-action-btn server-action-btn--edit"
                               onClick={() => handleEditMember(member)}
@@ -783,7 +774,7 @@ export function ServerPage() {
                       </h4>
                       <form className="server-form-grid" onSubmit={editingItem ? handleUpdateAdmin : handleAddAdmin} noValidate>
                         <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Name <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-user server-form-icon"></i>Name <span className="server-form-required">*</span></span>
                           <input
                             type="text"
                             required
@@ -793,7 +784,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-envelope server-form-icon"></i>Email <span className="server-form-required">*</span></span>
                           <input
                             type="email"
                             required
@@ -803,35 +794,26 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password {editingItem ? "(leave blank to keep current)" : <span style={{ color: "#ef4444" }}>*</span>}</span>
-                          <div style={{ position: "relative" }}>
+                          <span><i className="fas fa-lock server-form-icon"></i>Password {editingItem ? "(leave blank to keep current)" : <span className="server-form-required">*</span>}</span>
+                          <div className="server-form-input-wrapper">
                             <input
                               type={showAdminPassword ? "text" : "password"}
                               required={!editingItem}
                               value={adminForm.password}
                               onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
-                              className="mono-input"
+                              className="mono-input login-input--with-icon"
                             />
                             <button
                               type="button"
                               onClick={() => setShowAdminPassword(!showAdminPassword)}
-                              style={{
-                                position: "absolute",
-                                right: "12px",
-                                top: "50%",
-                                transform: "translateY(-50%)",
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                color: "#666"
-                              }}
+                              className="login-password-toggle"
                             >
                               <i className={`fas ${showAdminPassword ? "fa-eye-slash" : "fa-eye"}`}></i>
                             </button>
                           </div>
                         </label>
                         <label>
-                          <span><i className="fas fa-user-tag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Role</span>
+                          <span><i className="fas fa-user-tag server-form-icon"></i>Role</span>
                           <select
                             value={adminForm.role}
                             onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
@@ -843,7 +825,7 @@ export function ServerPage() {
                           </select>
                         </label>
                         <label>
-                          <span><i className="fas fa-toggle-on" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Status</span>
+                          <span><i className="fas fa-toggle-on server-form-icon"></i>Status</span>
                           <select
                             value={adminForm.status}
                             onChange={(e) => setAdminForm({ ...adminForm, status: e.target.value })}
@@ -882,7 +864,7 @@ export function ServerPage() {
                       },
                       Actions: {
                         render: () => (
-                          <div style={{ display: "flex", gap: "8px" }}>
+                          <div className="server-action-buttons">
                             <button
                               className="server-action-btn server-action-btn--edit"
                               onClick={() => handleEditAdmin(admin)}
@@ -923,7 +905,7 @@ export function ServerPage() {
                       </h4>
                       <form className="server-form-grid" onSubmit={editingItem ? handleUpdateInvoice : handleAddInvoice} noValidate>
                         <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member ID <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-user server-form-icon"></i>Member ID <span className="server-form-required">*</span></span>
                           <input
                             type="text"
                             required
@@ -934,7 +916,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member Name <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-user server-form-icon"></i>Member Name <span className="server-form-required">*</span></span>
                           <input
                             type="text"
                             required
@@ -944,7 +926,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Period <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-calendar server-form-icon"></i>Period <span className="server-form-required">*</span></span>
                           <input
                             type="text"
                             required
@@ -955,7 +937,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-id-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice Type</span>
+                          <span><i className="fas fa-id-card server-form-icon"></i>Invoice Type</span>
                           <select
                             value={invoiceForm.invoiceType}
                             onChange={(e) => setInvoiceForm({ ...invoiceForm, invoiceType: e.target.value })}
@@ -966,7 +948,7 @@ export function ServerPage() {
                           </select>
                         </label>
                         <label>
-                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-dollar-sign server-form-icon"></i>Amount <span className="server-form-required">*</span></span>
                           <input
                             type="number"
                             required
@@ -977,7 +959,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-calendar-check" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Due Date <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-calendar-check server-form-icon"></i>Due Date <span className="server-form-required">*</span></span>
                           <input
                             type="date"
                             required
@@ -1012,12 +994,11 @@ export function ServerPage() {
                                 }
                               }
                             }}
-                            className="mono-input"
-                            style={{ borderRadius: "4px", width: "100%" }}
+                              className="mono-input server-form-input-full-width"
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-info-circle" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Status</span>
+                          <span><i className="fas fa-info-circle server-form-icon"></i>Status</span>
                           <select
                             value={invoiceForm.status}
                             onChange={(e) => setInvoiceForm({ ...invoiceForm, status: e.target.value })}
@@ -1029,13 +1010,12 @@ export function ServerPage() {
                             <option value="Pending Verification">Pending Verification</option>
                           </select>
                         </label>
-                        <label className="notes" style={{ gridColumn: "1 / -1" }}>
+                        <label className="notes server-form-notes-label">
                           <span><i className="fas fa-sticky-note"></i>Notes</span>
                           <textarea
                             value={invoiceForm.notes}
                             onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
-                            className="mono-input"
-                            style={{ minHeight: "100px" }}
+                            className="mono-input server-form-textarea"
                           ></textarea>
                         </label>
                         <div className="server-form-actions">
@@ -1073,7 +1053,7 @@ export function ServerPage() {
                       "Due Date": invoice.due,
                       Actions: {
                         render: () => (
-                          <div style={{ display: "flex", gap: "8px" }}>
+                          <div className="server-action-buttons">
                             <button
                               className="server-action-btn server-action-btn--edit"
                               onClick={() => handleEditInvoice(invoice)}
@@ -1149,7 +1129,7 @@ export function ServerPage() {
                       </h4>
                       <form className="server-form-grid" onSubmit={editingItem ? handleUpdateDonation : handleAddDonation} noValidate>
                         <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donor Name <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-user server-form-icon"></i>Donor Name <span className="server-form-required">*</span></span>
                           <input
                             type="text"
                             required
@@ -1160,7 +1140,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-dollar-sign server-form-icon"></i>Amount <span className="server-form-required">*</span></span>
                           <input
                             type="number"
                             required
@@ -1171,7 +1151,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-check-circle" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Is Member</span>
+                          <span><i className="fas fa-check-circle server-form-icon"></i>Is Member</span>
                           <select
                             value={donationForm.isMember ? "true" : "false"}
                             onChange={(e) => setDonationForm({ ...donationForm, isMember: e.target.value === "true" })}
@@ -1183,7 +1163,7 @@ export function ServerPage() {
                         </label>
                         {donationForm.isMember && (
                           <label>
-                            <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member ID</span>
+                            <span><i className="fas fa-user server-form-icon"></i>Member ID</span>
                             <input
                               type="text"
                               value={donationForm.memberId}
@@ -1193,13 +1173,12 @@ export function ServerPage() {
                             />
                           </label>
                         )}
-                        <label className="notes" style={{ gridColumn: "1 / -1" }}>
+                        <label className="notes server-form-notes-label">
                           <span><i className="fas fa-sticky-note"></i>Notes</span>
                           <textarea
                             value={donationForm.notes}
                             onChange={(e) => setDonationForm({ ...donationForm, notes: e.target.value })}
-                            className="mono-input"
-                            style={{ minHeight: "100px" }}
+                            className="mono-input server-form-textarea"
                           ></textarea>
                         </label>
                         <div className="server-form-actions">
@@ -1225,7 +1204,7 @@ export function ServerPage() {
                         Date: donation.date || "-",
                         Actions: {
                           render: () => (
-                            <div style={{ display: "flex", gap: "8px" }}>
+                            <div className="server-action-buttons">
                               <button
                                 className="server-action-btn server-action-btn--delete"
                                 onClick={() => handleDeleteDonation(donation._id || donation.id)}
@@ -1260,7 +1239,7 @@ export function ServerPage() {
                       </h4>
                       <form className="server-form-grid" onSubmit={editingItem ? handleUpdatePaymentMethod : handleAddPaymentMethod} noValidate>
                         <label>
-                          <span><i className="fas fa-wallet" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Name <span style={{ color: "#ef4444" }}>*</span></span>
+                          <span><i className="fas fa-wallet server-form-icon"></i>Name <span className="server-form-required">*</span></span>
                           <input
                             type="text"
                             required
@@ -1271,7 +1250,7 @@ export function ServerPage() {
                           />
                         </label>
                         <label>
-                          <span><i className="fas fa-eye" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Visible</span>
+                          <span><i className="fas fa-eye server-form-icon"></i>Visible</span>
                           <select
                             value={paymentMethodForm.visible ? "true" : "false"}
                             onChange={(e) => setPaymentMethodForm({ ...paymentMethodForm, visible: e.target.value === "true" })}
@@ -1282,7 +1261,7 @@ export function ServerPage() {
                           </select>
                         </label>
                         <label>
-                          <span><i className="fas fa-image" style={{ marginRight: "8px", color: "#5a31ea" }}></i>QR Image URL</span>
+                          <span><i className="fas fa-image server-form-icon"></i>QR Image URL</span>
                           <input
                             type="url"
                             value={paymentMethodForm.qrImageUrl}
@@ -1291,16 +1270,15 @@ export function ServerPage() {
                             placeholder="Enter QR code image URL"
                           />
                         </label>
-                        <label className="notes" style={{ gridColumn: "1 / -1" }}>
-                          <span><i className="fas fa-list" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Details (one per line)</span>
+                        <label className="notes server-form-notes-label">
+                          <span><i className="fas fa-list server-form-icon"></i>Details (one per line)</span>
                           <textarea
                             value={Array.isArray(paymentMethodForm.details) ? paymentMethodForm.details.join("\n") : ""}
                             onChange={(e) => setPaymentMethodForm({ 
                               ...paymentMethodForm, 
                               details: e.target.value.split("\n").filter(d => d.trim()) 
                             })}
-                            className="mono-input"
-                            style={{ minHeight: "100px" }}
+                            className="mono-input server-form-textarea"
                             placeholder="Enter details, one per line"
                           ></textarea>
                         </label>
@@ -1329,14 +1307,14 @@ export function ServerPage() {
                           ),
                         },
                         "QR Image": method.qrImageUrl ? (
-                          <a href={method.qrImageUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#5a31ea" }}>
+                          <a href={method.qrImageUrl} target="_blank" rel="noopener noreferrer" className="server-link">
                             View Image
                           </a>
                         ) : "-",
                         Details: Array.isArray(method.details) ? method.details.join(", ") : "-",
                         Actions: {
                           render: () => (
-                            <div style={{ display: "flex", gap: "8px" }}>
+                            <div className="server-action-buttons">
                               <button
                                 className="server-action-btn server-action-btn--edit"
                                 onClick={() => handleEditPaymentMethod(method)}

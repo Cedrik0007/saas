@@ -1,20 +1,24 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { SiteHeader } from "../components/SiteHeader.jsx";
-import { SiteFooter } from "../components/SiteFooter.jsx";
-import { AlertModal } from "../components/AlertModal.jsx";
 import { Notie } from "../components/Notie.jsx";
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("admin"); // admin or member
-  const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [notieMessage, setNotieMessage] = useState(null);
   const [notieType, setNotieType] = useState("error");
   const navigate = useNavigate();
+
+  // Disable body scroll on forgot password page (100vh, overflow hidden)
+  useEffect(() => {
+    document.body.classList.add('login-page-body');
+    
+    return () => {
+      document.body.classList.remove('login-page-body');
+    };
+  }, []);
 
   // Email validation function
   const validateEmail = (email) => {
@@ -25,15 +29,19 @@ export function ForgotPasswordPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validate email first - show only email error
+    // Prevent multiple submissions
+    if (loading) {
+      return;
+    }
+
+    // Validate email - only show errors on submit
     setEmailError("");
-    setMessage(null);
+    setNotieMessage(null);
     
     if (!email.trim()) {
       setEmailError("Email is required");
       setNotieMessage("Email is required");
       setNotieType("error");
-      setTimeout(() => setNotieMessage(null), 3000);
       return;
     }
 
@@ -41,12 +49,11 @@ export function ForgotPasswordPage() {
       setEmailError("Please enter a valid email address");
       setNotieMessage("Please enter a valid email address");
       setNotieType("error");
-      setTimeout(() => setNotieMessage(null), 3000);
       return;
     }
 
     setLoading(true);
-    setMessage(null);
+    setNotieMessage(null);
 
     try {
       const apiBaseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
@@ -57,7 +64,6 @@ export function ForgotPasswordPage() {
         },
         body: JSON.stringify({
           email: email.trim(),
-          role: role,
         }),
       });
 
@@ -66,73 +72,57 @@ export function ForgotPasswordPage() {
         data = await response.json();
       } catch (jsonError) {
         console.error("Failed to parse response:", jsonError);
-        setMessage({
-          type: "error",
-          text: "Server returned an invalid response. Please try again.",
-        });
+        setNotieMessage("Server returned an invalid response. Please try again.");
+        setNotieType("error");
         setLoading(false);
         return;
       }
 
       if (!response.ok || !data.success) {
-        // Show error in field error style if it's email-related, otherwise in message
-        const errorMsg = data.message || "Failed to send reset email. Please try again.";
-        if (errorMsg.toLowerCase().includes("email")) {
-          setEmailError(errorMsg);
-        } else {
-          setMessage({
-            type: "error",
-            text: errorMsg,
-          });
-        }
+        const errorMsg = data.message || "Failed to send reset request. Please try again.";
+        setNotieMessage(errorMsg);
+        setNotieType("error");
         setLoading(false);
         return;
       }
 
-      // Success
-      setEmailSent(true);
-      setMessage({
-        type: "success",
-        text: data.message || "Password reset link has been sent to your email.",
-      });
+      // Success - always show success message (security: don't reveal if email exists)
+      setRequestSent(true);
       setLoading(false);
     } catch (error) {
       console.error("Forgot password error:", error);
-      setMessage({
-        type: "error",
-        text: error.message || "Unable to connect. Please check your connection and try again.",
-      });
+      setNotieMessage("Unable to connect. Please check your connection and try again.");
+      setNotieType("error");
       setLoading(false);
     }
   };
 
   return (
     <>
-      <SiteHeader showCTA={false} />
       <main className="login-main">
         <div className="login-shell">
           <aside className="login-menu">
             <p className="eyebrow light">Password Recovery</p>
-            <h2>Reset Your Password</h2>
+            <h2>Request Password Reset</h2>
             <p>
-              Enter your email address and we'll send you a link to reset your password.
+              Enter your email address to request a password reset. Your request will be sent to the administrator for manual approval.
             </p>
             <ul>
-              <li>Check your email inbox</li>
-              <li>Click the reset link</li>
-              <li>Create a new password</li>
+              <li>Submit your email address</li>
+              <li>Administrator will review your request</li>
+              <li>You'll receive your new password after verification</li>
             </ul>
           </aside>
 
           <div className="login-form-card">
             <div className="login-form-card__header">
-              <h1><i className="fas fa-key" style={{ marginRight: "12px", color: "#5a31ea" }}></i>Forgot Password</h1>
+              <h1><i className="fas fa-key login-title-icon"></i>Forgot Password</h1>
             </div>
 
-            {!emailSent ? (
+            {!requestSent ? (
               <form onSubmit={handleSubmit} noValidate>
                 <label className="mono-label">
-                  <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
+                  <span><i className="fas fa-envelope login-icon"></i>Email <span className="login-required">*</span></span>
                   <input
                     type="email"
                     value={email}
@@ -143,50 +133,22 @@ export function ForgotPasswordPage() {
                         setEmailError("");
                       }
                     }}
-                    onBlur={() => {
-                      // Validate on blur
-                      if (email.trim() && !validateEmail(email.trim())) {
-                        setEmailError("Please enter a valid email address");
-                        setNotieMessage("Please enter a valid email address");
-                        setNotieType("error");
-                        setTimeout(() => setNotieMessage(null), 3000);
-                      } else if (!email.trim()) {
-                        setEmailError("Email is required");
-                        setNotieMessage("Email is required");
-                        setNotieType("error");
-                        setTimeout(() => setNotieMessage(null), 3000);
-                      } else {
-                        setEmailError("");
-                      }
-                    }}
                     onInvalid={(e) => e.preventDefault()}
                     placeholder="Enter your email address"
                     className={`mono-input ${emailError ? "input-error" : ""}`}
                     disabled={loading}
-                    required
                   />
                 </label>
 
                 <div className="login-buttons">
                   <button
                     type="submit"
-                    className="btn-admin"
+                    className={`btn-admin login-btn-wrapper login-btn-full-width ${loading ? "login-btn--loading" : ""}`}
                     disabled={loading}
-                    style={{ 
-                      position: "relative",
-                      opacity: loading ? 0.7 : 1,
-                      cursor: loading ? "not-allowed" : "pointer",
-                      width: "100%"
-                    }}
                   >
                     {loading ? (
-                      <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                      <span className="login-btn-spinner">
                         <svg 
-                          style={{ 
-                            animation: "spin 1s linear infinite",
-                            width: "16px",
-                            height: "16px"
-                          }} 
                           viewBox="0 0 24 24" 
                           fill="none" 
                           stroke="currentColor" 
@@ -198,54 +160,31 @@ export function ForgotPasswordPage() {
                         Sending...
                       </span>
                     ) : (
-                      "Send Reset Link"
+                      "Request Password Reset"
                     )}
                   </button>
                 </div>
 
-                <div style={{ textAlign: "center", marginTop: "16px" }}>
-                  <Link 
-                    to="/login" 
-                    style={{ 
-                      color: "#5a31ea", 
-                      textDecoration: "none", 
-                      fontSize: "0.875rem",
-                      fontWeight: "500"
-                    }}
-                  >
-                    <i className="fas fa-arrow-left" style={{ marginRight: "6px" }}></i>Back to Login
+                <div className="forgot-password-back-link">
+                  <Link to="/login">
+                    <i className="fas fa-arrow-left forgot-password-back-link-icon"></i>Back to Login
                   </Link>
                 </div>
               </form>
             ) : (
-              <div style={{ textAlign: "center", padding: "20px 0" }}>
-                <div style={{ 
-                  width: "80px", 
-                  height: "80px", 
-                  margin: "0 auto 20px",
-                  background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "40px",
-                  color: "#ffffff"
-                }}>
+              <div className="forgot-password-success">
+                <div className="forgot-password-success-icon">
                   <i className="fas fa-check"></i>
                 </div>
-                <h3 style={{ marginBottom: "12px", color: "#1a1a1a" }}>Check Your Email</h3>
-                <p style={{ color: "#666", marginBottom: "24px" }}>
-                  We've sent a password reset link to <strong>{email}</strong>
-                </p>
-                <p style={{ color: "#666", fontSize: "0.875rem", marginBottom: "24px" }}>
-                  Please check your inbox and click the link to reset your password. The link will expire in 1 hour.
+                <h3 className="forgot-password-success-title">Request Sent</h3>
+                <p className="forgot-password-success-message">
+                  Your request has been sent to the administrator. You will receive your new password after verification.
                 </p>
                 <div className="login-buttons">
                   <button
                     type="button"
-                    className="btn-admin"
+                    className="btn-admin login-btn-full-width"
                     onClick={() => navigate("/login")}
-                    style={{ width: "100%" }}
                   >
                     Back to Login
                   </button>
@@ -253,12 +192,6 @@ export function ForgotPasswordPage() {
               </div>
             )}
 
-            <AlertModal
-              isOpen={!!message}
-              message={message?.text}
-              type={message?.type || "error"}
-              onClose={() => setMessage(null)}
-            />
             <Notie
               message={notieMessage}
               type={notieType}
@@ -268,7 +201,6 @@ export function ForgotPasswordPage() {
           </div>
         </div>
       </main>
-      <SiteFooter />
     </>
   );
 }

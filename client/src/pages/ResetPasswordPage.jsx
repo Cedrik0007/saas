@@ -60,7 +60,6 @@ export function ResetPasswordPage() {
       const errorToShow = passwordError || confirmPasswordError;
       setNotieMessage(errorToShow);
       setNotieType("error");
-      setTimeout(() => setNotieMessage(null), 3000);
       return;
     }
 
@@ -142,14 +141,14 @@ export function ResetPasswordPage() {
 
           <div className="login-form-card">
             <div className="login-form-card__header">
-              <h1><i className="fas fa-lock" style={{ marginRight: "12px", color: "#5a31ea" }}></i>Reset Password</h1>
+              <h1><i className="fas fa-lock login-title-icon"></i>Reset Password</h1>
             </div>
 
             {!passwordReset ? (
               <form onSubmit={handleSubmit} noValidate>
                 <label className="mono-label">
-                  <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>New Password <span style={{ color: "#ef4444" }}>*</span></span>
-                  <div style={{ position: "relative" }}>
+                  <span><i className="fas fa-lock login-icon"></i>New Password <span className="login-required">*</span></span>
+                  <div className="login-input-wrapper">
                     <input
                       type={showPassword ? "text" : "password"}
                       value={password}
@@ -165,33 +164,18 @@ export function ResetPasswordPage() {
                         if (error) {
                           setNotieMessage(error);
                           setNotieType("error");
-                          setTimeout(() => setNotieMessage(null), 3000);
                         }
                       }}
                       onInvalid={(e) => e.preventDefault()}
                       placeholder="Enter new password"
-                      className={`mono-input ${errors.password ? "input-error" : ""}`}
-                      style={{ paddingRight: "45px" }}
+                      className={`mono-input login-input--with-icon ${errors.password ? "input-error" : ""}`}
                       disabled={loading || !token}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      style={{
-                        position: "absolute",
-                        right: "12px",
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        padding: "4px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#666",
-                      }}
+                      className="login-password-toggle"
                       aria-label={showPassword ? "Hide password" : "Show password"}
                       disabled={loading}
                     >
@@ -211,8 +195,8 @@ export function ResetPasswordPage() {
                 </label>
 
                 <label className="mono-label">
-                  <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Confirm Password <span style={{ color: "#ef4444" }}>*</span></span>
-                  <div style={{ position: "relative" }}>
+                  <span><i className="fas fa-lock login-icon"></i>Confirm Password <span className="login-required">*</span></span>
+                  <div className="login-input-wrapper">
                     <input
                       type={showConfirmPassword ? "text" : "password"}
                       value={confirmPassword}
@@ -230,33 +214,18 @@ export function ResetPasswordPage() {
                         if (error) {
                           setNotieMessage(error);
                           setNotieType("error");
-                          setTimeout(() => setNotieMessage(null), 3000);
                         }
                       }}
                       onInvalid={(e) => e.preventDefault()}
                       placeholder="Confirm new password"
-                      className={`mono-input ${errors.confirmPassword ? "input-error" : ""}`}
-                      style={{ paddingRight: "45px" }}
+                      className={`mono-input login-input--with-icon ${errors.confirmPassword ? "input-error" : ""}`}
                       disabled={loading || !token}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      style={{
-                        position: "absolute",
-                        right: "12px",
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        padding: "4px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#666",
-                      }}
+                      className="login-password-toggle"
                       aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                       disabled={loading}
                     >
@@ -278,23 +247,12 @@ export function ResetPasswordPage() {
                 <div className="login-buttons">
                   <button
                     type="submit"
-                    className="btn-admin"
+                    className={`btn-admin login-btn-wrapper login-btn-full-width ${(loading || !token) ? "login-btn--loading" : ""}`}
                     disabled={loading || !token}
-                    style={{ 
-                      position: "relative",
-                      opacity: (loading || !token) ? 0.7 : 1,
-                      cursor: (loading || !token) ? "not-allowed" : "pointer",
-                      width: "100%"
-                    }}
                   >
                     {loading ? (
-                      <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                      <span className="login-btn-spinner">
                         <svg 
-                          style={{ 
-                            animation: "spin 1s linear infinite",
-                            width: "16px",
-                            height: "16px"
-                          }} 
                           viewBox="0 0 24 24" 
                           fill="none" 
                           stroke="currentColor" 
@@ -311,49 +269,29 @@ export function ResetPasswordPage() {
                   </button>
                 </div>
 
-                <div style={{ textAlign: "center", marginTop: "16px" }}>
-                  <Link 
-                    to="/login" 
-                    style={{ 
-                      color: "#5a31ea", 
-                      textDecoration: "none", 
-                      fontSize: "0.875rem",
-                      fontWeight: "500"
-                    }}
-                  >
-                    <i className="fas fa-arrow-left" style={{ marginRight: "6px" }}></i>Back to Login
+                <div className="forgot-password-back-link">
+                  <Link to="/login">
+                    <i className="fas fa-arrow-left forgot-password-back-link-icon"></i>Back to Login
                   </Link>
                 </div>
               </form>
             ) : (
-              <div style={{ textAlign: "center", padding: "20px 0" }}>
-                <div style={{ 
-                  width: "80px", 
-                  height: "80px", 
-                  margin: "0 auto 20px",
-                  background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "40px",
-                  color: "#ffffff"
-                }}>
+              <div className="forgot-password-success">
+                <div className="forgot-password-success-icon">
                   <i className="fas fa-check"></i>
                 </div>
-                <h3 style={{ marginBottom: "12px", color: "#1a1a1a" }}>Password Reset Successful!</h3>
-                <p style={{ color: "#666", marginBottom: "24px" }}>
+                <h3 className="forgot-password-success-title">Password Reset Successful!</h3>
+                <p className="forgot-password-success-message">
                   Your password has been reset successfully. You can now login with your new password.
                 </p>
-                <p style={{ color: "#666", fontSize: "0.875rem", marginBottom: "24px" }}>
+                <p className="forgot-password-success-message forgot-password-success-message--small">
                   Redirecting to login page in a few seconds...
                 </p>
                 <div className="login-buttons">
                   <button
                     type="button"
-                    className="btn-admin"
+                    className="btn-admin login-btn-full-width"
                     onClick={() => navigate("/login")}
-                    style={{ width: "100%" }}
                   >
                     Go to Login
                   </button>

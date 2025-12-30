@@ -299,8 +299,12 @@ export function AppProvider({ children }) {
         
         // Wait for all but don't block render
         await Promise.allSettled([criticalFetches, remainingFetches]);
+        // Set loading to false after data fetching completes
+        setLoading(false);
       } catch (error) {
         console.error('Error fetching initial data:', error);
+        // Set loading to false even on error so page can render
+        setLoading(false);
       }
     };
     

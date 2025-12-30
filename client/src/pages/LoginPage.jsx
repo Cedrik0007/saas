@@ -29,14 +29,10 @@ export function LoginPage() {
 
   // Disable body scroll on login page (100vh, overflow hidden)
   useEffect(() => {
-    const originalOverflow = document.body.style.overflow;
-    const originalHeight = document.body.style.height;
-    document.body.style.overflow = 'hidden';
-    document.body.style.height = '100vh';
+    document.body.classList.add('login-page-body');
     
     return () => {
-      document.body.style.overflow = originalOverflow;
-      document.body.style.height = originalHeight;
+      document.body.classList.remove('login-page-body');
     };
   }, []);
 
@@ -223,11 +219,11 @@ export function LoginPage() {
 
           <div className="login-form-card">
             <div className="login-form-card__header">
-              <h1><i className="fas fa-sign-in-alt" style={{ marginRight: "12px", color: "#5a31ea" }}></i>Sign in</h1>
+              <h1><i className="fas fa-sign-in-alt login-title-icon"></i>Sign in</h1>
             </div>
 
             <label className="mono-label">
-              <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
+              <span><i className="fas fa-envelope login-icon"></i>Email <span className="login-required">*</span></span>
               <input
                 type="text"
                 inputMode="email"
@@ -255,8 +251,8 @@ export function LoginPage() {
             </label>
 
             <label className="mono-label">
-              <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password <span style={{ color: "#ef4444" }}>*</span></span>
-              <div style={{ position: "relative" }}>
+              <span><i className="fas fa-lock login-icon"></i>Password <span className="login-required">*</span></span>
+              <div className="login-input-wrapper">
                 <input
                   type={showPassword ? "text" : "password"}
                   value={form.password}
@@ -277,27 +273,13 @@ export function LoginPage() {
                     }
                   }}
                   placeholder="Enter your password"
-                  className={`mono-input ${errors.password ? "input-error" : ""}`}
-                  style={{ paddingRight: "45px" }}
+                  className={`mono-input login-input--with-icon ${errors.password ? "input-error" : ""}`}
                   disabled={loadingRole !== null}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    position: "absolute",
-                    right: "12px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: "4px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#666",
-                  }}
+                  className="login-password-toggle"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   disabled={loadingRole !== null}
                 >
@@ -314,15 +296,9 @@ export function LoginPage() {
                   )}
                 </button>
               </div>
-              <div style={{ marginTop: "8px", textAlign: "right" }}>
+              <div className="login-forgot-link">
                 <Link 
                   to="/forgot-password" 
-                  style={{ 
-                    color: "#5a31ea", 
-                    textDecoration: "none", 
-                    fontSize: "0.875rem",
-                    fontWeight: "500"
-                  }}
                   onClick={(e) => {
                     // Prevent navigation if button is disabled (during loading)
                     if (loadingRole !== null) {
@@ -336,8 +312,8 @@ export function LoginPage() {
             </label>
 
             <div className="login-hints">
-              <p style={{ marginTop: 0, fontWeight: "600", color: "#1a1a1a", marginBottom: "12px" }}>
-                <i className="fas fa-info-circle" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Demo Credentials
+              <p className="login-hints-title">
+                <i className="fas fa-info-circle login-icon"></i>Demo Credentials
               </p>
               <p>
                 <strong>Admin:</strong> admin2002@gmail.com / #Admin2204
@@ -353,23 +329,13 @@ export function LoginPage() {
               {/* Admin login (email/password) */}
               <button
                 type="button"
-                className="btn-admin"
+                className={`btn-admin login-btn-wrapper ${loadingRole !== null ? "login-btn--loading" : ""}`}
                 onClick={() => handleLogin("admin")}
                 disabled={loadingRole !== null}
-                style={{ 
-                  position: "relative",
-                  opacity: loadingRole !== null ? 0.7 : 1,
-                  cursor: loadingRole !== null ? "not-allowed" : "pointer"
-                }}
               >
                 {loadingRole === "admin" ? (
-                  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                  <span className="login-btn-spinner">
                     <svg 
-                      style={{ 
-                        animation: "spin 1s linear infinite",
-                        width: "16px",
-                        height: "16px"
-                      }} 
                       viewBox="0 0 24 24" 
                       fill="none" 
                       stroke="currentColor" 
@@ -389,23 +355,13 @@ export function LoginPage() {
               {SHOW_MEMBER_LOGIN && (
                 <button
                   type="button"
-                  className="btn-member"
+                  className={`btn-member login-btn-wrapper ${loadingRole !== null ? "login-btn--loading" : ""}`}
                   onClick={() => handleLogin("member")}
                   disabled={loadingRole !== null}
-                  style={{ 
-                    position: "relative",
-                    opacity: loadingRole !== null ? 0.7 : 1,
-                    cursor: loadingRole !== null ? "not-allowed" : "pointer"
-                  }}
                 >
                   {loadingRole === "member" ? (
-                    <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                    <span className="login-btn-spinner">
                       <svg 
-                        style={{ 
-                          animation: "spin 1s linear infinite",
-                          width: "16px",
-                          height: "16px"
-                        }} 
                         viewBox="0 0 24 24" 
                         fill="none" 
                         stroke="currentColor" 
@@ -425,24 +381,18 @@ export function LoginPage() {
 
             {/* Google sign-in option for members - Hidden when SHOW_MEMBER_LOGIN is false */}
             {SHOW_MEMBER_LOGIN && (
-              <div style={{ marginTop: "16px", textAlign: "center", width: "100%" }}>
-              <div style={{ 
-                display: "flex", 
-                alignItems: "center", 
-                justifyContent: "center", 
-                marginBottom: "12px",
-                gap: "8px"
-              }}>
-                <div style={{ flex: 1, height: "1px", background: "#e0e0e0" }}></div>
-                <p style={{ fontSize: "0.85rem", color: "#666", margin: 0, padding: "0 12px" }}>
+              <div className="login-google-section">
+              <div className="login-google-divider">
+                <div className="login-google-divider-line"></div>
+                <p className="login-google-divider-text">
                   Or
                 </p>
-                <div style={{ flex: 1, height: "1px", background: "#e0e0e0" }}></div>
+                <div className="login-google-divider-line"></div>
               </div>
-              <p style={{ fontSize: "0.85rem", color: "#666", marginBottom: "8px" }}>
+              <p className="login-google-text">
                 Sign in as <strong>Member</strong> with Google
               </p>
-              <div style={{ display: "flex", justifyContent: "center" }}>
+              <div className="login-google-button-wrapper">
                 <GoogleLogin
                   onSuccess={async (credentialResponse) => {
                     try {

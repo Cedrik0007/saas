@@ -117,7 +117,6 @@ export function SignupPage() {
       newErrors.email = true;
       setNotieMessage("This email has already been registered. Please use a different email or try logging in.");
       setNotieType("error");
-      setTimeout(() => setNotieMessage(null), 3000);
       setFieldErrors(newErrors);
       return;
     }
@@ -206,7 +205,6 @@ export function SignupPage() {
 
       setNotieMessage("Account created successfully! Your account is pending approval. You will be able to login once an admin approves your account.");
       setNotieType("success");
-      setTimeout(() => setNotieMessage(null), 3000);
       
       // Redirect to login after 3 seconds
       setTimeout(() => {
@@ -222,7 +220,6 @@ export function SignupPage() {
       console.error("Signup error:", error);
       setNotieMessage(error.message || "Failed to create account. Please try again.");
       setNotieType("error");
-      setTimeout(() => setNotieMessage(null), 3000);
     } finally {
       setLoading(false);
     }
@@ -248,15 +245,15 @@ export function SignupPage() {
 
           <div className="login-form-card">
             <div className="login-form-card__header">
-              <h1><i className="fas fa-user-plus" style={{ marginRight: "12px", color: "#5a31ea" }}></i>Create Account</h1>
+              <h1><i className="fas fa-user-plus login-title-icon"></i>Create Account</h1>
               <p>
-                Already have an account? <Link to="/login" style={{ color: "#5a31ea", textDecoration: "none", fontWeight: "500" }}>Sign in</Link>
+                Already have an account? <Link to="/login" className="signup-link">Sign in</Link>
               </p>
             </div>
 
             <form onSubmit={handleSubmit} noValidate>
               <label className="mono-label">
-                <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Full Name <span style={{ color: "#ef4444" }}>*</span></span>
+                <span><i className="fas fa-user login-icon"></i>Full Name <span className="login-required">*</span></span>
                 <input
                   type="text"
                   required
@@ -268,17 +265,13 @@ export function SignupPage() {
                       setFieldErrors(prev => ({ ...prev, name: false }));
                     }
                   }}
-                  style={{
-                    borderColor: fieldErrors.name ? "#ef4444" : undefined,
-                    borderWidth: fieldErrors.name ? "2px" : undefined,
-                  }}
                   placeholder="Enter your full name"
-                  className="mono-input"
+                  className={`mono-input ${fieldErrors.name ? "signup-input-error" : ""}`}
                 />
               </label>
 
               <label className="mono-label">
-                <span><i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Email <span style={{ color: "#ef4444" }}>*</span></span>
+                <span><i className="fas fa-envelope login-icon"></i>Email <span className="login-required">*</span></span>
                 <input
                   type="email"
                   required
@@ -291,18 +284,14 @@ export function SignupPage() {
                     }
                   }}
                   onBlur={handleEmailBlur}
-                  style={{
-                    borderColor: fieldErrors.email ? "#ef4444" : undefined,
-                    borderWidth: fieldErrors.email ? "2px" : undefined,
-                  }}
                   placeholder="Enter your email address"
-                  className="mono-input"
+                  className={`mono-input ${fieldErrors.email ? "signup-input-error" : ""}`}
                 />
               </label>
 
               <div className="mono-label">
                 <PhoneInput
-                  label={<span><i className="fas fa-phone" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Phone Number <span style={{ color: "#ef4444" }}>*</span></span>}
+                  label={<span><i className="fas fa-phone login-icon"></i>Phone Number <span className="login-required">*</span></span>}
                   value={form.phone}
                   onChange={(e) => {
                     setForm({ ...form, phone: e.target.value });
@@ -313,76 +302,39 @@ export function SignupPage() {
                   onError={(error) => {
                     setNotieMessage(error);
                     setNotieType("error");
-                    setTimeout(() => setNotieMessage(null), 3000);
                     setFieldErrors(prev => ({ ...prev, phone: true }));
-                  }}
-                  style={{
-                    border: fieldErrors.phone ? "2px solid #ef4444" : undefined,
                   }}
                   placeholder="Enter your phone number"
                   required
-                  className="mono-input"
+                  className={`mono-input ${fieldErrors.phone ? "signup-input-error" : ""}`}
                 />
               </div>
 
               <label className="mono-label">
-                <span><i className="fas fa-id-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Subscription Type <span style={{ color: "#ef4444" }}>*</span></span>
-                <div style={{ 
-                  display: "grid", 
-                  gridTemplateColumns: "1fr 1fr", 
-                  gap: "12px",
-                  marginTop: "8px"
-                }}>
+                <span><i className="fas fa-id-card login-icon"></i>Subscription Type <span className="login-required">*</span></span>
+                <div className="signup-subscription-grid">
                   <button
                     type="button"
                     onClick={() => setForm({ ...form, subscriptionType: "Lifetime" })}
-                    style={{
-                      padding: "16px",
-                      border: "none",
-                      borderRadius: "10px",
-                      background: form.subscriptionType === "Lifetime" 
-                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" 
-                        : "#f8f9ff",
-                      color: form.subscriptionType === "Lifetime" ? "white" : "#1a1a1a",
-                      cursor: "pointer",
-                      fontSize: "1rem",
-                      fontWeight: "600",
-                      boxShadow: form.subscriptionType === "Lifetime" 
-                        ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
-                        : "0 2px 4px rgba(90, 49, 234, 0.08)",
-                    }}
+                    className={`signup-subscription-button ${form.subscriptionType === "Lifetime" ? "signup-subscription-button--active" : "signup-subscription-button--default"}`}
                   >
-                    <div style={{ fontWeight: "600", marginBottom: "4px" }}>Lifetime</div>
-                    <div style={{ fontSize: "0.875rem", opacity: 0.9 }}>$250/year</div>
+                    <div className="signup-subscription-button-title">Lifetime</div>
+                    <div className="signup-subscription-button-price">$250/year</div>
                   </button>
                   <button
                     type="button"
                     onClick={() => setForm({ ...form, subscriptionType: "Yearly + Janaza Fund" })}
-                    style={{
-                      padding: "16px",
-                      border: "none",
-                      borderRadius: "10px",
-                      background: form.subscriptionType === "Yearly + Janaza Fund" 
-                        ? "linear-gradient(135deg, #5a31ea 0%, #7c4eff 100%)" 
-                        : "#f8f9ff",
-                      color: form.subscriptionType === "Yearly + Janaza Fund" ? "white" : "#1a1a1a",
-                      cursor: "pointer",
-                      fontSize: "1rem",
-                      fontWeight: "600",
-                      boxShadow: form.subscriptionType === "Yearly + Janaza Fund" 
-                        ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
-                        : "0 2px 4px rgba(90, 49, 234, 0.08)",
-                    }}
+                    className={`signup-subscription-button ${form.subscriptionType === "Yearly + Janaza Fund" ? "signup-subscription-button--active" : "signup-subscription-button--default"}`}
                   >
-                    <div style={{ fontWeight: "600", marginBottom: "4px" }}>Yearly + Janaza Fund</div>
-                    <div style={{ fontSize: "0.875rem", opacity: 0.9 }}>$500/year</div>
+                    <div className="signup-subscription-button-title">Yearly + Janaza Fund</div>
+                    <div className="signup-subscription-button-price">$500/year</div>
                   </button>
                 </div>
               </label>
 
               <label className="mono-label">
-                <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Password <span style={{ color: "#ef4444" }}>*</span></span>
-                <div style={{ position: "relative" }}>
+                <span><i className="fas fa-lock login-icon"></i>Password <span className="login-required">*</span></span>
+                <div className="login-input-wrapper">
                   <input
                     type={showPassword ? "text" : "password"}
                     required
@@ -390,27 +342,13 @@ export function SignupPage() {
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     placeholder="Create a password (min. 6 characters)"
-                    className="mono-input"
+                    className="mono-input login-input--with-icon"
                     minLength={6}
-                    style={{ paddingRight: "45px" }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      position: "absolute",
-                      right: "12px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: "4px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#666",
-                    }}
+                    className="login-password-toggle"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? (
@@ -429,8 +367,8 @@ export function SignupPage() {
               </label>
 
               <label className="mono-label">
-                <span><i className="fas fa-lock" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Confirm Password <span style={{ color: "#ef4444" }}>*</span></span>
-                <div style={{ position: "relative" }}>
+                <span><i className="fas fa-lock login-icon"></i>Confirm Password <span className="login-required">*</span></span>
+                <div className="login-input-wrapper">
                   <input
                     type={showConfirmPassword ? "text" : "password"}
                     required
@@ -442,32 +380,14 @@ export function SignupPage() {
                         setFieldErrors(prev => ({ ...prev, confirmPassword: false }));
                       }
                     }}
-                    style={{
-                      paddingRight: "45px",
-                      borderColor: fieldErrors.confirmPassword ? "#ef4444" : undefined,
-                      borderWidth: fieldErrors.confirmPassword ? "2px" : undefined,
-                    }}
                     placeholder="Confirm your password"
-                    className="mono-input"
+                    className={`mono-input login-input--with-icon ${fieldErrors.confirmPassword ? "signup-input-error" : ""}`}
                     minLength={6}
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    style={{
-                      position: "absolute",
-                      right: "12px",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: "4px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#666",
-                    }}
+                    className="login-password-toggle"
                     aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                   >
                     {showConfirmPassword ? (
@@ -489,8 +409,7 @@ export function SignupPage() {
 
               <button
                 type="submit"
-                className="primary-btn"
-                style={{ width: "100%", marginTop: "24px" }}
+                className="primary-btn signup-submit-button"
                 disabled={loading}
               >
                 {loading ? "Creating Account..." : "Create Account"}
