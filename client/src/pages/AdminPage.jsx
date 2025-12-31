@@ -96,7 +96,7 @@ export function AdminPage() {
   // Grouped navigation structure
   const navigationGroups = [
     {
-      id: "members",
+      id: "members-group",
       label: "Members",
       icon: "fa-users",
       items: [

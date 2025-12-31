@@ -134,16 +134,19 @@ h5, h6 {
   background: #ffffff;
   position: static;
   box-sizing: border-box;
-  box-shadow: 0 2px 8px rgba(90, 49, 234, 0.1);
+  /* box-shadow: 0 2px 8px rgba(90, 49, 234, 0.1); */
   gap: 12px;
   flex-wrap: wrap;
 }
 
 .site-header--sticky {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
   z-index: 1000;
-  box-shadow: 0 4px 12px rgba(90, 49, 234, 0.15);
+  /* box-shadow: 0 4px 12px rgba(90, 49, 234, 0.15); */
   min-height: 73px;
 }
 
@@ -961,13 +964,17 @@ main {
   -ms-overflow-style: none; /* IE/Edge */
 }
 
+.admin-main--sticky-header {
+  padding-top: calc(24px + var(--header-height));
+}
+
 .admin-main::-webkit-scrollbar {
   display: none; /* Chrome/Safari */
 }
 
 .admin-layout {
   display: grid;
-  grid-template-columns: minmax(250px, 30%) 1fr;
+  grid-template-columns: 20% 80%;
   gap: 24px;
   align-items: start;
   width: 100%;
@@ -1154,6 +1161,10 @@ main {
     display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
+  }
+
+  .admin-main--sticky-header {
+    padding-top: var(--header-height-mobile) !important;
   }
 
   .admin-layout {
@@ -2653,7 +2664,9 @@ main {
   color: #1a1a1a;
   border: none;
   border-radius: 12px;
-  padding: 24px;
+  /* padding: 24px;
+   */
+   padding: 60px 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -2663,7 +2676,43 @@ main {
   top: 24px;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
-  box-shadow: 0 2px 8px rgba(90, 49, 234, 0.1);
+  /* box-shadow: 0 2px 8px rgba(90, 49, 234, 0.1); */
+  box-sizing: border-box;
+}
+
+/* Desktop: Fixed menu at 20% width */
+@media (min-width: 1025px) {
+  .admin-menu {
+    position: fixed !important;
+    left: 0;
+    top: 0;
+    width: 20%;
+    height: 100vh;
+    border-radius: 0;
+    z-index: 100;
+    /* padding: 24px;
+     */
+     padding: 60px 20px;
+  }
+
+  .admin-main--sticky-header .admin-menu {
+    top: var(--header-height) !important;
+    height: calc(100vh - var(--header-height)) !important;
+  }
+
+  .admin-main--sticky-header {
+    padding-top: var(--header-height) !important;
+  }
+
+  .admin-body {
+    margin-left: 20% !important;
+    width: 80% !important;
+    box-sizing: border-box;
+  }
+
+  .admin-layout {
+    display: block !important;
+  }
 }
 
 .admin-menu::-webkit-scrollbar {
@@ -6458,6 +6507,7 @@ button {
 /* Perfect spacing for all sections */
 .screen-card {
   margin-bottom: 20px;
+  margin-top: 40px;
 }
 
 .screen-card__header {
