@@ -403,18 +403,38 @@ main {
 .login-page-body {
   overflow: hidden;
   height: 100vh;
+  position: fixed;
+  width: 100%;
+  top: 0;
+  left: 0;
+}
+
+.login-page-body .login-main {
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 60px 16px;
 }
 
 .login-main {
   padding: 60px 16px;
-  height: 100vh;
   min-height: 100vh;
-  max-height: 100vh;
   background: #ffffff;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+
+.login-main .login-shell {
+  margin: auto 0;
+  align-self: center;
 }
 
 .login-shell {
@@ -424,9 +444,11 @@ main {
   grid-template-columns: minmax(280px, 0.4fr) 1fr;
   border: none;
   border-radius: 4px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 4px 20px rgba(90, 49, 234, 0.12);
   background: #ffffff;
+  box-sizing: border-box;
+  margin: auto 0;
 }
 
 .login-menu {
@@ -437,7 +459,7 @@ main {
   flex-direction: column;
   gap: 24px;
 }
-
+/* checking its working or not */
 .login-menu h2 {
   margin: 4px 0;
   color: #fff;
@@ -4812,10 +4834,23 @@ button[disabled] {
 
 /* Large tablets and below - 1024px */
 @media (max-width: 1024px) {
+  .login-page-body .login-main {
+    padding: 40px 20px;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
   .login-main {
-    padding: 50px 20px;
+    padding: 40px 20px;
     min-height: 100vh;
     height: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .login-main .login-shell {
+    margin: 40px auto;
   }
 
   .login-shell {
@@ -4892,9 +4927,22 @@ button[disabled] {
     gap: 12px;
   }
 
+  .login-page-body .login-main {
+    padding: 30px 16px;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
   .login-main {
-    padding: 40px 16px;
+    padding: 30px 16px;
     min-height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .login-main .login-shell {
+    margin: 30px auto;
   }
 
   .login-shell {
@@ -4902,6 +4950,8 @@ button[disabled] {
     max-width: 600px;
     border-radius: 16px;
     width: 100%;
+    box-sizing: border-box;
+    overflow: visible;
   }
 
   .login-menu {
@@ -5104,6 +5154,8 @@ button[disabled] {
     max-width: 100%;
     width: 100%;
     border-radius: 12px;
+    box-sizing: border-box;
+    overflow: visible;
   }
 
   .login-menu {
@@ -5880,16 +5932,31 @@ button[disabled] {
     font-size: 0.8rem;
   }
   
+  .login-page-body .login-main {
+    padding: 16px 12px;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
   .login-main {
-    padding: 20px 12px;
+    padding: 16px 12px;
     min-height: 100vh;
     height: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .login-main .login-shell {
+    margin: 16px auto;
   }
   
   .login-shell {
     border-radius: 12px;
     max-width: 100%;
     width: 100%;
+    box-sizing: border-box;
+    overflow: visible;
   }
   
   .login-menu {
