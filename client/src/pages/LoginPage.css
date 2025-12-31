@@ -1,0 +1,8 @@
+/* LoginPage.css - Component-level styles for LoginPage */
+
+/* Scoped styles for LoginPage component */
+.login-menu li {
+  color: #ffffff;
+}
+
+/* ...existing styles... */

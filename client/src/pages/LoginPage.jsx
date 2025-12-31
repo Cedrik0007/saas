@@ -4,6 +4,7 @@ import { AlertModal } from "../components/AlertModal.jsx";
 import { Notie } from "../components/Notie.jsx";
 import { loginPresets } from "../data";
 import { GoogleLogin } from "@react-oauth/google";
+import "./LoginPage.css";
 
 export function LoginPage() {
   const [authMessage, setAuthMessage] = useState(null);
@@ -201,7 +202,7 @@ export function LoginPage() {
 
   return (
     <>
-      <main className="login-main">
+      <main className="login-main login-page">
         <div className="login-shell">
           <aside className="login-menu">
             <p className="eyebrow light">Welcome</p>
