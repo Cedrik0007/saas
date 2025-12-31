@@ -3276,7 +3276,6 @@ Subscription Manager HK`;
             onClick={(e) => e.stopPropagation()}
           >
             <p className="eyebrow light">{currentPortalTitle}</p>
-            <h3>{currentPortalSubtitle}</h3>
             <nav className="admin-nav-grouped">
               {/* Dashboard - Always visible */}
               <div className="nav-group">
