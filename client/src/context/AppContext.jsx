@@ -44,6 +44,9 @@ export function AppProvider({ children }) {
   // Reminder logs from backend (automatic + manual email reminders)
   const [reminderLogs, setReminderLogs] = useState([]);
 
+  // Password reset requests
+  const [passwordResetRequests, setPasswordResetRequests] = useState([]);
+
   const [paymentMethods, setPaymentMethods] = useState(initialPaymentMethods); // Will be loaded from database
 
   const [metrics, setMetrics] = useState(() => {
@@ -273,6 +276,20 @@ export function AppProvider({ children }) {
     } catch (error) {
       console.error('Error fetching reminder logs:', error);
       setReminderLogs([]);
+    }
+  };
+
+  // Fetch password reset requests from server
+  const fetchPasswordResetRequests = async () => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/auth/password-reset-requests`);
+      if (!response.ok) throw new Error('Failed to fetch password reset requests');
+      const data = await response.json();
+      setPasswordResetRequests(data);
+      console.log('✓ Loaded', data.length, 'password reset requests from MongoDB');
+    } catch (error) {
+      console.error('Error fetching password reset requests:', error);
+      setPasswordResetRequests([]);
     }
   };
 
@@ -744,10 +761,12 @@ export function AppProvider({ children }) {
     fetchDonations,
     fetchPaymentMethods,
     fetchReminderLogs,
+    fetchPasswordResetRequests,
     recentPayments,
     paymentHistory,
     communicationLog,
     reminderLogs,
+    passwordResetRequests,
     paymentMethods,
     metrics,
     reminderRules,

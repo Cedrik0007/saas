@@ -819,9 +819,11 @@ export function ServerPage() {
                             onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
                             className="mono-input"
                           >
-                            <option value="Viewer">Viewer</option>
-                            <option value="Editor">Editor</option>
                             <option value="Admin">Admin</option>
+                            <option value="Super Admin">Super Admin</option>
+                            <option value="Finance">Finance</option>
+                            <option value="Staff">Staff</option>
+                            <option value="Viewer">Viewer</option>
                           </select>
                         </label>
                         <label>

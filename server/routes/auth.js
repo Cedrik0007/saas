@@ -239,33 +239,26 @@ router.post("/auth/forgot-password", async (req, res) => {
     await ensureConnection();
     const emailLower = email.trim().toLowerCase();
     
-    // Check if user exists (admin or member) to determine role
-    let user = null;
-    let userRole = null;
-    let userName = "";
+    // Check if email exists in admin database only
+    const admin = await AdminModel.findOne({ email: emailLower });
     
-    // Check admin database first
-    user = await AdminModel.findOne({ email: emailLower });
-    if (user) {
-      userRole = "admin";
-      userName = user.name || "";
-    } else {
-      // Check member database
-      const escapedEmail = emailLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      user = await UserModel.findOne({ 
-        email: { $regex: `^${escapedEmail}$`, $options: 'i' }
+    if (!admin) {
+      // Email not found in admins - return error
+      return res.status(400).json({ 
+        message: "This email is not registered as an admin. Please contact your administrator.",
+        success: false 
       });
-      if (user) {
-        userRole = "member";
-        userName = user.name || "";
-      }
     }
 
-    // Log the password reset request (always log, regardless of whether user exists)
+    const userName = admin.name || "";
+    const userRole = "admin";
+
+    // Log the password reset request
     try {
       await PasswordResetRequestLogModel.create({
         userEmail: emailLower,
-        userRole: userRole || "unknown",
+        userName: userName,
+        userRole: userRole,
         requestedAt: new Date(),
         status: "Pending"
       });
@@ -290,7 +283,9 @@ router.post("/auth/forgot-password", async (req, res) => {
       setTransporter(transporter);
 
       // Super Admin email
-      const superAdminEmail = "0741sanjai@gmail.com";
+      // const superAdminEmail = "0741sanjai@gmail.com";
+      // Super Admin email
+      const superAdminEmail = "usertesting22204@gmail.com";
       const requestDate = new Date().toLocaleString('en-GB', {
         day: '2-digit',
         month: 'short',
@@ -351,7 +346,7 @@ After creating a new password, please share it securely with the user via email 
       // Still return success for security, but log the issue
     }
 
-    // Always return success message (security best practice - don't reveal if email exists)
+    // Return success message only if email was sent
     return res.json({
       success: true,
       message: "Your request has been sent to the administrator. You will receive your new password after verification.",
@@ -463,6 +458,136 @@ router.post("/auth/reset-password", async (req, res) => {
       message: "Server error. Please try again later.",
       success: false 
     });
+  }
+});
+
+// GET all password reset requests
+router.get("/auth/password-reset-requests", async (req, res) => {
+  try {
+    await ensureConnection();
+    const requests = await PasswordResetRequestLogModel.find()
+      .sort({ requestedAt: -1 })
+      .limit(100); // Limit to recent 100 requests
+    res.json(requests);
+  } catch (error) {
+    console.error("Error fetching password reset requests:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT update password reset request and send new password to user
+router.put("/auth/password-reset-requests/:id", async (req, res) => {
+  try {
+    await ensureConnection();
+    const { newPassword, handledBy } = req.body;
+    
+    if (!newPassword || newPassword.trim().length < 6) {
+      return res.status(400).json({ 
+        error: "New password is required and must be at least 6 characters" 
+      });
+    }
+
+    const request = await PasswordResetRequestLogModel.findById(req.params.id);
+    if (!request) {
+      return res.status(404).json({ error: "Password reset request not found" });
+    }
+
+    if (request.status !== "Pending") {
+      return res.status(400).json({ error: "This request has already been handled" });
+    }
+
+    const emailLower = request.userEmail.toLowerCase();
+    const admin = await AdminModel.findOne({ email: emailLower });
+    
+    if (!admin) {
+      return res.status(404).json({ error: "Admin user not found" });
+    }
+
+    // Update the admin's password
+    admin.password = newPassword.trim();
+    await admin.save();
+
+    // Get email settings
+    const emailSettings = await EmailSettingsModel.findOne({});
+    
+    if (emailSettings && emailSettings.emailUser && emailSettings.emailPassword) {
+      // Update transporter with saved settings
+      const transporter = nodemailer.createTransport({
+        service: emailSettings.emailService || 'gmail',
+        auth: {
+          user: emailSettings.emailUser,
+          pass: emailSettings.emailPassword,
+        },
+      });
+      setTransporter(transporter);
+
+      // Send email to user with new password
+      const mailOptions = {
+        from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
+        to: emailLower,
+        subject: "Password Reset - Subscription Manager HK",
+        html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h2 style="color: #333; border-bottom: 2px solid #5a31ea; padding-bottom: 10px;">
+    Password Reset Complete
+  </h2>
+  <p>Dear ${admin.name || 'User'},</p>
+  <p>Your password reset request has been processed. Your new password is:</p>
+  <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #5a31ea;">
+    <p style="font-size: 18px; font-weight: bold; color: #1a1a1a; margin: 0; font-family: monospace;">
+      ${newPassword.trim()}
+    </p>
+  </div>
+  <p style="color: #d32f2f; font-weight: bold; margin-top: 20px;">
+    Please login with this new password and change it to something memorable after your first login.
+  </p>
+  <p>If you did not request this password reset, please contact support immediately.</p>
+  <p style="margin-top: 30px;">Best regards,<br><strong>Subscription Manager HK</strong></p>
+</div>`,
+        text: `Password Reset Complete
+
+Dear ${admin.name || 'User'},
+
+Your password reset request has been processed. Your new password is:
+
+${newPassword.trim()}
+
+Please login with this new password and change it to something memorable after your first login.
+
+Login: ${process.env.FRONTEND_URL || 'http://localhost:5173'}/login
+
+If you did not request this password reset, please contact support immediately.
+
+Best regards,
+Subscription Manager HK`,
+        messageId: generateUniqueMessageId(),
+        headers: {
+          'X-Entity-Ref-ID': `password-reset-complete-${Date.now()}`,
+        },
+      };
+
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log(`✓ New password sent to ${emailLower}`);
+      } catch (emailError) {
+        console.error(`✗ Failed to send password email:`, emailError);
+        // Still update the request status but mark email as failed
+      }
+    }
+
+    // Update the password reset request
+    request.status = "Approved";
+    request.newPassword = newPassword.trim();
+    request.handledBy = handledBy || "Super Admin";
+    request.handledAt = new Date();
+    await request.save();
+
+    res.json({ 
+      success: true, 
+      message: "Password updated and email sent successfully" 
+    });
+  } catch (error) {
+    console.error("Error updating password reset request:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 

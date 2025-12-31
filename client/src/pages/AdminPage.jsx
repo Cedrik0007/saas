@@ -56,6 +56,8 @@ export function AdminPage() {
     addPayment,
     reminderLogs,
     fetchReminderLogs,
+    passwordResetRequests,
+    fetchPasswordResetRequests,
     donations,
     fetchDonations,
     addDonation,
@@ -71,21 +73,23 @@ export function AdminPage() {
   } else if (rawAdminRole === "Finance Admin") {
     currentAdminRole = "Finance";
   }
-  const isAdmin = currentAdminRole === "Admin";
+  const isAdmin = currentAdminRole === "Admin" || currentAdminRole === "Super Admin";
   const isOwner = currentAdminRole === "Owner";
   const isViewer = currentAdminRole === "Viewer";
-  const isFinanceRole = currentAdminRole === "Admin" || currentAdminRole === "Finance";
+  const isFinanceRole = currentAdminRole === "Admin" || currentAdminRole === "Finance" || currentAdminRole === "Super Admin";
   const isAdminOrOwner = isAdmin || isOwner;
 
   // Portal labelling based on role
   const portalTitleByRole = {
     Admin: "Admin Portal",
+    "Super Admin": "Super Admin Portal",
     Finance: "Finance Portal",
     Staff: "Staff Portal",
     Viewer: "Viewer Portal",
   };
   const portalSubtitleByRole = {
     Admin: "Full administration access",
+    "Super Admin": "Full system administration access",
     Finance: "Finance operations and reporting",
     Staff: "Member management and reporting",
     Viewer: "Read-only access to view data",
@@ -100,9 +104,9 @@ export function AdminPage() {
       label: "Members",
       icon: "fa-users",
       items: [
-        { id: "members", label: "Members List", roles: ["Admin", "Finance", "Staff", "Viewer"] },
-        { id: "member-detail", label: "Member Details", roles: ["Admin", "Finance", "Staff", "Viewer"] },
-        { id: "invoice-builder", label: "Subscriptions", roles: ["Admin", "Finance"] },
+        { id: "members", label: "Members List", roles: ["Admin", "Super Admin", "Finance", "Staff", "Viewer"] },
+        { id: "member-detail", label: "Member Details", roles: ["Admin", "Super Admin", "Finance", "Staff", "Viewer"] },
+        { id: "invoice-builder", label: "Subscriptions", roles: ["Admin", "Super Admin", "Finance"] },
       ]
     },
     {
@@ -110,9 +114,9 @@ export function AdminPage() {
       label: "Finance",
       icon: "fa-dollar-sign",
       items: [
-        { id: "invoices", label: "Invoices", roles: ["Admin", "Finance"] },
-        { id: "payments", label: "Payments", roles: ["Admin", "Finance"] },
-        { id: "donations", label: "Donations", roles: ["Admin", "Finance"] },
+        { id: "invoices", label: "Invoices", roles: ["Admin", "Super Admin", "Finance"] },
+        { id: "payments", label: "Payments", roles: ["Admin", "Super Admin", "Finance"] },
+        { id: "donations", label: "Donations", roles: ["Admin", "Super Admin", "Finance"] },
       ]
     },
     {
@@ -120,8 +124,8 @@ export function AdminPage() {
       label: "Communication",
       icon: "fa-comments",
       items: [
-        { id: "automation", label: "Reminders", roles: ["Admin", "Finance"] },
-        { id: "communications", label: "Reminder Logs", roles: ["Admin", "Finance", "Staff", "Viewer"] },
+        { id: "automation", label: "Reminders", roles: ["Admin", "Super Admin", "Finance"] },
+        { id: "communications", label: "Reminder Logs", roles: ["Admin", "Super Admin", "Finance", "Staff", "Viewer"] },
       ]
     },
     {
@@ -129,8 +133,8 @@ export function AdminPage() {
       label: "Reports",
       icon: "fa-chart-bar",
       items: [
-        { id: "reports", label: "Financial Reports", roles: ["Admin", "Finance", "Staff", "Viewer"] },
-        { id: "export-reports", label: "Export Reports", roles: ["Admin", "Finance"] },
+        { id: "reports", label: "Financial Reports", roles: ["Admin", "Super Admin", "Finance", "Staff", "Viewer"] },
+        { id: "export-reports", label: "Export Reports", roles: ["Admin", "Super Admin", "Finance"] },
       ]
     },
     {
@@ -138,9 +142,9 @@ export function AdminPage() {
       label: "Settings",
       icon: "fa-cog",
       items: [
-        { id: "settings", label: "Users", roles: ["Admin"] },
-        { id: "roles", label: "Roles", roles: ["Admin"] },
-        { id: "org-settings", label: "Organization Settings", roles: ["Admin", "Finance"] },
+        { id: "settings", label: "Users", roles: ["Admin", "Super Admin"] },
+        { id: "roles", label: "Roles", roles: ["Admin", "Super Admin"] },
+        { id: "org-settings", label: "Organization Settings", roles: ["Admin", "Super Admin", "Finance"] },
       ]
     },
   ];
@@ -522,6 +526,9 @@ export function AdminPage() {
   const [currentInvalidPaymentModalField, setCurrentInvalidPaymentModalField] = useState(null);
   const [showPaymentDetailsModal, setShowPaymentDetailsModal] = useState(false);
   const [selectedPaymentDetails, setSelectedPaymentDetails] = useState(null);
+  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
+  const [selectedPasswordResetRequest, setSelectedPasswordResetRequest] = useState(null);
+  const [passwordResetForm, setPasswordResetForm] = useState({ newPassword: "" });
   const [hoveredMonth, setHoveredMonth] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const chartContainerRef = useRef(null);
@@ -639,8 +646,10 @@ export function AdminPage() {
   useEffect(() => {
     if (activeSection === "communications") {
       fetchReminderLogs();
+      fetchPasswordResetRequests();
     }
-  }, [activeSection, fetchReminderLogs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection]); // Only depend on activeSection to prevent infinite loops
 
   // Calculate monthly collections from paymentHistory
   const calculateMonthlyCollections = () => {
@@ -1920,7 +1929,7 @@ export function AdminPage() {
   // Send reminder to all outstanding members
   const handleSendToAllOutstanding = async () => {
     if (!isAdminOrOwner) {
-      showToast("Only Admin and Owner can send bulk reminders", "error");
+      showToast("Only Admin, Super Admin and Owner can send bulk reminders", "error");
       return;
     }
     if (!emailSettings.emailUser || !emailSettings.emailPassword) {
@@ -1960,7 +1969,7 @@ export function AdminPage() {
   // Send WhatsApp reminder to all outstanding members
   const handleSendWhatsAppToAllOutstanding = async () => {
     if (!isAdminOrOwner) {
-      showToast("Only Admin and Owner can send bulk reminders", "error");
+      showToast("Only Admin, Super Admin and Owner can send bulk reminders", "error");
       return;
     }
     const outstandingMembers = members.filter(member => {
@@ -2277,6 +2286,42 @@ Subscription Manager HK`;
     setTimeout(() => {
       navigate("/login", { replace: true });
     }, 500);
+  };
+
+  // Handle password reset request
+  const handlePasswordReset = async (requestId, newPassword) => {
+    try {
+      const apiUrl = import.meta.env.DEV
+        ? ""
+        : import.meta.env.VITE_API_URL || "";
+      const currentAdminEmail = sessionStorage.getItem("adminEmail") || "Super Admin";
+      
+      const response = await fetch(`${apiUrl}/api/auth/password-reset-requests/${requestId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          newPassword,
+          handledBy: currentAdminEmail,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        showToast(data.message || "Password updated and email sent successfully");
+        // Close modal and reset form
+        setShowPasswordResetModal(false);
+        setSelectedPasswordResetRequest(null);
+        setPasswordResetForm({ newPassword: "" });
+        // Refresh password reset requests
+        fetchPasswordResetRequests();
+      } else {
+        showToast(data.error || "Failed to update password", "error");
+      }
+    } catch (error) {
+      console.error("Error updating password:", error);
+      showToast("Failed to update password", "error");
+    }
   };
 
   const showToast = (message, type = "success") => {
@@ -7463,6 +7508,106 @@ Subscription Manager HK`;
               </article>
             )}
 
+            {/* PASSWORD RESET REQUESTS - Only visible to Super Admin */}
+            {activeSection === "communications" && currentAdminRole === "Super Admin" && (
+              <article className="screen-card" id="password-reset-requests" style={{ marginTop: "24px" }}>
+                <header className="screen-card__header">
+                  <div>
+                    <h3><i className="fas fa-key" style={{ marginRight: "10px" }}></i>Password Reset Requests</h3>
+                    <p>Manage password reset requests from admin users.</p>
+                  </div>
+                </header>
+                <div className="card">
+                  <div style={{ padding: "24px" }}>
+                    {passwordResetRequests && passwordResetRequests.length > 0 ? (
+                      <div style={{ overflowX: "auto" }}>
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>User Email</th>
+                              <th>User Name</th>
+                              <th>Requested At</th>
+                              <th>Status</th>
+                              <th>Handled By</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {passwordResetRequests
+                              .sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt))
+                              .map((request) => (
+                                <tr key={request._id}>
+                                  <td>{request.userEmail}</td>
+                                  <td>{request.userName || "N/A"}</td>
+                                  <td>
+                                    {request.requestedAt
+                                      ? new Date(request.requestedAt).toLocaleString("en-GB", {
+                                          day: "2-digit",
+                                          month: "short",
+                                          year: "numeric",
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })
+                                      : "N/A"}
+                                  </td>
+                                  <td>
+                                    <span
+                                      className={
+                                        request.status === "Pending"
+                                          ? "badge badge--warning"
+                                          : request.status === "Approved"
+                                          ? "badge badge--success"
+                                          : "badge badge--error"
+                                      }
+                                    >
+                                      {request.status || "Pending"}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {request.handledBy
+                                      ? `${request.handledBy}${
+                                          request.handledAt
+                                            ? ` - ${new Date(request.handledAt).toLocaleDateString("en-GB")}`
+                                            : ""
+                                        }`
+                                      : "-"}
+                                  </td>
+                                  <td>
+                                    {request.status === "Pending" && (
+                                      <button
+                                        className="primary-btn"
+                                        style={{ fontSize: "0.875rem", padding: "6px 12px" }}
+                                        onClick={() => {
+                                          setSelectedPasswordResetRequest(request);
+                                          setPasswordResetForm({ newPassword: "" });
+                                          setShowPasswordResetModal(true);
+                                        }}
+                                      >
+                                        <i className="fas fa-key" style={{ marginRight: "6px" }}></i>
+                                        Set Password
+                                      </button>
+                                    )}
+                                    {request.status === "Approved" && request.newPassword && (
+                                      <span style={{ fontSize: "0.875rem", color: "#666" }}>
+                                        Password sent
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div style={{ padding: "40px 20px", textAlign: "center", color: "#666" }}>
+                        <p>No password reset requests found.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </article>
+            )}
+
             {/* PAYMENT METHODS */}
             {activeSection === "payment-methods" && (
               <article className="screen-card" id="payment-methods">
@@ -11696,27 +11841,29 @@ Subscription Manager HK`;
                           Actions: {
                             render: () => (
                               <div style={{ display: "flex", gap: "8px" }}>
-                                <button
-                                  className="ghost-btn icon-btn icon-btn--edit"
-                                  onClick={async () => {
-                                    try {
-                                      // Cycle through the 4 allowed roles: Admin -> Finance -> Staff -> Viewer -> Admin
-                                      const roleOrder = ["Admin", "Finance", "Staff", "Viewer"];
-                                      const currentRole = admin.role || "Viewer";
-                                      const currentIndex = roleOrder.indexOf(currentRole);
-                                      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % roleOrder.length;
-                                      const newRole = roleOrder[nextIndex];
-                                      await updateAdminUser(admin.id, { role: newRole });
-                                      showToast(`${admin.name}'s role updated to ${newRole}`);
-                                    } catch (error) {
-                                      showToast(error.message || "Failed to update role", "error");
-                                    }
-                                  }}
-                                  title="Change Role"
-                                >
-                                  <i className="fas fa-sync-alt" aria-hidden="true"></i>
-                                </button>
-                                {(admin.role || 'Viewer') !== "Admin" && (
+                                {currentAdminRole === "Super Admin" && (
+                                  <button
+                                    className="ghost-btn icon-btn icon-btn--edit"
+                                    onClick={async () => {
+                                      try {
+                                        // Cycle through the 5 allowed roles: Admin -> Super Admin -> Finance -> Staff -> Viewer -> Admin
+                                        const roleOrder = ["Admin", "Super Admin", "Finance", "Staff", "Viewer"];
+                                        const currentRole = admin.role || "Viewer";
+                                        const currentIndex = roleOrder.indexOf(currentRole);
+                                        const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % roleOrder.length;
+                                        const newRole = roleOrder[nextIndex];
+                                        await updateAdminUser(admin.id, { role: newRole });
+                                        showToast(`${admin.name}'s role updated to ${newRole}`);
+                                      } catch (error) {
+                                        showToast(error.message || "Failed to update role", "error");
+                                      }
+                                    }}
+                                    title="Change Role"
+                                  >
+                                    <i className="fas fa-sync-alt" aria-hidden="true"></i>
+                                  </button>
+                                )}
+                                {(admin.role || 'Viewer') !== "Admin" && (admin.role || 'Viewer') !== "Super Admin" && (
                                   <button
                                     className="ghost-btn icon-btn icon-btn--delete"
                                     style={{ color: "#ef4444" }}
@@ -11887,14 +12034,14 @@ Subscription Manager HK`;
                           className="settings-card__add-btn secondary-btn"
                           onClick={() => {
                             if (!isAdmin) {
-                              showToast("Only Admin can add new admin users", "error");
+                              showToast("Only Admin and Super Admin can add new admin users", "error");
                               return;
                             }
                             setShowAdminForm(true);
                             setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
                           }}
                           disabled={!isAdmin}
-                          title={isAdmin ? "Add a new admin user" : "Only Admin can add admins"}
+                          title={isAdmin ? "Add a new admin user" : "Only Admin and Super Admin can add admins"}
                         >
                           + Add Admin
                         </button>
@@ -12135,6 +12282,7 @@ Subscription Manager HK`;
                               onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
                             >
                               <option>Admin</option>
+                              <option>Super Admin</option>
                               <option>Finance</option>
                               <option>Staff</option>
                               <option>Viewer</option>
@@ -13115,6 +13263,167 @@ Subscription Manager HK`;
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Reset Modal */}
+      {showPasswordResetModal && selectedPasswordResetRequest && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+            padding: "20px",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowPasswordResetModal(false);
+              setSelectedPasswordResetRequest(null);
+              setPasswordResetForm({ newPassword: "" });
+            }
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: "500px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              background: "#f9fafb",
+              position: "relative",
+              padding: "24px 24px 20px",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "16px",
+              }}
+            >
+              <h4
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  margin: 0,
+                }}
+              >
+                <i className="fas fa-key" aria-hidden="true"></i>
+                Set New Password
+              </h4>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => {
+                  setShowPasswordResetModal(false);
+                  setSelectedPasswordResetRequest(null);
+                  setPasswordResetForm({ newPassword: "" });
+                }}
+                style={{
+                  fontSize: "1.5rem",
+                  lineHeight: 1,
+                  color: "#ef4444",
+                  fontWeight: "bold",
+                  width: "32px",
+                  height: "32px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "4px",
+                  border: "1px solid #ef4444",
+                  background: "transparent",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = "#fee2e2";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = "transparent";
+                }}
+                aria-label="Close password reset modal"
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ marginBottom: "16px" }}>
+              <p style={{ margin: 0, fontSize: "0.875rem", color: "#666", marginBottom: "8px" }}>
+                Set a new password for:
+              </p>
+              <p style={{ margin: 0, fontSize: "1rem", fontWeight: "600", color: "#1a1a1a" }}>
+                {selectedPasswordResetRequest.userEmail}
+              </p>
+              {selectedPasswordResetRequest.userName && (
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.875rem", color: "#666" }}>
+                  {selectedPasswordResetRequest.userName}
+                </p>
+              )}
+            </div>
+
+            <form
+              noValidate
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!passwordResetForm.newPassword || passwordResetForm.newPassword.trim().length < 6) {
+                  showToast("Password must be at least 6 characters", "error");
+                  return;
+                }
+                await handlePasswordReset(
+                  selectedPasswordResetRequest._id,
+                  passwordResetForm.newPassword.trim()
+                );
+              }}
+              className="settings-form"
+            >
+              <div className="settings-form__group">
+                <label className="settings-form__label">
+                  New Password
+                  <input
+                    type="password"
+                    className="settings-form__input"
+                    required
+                    minLength={6}
+                    value={passwordResetForm.newPassword}
+                    onChange={(e) =>
+                      setPasswordResetForm({ newPassword: e.target.value })
+                    }
+                    placeholder="Enter new password (min 6 characters)"
+                    autoFocus
+                  />
+                </label>
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.75rem", color: "#666" }}>
+                  Password must be at least 6 characters long. The new password will be sent to the user via email.
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "20px" }}>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => {
+                    setShowPasswordResetModal(false);
+                    setSelectedPasswordResetRequest(null);
+                    setPasswordResetForm({ newPassword: "" });
+                  }}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="primary-btn">
+                  <i className="fas fa-key" style={{ marginRight: "6px" }}></i>
+                  Set Password & Send Email
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

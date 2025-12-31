@@ -32,7 +32,7 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ message: "Admin ID already exists" });
     }
     
-    const allowedRoles = ["Admin", "Finance", "Staff", "Viewer"];
+    const allowedRoles = ["Admin", "Super Admin", "Finance", "Staff", "Viewer"];
     const requestedRole = req.body.role || "Viewer";
     const safeRole = allowedRoles.includes(requestedRole) ? requestedRole : "Viewer";
 
@@ -60,10 +60,10 @@ router.post("/", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     await ensureConnection();
-    const allowedRoles = ["Admin", "Finance", "Staff", "Viewer"];
+    const allowedRoles = ["Admin", "Super Admin", "Finance", "Staff", "Viewer"];
     const update = { ...req.body };
     if (update.role && !allowedRoles.includes(update.role)) {
-      return res.status(400).json({ message: "Invalid role. Allowed roles are Admin, Finance, Staff, Viewer." });
+      return res.status(400).json({ message: "Invalid role. Allowed roles are Admin, Super Admin, Finance, Staff, Viewer." });
     }
 
     const admin = await AdminModel.findOneAndUpdate(

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const allowedRoles = ["Admin", "Finance", "Staff", "Viewer"];
+const allowedRoles = ["Admin", "Super Admin", "Finance", "Staff", "Viewer"];
 
 const AdminSchema = new mongoose.Schema({
   id: String,
