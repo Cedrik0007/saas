@@ -36,7 +36,7 @@ export function Table({ columns, rows }) {
 
   // Get name from row (prioritize name columns)
   const getName = (row, columns) => {
-    const nameColumns = ["Name", "Member", "User", "Donor Name", "Source"];
+    const nameColumns = ["Name", "Member Name", "Member", "User", "Donor Name", "Source"];
     for (const nameCol of nameColumns) {
       if (columns.includes(nameCol)) {
         const value = row[nameCol];

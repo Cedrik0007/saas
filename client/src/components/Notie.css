@@ -64,10 +64,30 @@
 @media (max-width: 768px) {
   .notie {
     font-size: 14px;
+    top: auto;
+    bottom: 0;
+    animation: notie-slide-up 0.35s ease-in-out;
   }
   
   .notie-content {
     padding: 14px 16px;
+  }
+  
+  .notie--exiting {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+/* Animation for mobile (bottom position) */
+@keyframes notie-slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 

@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { LoginPage } from "./pages/LoginPage.jsx";
-import { AdminPage } from "./pages/AdminPage.jsx";
+import AdminPage from "./pages/AdminPage.jsx";
 import { MemberPage } from "./pages/MemberPage.jsx";
 import { SignupPage } from "./pages/SignupPage.jsx";
 import { ServerPage } from "./pages/ServerPage.jsx";

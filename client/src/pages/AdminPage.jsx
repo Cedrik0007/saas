@@ -14,7 +14,7 @@ import { statusClass } from "../statusClasses";
 import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
 
 
-export function AdminPage() {
+function AdminPage() {
   const {
     members,
     admins,
@@ -64,6 +64,136 @@ export function AdminPage() {
     deleteDonation,
     loading,
   } = useApp();
+
+  // Reusable style constants to reduce duplication
+  const modalOverlayStyle = {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0, 0, 0, 0.45)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10000,
+    padding: "20px",
+  };
+
+  const modalOverlayStyle05 = {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0, 0, 0, 0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10000,
+    padding: "20px",
+  };
+
+  const modalOverlayStyle05High = {
+    ...modalOverlayStyle05,
+    zIndex: 10001,
+  };
+
+  const modalContainerStyle = {
+    maxWidth: "600px",
+    width: "100%",
+    maxHeight: "90vh",
+    overflowY: "auto",
+    background: "#f9fafb",
+    position: "relative",
+    padding: "24px 24px 20px",
+  };
+
+  const modalContainerStyle500 = {
+    ...modalContainerStyle,
+    maxWidth: "500px",
+  };
+
+  const modalContainerStyle800 = {
+    ...modalContainerStyle,
+    maxWidth: "800px",
+    background: undefined,
+    padding: undefined,
+  };
+
+  const modalContainerStyle640 = {
+    ...modalContainerStyle,
+    maxWidth: "640px",
+    background: "#ffffff",
+    padding: undefined,
+  };
+
+  const modalHeaderStyle = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "16px",
+  };
+
+  const modalHeaderStyle20 = {
+    ...modalHeaderStyle,
+    marginBottom: "20px",
+  };
+
+  const modalHeaderStyle24 = {
+    ...modalHeaderStyle,
+    marginBottom: "24px",
+  };
+
+  const modalTitleStyle = {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    margin: 0,
+  };
+
+  const closeButtonStyleRed = {
+    fontSize: "1.5rem",
+    lineHeight: 1,
+    color: "#ef4444",
+    fontWeight: "bold",
+    width: "32px",
+    height: "32px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "4px",
+    border: "1px solid #ef4444",
+    background: "transparent",
+    cursor: "pointer",
+    transition: "all 0.2s ease",
+  };
+
+  const closeButtonStyleSimple = {
+    background: "transparent",
+    border: "none",
+    fontSize: "1.5rem",
+    color: "#666",
+    cursor: "pointer",
+    padding: "0",
+    width: "32px",
+    height: "32px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "4px",
+  };
+
+  const closeButtonStyleRedNoBorder = {
+    background: "transparent",
+    border: "1px solid #ef4444",
+    fontSize: "1.5rem",
+    color: "#ef4444",
+    fontWeight: "bold",
+    width: "32px",
+    height: "32px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "4px",
+    cursor: "pointer",
+    padding: "0",
+    transition: "all 0.2s ease",
+  };
 
   // Get current admin role from sessionStorage and normalize legacy values
   const rawAdminRole = sessionStorage.getItem('adminRole') || 'Viewer';
@@ -532,12 +662,40 @@ export function AdminPage() {
   const [hoveredMonth, setHoveredMonth] = useState(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const chartContainerRef = useRef(null);
+
+  // Helper function to update mouse position from chart container
+  const updateChartMousePosition = (e) => {
+    if (chartContainerRef.current) {
+      const rect = chartContainerRef.current.getBoundingClientRect();
+      setMousePosition({ 
+        x: e.clientX - rect.left, 
+        y: e.clientY - rect.top 
+      });
+    }
+  };
+
+  // Helper component for Dashboard KPI Card
+  const DashboardKPICard = ({ icon, iconClass, label, value, description, onClick, valueClass = "" }) => (
+    <button
+      type="button"
+      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
+      onClick={onClick}
+    >
+      <p className="admin-dashboard-kpi-label">
+        <i className={`${icon} ${iconClass || "admin-dashboard-kpi-icon"}`}></i>
+        {label}
+      </p>
+      <h4 className={`admin-dashboard-kpi-value ${valueClass}`}>{value}</h4>
+      {description && <small className="admin-dashboard-kpi-description">{description}</small>}
+    </button>
+  );
   const [sendingEmails, setSendingEmails] = useState({}); // Track which member is sending
   const [sendingToAll, setSendingToAll] = useState(false);
   const [sendingWhatsApp, setSendingWhatsApp] = useState({}); // Track which member is sending WhatsApp
   const [sendingWhatsAppToAll, setSendingWhatsAppToAll] = useState(false);
   const [showTemplatePreview, setShowTemplatePreview] = useState(false);
   const [showChannelSelection, setShowChannelSelection] = useState(false);
+  const [selectedReminderLogItem, setSelectedReminderLogItem] = useState(null);
   const [pendingReminderAction, setPendingReminderAction] = useState(null); // { type: 'single'|'bulk', memberData?: member }
   const [selectedChannels, setSelectedChannels] = useState([]); // Track selected channels for bulk send (can be multiple)
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
@@ -562,6 +720,7 @@ export function AdminPage() {
   const [donationMemberSearch, setDonationMemberSearch] = useState(""); // Search filter for donation member select
   const [showMemberDropdown, setShowMemberDropdown] = useState(false); // Show/hide member dropdown
   const [showDonationMemberDropdown, setShowDonationMemberDropdown] = useState(false); // Show/hide donation member dropdown
+  const [showDonationPaymentMethodDropdown, setShowDonationPaymentMethodDropdown] = useState(false); // Show/hide donation payment method dropdown
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
   
   // Payment form state
@@ -2225,11 +2384,15 @@ Subscription Manager HK`;
                 {index > 0 && <span className="admin-breadcrumb-separator"> &gt; </span>}
                 {index === breadcrumbPath.length - 1 ? (
                   <span className="admin-breadcrumb-current">{item.label}</span>
-                ) : (
+                ) : index === 0 ? (
                   <span 
                     onClick={() => handleNavClick(item.id)}
                     className="admin-breadcrumb-link--inline"
                   >
+                    {item.label}
+                  </span>
+                ) : (
+                  <span className="admin-breadcrumb-link--inline admin-breadcrumb-link--no-click">
                     {item.label}
                   </span>
                 )}
@@ -3084,33 +3247,53 @@ Subscription Manager HK`;
 
       {/* Template Preview Modal */}
       {showTemplatePreview && (
-        <div 
-          className="admin-modal-overlay"
-          style={{ zIndex: 10001 }}
-          onClick={() => setShowTemplatePreview(false)}
+        <div
+          style={modalOverlayStyle05High}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowTemplatePreview(false);
+            }
+          }}
         >
-          <div 
-            className="admin-modal-container"
+          <div
+            className="card admin-template-preview-modal"
+            style={{
+              ...modalContainerStyle800,
+              background: "#ffffff",
+              padding: "24px",
+              maxWidth: "900px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="admin-modal-header">
-              <h3 className="admin-modal-title">
-                <i className="fas fa-eye admin-icon"></i>
+            <div style={modalHeaderStyle24}>
+              <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "8px" }}>
+                <i className="fas fa-eye" style={{ color: "#5a31ea" }}></i>
                 Email Template Preview
               </h3>
               <button
                 type="button"
-                className="admin-modal-close-button"
                 onClick={() => setShowTemplatePreview(false)}
+                style={closeButtonStyleSimple}
+                onMouseEnter={(e) => {
+                  e.target.style.background = "#f3f4f6";
+                  e.target.style.color = "#1a1a1a";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = "transparent";
+                  e.target.style.color = "#666";
+                }}
+                aria-label="Close template preview"
               >
                 ×
               </button>
             </div>
-            <div 
-              className="admin-modal-content"
+            <div
+              className="admin-template-preview-content"
               dangerouslySetInnerHTML={{ __html: getPreviewTemplate() }}
             />
-            <div className="admin-modal-actions">
+            <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end" }}>
               <button
                 className="secondary-btn"
                 onClick={() => setShowTemplatePreview(false)}
@@ -3125,19 +3308,7 @@ Subscription Manager HK`;
       {/* Channel Selection Modal */}
       {showChannelSelection && (
         <div 
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10001,
-            padding: "20px",
-          }}
+          style={modalOverlayStyle05High}
           onClick={() => {
             setShowChannelSelection(false);
             setPendingReminderAction(null);
@@ -3147,7 +3318,7 @@ Subscription Manager HK`;
             className="admin-modal-card admin-modal-card--small"
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+            <div style={modalHeaderStyle24}>
               <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle", display: "inline-block" }}>
                   <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#5a31ea"/>
@@ -3273,7 +3444,7 @@ Subscription Manager HK`;
                     Email
                   </button>
                   <button
-                    className="admin-channel-action-button"
+                    className="admin-channel-action-button admin-channel-action-button--whatsapp"
                     onClick={() => handleSelectChannel('WhatsApp')}
                   >
                     <i className="fab fa-whatsapp admin-channel-action-icon-large"></i>
@@ -3402,88 +3573,51 @@ Subscription Manager HK`;
                 </header>
                 <div className="admin-dashboard-main-card">
                   <div className="kpi-grid">
-                    {/* Total Members */}
-                    <button
-                      type="button"
-                      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
+                    <DashboardKPICard
+                      icon="fas fa-users"
+                      label="Total Members"
+                      value={formatNumber(members.length)}
+                      description="Active members"
                       onClick={() => handleNavClick("members")}
-                    >
-                      <p className="admin-dashboard-kpi-label">
-                        <i className="fas fa-users admin-dashboard-kpi-icon"></i>
-                        Total Members
-                      </p>
-                      <h4 className="admin-dashboard-kpi-value">{formatNumber(members.length)}</h4>
-                      <small className="admin-dashboard-kpi-description">Active members</small>
-                    </button>
-
-                    {/* Total Collected */}
-                    <button
-                      type="button"
-                      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
+                    />
+                    <DashboardKPICard
+                      icon="fas fa-dollar-sign"
+                      iconClass="admin-dashboard-kpi-icon--green"
+                      label="Total Collected"
+                      value={`$${formatNumber(dashboardMetrics.collectedMonth, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}`}
+                      description={`$${formatNumber(dashboardMetrics.collectedYear, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })} YTD`}
                       onClick={() => handleNavClick("payments")}
-                    >
-                      <p className="admin-dashboard-kpi-label">
-                        <i className="fas fa-dollar-sign admin-dashboard-kpi-icon--green"></i>
-                        Total Collected
-                      </p>
-                      <h4 className="admin-dashboard-kpi-value">
-                        $
-                        {formatNumber(dashboardMetrics.collectedMonth, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </h4>
-                      <small className="admin-dashboard-kpi-description">
-                        $
-                        {formatNumber(dashboardMetrics.collectedYear, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
-                        YTD
-                      </small>
-                    </button>
-
-                    {/* Outstanding */}
-                    <button
-                      type="button"
-                      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
+                    />
+                    <DashboardKPICard
+                      icon="fas fa-exclamation-triangle"
+                      iconClass="admin-dashboard-kpi-icon--red"
+                      label="Total Outstanding"
+                      value={`$${formatNumber(dashboardMetrics.outstanding, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}`}
+                      description={`Expected $${formatNumber(dashboardMetrics.expectedAnnual, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}`}
                       onClick={() => handleNavClick("members")}
-                    >
-                      <p className="admin-dashboard-kpi-label">
-                        <i className="fas fa-exclamation-triangle admin-dashboard-kpi-icon--red"></i>
-                        Total Outstanding
-                      </p>
-                      <h4 className={`admin-dashboard-kpi-value ${dashboardMetrics.outstanding > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}`}>
-                        $
-                        {formatNumber(dashboardMetrics.outstanding, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </h4>
-                      <small className="admin-dashboard-kpi-description">
-                        Expected $
-                        {formatNumber(dashboardMetrics.expectedAnnual, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </small>
-                    </button>
-
-                    {/* Overdue Members */}
-                    <button
-                      type="button"
-                      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
+                      valueClass={dashboardMetrics.outstanding > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}
+                    />
+                    <DashboardKPICard
+                      icon="fas fa-exclamation-circle"
+                      iconClass={dashboardMetrics.overdueMembers > 0 ? "admin-dashboard-kpi-icon--red" : "admin-dashboard-kpi-icon--gray"}
+                      label="Overdue Members"
+                      value={formatNumber(dashboardMetrics.overdueMembers)}
+                      description="Requires attention"
                       onClick={() => handleNavClick("members")}
-                    >
-                      <p className="admin-dashboard-kpi-label">
-                        <i className={`fas fa-exclamation-circle ${dashboardMetrics.overdueMembers > 0 ? "admin-dashboard-kpi-icon--red" : "admin-dashboard-kpi-icon--gray"}`}></i>
-                        Overdue Members
-                      </p>
-                      <h4 className={`admin-dashboard-kpi-value ${dashboardMetrics.overdueMembers > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}`}>
-                        {formatNumber(dashboardMetrics.overdueMembers)}
-                      </h4>
-                      <small className="admin-dashboard-kpi-description">Requires attention</small>
-                    </button>
+                      valueClass={dashboardMetrics.overdueMembers > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}
+                    />
                   </div>
 
                   {/* Last updated timestamp */}
@@ -3502,12 +3636,8 @@ Subscription Manager HK`;
                       ref={chartContainerRef}
                       className="chart admin-dashboard-chart-container" 
                       onMouseMove={(e) => {
-                        if (hoveredMonth && chartContainerRef.current) {
-                          const rect = chartContainerRef.current.getBoundingClientRect();
-                          setMousePosition({ 
-                            x: e.clientX - rect.left, 
-                            y: e.clientY - rect.top 
-                          });
+                        if (hoveredMonth) {
+                          updateChartMousePosition(e);
                         }
                       }}
                     >
@@ -3519,21 +3649,11 @@ Subscription Manager HK`;
                           data-month={item.month}
                           onMouseEnter={(e) => {
                             setHoveredMonth(item);
-                            if (chartContainerRef.current) {
-                              const rect = chartContainerRef.current.getBoundingClientRect();
-                              setMousePosition({ 
-                                x: e.clientX - rect.left, 
-                                y: e.clientY - rect.top 
-                              });
-                            }
+                            updateChartMousePosition(e);
                           }}
                           onMouseMove={(e) => {
-                            if (hoveredMonth?.monthKey === item.monthKey && chartContainerRef.current) {
-                              const rect = chartContainerRef.current.getBoundingClientRect();
-                              setMousePosition({ 
-                                x: e.clientX - rect.left, 
-                                y: e.clientY - rect.top 
-                              });
+                            if (hoveredMonth?.monthKey === item.monthKey) {
+                              updateChartMousePosition(e);
                             }
                           }}
                           onMouseLeave={() => setHoveredMonth(null)}
@@ -3541,35 +3661,32 @@ Subscription Manager HK`;
                         </div>
                       ))}
                       {hoveredMonth && chartContainerRef.current && (() => {
-                        // Calculate tooltip position with overflow prevention
-                        const tooltipWidth = 220; // Approximate tooltip width
-                        const tooltipHeight = 40;
+                        // Position tooltip on the left side
+                        const tooltipWidth = 220;
+                        const tooltipHeight = 80;
                         const chartRect = chartContainerRef.current.getBoundingClientRect();
-                        const viewportWidth = window.innerWidth;
                         const viewportHeight = window.innerHeight;
                         
-                        let left = mousePosition.x + 10;
-                        let top = mousePosition.y - 50;
+                        // Position on the left side of the cursor
+                        let left = mousePosition.x - tooltipWidth - 15;
                         
-                        // Prevent horizontal overflow - check right edge
-                        const tooltipRightEdge = chartRect.left + left + tooltipWidth;
-                        if (tooltipRightEdge > viewportWidth - 10) {
-                          // Position tooltip to the left of cursor
-                          left = mousePosition.x - tooltipWidth - 10;
-                        }
-                        // Prevent left overflow
-                        if (chartRect.left + left < 10) {
+                        // Ensure tooltip doesn't go off the left edge
+                        if (left < 10) {
                           left = 10;
                         }
+                        
+                        // Center tooltip vertically relative to cursor
+                        let top = mousePosition.y - tooltipHeight / 2;
                         
                         // Prevent vertical overflow - check top edge
                         if (chartRect.top + top < 10) {
                           top = 10 - chartRect.top;
                         }
+                        
                         // Prevent bottom overflow
                         const tooltipBottomEdge = chartRect.top + top + tooltipHeight;
                         if (tooltipBottomEdge > viewportHeight - 10) {
-                          top = mousePosition.y - tooltipHeight - 10;
+                          top = viewportHeight - 10 - chartRect.top - tooltipHeight;
                           // Ensure it doesn't go above viewport
                           if (chartRect.top + top < 10) {
                             top = 10 - chartRect.top;
@@ -3584,8 +3701,21 @@ Subscription Manager HK`;
                               top: `${top}px`
                             }}
                           >
-                            {hoveredMonth.month} {new Date().getFullYear()}: ${hoveredMonth.value.toFixed(2)}
-                            {hoveredMonth.count > 0 && ` (${hoveredMonth.count} payment${hoveredMonth.count > 1 ? 's' : ''})`}
+                            <div className="admin-dashboard-chart-tooltip-header">
+                              <strong>{hoveredMonth.monthKey}</strong>
+                            </div>
+                            <div className="admin-dashboard-chart-tooltip-content">
+                              <div className="admin-dashboard-chart-tooltip-row">
+                                <span>Amount:</span>
+                                <strong>{formatCurrency(hoveredMonth.value)}</strong>
+                              </div>
+                              {hoveredMonth.count > 0 && (
+                                <div className="admin-dashboard-chart-tooltip-row">
+                                  <span>Payments:</span>
+                                  <strong>{hoveredMonth.count} payment{hoveredMonth.count > 1 ? 's' : ''}</strong>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         );
                       })()}
@@ -3594,7 +3724,7 @@ Subscription Manager HK`;
 
                   <div className="admin-dashboard-payments-card">
                     <div className="card-header">
-                      <h4><i className="fas fa-clock admin-icon"></i>Recent Payments</h4>
+                      <h4><i className="fas fa-clock admin-icon" style={{marginRight: "10px"}}></i>Recent Payments</h4>
                       <button className="text-btn" onClick={() => handleNavClick("members")}>
                         View all
                       </button>
@@ -3702,7 +3832,7 @@ Subscription Manager HK`;
                     }}
                   >
                     <div
-                      className="card admin-members-form-container"
+                      className="admin-members-form-container"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="admin-members-form-header">
@@ -4327,7 +4457,7 @@ Subscription Manager HK`;
                                   ))}
                                 </div>
                               </div>
-                              <label style={{ fontSize: "0.875rem", color: "#666" }}>
+                              <label className="member-sort-by-outstanding" style={{ fontSize: "0.875rem", color: "#666" }}>
                                 Sort by Outstanding:&nbsp;
                                 <select
                                   value={memberSortByOutstanding}
@@ -4484,6 +4614,65 @@ Subscription Manager HK`;
             )}
 
             {/* MEMBER DETAIL */}
+            {activeSection === "member-detail" && !selectedMember && (
+              <article className="screen-card" id="member-detail">
+                <header className="screen-card__header">
+                  <div>
+                    {renderBreadcrumb("member-detail")}
+                    <h3>Member Detail</h3>
+                    <p>360º view with invoices, payment history, communications.</p>
+                  </div>
+                </header>
+                <div style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "80px 40px",
+                  textAlign: "center",
+                  minHeight: "400px"
+                }}>
+                  <div style={{
+                    fontSize: "4rem",
+                    marginBottom: "24px",
+                    color: "#d1d5db",
+                    opacity: 0.7
+                  }}>
+                    <i className="fas fa-user-circle"></i>
+                  </div>
+                  <h3 style={{
+                    fontSize: "1.5rem",
+                    fontWeight: "600",
+                    color: "#1a1a1a",
+                    marginBottom: "12px"
+                  }}>
+                    No Member Selected
+                  </h3>
+                  <p style={{
+                    fontSize: "1rem",
+                    color: "#666",
+                    marginBottom: "32px",
+                    maxWidth: "500px",
+                    lineHeight: "1.6"
+                  }}>
+                    Please select a member from the members list to view their detailed information, invoices, payment history, and communications.
+                  </p>
+                  <button
+                    className="primary-btn"
+                    onClick={() => setActiveSection("members")}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px"
+                    }}
+                  >
+                    <i className="fas fa-users"></i>
+                    Go to Members List
+                  </button>
+                </div>
+              </article>
+            )}
+
             {activeSection === "member-detail" && selectedMember && (
               <article className="screen-card" id="member-detail">
                 <header className="screen-card__header">
@@ -5427,7 +5616,7 @@ Subscription Manager HK`;
                   </div>
                 )}
                 
-                <form className="card form-grid" onSubmit={handleAddInvoice} noValidate style={{ padding: "40px", background: "#ffffff", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
+                <form className="card form-grid" onSubmit={handleAddInvoice} noValidate style={{ padding: "20px", background: "#ffffff", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
                   <label style={{ marginBottom: "24px" }}>
                     <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}>
                       <i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
@@ -7326,7 +7515,16 @@ Subscription Manager HK`;
                                 </thead>
                                 <tbody>
                                   {pageItems.map((item, idx) => (
-                                    <tr key={`${item.memberId || item.memberName || "row"}-${start + idx}`}>
+                                    <tr 
+                                      key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
+                                      onClick={() => {
+                                        // Only open modal on mobile (under 768px)
+                                        if (window.innerWidth <= 768) {
+                                          setSelectedReminderLogItem(item);
+                                        }
+                                      }}
+                                      style={{ cursor: window.innerWidth <= 768 ? 'pointer' : 'default' }}
+                                    >
                                       <td>
                                         {item.memberName || item.member || "N/A"}
                                         {item.memberId ? ` (${item.memberId})` : ""}
@@ -7343,7 +7541,7 @@ Subscription Manager HK`;
                                         </span>
                                       </td>
                                       <td>
-                                        <div style={{ display: "flex", gap: "6px" }}>
+                                        <div style={{ display: "flex", gap: "6px" }} onClick={(e) => e.stopPropagation()}>
                                           {/* View full message in alert-style preview */}
                                           <button
                                             type="button"
@@ -7351,16 +7549,21 @@ Subscription Manager HK`;
                                             title="View full message"
                                             aria-label="View full message"
                                             onClick={() => {
-                                              const fullText = [
-                                                `Member: ${item.memberName || "N/A"}`,
-                                                `Channel: ${item.channel || "N/A"}`,
-                                                `Type: ${item.type || "-"}`,
-                                                `Date: ${item.date || "N/A"}`,
-                                                "",
-                                                "Message:",
-                                                item.message || "N/A",
-                                              ].join("\n");
-                                              window.alert(fullText);
+                                              // On mobile, open modal instead of alert
+                                              if (window.innerWidth <= 768) {
+                                                setSelectedReminderLogItem(item);
+                                              } else {
+                                                const fullText = [
+                                                  `Member: ${item.memberName || "N/A"}`,
+                                                  `Channel: ${item.channel || "N/A"}`,
+                                                  `Type: ${item.type || "-"}`,
+                                                  `Date: ${item.date || "N/A"}`,
+                                                  "",
+                                                  "Message:",
+                                                  item.message || "N/A",
+                                                ].join("\n");
+                                                window.alert(fullText);
+                                              }
                                             }}
                                           >
                                             <i className="fas fa-eye" aria-hidden="true"></i>
@@ -7517,7 +7720,7 @@ Subscription Manager HK`;
                     <p>Manage password reset requests from admin users.</p>
                   </div>
                 </header>
-                <div className="card">
+                <div className="card-communications">
                   <div style={{ padding: "24px" }}>
                     {passwordResetRequests && passwordResetRequests.length > 0 ? (
                       <div style={{ overflowX: "auto" }}>
@@ -8255,19 +8458,7 @@ Subscription Manager HK`;
                 {/* Payment Form - shown as popup modal */}
                 {showPaymentForm && (
                   <div
-                    style={{
-                      position: "fixed",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: "rgba(0, 0, 0, 0.5)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      zIndex: 10000,
-                      padding: "20px",
-                    }}
+                    style={modalOverlayStyle05}
                     onClick={(e) => {
                       // 点击遮罩不关闭，避免误操作；只允许通过按钮关闭
                       if (e.target === e.currentTarget) {
@@ -8277,24 +8468,10 @@ Subscription Manager HK`;
                   >
                     <div
                       className="card"
-                      style={{
-                        maxWidth: "640px",
-                        width: "100%",
-                        maxHeight: "90vh",
-                        overflowY: "auto",
-                        position: "relative",
-                        background: "#ffffff",
-                      }}
+                      style={modalContainerStyle640}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: "20px",
-                        }}
-                      >
+                      <div style={modalHeaderStyle20}>
                         <h4 style={{ margin: 0 }}>
                           {editingPayment ? "Edit Payment" : "Add New Payment"}
                         </h4>
@@ -8561,7 +8738,7 @@ Subscription Manager HK`;
                   </div>
                 )}
 
-                <div className="card">
+                <div className="card-payment-approvals">
                   <div className="table-wrapper">
                     {(() => {
                       // Filter and sort payments
@@ -8862,7 +9039,7 @@ Subscription Manager HK`;
                   );
                 })()}
                 
-                <div className="card">
+                <div className="card-invoices">
                   <div className="table-wrapper">
                     {(() => {
                       // Filter invoices by status
@@ -9057,7 +9234,7 @@ Subscription Manager HK`;
                     <div>
                       {renderBreadcrumb("payments")}
                       <h3><i className="fas fa-credit-card" style={{ marginRight: "10px" }}></i>Payments</h3>
-                      <p>View and manage all payment transactions.</p>
+                      <p>View and all payment transactions.</p>
                     </div>
                   </div>
                 </header>
@@ -9065,19 +9242,7 @@ Subscription Manager HK`;
                 {/* Payment Form Modal */}
                 {showPaymentForm && (
                   <div 
-                    style={{
-                      position: "fixed",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: "rgba(0, 0, 0, 0.5)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      zIndex: 10000,
-                      padding: "20px",
-                    }}
+                    style={modalOverlayStyle05}
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
                         setShowPaymentForm(false);
@@ -9102,14 +9267,8 @@ Subscription Manager HK`;
                     }}
                   >
                     <div 
-                      className="card"
-                      style={{
-                        maxWidth: "800px",
-                        width: "100%",
-                        maxHeight: "90vh",
-                        overflowY: "auto",
-                        position: "relative",
-                      }}
+                      className="payments-card"
+                      style={modalContainerStyle800}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
@@ -9314,8 +9473,8 @@ Subscription Manager HK`;
                   </div>
                 )}
 
-                <div className="card">
-                  <div style={{ padding: "24px" }}>
+                <div className=" card-payments">
+                  <div style={{ padding: "2px" }}>
                     {/* Payment Status Filter - Segmented Buttons */}
                     <div style={{ marginBottom: "20px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                       <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
@@ -9523,19 +9682,8 @@ Subscription Manager HK`;
                 {/* Add Donation Form Modal */}
                 {showDonationForm && (
                   <div 
-                    style={{
-                      position: "fixed",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: "rgba(0, 0, 0, 0.5)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      zIndex: 10000,
-                      padding: "20px",
-                    }}
+                    className="donation-form-overlay"
+                    style={modalOverlayStyle05}
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
                           setShowDonationForm(false);
@@ -9554,21 +9702,16 @@ Subscription Manager HK`;
                           setDonationImagePreview(null);
                           setDonationMemberSearch("");
                           setShowDonationMemberDropdown(false);
+                          setShowDonationPaymentMethodDropdown(false);
                       }
                     }}
                   >
                     <div 
-                      className="card"
-                      style={{
-                        maxWidth: "800px",
-                        width: "100%",
-                        maxHeight: "90vh",
-                        overflowY: "auto",
-                        position: "relative",
-                      }}
+                      className="donation-card donation-form-container"
+                      style={modalContainerStyle800}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+                      <div style={modalHeaderStyle24}>
                         <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
                           <i className="fas fa-heart" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                           Add Donation
@@ -9601,23 +9744,9 @@ Subscription Manager HK`;
                             setDonationImagePreview(null);
                             setDonationMemberSearch("");
                             setShowDonationMemberDropdown(false);
+                            setShowDonationPaymentMethodDropdown(false);
                           }}
-                          style={{
-                            background: "transparent",
-                            border: "1px solid #ef4444",
-                            fontSize: "1.5rem",
-                            color: "#ef4444",
-                            fontWeight: "bold",
-                            width: "32px",
-                            height: "32px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            padding: "0",
-                            transition: "all 0.2s ease",
-                          }}
+                          style={closeButtonStyleRedNoBorder}
                           onMouseEnter={(e) => {
                             e.target.style.background = "#f3f4f6";
                             e.target.style.color = "#1a1a1a";
@@ -10197,26 +10326,141 @@ Subscription Manager HK`;
                       )}
                       <label>
                         Payment Method <span style={{ color: "#ef4444" }}>*</span>
-                        <select
-                          value={donationForm.method}
-                          onChange={(e) => {
-                            setDonationForm({ ...donationForm, method: e.target.value });
-                            if (donationFieldErrors.method) {
-                              setDonationFieldErrors(prev => ({ ...prev, method: false }));
-                              if (currentInvalidDonationField === "method") {
-                                setCurrentInvalidDonationField(null);
+                        <div className="donation-payment-method-select-wrapper">
+                          <select
+                            className="donation-payment-method-select-default"
+                            value={donationForm.method}
+                            onChange={(e) => {
+                              setDonationForm({ ...donationForm, method: e.target.value });
+                              if (donationFieldErrors.method) {
+                                setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                if (currentInvalidDonationField === "method") {
+                                  setCurrentInvalidDonationField(null);
+                                }
                               }
-                            }
-                          }}
-                          required
-                          style={{
-                            border: donationFieldErrors.method ? "2px solid #ef4444" : undefined
-                          }}
-                        >
-                          <option value="">Select method</option>
-                          <option value="Online Payment">Online Payment</option>
-                          <option value="Cash Payment">Cash Payment</option>
-                        </select>
+                            }}
+                            required
+                            style={{
+                              border: donationFieldErrors.method ? "2px solid #ef4444" : undefined
+                            }}
+                          >
+                            <option value="">Select method</option>
+                            <option value="Online Payment">Online Payment</option>
+                            <option value="Cash Payment">Cash Payment</option>
+                          </select>
+                          
+                          {/* Custom dropdown UI for mobile */}
+                          <div className="donation-payment-method-select-custom" data-donation-payment-method-dropdown>
+                            <div
+                              onClick={() => setShowDonationPaymentMethodDropdown(!showDonationPaymentMethodDropdown)}
+                              style={{
+                                padding: "10px 16px",
+                                border: donationFieldErrors.method ? "2px solid #ef4444" : "1px solid #e0e0e0",
+                                borderRadius: "4px",
+                                background: "#fff",
+                                cursor: "pointer",
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                color: donationForm.method ? "#000" : "#999",
+                                minHeight: "42px"
+                              }}
+                            >
+                              <span>
+                                {donationForm.method || "Select method"}
+                              </span>
+                              <span style={{ 
+                                fontSize: "0.75rem",
+                                color: "#5a31ea",
+                                transition: "transform 0.2s ease",
+                                transform: showDonationPaymentMethodDropdown ? "rotate(180deg)" : "rotate(0deg)",
+                                display: "inline-block"
+                              }}>▼</span>
+                            </div>
+                            
+                            {showDonationPaymentMethodDropdown && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "100%",
+                                  left: 0,
+                                  right: 0,
+                                  background: "#fff",
+                                  border: "1px solid #e0e0e0",
+                                  borderRadius: "4px",
+                                  marginTop: "4px",
+                                  zIndex: 1000,
+                                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div
+                                  onClick={() => {
+                                    setDonationForm({ ...donationForm, method: "Online Payment" });
+                                    setShowDonationPaymentMethodDropdown(false);
+                                    if (donationFieldErrors.method) {
+                                      setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                      if (currentInvalidDonationField === "method") {
+                                        setCurrentInvalidDonationField(null);
+                                      }
+                                    }
+                                  }}
+                                  style={{
+                                    padding: "12px 16px",
+                                    cursor: "pointer",
+                                    borderBottom: "1px solid #e5e7eb",
+                                    background: donationForm.method === "Online Payment" ? "#f9fafb" : "#fff",
+                                    transition: "background 0.2s",
+                                    color: "#1a1a1a"
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (donationForm.method !== "Online Payment") {
+                                      e.currentTarget.style.background = "#f3f4f6";
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (donationForm.method !== "Online Payment") {
+                                      e.currentTarget.style.background = "#fff";
+                                    }
+                                  }}
+                                >
+                                  Online Payment
+                                </div>
+                                <div
+                                  onClick={() => {
+                                    setDonationForm({ ...donationForm, method: "Cash Payment" });
+                                    setShowDonationPaymentMethodDropdown(false);
+                                    if (donationFieldErrors.method) {
+                                      setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                      if (currentInvalidDonationField === "method") {
+                                        setCurrentInvalidDonationField(null);
+                                      }
+                                    }
+                                  }}
+                                  style={{
+                                    padding: "12px 16px",
+                                    cursor: "pointer",
+                                    background: donationForm.method === "Cash Payment" ? "#f9fafb" : "#fff",
+                                    transition: "background 0.2s",
+                                    color: "#1a1a1a"
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (donationForm.method !== "Cash Payment") {
+                                      e.currentTarget.style.background = "#f3f4f6";
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (donationForm.method !== "Cash Payment") {
+                                      e.currentTarget.style.background = "#fff";
+                                    }
+                                  }}
+                                >
+                                  Cash Payment
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </label>
 
                       {/* Proof Image - Required for Cash Payment */}
@@ -10557,7 +10801,7 @@ Subscription Manager HK`;
                 )}
 
                 {/* Donations Table */}
-                <div className="card">
+                <div className="card-donations">
                   {!donations || (Array.isArray(donations) && donations.length === 0) ? (
                     <div style={{ 
                       textAlign: "center", 
@@ -10747,7 +10991,7 @@ Subscription Manager HK`;
                     <p>Comprehensive financial overview and payment analytics.</p>
                   </div>
                   {isFinanceRole && (
-                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                    <div className="financial-reports-export-buttons" style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                       <button
                         type="button"
                         onClick={handleSecureExportCSV}
@@ -10825,7 +11069,7 @@ Subscription Manager HK`;
                 </header>
 
                 {/* Date Range Selector - Modern Design */}
-                <div className="card" style={{ marginBottom: "24px", padding: "20px", background: "#ffffff" }}>
+                <div className="card card-reports" style={{ marginBottom: "24px", padding: "20px", background: "#ffffff" }}>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "flex-end" }}>
                     <div style={{ flex: "1", minWidth: "200px" }}>
                       <label style={{ display: "block", marginBottom: "8px", fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>
@@ -11009,80 +11253,46 @@ Subscription Manager HK`;
                         Financial overview for selected period
                       </p>
                     </div>
-                    <div style={{ position: "relative", height: "280px", display: "flex", alignItems: "flex-end", gap: "32px", justifyContent: "center", padding: "0 24px" }}>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", flex: 1, maxWidth: "200px" }}>
-                        <div
-                          style={{
-                            width: "100%",
-                            background: "#10b981",
-                            borderRadius: "8px 8px 0 0",
-                            minHeight: "60px",
-                            height: `${Math.max(60, Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 200) || 0)}px`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "#fff",
-                            fontWeight: "700",
-                            fontSize: "1.125rem",
-                            transition: "all 0.2s ease",
-                            cursor: "pointer",
-                            boxShadow: "0 2px 8px rgba(16, 185, 129, 0.2)"
-                          }}
-                          onMouseEnter={(e) => {
-                            e.target.style.transform = "translateY(-4px)";
-                            e.target.style.boxShadow = "0 4px 12px rgba(16, 185, 129, 0.3)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.transform = "translateY(0)";
-                            e.target.style.boxShadow = "0 2px 8px rgba(16, 185, 129, 0.2)";
-                          }}
-                        >
-                          ${formatNumber(reportStats.collected)}
+                    {(() => {
+                      const total = reportStats.collected + dashboardMetrics.outstanding;
+                      const collectedHeight = Math.max(60, Math.round((reportStats.collected / total) * 200) || 0);
+                      const outstandingHeight = Math.max(60, Math.round((dashboardMetrics.outstanding / total) * 200) || 0);
+                      const collectedPercent = Math.round((reportStats.collected / total) * 100);
+                      const outstandingPercent = Math.round((dashboardMetrics.outstanding / total) * 100);
+                      
+                      return (
+                        <div className="admin-reports-collected-chart">
+                          <div className="admin-reports-collected-bar-wrapper">
+                            <div
+                              className="admin-reports-collected-bar"
+                              style={{ height: `${collectedHeight}px` }}
+                            >
+                              {formatCurrency(reportStats.collected)}
+                            </div>
+                            <div className="admin-reports-collected-label">
+                              <span className="admin-reports-collected-label-title">Collected</span>
+                              <span className="admin-reports-collected-label-percent">
+                                {collectedPercent}%
+                              </span>
+                            </div>
+                          </div>
+                          <div className="admin-reports-collected-bar-wrapper">
+                            <div
+                              className="admin-reports-collected-bar admin-reports-collected-bar--outstanding"
+                              style={{ height: `${outstandingHeight}px` }}
+                            >
+                              {formatCurrency(dashboardMetrics.outstanding)}
+                            </div>
+                            <div className="admin-reports-collected-label">
+                              <span className="admin-reports-collected-label-title">Outstanding</span>
+                              <span className="admin-reports-collected-label-percent">
+                                {outstandingPercent}%
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ textAlign: "center", width: "100%" }}>
-                          <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#1a1a1a", display: "block", marginBottom: "4px" }}>Collected</span>
-                          <span style={{ fontSize: "0.75rem", color: "#666" }}>
-                            {Math.round((reportStats.collected / (reportStats.collected + dashboardMetrics.outstanding)) * 100)}%
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", flex: 1, maxWidth: "200px" }}>
-                        <div
-                          style={{
-                            width: "100%",
-                            background: "#ef4444",
-                            borderRadius: "8px 8px 0 0",
-                            minHeight: "60px",
-                            height: `${Math.max(60, Math.round((dashboardMetrics.outstanding / (reportStats.collected + dashboardMetrics.outstanding)) * 200) || 0)}px`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "#fff",
-                            fontWeight: "700",
-                            fontSize: "1.125rem",
-                            transition: "all 0.2s ease",
-                            cursor: "pointer",
-                            boxShadow: "0 2px 8px rgba(239, 68, 68, 0.2)"
-                          }}
-                          onMouseEnter={(e) => {
-                            e.target.style.transform = "translateY(-4px)";
-                            e.target.style.boxShadow = "0 4px 12px rgba(239, 68, 68, 0.3)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.transform = "translateY(0)";
-                            e.target.style.boxShadow = "0 2px 8px rgba(239, 68, 68, 0.2)";
-                          }}
-                        >
-                          ${dashboardMetrics.outstanding.toLocaleString()}
-                        </div>
-                        <div style={{ textAlign: "center", width: "100%" }}>
-                          <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#1a1a1a", display: "block", marginBottom: "4px" }}>Outstanding</span>
-                          <span style={{ fontSize: "0.75rem", color: "#666" }}>
-                            {Math.round((dashboardMetrics.outstanding / (reportStats.collected + dashboardMetrics.outstanding)) * 100)}%
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Payments Over Time Chart */}
@@ -11095,7 +11305,7 @@ Subscription Manager HK`;
                         Payment trends for selected period
                       </p>
                     </div>
-                      <div style={{ position: "relative", height: "240px", padding: "0 16px" }}>
+                      <div className="admin-reports-payments-chart">
                         {(() => {
                           // Group payments by week (or day if less than 7 days)
                           const paymentsByPeriod = {};
@@ -11133,49 +11343,28 @@ Subscription Manager HK`;
                           const maxAmount = Math.max(...periods.map(p => paymentsByPeriod[p]), 1);
 
                           return (
-                            <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", height: "100%", justifyContent: "space-between" }}>
+                            <div className="admin-reports-payments-chart-bars">
                               {periods.length > 0 ? periods.map((period, index) => {
                                 const amount = paymentsByPeriod[period];
                                 const height = Math.max(30, (amount / maxAmount) * 180);
                                 return (
-                                  <div key={`${period}-${index}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", flex: 1, minWidth: "50px" }}>
+                                  <div key={`${period}-${index}`} className="admin-reports-payments-bar-wrapper">
                                     <div
+                                      className="admin-reports-payments-bar"
                                       style={{
-                                        width: "100%",
-                                        background: "#5a31ea",
-                                        borderRadius: "6px 6px 0 0",
-                                        height: `${height}px`,
-                                        minHeight: "30px",
-                                        display: "flex",
-                                        alignItems: "flex-end",
-                                        justifyContent: "center",
-                                        paddingBottom: "6px",
-                                        color: "#fff",
-                                        fontSize: "0.75rem",
-                                        fontWeight: "600",
-                                        boxShadow: "0 2px 8px rgba(90, 49, 234, 0.15)",
-                                        cursor: "pointer",
-                                        transition: "all 0.2s ease",
+                                        height: `${height}px`
                                       }}
-                                      title={`${period}: $${amount.toFixed(2)}`}
-                                      onMouseEnter={(e) => {
-                                        e.currentTarget.style.transform = "translateY(-4px)";
-                                        e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.25)";
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.transform = "translateY(0)";
-                                        e.currentTarget.style.boxShadow = "0 2px 8px rgba(90, 49, 234, 0.15)";
-                                      }}
+                                      title={`${period}: ${formatCurrency(amount)}`}
                                     >
-                                      {height > 40 && `$${Math.round(amount)}`}
+                                      {height > 40 && formatCurrency(Math.round(amount))}
                                     </div>
-                                    <span style={{ fontSize: "0.75rem", color: "#666", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", fontWeight: "500" }}>
+                                    <span className="admin-reports-payments-label">
                                       {period.length > 10 ? period.substring(0, 8) + '...' : period}
                                     </span>
                                   </div>
                                 );
                               }) : (
-                                <div style={{ width: "100%", textAlign: "center", color: "#999", padding: "60px 0", fontSize: "0.875rem" }}>
+                                <div className="admin-reports-payments-empty">
                                   No payment data in selected period
                                 </div>
                               )}
@@ -11187,7 +11376,7 @@ Subscription Manager HK`;
                   </div>
 
                 {/* Payment Method Breakdown - Enhanced */}
-                <div className="card" style={{ 
+                <div className="card card-reports" style={{ 
                   marginBottom: "24px", 
                   padding: "24px",
                   background: "#ffffff",
@@ -11251,7 +11440,7 @@ Subscription Manager HK`;
                 </div>
 
                 {/* Filters and Transactions Section */}
-                <div className="card" style={{ 
+                <div className="card card-reports" style={{ 
                   padding: "24px",
                   background: "#ffffff",
                   border: "1px solid #e5e7eb"
@@ -11681,8 +11870,8 @@ Subscription Manager HK`;
                     <p>Export financial data in various formats.</p>
                   </div>
                 </header>
-                <div className="card">
-                  <div style={{ padding: "24px" }}>
+                <div className="card-exports">
+                  <div style={{ padding: "2px" }}>
                     <div style={{ marginBottom: "24px" }}>
                       <h4 style={{ marginBottom: "12px" }}>Export Options</h4>
                       <p style={{ color: "#666", marginBottom: "20px" }}>
@@ -11691,7 +11880,7 @@ Subscription Manager HK`;
                     </div>
 
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-                      <div className="card" style={{ 
+                      <div className="card card-export-reports" style={{ 
                         padding: "20px", 
                         background: "#ffffff",
                         display: "flex",
@@ -11720,7 +11909,7 @@ Subscription Manager HK`;
                         </button>
                       </div>
 
-                      <div className="card" style={{ 
+                      <div className="card card-export-reports" style={{ 
                         padding: "20px", 
                         background: "#ffffff",
                         display: "flex",
@@ -11782,8 +11971,8 @@ Subscription Manager HK`;
                     </div>
                   </div>
                 </header>
-                <div className="card">
-                  <div style={{ padding: "24px" }}>
+                <div className="card-roles">
+                  <div style={{ padding: "2px" }}>
                     <div style={{ marginBottom: "20px" }}>
                       <h4 style={{ marginBottom: "12px" }}>Available Roles</h4>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "24px" }}>
@@ -12127,16 +12316,7 @@ Subscription Manager HK`;
                 {/* Add Admin Modal */}
                 {showAdminForm && (
                   <div
-                    style={{
-                      position: "fixed",
-                      inset: 0,
-                      background: "rgba(0, 0, 0, 0.45)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      zIndex: 10000,
-                      padding: "20px",
-                    }}
+                    style={modalOverlayStyle}
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
                         setShowAdminForm(false);
@@ -12145,33 +12325,11 @@ Subscription Manager HK`;
                   >
                     <div
                       className="card"
-                      style={{
-                        maxWidth: "600px",
-                        width: "100%",
-                        maxHeight: "90vh",
-                        overflowY: "auto",
-                        background: "#f9fafb",
-                        position: "relative",
-                        padding: "24px 24px 20px",
-                      }}
+                      style={modalContainerStyle}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: "16px",
-                        }}
-                      >
-                        <h4
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            margin: 0,
-                          }}
-                        >
+                      <div style={modalHeaderStyle}>
+                        <h4 style={modalTitleStyle}>
                           <i className="fas fa-user-plus" aria-hidden="true"></i>
                           Add New Admin
                         </h4>
@@ -12179,22 +12337,7 @@ Subscription Manager HK`;
                           type="button"
                           className="ghost-btn"
                           onClick={() => setShowAdminForm(false)}
-                          style={{ 
-                            fontSize: "1.5rem", 
-                            lineHeight: 1,
-                            color: "#ef4444",
-                            fontWeight: "bold",
-                            width: "32px",
-                            height: "32px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            borderRadius: "4px",
-                            border: "1px solid #ef4444",
-                            background: "transparent",
-                            cursor: "pointer",
-                            transition: "all 0.2s ease",
-                          }}
+                          style={closeButtonStyleRed}
                           onMouseEnter={(e) => {
                             e.target.style.background = "#fee2e2";
                           }}
@@ -12315,19 +12458,7 @@ Subscription Manager HK`;
       {/* Payment Modal */}
       {showPaymentModal && paymentModalInvoice && (
         <div 
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10000,
-            padding: "20px",
-          }}
+          style={modalOverlayStyle05}
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowPaymentModal(false);
@@ -12346,16 +12477,10 @@ Subscription Manager HK`;
         >
           <div 
             className="card"
-            style={{
-              maxWidth: "600px",
-              width: "100%",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              position: "relative",
-            }}
+            style={{ ...modalContainerStyle, background: "transparent", padding: undefined }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+            <div style={modalHeaderStyle24}>
               <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
                 <i className="fas fa-money-bill-wave" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                 Pay Invoice #{paymentModalInvoice.id}
@@ -12372,20 +12497,7 @@ Subscription Manager HK`;
                     imageUrl: "",
                   });
                 }}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  fontSize: "1.5rem",
-                  color: "#666",
-                  cursor: "pointer",
-                  padding: "0",
-                  width: "32px",
-                  height: "32px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: "4px",
-                }}
+                style={closeButtonStyleSimple}
                 onMouseEnter={(e) => {
                   e.target.style.background = "#f3f4f6";
                   e.target.style.color = "#1a1a1a";
@@ -12968,22 +13080,141 @@ Subscription Manager HK`;
         </div>
       )}
 
+      {/* Reminder Log Details Modal (Mobile) */}
+      {selectedReminderLogItem && (
+        <div 
+          className="mobile-card-modal-overlay"
+          onClick={() => setSelectedReminderLogItem(null)}
+        >
+          <div 
+            className="mobile-card-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mobile-card-modal-header">
+              <div className="mobile-card-modal-title-section">
+                <div className="mobile-card-modal-title">
+                  {selectedReminderLogItem.memberName || selectedReminderLogItem.member || "N/A"}
+                  {selectedReminderLogItem.memberId ? ` (${selectedReminderLogItem.memberId})` : ""}
+                </div>
+                <div className="mobile-card-modal-metric">
+                  <i className="fas fa-envelope" style={{ fontSize: "0.75rem", marginRight: "4px", color: "#666" }}></i>
+                  <span>{selectedReminderLogItem.channel || "N/A"}</span>
+                </div>
+              </div>
+              <button
+                className="mobile-card-modal-close"
+                onClick={() => setSelectedReminderLogItem(null)}
+                aria-label="Close"
+              >
+                <i className="fa-solid fa-times" />
+              </button>
+            </div>
+            
+            <div className="mobile-card-modal-content">
+              <div className="mobile-card-modal-row">
+                <div className="mobile-card-modal-label">
+                  <i className="fas fa-envelope" style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>
+                  Channel
+                </div>
+                <div className="mobile-card-modal-value">{selectedReminderLogItem.channel || "N/A"}</div>
+              </div>
+
+              <div className="mobile-card-modal-row">
+                <div className="mobile-card-modal-label">
+                  <i className="fas fa-tag" style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>
+                  Type
+                </div>
+                <div className="mobile-card-modal-value">{selectedReminderLogItem.type || "-"}</div>
+              </div>
+
+              <div className="mobile-card-modal-row">
+                <div className="mobile-card-modal-label">
+                  <i className="fas fa-calendar" style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>
+                  Date
+                </div>
+                <div className="mobile-card-modal-value">{selectedReminderLogItem.date || "N/A"}</div>
+              </div>
+
+              <div className="mobile-card-modal-row">
+                <div className="mobile-card-modal-label">
+                  <i className="fas fa-info-circle" style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>
+                  Status
+                </div>
+                <div className="mobile-card-modal-value">
+                  <span className={statusClass[selectedReminderLogItem.status] || "badge"}>
+                    {selectedReminderLogItem.status || "N/A"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mobile-card-modal-row">
+                <div className="mobile-card-modal-label">
+                  <i className="fas fa-file-alt" style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>
+                  Message
+                </div>
+                <div className="mobile-card-modal-value">{selectedReminderLogItem.message || "N/A"}</div>
+              </div>
+
+              <div className="mobile-card-modal-row mobile-card-modal-row-actions">
+                <div className="mobile-card-modal-label">Actions</div>
+                <div className="mobile-card-modal-value">
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                    {/* Retry failed email reminders */}
+                    {selectedReminderLogItem.channel === "Email" && selectedReminderLogItem.status === "Failed" && !isViewer && (
+                      <button
+                        type="button"
+                        className="icon-btn icon-btn--edit"
+                        title="Retry sending"
+                        aria-label="Retry sending reminder"
+                        onClick={async () => {
+                          try {
+                            const raw = selectedReminderLogItem.raw;
+                            const reminderId = raw?._id || raw?.id;
+                            const apiUrl = import.meta.env.DEV
+                              ? ""
+                              : import.meta.env.VITE_API_URL || "";
+                            const res = await fetch(
+                              `${apiUrl}/api/reminders/retry`,
+                              {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ reminderId }),
+                              }
+                            );
+                            const data = await res.json();
+                            if (res.ok) {
+                              showToast(data.message || "Reminder retry queued");
+                              if (typeof fetchReminderLogs === "function") {
+                                fetchReminderLogs();
+                              }
+                              setSelectedReminderLogItem(null);
+                            } else {
+                              showToast(
+                                data.error || "Failed to retry reminder",
+                                "error"
+                              );
+                            }
+                          } catch (error) {
+                            console.error("Retry reminder failed", error);
+                            showToast("Failed to retry reminder", "error");
+                          }
+                        }}
+                      >
+                        <i className="fas fa-redo" aria-hidden="true"></i>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Payment Details Modal */}
       {showPaymentDetailsModal && selectedPaymentDetails && (
         <div 
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10000,
-            padding: "20px",
-          }}
+          style={modalOverlayStyle05}
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowPaymentDetailsModal(false);
@@ -12993,16 +13224,10 @@ Subscription Manager HK`;
         >
           <div 
             className="card"
-            style={{
-              maxWidth: "600px",
-              width: "100%",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              position: "relative",
-            }}
+            style={{ ...modalContainerStyle, background: undefined, padding: undefined }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+            <div style={modalHeaderStyle24}>
               <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
                 <i className="fas fa-receipt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                 Payment Details
@@ -13013,20 +13238,7 @@ Subscription Manager HK`;
                   setShowPaymentDetailsModal(false);
                   setSelectedPaymentDetails(null);
                 }}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  fontSize: "1.5rem",
-                  color: "#666",
-                  cursor: "pointer",
-                  padding: "0",
-                  width: "32px",
-                  height: "32px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: "4px",
-                }}
+                style={closeButtonStyleSimple}
                 onMouseEnter={(e) => {
                   e.target.style.background = "#f3f4f6";
                   e.target.style.color = "#1a1a1a";
@@ -13270,16 +13482,7 @@ Subscription Manager HK`;
       {/* Password Reset Modal */}
       {showPasswordResetModal && selectedPasswordResetRequest && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10000,
-            padding: "20px",
-          }}
+          style={modalOverlayStyle}
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowPasswordResetModal(false);
@@ -13290,33 +13493,11 @@ Subscription Manager HK`;
         >
           <div
             className="card"
-            style={{
-              maxWidth: "500px",
-              width: "100%",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              background: "#f9fafb",
-              position: "relative",
-              padding: "24px 24px 20px",
-            }}
+            style={modalContainerStyle500}
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "16px",
-              }}
-            >
-              <h4
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  margin: 0,
-                }}
-              >
+            <div style={modalHeaderStyle}>
+              <h4 style={modalTitleStyle}>
                 <i className="fas fa-key" aria-hidden="true"></i>
                 Set New Password
               </h4>
@@ -13328,22 +13509,7 @@ Subscription Manager HK`;
                   setSelectedPasswordResetRequest(null);
                   setPasswordResetForm({ newPassword: "" });
                 }}
-                style={{
-                  fontSize: "1.5rem",
-                  lineHeight: 1,
-                  color: "#ef4444",
-                  fontWeight: "bold",
-                  width: "32px",
-                  height: "32px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: "4px",
-                  border: "1px solid #ef4444",
-                  background: "transparent",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                }}
+                style={closeButtonStyleRed}
                 onMouseEnter={(e) => {
                   e.target.style.background = "#fee2e2";
                 }}
@@ -13432,3 +13598,5 @@ Subscription Manager HK`;
     </>
   );
 }
+
+export default AdminPage;
