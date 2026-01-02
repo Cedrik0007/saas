@@ -10200,6 +10200,97 @@ button[disabled] {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Reminder Log Modal Card Styles */
+.reminder-log-modal-card {
+  max-width: 700px;
+}
+
+.reminder-log-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.reminder-log-modal-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.reminder-log-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reminder-log-modal-field-full {
+  grid-column: 1 / -1;
+}
+
+.reminder-log-modal-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+}
+
+.reminder-log-modal-value {
+  font-size: 1rem;
+  color: #1a1a1a;
+  line-height: 1.5;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.reminder-log-modal-actions .reminder-log-modal-value {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* Responsive: Stack fields on mobile */
+@media (max-width: 768px) {
+  .reminder-log-modal-row {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .reminder-log-modal-field-full {
+    grid-column: 1;
+  }
+  
+  /* Ensure close button is visible */
+  .reminder-log-modal-card .admin-members-form-close {
+    display: flex !important;
+  }
+  
+  /* Hide desktop table */
+  .reminder-logs-table-wrapper table.data-table {
+    display: none !important;
+  }
+  
+  /* Show mobile cards */
+  .reminder-logs-mobile-cards {
+    display: flex !important;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+/* Hide mobile cards on desktop */
+@media (min-width: 769px) {
+  .reminder-logs-mobile-cards {
+    display: none !important;
+  }
+}
+
 /* Admin Members Form Header */
 .admin-members-form-header {
   margin-bottom: var(--spacing-lg);
@@ -10301,7 +10392,7 @@ button[disabled] {
     overflow-y: auto !important;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2) !important;
     animation: scaleIn 0.3s ease !important;
-    padding: 20px !important;
+    padding: 30px !important;
     -webkit-overflow-scrolling: touch !important;
   }
 
@@ -10750,7 +10841,7 @@ button[disabled] {
     overflow-y: auto !important;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2) !important;
     animation: scaleIn 0.3s ease !important;
-    padding: 20px !important;
+    padding: 30px !important;
     -webkit-overflow-scrolling: touch !important;
   }
 

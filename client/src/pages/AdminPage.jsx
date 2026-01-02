@@ -272,7 +272,7 @@ function AdminPage() {
       label: "Settings",
       icon: "fa-cog",
       items: [
-        { id: "settings", label: "Users", roles: ["Admin", "Super Admin"] },
+        { id: "users", label: "Users", roles: ["Admin", "Super Admin"] },
         { id: "roles", label: "Roles", roles: ["Admin", "Super Admin"] },
         { id: "org-settings", label: "Organization Settings", roles: ["Admin", "Super Admin", "Finance"] },
       ]
@@ -7500,170 +7500,184 @@ Subscription Manager HK`;
 
                               return (
                                 <>
-                                  <div style={{ overflowX: "auto" }}>
-                                    <table className="table">
-                                <thead>
-                                  <tr>
-                                    <th>Member</th>
-                                    <th>Channel</th>
-                                    <th>Type</th>
-                                    <th>Message</th>
-                                    <th>Date</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {pageItems.map((item, idx) => (
-                                    <tr 
-                                      key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
-                                      onClick={() => {
-                                        // Only open modal on mobile (under 768px)
-                                        if (window.innerWidth <= 768) {
-                                          setSelectedReminderLogItem(item);
-                                        }
-                                      }}
-                                      style={{ cursor: window.innerWidth <= 768 ? 'pointer' : 'default' }}
-                                    >
-                                      <td>
-                                        {item.memberName || item.member || "N/A"}
-                                        {item.memberId ? ` (${item.memberId})` : ""}
-                                      </td>
-                                      <td>{item.channel || "N/A"}</td>
-                                      <td>{item.type || "-"}</td>
-                                      <td style={{ maxWidth: "320px", whiteSpace: "normal" }}>
-                                        {item.message || "N/A"}
-                                      </td>
-                                      <td>{item.date || "N/A"}</td>
-                                      <td>
-                                        <span className={statusClass[item.status] || "badge"}>
-                                          {item.status || "N/A"}
-                                        </span>
-                                      </td>
-                                      <td>
-                                        <div style={{ display: "flex", gap: "6px" }} onClick={(e) => e.stopPropagation()}>
-                                          {/* View full message in alert-style preview */}
-                                          <button
-                                            type="button"
-                                            className="icon-btn icon-btn--view"
-                                            title="View full message"
-                                            aria-label="View full message"
-                                            onClick={() => {
-                                              // On mobile, open modal instead of alert
-                                              if (window.innerWidth <= 768) {
-                                                setSelectedReminderLogItem(item);
-                                              } else {
-                                                const fullText = [
-                                                  `Member: ${item.memberName || "N/A"}`,
-                                                  `Channel: ${item.channel || "N/A"}`,
-                                                  `Type: ${item.type || "-"}`,
-                                                  `Date: ${item.date || "N/A"}`,
-                                                  "",
-                                                  "Message:",
-                                                  item.message || "N/A",
-                                                ].join("\n");
-                                                window.alert(fullText);
-                                              }
-                                            }}
+                                  {/* Desktop Table */}
+                                  <div style={{ overflowX: "auto" }} className="reminder-logs-table-wrapper">
+                                    <table className="table data-table">
+                                      <thead>
+                                        <tr>
+                                          <th>Member</th>
+                                          <th>Channel</th>
+                                          <th>Type</th>
+                                          <th>Message</th>
+                                          <th>Date</th>
+                                          <th>Status</th>
+                                          <th>Actions</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {pageItems.map((item, idx) => (
+                                          <tr 
+                                            key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
                                           >
-                                            <i className="fas fa-eye" aria-hidden="true"></i>
-                                          </button>
-                                          {/* Retry failed email reminders */}
-                                          {item.channel === "Email" && item.status === "Failed" && !isViewer && (
-                                            <button
-                                              type="button"
-                                              className="icon-btn icon-btn--edit"
-                                              title="Retry sending"
-                                              aria-label="Retry sending reminder"
-                                              onClick={async () => {
-                                                try {
-                                                  // Only backend-stored reminder logs have raw.id or raw._id
-                                                  const raw = item.raw;
-                                                  const reminderId = raw?._id || raw?.id;
-                                                  const apiUrl = import.meta.env.DEV
-                                                    ? ""
-                                                    : import.meta.env.VITE_API_URL || "";
-                                                  const res = await fetch(
-                                                    `${apiUrl}/api/reminders/retry`,
-                                                    {
-                                                      method: "POST",
-                                                      headers: { "Content-Type": "application/json" },
-                                                      body: JSON.stringify({ reminderId }),
-                                                    }
-                                                  );
-                                                  const data = await res.json();
-                                                  if (res.ok) {
-                                                    showToast(data.message || "Reminder retry queued");
-                                                    // Refresh logs
-                                                    if (typeof fetchReminderLogs === "function") {
-                                                      fetchReminderLogs();
-                                                    }
-                                                  } else {
-                                                    showToast(
-                                                      data.error || "Failed to retry reminder",
-                                                      "error"
-                                                    );
-                                                  }
-                                                } catch (error) {
-                                                  console.error("Retry reminder failed", error);
-                                                  showToast("Failed to retry reminder", "error");
-                                                }
-                                              }}
-                                            >
-                                              <i className="fas fa-redo" aria-hidden="true"></i>
-                                            </button>
-                                          )}
+                                            <td>
+                                              {item.memberName || item.member || "N/A"}
+                                              {item.memberId ? ` (${item.memberId})` : ""}
+                                            </td>
+                                            <td>{item.channel || "N/A"}</td>
+                                            <td>{item.type || "-"}</td>
+                                            <td style={{ maxWidth: "320px", whiteSpace: "normal" }}>
+                                              {item.message || "N/A"}
+                                            </td>
+                                            <td>{item.date || "N/A"}</td>
+                                            <td>
+                                              <span className={statusClass[item.status] || "badge"}>
+                                                {item.status || "N/A"}
+                                              </span>
+                                            </td>
+                                            <td>
+                                              <div style={{ display: "flex", gap: "6px" }} onClick={(e) => e.stopPropagation()}>
+                                                {/* View full message in modal */}
+                                                <button
+                                                  type="button"
+                                                  className="icon-btn icon-btn--view"
+                                                  title="View full message"
+                                                  aria-label="View full message"
+                                                  onClick={() => {
+                                                    setSelectedReminderLogItem(item);
+                                                  }}
+                                                >
+                                                  <i className="fas fa-eye" aria-hidden="true"></i>
+                                                </button>
+                                                {/* Retry failed email reminders */}
+                                                {item.channel === "Email" && item.status === "Failed" && !isViewer && (
+                                                  <button
+                                                    type="button"
+                                                    className="icon-btn icon-btn--edit"
+                                                    title="Retry sending"
+                                                    aria-label="Retry sending reminder"
+                                                    onClick={async () => {
+                                                      try {
+                                                        // Only backend-stored reminder logs have raw.id or raw._id
+                                                        const raw = item.raw;
+                                                        const reminderId = raw?._id || raw?.id;
+                                                        const apiUrl = import.meta.env.DEV
+                                                          ? ""
+                                                          : import.meta.env.VITE_API_URL || "";
+                                                        const res = await fetch(
+                                                          `${apiUrl}/api/reminders/retry`,
+                                                          {
+                                                            method: "POST",
+                                                            headers: { "Content-Type": "application/json" },
+                                                            body: JSON.stringify({ reminderId }),
+                                                          }
+                                                        );
+                                                        const data = await res.json();
+                                                        if (res.ok) {
+                                                          showToast(data.message || "Reminder retry queued");
+                                                          // Refresh logs
+                                                          if (typeof fetchReminderLogs === "function") {
+                                                            fetchReminderLogs();
+                                                          }
+                                                        } else {
+                                                          showToast(
+                                                            data.error || "Failed to retry reminder",
+                                                            "error"
+                                                          );
+                                                        }
+                                                      } catch (error) {
+                                                        console.error("Retry reminder failed", error);
+                                                        showToast("Failed to retry reminder", "error");
+                                                      }
+                                                    }}
+                                                  >
+                                                    <i className="fas fa-redo" aria-hidden="true"></i>
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+
+                                  {/* Mobile Cards */}
+                                  <div className="mobile-table-cards reminder-logs-mobile-cards">
+                                    {pageItems.map((item, idx) => (
+                                      <div
+                                        key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
+                                        className="mobile-table-card"
+                                        onClick={() => setSelectedReminderLogItem(item)}
+                                      >
+                                        <div className="mobile-table-card-header">
+                                          <div className="mobile-table-card-header-content">
+                                            <div className="mobile-table-card-title-section">
+                                              <div className="mobile-table-card-title">
+                                                {item.memberName || item.member || "N/A"}
+                                                {item.memberId ? ` (${item.memberId})` : ""}
+                                              </div>
+                                              <div className="mobile-table-card-metric">
+                                                <i className={`fas ${item.channel === "Email" ? "fa-envelope" : "fa-whatsapp"}`} style={{ fontSize: "0.75rem", marginRight: "4px" }}></i>
+                                                <span>{item.channel || "N/A"}</span>
+                                              </div>
+                                            </div>
+                                            <div className="mobile-table-card-header-right">
+                                              <div className="mobile-table-card-status">
+                                                <span className={statusClass[item.status] || "badge"}>
+                                                  {item.status || "N/A"}
+                                                </span>
+                                              </div>
+                                              <i className="fas fa-chevron-right mobile-table-card-arrow"></i>
+                                            </div>
+                                          </div>
                                         </div>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
+                                      </div>
+                                    ))}
+                                  </div>
 
-                              {/* Pagination controls */}
-                              <div
-                                style={{
-                                  marginTop: "16px",
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                  flexWrap: "wrap",
-                                  gap: "8px",
-                                }}
-                              >
-                                <div style={{ fontSize: "0.875rem", color: "#555" }}>
-                                  Showing{" "}
-                                  <strong>
-                                    {start + 1}-{Math.min(end, total)}
-                                  </strong>{" "}
-                                  of <strong>{total}</strong> reminders
-                                </div>
+                                  {/* Pagination controls */}
+                                  <div
+                                    style={{
+                                      marginTop: "16px",
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      flexWrap: "wrap",
+                                      gap: "8px",
+                                    }}
+                                  >
+                                    <div style={{ fontSize: "0.875rem", color: "#555" }}>
+                                      Showing{" "}
+                                      <strong>
+                                        {start + 1}-{Math.min(end, total)}
+                                      </strong>{" "}
+                                      of <strong>{total}</strong> reminders
+                                    </div>
 
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                  <button
-                                    type="button"
-                                    className="secondary-btn"
-                                    disabled={currentPage <= 1}
-                                    onClick={() => setRemindersPage(Math.max(1, currentPage - 1))}
-                                  >
-                                    Previous
-                                  </button>
-                                  <span style={{ fontSize: "0.875rem" }}>
-                                    Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
-                                  </span>
-                                  <button
-                                    type="button"
-                                    className="secondary-btn"
-                                    disabled={currentPage >= totalPages}
-                                    onClick={() =>
-                                      setRemindersPage(Math.min(totalPages, currentPage + 1))
-                                    }
-                                  >
-                                    Next
-                                  </button>
-                                </div>
-                              </div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                      <button
+                                        type="button"
+                                        className="secondary-btn"
+                                        disabled={currentPage <= 1}
+                                        onClick={() => setRemindersPage(Math.max(1, currentPage - 1))}
+                                      >
+                                        Previous
+                                      </button>
+                                      <span style={{ fontSize: "0.875rem" }}>
+                                        Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        className="secondary-btn"
+                                        disabled={currentPage >= totalPages}
+                                        onClick={() =>
+                                          setRemindersPage(Math.min(totalPages, currentPage + 1))
+                                        }
+                                      >
+                                        Next
+                                      </button>
+                                    </div>
+                                  </div>
                                 </>
                               );
                             })()}
@@ -12202,11 +12216,11 @@ Subscription Manager HK`;
             )}
 
             {/* SETTINGS */}
-            {activeSection === "settings" && isAdmin && (
+            {activeSection === "users" && isAdmin && (
               <article className="screen-card" id="settings">
                 <header className="screen-card__header">
                   <div>
-                    {renderBreadcrumb("settings")}
+                    {renderBreadcrumb("users")}
                     <h3>Admin Settings</h3>
                     <p>Organization profile and admin accounts.</p>
                   </div>
@@ -13080,92 +13094,104 @@ Subscription Manager HK`;
         </div>
       )}
 
-      {/* Reminder Log Details Modal (Mobile) */}
+      {/* Reminder Log Details Modal */}
       {selectedReminderLogItem && (
         <div 
-          className="mobile-card-modal-overlay"
+          className="admin-members-form-overlay"
           onClick={() => setSelectedReminderLogItem(null)}
         >
           <div 
-            className="mobile-card-modal"
+            className="admin-members-form-container reminder-log-modal-card"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mobile-card-modal-header">
-              <div className="mobile-card-modal-title-section">
-                <div className="mobile-card-modal-title">
-                  {selectedReminderLogItem.memberName || selectedReminderLogItem.member || "N/A"}
-                  {selectedReminderLogItem.memberId ? ` (${selectedReminderLogItem.memberId})` : ""}
-                </div>
-                <div className="mobile-card-modal-metric">
-                  <i className="fas fa-envelope" style={{ fontSize: "0.75rem", marginRight: "4px", color: "#666" }}></i>
-                  <span>{selectedReminderLogItem.channel || "N/A"}</span>
-                </div>
+            <div className="admin-members-form-header">
+              <div className="admin-members-form-header-top">
+                <h3 className="admin-members-form-title">
+                  <i className="fas fa-eye"></i>
+                  Reminder Log Details
+                </h3>
+                <button
+                  className="admin-members-form-close"
+                  onClick={() => setSelectedReminderLogItem(null)}
+                  aria-label="Close"
+                >
+                  <i className="fa-solid fa-times" />
+                </button>
               </div>
-              <button
-                className="mobile-card-modal-close"
-                onClick={() => setSelectedReminderLogItem(null)}
-                aria-label="Close"
-              >
-                <i className="fa-solid fa-times" />
-              </button>
             </div>
             
-            <div className="mobile-card-modal-content">
-              <div className="mobile-card-modal-row">
-                <div className="mobile-card-modal-label">
-                  <i className="fas fa-envelope" style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>
-                  Channel
+            <div className="reminder-log-modal-content">
+              <div className="reminder-log-modal-row">
+                <div className="reminder-log-modal-field">
+                  <label className="reminder-log-modal-label">
+                    <i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                    Member
+                  </label>
+                  <div className="reminder-log-modal-value">
+                    {selectedReminderLogItem.memberName || selectedReminderLogItem.member || "N/A"}
+                    {selectedReminderLogItem.memberId ? ` (${selectedReminderLogItem.memberId})` : ""}
+                  </div>
                 </div>
-                <div className="mobile-card-modal-value">{selectedReminderLogItem.channel || "N/A"}</div>
-              </div>
 
-              <div className="mobile-card-modal-row">
-                <div className="mobile-card-modal-label">
-                  <i className="fas fa-tag" style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>
-                  Type
-                </div>
-                <div className="mobile-card-modal-value">{selectedReminderLogItem.type || "-"}</div>
-              </div>
-
-              <div className="mobile-card-modal-row">
-                <div className="mobile-card-modal-label">
-                  <i className="fas fa-calendar" style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>
-                  Date
-                </div>
-                <div className="mobile-card-modal-value">{selectedReminderLogItem.date || "N/A"}</div>
-              </div>
-
-              <div className="mobile-card-modal-row">
-                <div className="mobile-card-modal-label">
-                  <i className="fas fa-info-circle" style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>
-                  Status
-                </div>
-                <div className="mobile-card-modal-value">
-                  <span className={statusClass[selectedReminderLogItem.status] || "badge"}>
-                    {selectedReminderLogItem.status || "N/A"}
-                  </span>
+                <div className="reminder-log-modal-field">
+                  <label className="reminder-log-modal-label">
+                    <i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                    Channel
+                  </label>
+                  <div className="reminder-log-modal-value">{selectedReminderLogItem.channel || "N/A"}</div>
                 </div>
               </div>
 
-              <div className="mobile-card-modal-row">
-                <div className="mobile-card-modal-label">
-                  <i className="fas fa-file-alt" style={{ marginRight: "6px", color: "#5a31ea", fontSize: "0.75rem" }}></i>
-                  Message
+              <div className="reminder-log-modal-row">
+                <div className="reminder-log-modal-field">
+                  <label className="reminder-log-modal-label">
+                    <i className="fas fa-tag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                    Type
+                  </label>
+                  <div className="reminder-log-modal-value">{selectedReminderLogItem.type || "-"}</div>
                 </div>
-                <div className="mobile-card-modal-value">{selectedReminderLogItem.message || "N/A"}</div>
+
+                <div className="reminder-log-modal-field">
+                  <label className="reminder-log-modal-label">
+                    <i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                    Date
+                  </label>
+                  <div className="reminder-log-modal-value">{selectedReminderLogItem.date || "N/A"}</div>
+                </div>
               </div>
 
-              <div className="mobile-card-modal-row mobile-card-modal-row-actions">
-                <div className="mobile-card-modal-label">Actions</div>
-                <div className="mobile-card-modal-value">
-                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                    {/* Retry failed email reminders */}
-                    {selectedReminderLogItem.channel === "Email" && selectedReminderLogItem.status === "Failed" && !isViewer && (
+              <div className="reminder-log-modal-row">
+                <div className="reminder-log-modal-field">
+                  <label className="reminder-log-modal-label">
+                    <i className="fas fa-info-circle" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                    Status
+                  </label>
+                  <div className="reminder-log-modal-value">
+                    <span className={statusClass[selectedReminderLogItem.status] || "badge"}>
+                      {selectedReminderLogItem.status || "N/A"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="reminder-log-modal-row">
+                <div className="reminder-log-modal-field reminder-log-modal-field-full">
+                  <label className="reminder-log-modal-label">
+                    <i className="fas fa-file-alt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                    Message
+                  </label>
+                  <div className="reminder-log-modal-value">{selectedReminderLogItem.message || "N/A"}</div>
+                </div>
+              </div>
+
+              {selectedReminderLogItem.channel === "Email" && selectedReminderLogItem.status === "Failed" && !isViewer && (
+                <div className="reminder-log-modal-row">
+                  <div className="reminder-log-modal-field reminder-log-modal-actions reminder-log-modal-field-full">
+                    <label className="reminder-log-modal-label">Actions</label>
+                    <div className="reminder-log-modal-value">
                       <button
                         type="button"
-                        className="icon-btn icon-btn--edit"
-                        title="Retry sending"
-                        aria-label="Retry sending reminder"
+                        className="secondary-btn"
                         onClick={async () => {
                           try {
                             const raw = selectedReminderLogItem.raw;
@@ -13200,12 +13226,13 @@ Subscription Manager HK`;
                           }
                         }}
                       >
-                        <i className="fas fa-redo" aria-hidden="true"></i>
+                        <i className="fas fa-redo" style={{ marginRight: "6px" }}></i>
+                        Retry Sending
                       </button>
-                    )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
