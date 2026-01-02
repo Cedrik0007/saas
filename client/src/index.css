@@ -979,7 +979,7 @@ main {
   height: calc(100vh - var(--header-height, 80px));
   background: #ffffff;
   border-right: 1px solid #e5e7eb;
-  padding: 24px;
+  padding: 30px 10px;
   overflow-y: auto;
   overflow-x: hidden;
   z-index: 100;
