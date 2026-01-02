@@ -65,163 +65,34 @@ function AdminPage() {
     loading,
   } = useApp();
 
-  // Reusable style constants to reduce duplication
-  const modalOverlayStyle = {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0, 0, 0, 0.45)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10000,
-    padding: "20px",
-  };
-
-  const modalOverlayStyle05 = {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0, 0, 0, 0.5)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10000,
-    padding: "20px",
-  };
-
-  const modalOverlayStyle05High = {
-    ...modalOverlayStyle05,
-    zIndex: 10001,
-  };
-
-  const modalContainerStyle = {
-    maxWidth: "600px",
-    width: "100%",
-    maxHeight: "90vh",
-    overflowY: "auto",
-    background: "#f9fafb",
-    position: "relative",
-    padding: "24px 24px 20px",
-  };
-
-  const modalContainerStyle500 = {
-    ...modalContainerStyle,
-    maxWidth: "500px",
-  };
-
-  const modalContainerStyle800 = {
-    ...modalContainerStyle,
-    maxWidth: "800px",
-    background: undefined,
-    padding: undefined,
-  };
-
-  const modalContainerStyle640 = {
-    ...modalContainerStyle,
-    maxWidth: "640px",
-    background: "#ffffff",
-    padding: undefined,
-  };
-
-  const modalHeaderStyle = {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "16px",
-  };
-
-  const modalHeaderStyle20 = {
-    ...modalHeaderStyle,
-    marginBottom: "20px",
-  };
-
-  const modalHeaderStyle24 = {
-    ...modalHeaderStyle,
-    marginBottom: "24px",
-  };
-
-  const modalTitleStyle = {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    margin: 0,
-  };
-
-  const closeButtonStyleRed = {
-    fontSize: "1.5rem",
-    lineHeight: 1,
-    color: "#ef4444",
-    fontWeight: "bold",
-    width: "32px",
-    height: "32px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: "4px",
-    border: "1px solid #ef4444",
-    background: "transparent",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-  };
-
-  const closeButtonStyleSimple = {
-    background: "transparent",
-    border: "none",
-    fontSize: "1.5rem",
-    color: "#666",
-    cursor: "pointer",
-    padding: "0",
-    width: "32px",
-    height: "32px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: "4px",
-  };
-
-  const closeButtonStyleRedNoBorder = {
-    background: "transparent",
-    border: "1px solid #ef4444",
-    fontSize: "1.5rem",
-    color: "#ef4444",
-    fontWeight: "bold",
-    width: "32px",
-    height: "32px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: "4px",
-    cursor: "pointer",
-    padding: "0",
-    transition: "all 0.2s ease",
-  };
 
   // Get current admin role from sessionStorage and normalize legacy values
   const rawAdminRole = sessionStorage.getItem('adminRole') || 'Viewer';
   let currentAdminRole = rawAdminRole;
-  if (rawAdminRole === "Owner") {
-    currentAdminRole = "Admin";
-  } else if (rawAdminRole === "Finance Admin") {
-    currentAdminRole = "Finance";
+  // Normalize legacy role names
+  if (rawAdminRole === "Super Admin") {
+    currentAdminRole = "Owner";
+  } else if (rawAdminRole === "Admin") {
+    currentAdminRole = "Finance Admin";
+  } else if (rawAdminRole === "Finance" || rawAdminRole === "Staff") {
+    // Map old Finance/Staff roles to Finance Admin
+    currentAdminRole = "Finance Admin";
   }
-  const isAdmin = currentAdminRole === "Admin" || currentAdminRole === "Super Admin";
+  const isAdmin = currentAdminRole === "Owner" || currentAdminRole === "Finance Admin";
   const isOwner = currentAdminRole === "Owner";
   const isViewer = currentAdminRole === "Viewer";
-  const isFinanceRole = currentAdminRole === "Admin" || currentAdminRole === "Finance" || currentAdminRole === "Super Admin";
+  const isFinanceRole = currentAdminRole === "Owner" || currentAdminRole === "Finance Admin";
   const isAdminOrOwner = isAdmin || isOwner;
 
   // Portal labelling based on role
   const portalTitleByRole = {
-    Admin: "Admin Portal",
-    "Super Admin": "Super Admin Portal",
-    Finance: "Finance Portal",
-    Staff: "Staff Portal",
+    Owner: "Owner Portal",
+    "Finance Admin": "Finance Admin Portal",
     Viewer: "Viewer Portal",
   };
   const portalSubtitleByRole = {
-    Admin: "Full administration access",
-    "Super Admin": "Full system administration access",
-    Finance: "Finance operations and reporting",
-    Staff: "Member management and reporting",
+    Owner: "Full system administration access",
+    "Finance Admin": "Finance operations and reporting",
     Viewer: "Read-only access to view data",
   };
   const currentPortalTitle = portalTitleByRole[currentAdminRole] || "Admin Portal";
@@ -234,9 +105,9 @@ function AdminPage() {
       label: "Members",
       icon: "fa-users",
       items: [
-        { id: "members", label: "Members List", roles: ["Admin", "Super Admin", "Finance", "Staff", "Viewer"] },
-        { id: "member-detail", label: "Member Details", roles: ["Admin", "Super Admin", "Finance", "Staff", "Viewer"] },
-        { id: "invoice-builder", label: "Subscriptions", roles: ["Admin", "Super Admin", "Finance"] },
+        { id: "members", label: "Members List", roles: ["Owner", "Finance Admin", "Viewer"] },
+        { id: "member-detail", label: "Member Details", roles: ["Owner", "Finance Admin", "Viewer"] },
+        { id: "invoice-builder", label: "Subscriptions", roles: ["Owner", "Finance Admin"] },
       ]
     },
     {
@@ -244,9 +115,9 @@ function AdminPage() {
       label: "Finance",
       icon: "fa-dollar-sign",
       items: [
-        { id: "invoices", label: "Invoices", roles: ["Admin", "Super Admin", "Finance"] },
-        { id: "payments", label: "Payments", roles: ["Admin", "Super Admin", "Finance"] },
-        { id: "donations", label: "Donations", roles: ["Admin", "Super Admin", "Finance"] },
+        { id: "invoices", label: "Invoices", roles: ["Owner", "Finance Admin"] },
+        { id: "payments", label: "Payments", roles: ["Owner", "Finance Admin"] },
+        { id: "donations", label: "Donations", roles: ["Owner", "Finance Admin"] },
       ]
     },
     {
@@ -254,8 +125,8 @@ function AdminPage() {
       label: "Communication",
       icon: "fa-comments",
       items: [
-        { id: "automation", label: "Reminders", roles: ["Admin", "Super Admin", "Finance"] },
-        { id: "communications", label: "Reminder Logs", roles: ["Admin", "Super Admin", "Finance", "Staff", "Viewer"] },
+        { id: "automation", label: "Reminders", roles: ["Owner", "Finance Admin"] },
+        { id: "communications", label: "Reminder Logs", roles: ["Owner", "Finance Admin", "Viewer"] },
       ]
     },
     {
@@ -263,8 +134,8 @@ function AdminPage() {
       label: "Reports",
       icon: "fa-chart-bar",
       items: [
-        { id: "reports", label: "Financial Reports", roles: ["Admin", "Super Admin", "Finance", "Staff", "Viewer"] },
-        { id: "export-reports", label: "Export Reports", roles: ["Admin", "Super Admin", "Finance"] },
+        { id: "reports", label: "Financial Reports", roles: ["Owner", "Finance Admin", "Viewer"] },
+        { id: "export-reports", label: "Export Reports", roles: ["Owner", "Finance Admin"] },
       ]
     },
     {
@@ -272,9 +143,9 @@ function AdminPage() {
       label: "Settings",
       icon: "fa-cog",
       items: [
-        { id: "users", label: "Users", roles: ["Admin", "Super Admin"] },
-        { id: "roles", label: "Roles", roles: ["Admin", "Super Admin"] },
-        { id: "org-settings", label: "Organization Settings", roles: ["Admin", "Super Admin", "Finance"] },
+        { id: "users", label: "Users", roles: ["Owner", "Finance Admin"] },
+        { id: "roles", label: "Roles", roles: ["Owner"] },
+        { id: "org-settings", label: "Organization Settings", roles: ["Owner", "Finance Admin"] },
       ]
     },
   ];
@@ -581,6 +452,20 @@ function AdminPage() {
   const [orgForm, setOrgForm] = useState(organizationInfo);
   const [showAdminForm, setShowAdminForm] = useState(false);
   const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
+  const [showAddAdminPassword, setShowAddAdminPassword] = useState(false);
+  const [adminEmailError, setAdminEmailError] = useState("");
+
+  // Email validation function
+  const validateAdminEmail = (email) => {
+    if (!email || !email.trim()) {
+      return "Email is required";
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      return "Please enter a valid email address";
+    }
+    return "";
+  };
   
   // Email template state
   const [emailTemplate, setEmailTemplate] = useState({
@@ -2088,7 +1973,7 @@ function AdminPage() {
   // Send reminder to all outstanding members
   const handleSendToAllOutstanding = async () => {
     if (!isAdminOrOwner) {
-      showToast("Only Admin, Super Admin and Owner can send bulk reminders", "error");
+      showToast("Only Owner and Finance Admin can send bulk reminders", "error");
       return;
     }
     if (!emailSettings.emailUser || !emailSettings.emailPassword) {
@@ -2128,7 +2013,7 @@ function AdminPage() {
   // Send WhatsApp reminder to all outstanding members
   const handleSendWhatsAppToAllOutstanding = async () => {
     if (!isAdminOrOwner) {
-      showToast("Only Admin, Super Admin and Owner can send bulk reminders", "error");
+      showToast("Only Owner and Finance Admin can send bulk reminders", "error");
       return;
     }
     const outstandingMembers = members.filter(member => {
@@ -2457,7 +2342,7 @@ Subscription Manager HK`;
       const apiUrl = import.meta.env.DEV
         ? ""
         : import.meta.env.VITE_API_URL || "";
-      const currentAdminEmail = sessionStorage.getItem("adminEmail") || "Super Admin";
+      const currentAdminEmail = sessionStorage.getItem("adminEmail") || "Owner";
       
       const response = await fetch(`${apiUrl}/api/auth/password-reset-requests/${requestId}`, {
         method: "PUT",
@@ -3248,7 +3133,7 @@ Subscription Manager HK`;
       {/* Template Preview Modal */}
       {showTemplatePreview && (
         <div
-          style={modalOverlayStyle05High}
+          className="modal-overlay modal-overlay-high"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowTemplatePreview(false);
@@ -3256,34 +3141,21 @@ Subscription Manager HK`;
           }}
         >
           <div
-            className="card admin-template-preview-modal"
+            className="card admin-template-preview-modal modal-container modal-container-800"
             style={{
-              ...modalContainerStyle800,
-              background: "#ffffff",
-              padding: "24px",
               maxWidth: "900px",
-              maxHeight: "90vh",
-              overflowY: "auto",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={modalHeaderStyle24}>
-              <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600", display: "flex", alignItems: "center", gap: "8px" }}>
-                <i className="fas fa-eye" style={{ color: "#5a31ea" }}></i>
+            <div className="modal-header mb-2xl">
+              <h3 className="modal-title">
+                <i className="fas fa-eye text-primary"></i>
                 Email Template Preview
               </h3>
               <button
                 type="button"
                 onClick={() => setShowTemplatePreview(false)}
-                style={closeButtonStyleSimple}
-                onMouseEnter={(e) => {
-                  e.target.style.background = "#f3f4f6";
-                  e.target.style.color = "#1a1a1a";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = "transparent";
-                  e.target.style.color = "#666";
-                }}
+                className="close-btn-simple"
                 aria-label="Close template preview"
               >
                 ×
@@ -3293,7 +3165,7 @@ Subscription Manager HK`;
               className="admin-template-preview-content"
               dangerouslySetInnerHTML={{ __html: getPreviewTemplate() }}
             />
-            <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "flex-end" }}>
+            <div className="mt-2xl pt-xl border-t flex justify-end">
               <button
                 className="secondary-btn"
                 onClick={() => setShowTemplatePreview(false)}
@@ -3308,7 +3180,7 @@ Subscription Manager HK`;
       {/* Channel Selection Modal */}
       {showChannelSelection && (
         <div 
-          style={modalOverlayStyle05High}
+          className="modal-overlay modal-overlay-high"
           onClick={() => {
             setShowChannelSelection(false);
             setPendingReminderAction(null);
@@ -3318,9 +3190,9 @@ Subscription Manager HK`;
             className="admin-modal-card admin-modal-card--small"
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={modalHeaderStyle24}>
-              <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle", display: "inline-block" }}>
+            <div className="modal-header mb-2xl">
+              <h3 className="modal-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="icon-spacing-sm" style={{ verticalAlign: "middle", display: "inline-block" }}>
                   <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#5a31ea"/>
                 </svg>
                 Select Channel
@@ -3331,33 +3203,12 @@ Subscription Manager HK`;
                   setShowChannelSelection(false);
                   setPendingReminderAction(null);
                 }}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  fontSize: "1.5rem",
-                  color: "#666",
-                  cursor: "pointer",
-                  padding: "0",
-                  width: "32px",
-                  height: "32px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: "4px",
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.background = "#f3f4f6";
-                  e.target.style.color = "#1a1a1a";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = "transparent";
-                  e.target.style.color = "#666";
-                }}
+                className="close-btn-simple"
               >
                 ×
               </button>
             </div>
-            <p style={{ marginBottom: "24px", color: "#666" }}>
+            <p className="mb-2xl text-muted">
               {pendingReminderAction?.type === 'bulk' 
                 ? (selectedChannels.length > 0 
                     ? `Selected: ${selectedChannels.join(" and ")}. Click "Send" to send reminders to all outstanding members.`
@@ -3751,7 +3602,7 @@ Subscription Manager HK`;
             {activeSection === "members" && (
               <article className="screen-card" id="members">
                 <header className="screen-card__header">
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", flexWrap: "wrap", gap: "12px" }}>
+                  <div className="flex justify-between items-center w-full flex-wrap gap-md">
                     <div>
                       {renderBreadcrumb("members")}
                       <h3>Members List</h3>
@@ -3770,7 +3621,7 @@ Subscription Manager HK`;
                         ⏳ Pending Approval: {(members || []).filter(m => m.status === 'Pending').length}
                       </div>
                     )}
-                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    <div className="flex gap-sm flex-wrap">
                       {/* <button
                         className="ghost-btn"
                         onClick={() => {
@@ -4221,64 +4072,43 @@ Subscription Manager HK`;
                       justifyContent: "space-between",
                       marginBottom: "16px"
                     }}>
-                      <h4 style={{ margin: 0, color: "#ef4444", display: "flex", alignItems: "center", gap: "8px" }}>
+                      <h4 className="m-0 text-danger flex items-center gap-sm">
                         ⏳ Pending Approval ({members.filter(m => m.status === 'Pending').length})
                       </h4>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div className="flex flex-col gap-md">
                       {members
                         .filter(m => m.status === 'Pending')
                         .map(member => (
                           <div
                             key={member.id}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              padding: "16px",
-                              background: "#fff",
-                              borderRadius: "4px",
-                              border: "1px solid #ef4444",
-                              flexWrap: "wrap",
-                              gap: "12px"
-                            }}
+                            className="flex items-center justify-between p-lg bg-white rounded border flex-wrap gap-md"
+                            style={{ borderColor: "#ef4444" }}
                           >
-                            <div style={{ flex: "1 1 300px" }}>
-                              <div style={{ fontWeight: "600", marginBottom: "4px", fontSize: "1rem" }}>
+                            <div className="flex-1" style={{ minWidth: "300px", flexBasis: "300px" }}>
+                              <div className="font-semibold mb-xs text-base">
                                 {member.name}
                               </div>
-                              <div style={{ fontSize: "0.875rem", color: "#666", marginBottom: "4px" }}>
+                              <div className="text-sm text-muted mb-xs">
                                 {member.email}
                               </div>
-                              <div style={{ fontSize: "0.875rem", color: "#666", marginBottom: "4px" }}>
+                              <div className="text-sm text-muted mb-xs">
                                 📱 {member.phone || "No phone"}
                               </div>
-                              <div style={{ fontSize: "0.8125rem", color: "#ef4444", marginTop: "8px" }}>
+                              <div className="text-xs text-danger" style={{ marginTop: "8px" }}>
                                 📅 Subscription: {member.subscriptionType || 'Lifetime'}
                               </div>
                             </div>
-                            <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+                            <div className="flex gap-sm flex-shrink-0">
                               <button
                                 className="primary-btn"
                                 onClick={() => handleApproveMember(member.id)}
-                                style={{
-                                  padding: "10px 20px",
-                                  borderRadius: "4px",
-                                  fontWeight: "600",
-                                  fontSize: "0.875rem"
-                                }}
                               >
                                 ✓ Approve
                               </button>
                               <button
                                 className="ghost-btn"
                                 onClick={() => handleViewMemberDetail(member)}
-                                style={{
-                                  padding: "10px 20px",
-                                  borderRadius: "4px",
-                                  fontWeight: "600",
-                                  fontSize: "0.875rem"
-                                }}
                               >
                                 View Details
                               </button>
@@ -4329,7 +4159,7 @@ Subscription Manager HK`;
                         Clear
                       </button>
                     )}
-                    <div style={{ fontSize: "0.875rem", color: "#666" }}>
+                    <div className="text-sm text-muted">
                       {(() => {
                         const filtered = members.filter(m => 
                           !memberSearchTerm || 
@@ -4401,9 +4231,9 @@ Subscription Manager HK`;
                         return (
                           <>
                             {/* Filters above table */}
-                            <div style={{ marginBottom: "16px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
-                              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                                <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
+                            <div className="mb-lg flex gap-md flex-wrap items-center justify-between">
+                              <div className="flex gap-md flex-wrap items-center">
+                                <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Status:</label>
                                 <div style={{ 
                                   display: "flex", 
                                   gap: "4px", 
@@ -4457,7 +4287,7 @@ Subscription Manager HK`;
                                   ))}
                                 </div>
                               </div>
-                              <label className="member-sort-by-outstanding" style={{ fontSize: "0.875rem", color: "#666" }}>
+                              <label className="member-sort-by-outstanding text-sm text-muted">
                                 Sort by Outstanding:&nbsp;
                                 <select
                                   value={memberSortByOutstanding}
@@ -4553,7 +4383,7 @@ Subscription Manager HK`;
                                       },
                                       Actions: {
                                         render: () => (
-                                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                          <div className="flex gap-sm flex-wrap justify-end">
                                             <button
                                               className="ghost-btn icon-btn icon-btn--view"
                                               onClick={() => handleViewMemberDetail(member)}
@@ -4967,7 +4797,7 @@ Subscription Manager HK`;
                           } : "-",
                           Actions: {
                             render: () => (
-                                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                <div className="flex gap-sm flex-wrap">
                                   {isUnpaid && !isViewer && (
                                     <button
                                       className="primary-btn"
@@ -5060,7 +4890,7 @@ Subscription Manager HK`;
                                 color: "#666",
                               }}
                             >
-                              <p style={{ margin: 0, fontSize: "1rem" }}>
+                              <p className="m-0 text-base">
                                 No payment history available for this member.
                               </p>
                             </div>
@@ -5274,7 +5104,7 @@ Subscription Manager HK`;
                                 color: "#666",
                               }}
                             >
-                              <p style={{ margin: 0, fontSize: "1rem" }}>
+                              <p className="m-0 text-base">
                                 No communication history available for this member.
                               </p>
                             </div>
@@ -5416,7 +5246,7 @@ Subscription Manager HK`;
                                 color: "#666",
                               }}
                             >
-                              <p style={{ margin: 0, fontSize: "1rem" }}>
+                              <p className="m-0 text-base">
                                 No activity recorded for this member yet.
                               </p>
                             </div>
@@ -5451,7 +5281,7 @@ Subscription Manager HK`;
                   {activeTab === "Notes" && (
                     <div className="tab-panel">
                       <h4>Internal Notes</h4>
-                      <p style={{ fontSize: "0.875rem", color: "#6b7280", marginBottom: "12px" }}>
+                      <p className="text-sm mb-md" style={{ color: "#6b7280" }}>
                         These notes are <strong>internal only</strong> and are not visible to members.
                       </p>
                       <textarea
@@ -5512,10 +5342,10 @@ Subscription Manager HK`;
                     <div style={{
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: "16px"
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      justifyContent: "space-between"
+                    }}
+                    className="mb-lg">
+                      <div className="flex items-center gap-md">
                         <div style={{
                           width: "48px",
                           height: "48px",
@@ -6739,16 +6569,9 @@ Subscription Manager HK`;
                         }}
                         placeholder="Enter HTML email template..."
                       />
-                      <div style={{
-                        marginTop: "12px",
-                        padding: "12px",
-                        background: "#f8f9fa",
-                        borderRadius: "4px",
-                        fontSize: "0.75rem",
-                        color: "#666"
-                      }}>
+                      <div className="mt-md p-md bg-gray-50 rounded text-xs text-muted">
                         <strong>Available Placeholders:</strong>
-                        <ul style={{ margin: "8px 0 0 0", paddingLeft: "20px" }}>
+                        <ul className="m-0" style={{ marginTop: "8px", paddingLeft: "20px" }}>
                           <li><code>{'{{member_name}}'}</code> - Member's full name</li>
                           <li><code>{'{{member_id}}'}</code> - Member ID</li>
                           <li><code>{'{{member_email}}'}</code> - Member email</li>
@@ -6951,7 +6774,7 @@ Subscription Manager HK`;
                         }}>
                           Schedule Time
                         </label>
-                        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <div className="flex gap-sm items-center">
                           <input
                             type="time"
                             value={emailSettings.scheduleTime}
@@ -7100,7 +6923,7 @@ Subscription Manager HK`;
                 </div>
 
                 {/* Save Button */}
-                <div style={{ marginTop: "32px", display: "flex", justifyContent: "flex-end" }}>
+                <div className="mt-2xl flex justify-end">
                   <button
                     className="primary-btn"
                     onClick={handleSaveAllSettings}
@@ -7116,7 +6939,7 @@ Subscription Manager HK`;
                     }}
                   >
                     {savingAllSettings ? (
-                      <span style={{ display: "flex", alignItems: "center", gap: "8px", color: "#ffffff" }}>
+                      <span className="flex items-center gap-sm" style={{ color: "#ffffff" }}>
                         <svg 
                           style={{ 
                             animation: "spin 1s linear infinite",
@@ -7134,7 +6957,7 @@ Subscription Manager HK`;
                         Saving...
                       </span>
                     ) : (
-                      <span style={{ display: "flex", alignItems: "center", gap: "8px", color: "#ffffff" }}>
+                      <span className="flex items-center gap-sm" style={{ color: "#ffffff" }}>
                         <i className="fas fa-save"></i>
                         Save All Settings
                       </span>
@@ -7240,8 +7063,8 @@ Subscription Manager HK`;
                 <div className="admin-communications-filter-card">
                   {/* Filters - Always visible */}
                   <div className="admin-communications-filters-container">
-                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                      <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
+                    <div className="flex gap-md flex-wrap items-center">
+                      <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Status:</label>
                       <div style={{ 
                         display: "flex", 
                         gap: "4px", 
@@ -7297,8 +7120,8 @@ Subscription Manager HK`;
                         ))}
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                      <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Channel:</label>
+                    <div className="flex gap-md flex-wrap items-center">
+                      <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Channel:</label>
                       <div style={{ 
                         display: "flex", 
                         gap: "4px", 
@@ -7654,7 +7477,7 @@ Subscription Manager HK`;
                                       of <strong>{total}</strong> reminders
                                     </div>
 
-                                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <div className="flex items-center gap-sm">
                                       <button
                                         type="button"
                                         className="secondary-btn"
@@ -7725,8 +7548,8 @@ Subscription Manager HK`;
               </article>
             )}
 
-            {/* PASSWORD RESET REQUESTS - Only visible to Super Admin */}
-            {activeSection === "communications" && currentAdminRole === "Super Admin" && (
+            {/* PASSWORD RESET REQUESTS - Only visible to Owner */}
+            {activeSection === "communications" && currentAdminRole === "Owner" && (
               <article className="screen-card" id="password-reset-requests" style={{ marginTop: "24px" }}>
                 <header className="screen-card__header">
                   <div>
@@ -8472,7 +8295,7 @@ Subscription Manager HK`;
                 {/* Payment Form - shown as popup modal */}
                 {showPaymentForm && (
                   <div
-                    style={modalOverlayStyle05}
+                    className="modal-overlay"
                     onClick={(e) => {
                       // 点击遮罩不关闭，避免误操作；只允许通过按钮关闭
                       if (e.target === e.currentTarget) {
@@ -8481,12 +8304,11 @@ Subscription Manager HK`;
                     }}
                   >
                     <div
-                      className="card"
-                      style={modalContainerStyle640}
+                      className="card modal-container modal-container-640"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div style={modalHeaderStyle20}>
-                        <h4 style={{ margin: 0 }}>
+                      <div className="modal-header mb-xl">
+                        <h4 className="m-0">
                           {editingPayment ? "Edit Payment" : "Add New Payment"}
                         </h4>
                         <button
@@ -9256,7 +9078,7 @@ Subscription Manager HK`;
                 {/* Payment Form Modal */}
                 {showPaymentForm && (
                   <div 
-                    style={modalOverlayStyle05}
+                    className="admin-members-form-overlay"
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
                         setShowPaymentForm(false);
@@ -9281,8 +9103,7 @@ Subscription Manager HK`;
                     }}
                   >
                     <div 
-                      className="payments-card"
-                      style={modalContainerStyle800}
+                      className="payments-card admin-members-form-container"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
@@ -9696,8 +9517,7 @@ Subscription Manager HK`;
                 {/* Add Donation Form Modal */}
                 {showDonationForm && (
                   <div 
-                    className="donation-form-overlay"
-                    style={modalOverlayStyle05}
+                    className="admin-members-form-overlay"
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
                           setShowDonationForm(false);
@@ -9721,17 +9541,17 @@ Subscription Manager HK`;
                     }}
                   >
                     <div 
-                      className="donation-card donation-form-container"
-                      style={modalContainerStyle800}
+                      className="admin-members-form-container"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div style={modalHeaderStyle24}>
-                        <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
-                          <i className="fas fa-heart" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                      <div className="modal-header">
+                        <h4 className="modal-title">
+                          <i className="fas fa-heart" aria-hidden="true"></i>
                           Add Donation
-                        </h3>
+                        </h4>
                         <button
                           type="button"
+                          className="close-btn close-btn-danger"
                           onClick={() => {
                             // Clear validation state when closing
                             setDonationFieldErrors({
@@ -9760,15 +9580,7 @@ Subscription Manager HK`;
                             setShowDonationMemberDropdown(false);
                             setShowDonationPaymentMethodDropdown(false);
                           }}
-                          style={closeButtonStyleRedNoBorder}
-                          onMouseEnter={(e) => {
-                            e.target.style.background = "#f3f4f6";
-                            e.target.style.color = "#1a1a1a";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.background = "transparent";
-                            e.target.style.color = "#666";
-                          }}
+                          aria-label="Close add donation form"
                         >
                           ×
                         </button>
@@ -10845,7 +10657,7 @@ Subscription Manager HK`;
                         return (
                           <>
                             <div style={{ marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                              <div style={{ fontSize: "0.875rem", color: "#666" }}>
+                              <div className="text-sm text-muted">
                                 Total donations:{" "}
                                 <strong>
                                   $
@@ -11991,21 +11803,15 @@ Subscription Manager HK`;
                       <h4 style={{ marginBottom: "12px" }}>Available Roles</h4>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "24px" }}>
                         <div style={{ padding: "16px", background: "#f8f9ff", borderRadius: "8px", border: "2px solid #5a31ea" }}>
-                          <h5 style={{ margin: "0 0 8px 0", color: "#5a31ea" }}>Admin</h5>
+                          <h5 style={{ margin: "0 0 8px 0", color: "#5a31ea" }}>Owner</h5>
                           <p style={{ fontSize: "0.875rem", color: "#666", margin: 0 }}>
                             Full access to all features and settings
                           </p>
                         </div>
                         <div style={{ padding: "16px", background: "#f8f9ff", borderRadius: "8px" }}>
-                          <h5 style={{ margin: "0 0 8px 0" }}>Finance</h5>
+                          <h5 style={{ margin: "0 0 8px 0" }}>Finance Admin</h5>
                           <p style={{ fontSize: "0.875rem", color: "#666", margin: 0 }}>
                             Can manage finances, invoices, and payments
-                          </p>
-                        </div>
-                        <div style={{ padding: "16px", background: "#f8f9ff", borderRadius: "8px" }}>
-                          <h5 style={{ margin: "0 0 8px 0" }}>Staff</h5>
-                          <p style={{ fontSize: "0.875rem", color: "#666", margin: 0 }}>
-                            Can manage members and view reports, no financial exports
                           </p>
                         </div>
                         <div style={{ padding: "16px", background: "#f8f9ff", borderRadius: "8px" }}>
@@ -12044,29 +11850,7 @@ Subscription Manager HK`;
                           Actions: {
                             render: () => (
                               <div style={{ display: "flex", gap: "8px" }}>
-                                {currentAdminRole === "Super Admin" && (
-                                  <button
-                                    className="ghost-btn icon-btn icon-btn--edit"
-                                    onClick={async () => {
-                                      try {
-                                        // Cycle through the 5 allowed roles: Admin -> Super Admin -> Finance -> Staff -> Viewer -> Admin
-                                        const roleOrder = ["Admin", "Super Admin", "Finance", "Staff", "Viewer"];
-                                        const currentRole = admin.role || "Viewer";
-                                        const currentIndex = roleOrder.indexOf(currentRole);
-                                        const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % roleOrder.length;
-                                        const newRole = roleOrder[nextIndex];
-                                        await updateAdminUser(admin.id, { role: newRole });
-                                        showToast(`${admin.name}'s role updated to ${newRole}`);
-                                      } catch (error) {
-                                        showToast(error.message || "Failed to update role", "error");
-                                      }
-                                    }}
-                                    title="Change Role"
-                                  >
-                                    <i className="fas fa-sync-alt" aria-hidden="true"></i>
-                                  </button>
-                                )}
-                                {(admin.role || 'Viewer') !== "Admin" && (admin.role || 'Viewer') !== "Super Admin" && (
+                                {(admin.role || 'Viewer') !== "Owner" && (admin.role || 'Viewer') !== "Finance Admin" && (
                                   <button
                                     className="ghost-btn icon-btn icon-btn--delete"
                                     style={{ color: "#ef4444" }}
@@ -12237,14 +12021,16 @@ Subscription Manager HK`;
                           className="settings-card__add-btn secondary-btn"
                           onClick={() => {
                             if (!isAdmin) {
-                              showToast("Only Admin and Super Admin can add new admin users", "error");
+                              showToast("Only Owner and Finance Admin can add new admin users", "error");
                               return;
                             }
                             setShowAdminForm(true);
                             setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
+                            setShowAddAdminPassword(false);
+                            setAdminEmailError("");
                           }}
                           disabled={!isAdmin}
-                          title={isAdmin ? "Add a new admin user" : "Only Admin and Super Admin can add admins"}
+                          title={isAdmin ? "Add a new admin user" : "Only Owner and Finance Admin can add admins"}
                         >
                           + Add Admin
                         </button>
@@ -12296,7 +12082,7 @@ Subscription Manager HK`;
                                     Activate
                                   </button>
                                 )}
-                                {(user.role || 'Viewer') !== "Admin" && (
+                                {(user.role || 'Viewer') !== "Owner" && (user.role || 'Viewer') !== "Finance Admin" && (
                                   <button
                                     className="ghost-btn icon-btn icon-btn--delete"
                                     onClick={async () => {
@@ -12330,33 +12116,31 @@ Subscription Manager HK`;
                 {/* Add Admin Modal */}
                 {showAdminForm && (
                   <div
-                    style={modalOverlayStyle}
+                    className="admin-members-form-overlay"
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
                         setShowAdminForm(false);
+                        setShowAddAdminPassword(false);
+                        setAdminEmailError("");
                       }
                     }}
                   >
                     <div
-                      className="card"
-                      style={modalContainerStyle}
+                      className="admin-members-form-container"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div style={modalHeaderStyle}>
-                        <h4 style={modalTitleStyle}>
+                      <div className="modal-header">
+                        <h4 className="modal-title">
                           <i className="fas fa-user-plus" aria-hidden="true"></i>
                           Add New Admin
                         </h4>
                         <button
                           type="button"
-                          className="ghost-btn"
-                          onClick={() => setShowAdminForm(false)}
-                          style={closeButtonStyleRed}
-                          onMouseEnter={(e) => {
-                            e.target.style.background = "#fee2e2";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.background = "transparent";
+                          className="close-btn close-btn-danger"
+                          onClick={() => {
+                            setShowAdminForm(false);
+                            setShowAddAdminPassword(false);
+                            setAdminEmailError("");
                           }}
                           aria-label="Close add admin form"
                         >
@@ -12368,22 +12152,30 @@ Subscription Manager HK`;
                         noValidate
                         onSubmit={async (e) => {
                           e.preventDefault();
-                          if (!adminForm.name) {
-                            showToast("Please enter admin name", "error");
+                          if (!adminForm.name || !adminForm.name.trim()) {
+                            showToast("Please enter name", "error");
                             return;
                           }
-                          if (!adminForm.email) {
-                            showToast("Please enter admin email", "error");
+                          
+                          // Validate email
+                          const emailError = validateAdminEmail(adminForm.email);
+                          if (emailError) {
+                            setAdminEmailError(emailError);
+                            showToast(emailError, "error");
                             return;
                           }
-                          if (!adminForm.password) {
-                            showToast("Please enter admin password", "error");
+                          setAdminEmailError("");
+                          
+                          if (!adminForm.password || !adminForm.password.trim()) {
+                            showToast("Please enter password", "error");
                             return;
                           }
                           try {
                             await addAdminUser(adminForm);
                             setShowAdminForm(false);
                             setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
+                            setShowAddAdminPassword(false);
+                            setAdminEmailError("");
                             showToast("Admin user added!");
                           } catch (error) {
                             showToast(error.message || "Failed to add admin user", "error");
@@ -12412,22 +12204,55 @@ Subscription Manager HK`;
                               className="settings-form__input"
                               required
                               value={adminForm.email}
-                              onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+                              onChange={(e) => {
+                                setAdminForm({ ...adminForm, email: e.target.value });
+                                // Clear error when user starts typing
+                                if (adminEmailError) {
+                                  setAdminEmailError("");
+                                }
+                              }}
+                              onBlur={(e) => {
+                                // Validate on blur
+                                const error = validateAdminEmail(e.target.value);
+                                setAdminEmailError(error);
+                              }}
                               placeholder="Enter admin email"
+                              style={{
+                                borderColor: adminEmailError ? "#ef4444" : undefined,
+                                borderWidth: adminEmailError ? "2px" : undefined,
+                              }}
+                              aria-invalid={!!adminEmailError}
                             />
+                            {adminEmailError && (
+                              <span style={{ color: "#ef4444", fontSize: "0.875rem", marginTop: "4px", display: "block" }}>
+                                {adminEmailError}
+                              </span>
+                            )}
                           </label>
                         </div>
                         <div className="settings-form__group">
                           <label className="settings-form__label">
                             Password
-                            <input
-                              type="password"
-                              className="settings-form__input"
-                              required
-                              value={adminForm.password}
-                              onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
-                              placeholder="Set a password"
-                            />
+                            <div style={{ position: "relative" }}>
+                              <input
+                                type={showAddAdminPassword ? "text" : "password"}
+                                className="settings-form__input"
+                                required
+                                value={adminForm.password}
+                                onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
+                                placeholder="Set a password"
+                                style={{ paddingRight: "40px" }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowAddAdminPassword(!showAddAdminPassword)}
+                                className="login-password-toggle"
+                                style={{ position: "absolute", right: "8px", top: "50%", transform: "translateY(-50%)" }}
+                                aria-label={showAddAdminPassword ? "Hide password" : "Show password"}
+                              >
+                                <i className={`fas ${showAddAdminPassword ? "fa-eye-slash" : "fa-eye"}`}></i>
+                              </button>
+                            </div>
                           </label>
                         </div>
                         <div className="settings-form__group">
@@ -12438,10 +12263,8 @@ Subscription Manager HK`;
                               value={adminForm.role}
                               onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
                             >
-                              <option>Admin</option>
-                              <option>Super Admin</option>
-                              <option>Finance</option>
-                              <option>Staff</option>
+                              <option>Owner</option>
+                              <option>Finance Admin</option>
                               <option>Viewer</option>
                             </select>
                           </label>
@@ -12451,7 +12274,11 @@ Subscription Manager HK`;
                           <button
                             type="button"
                             className="ghost-btn settings-form__cancel"
-                            onClick={() => setShowAdminForm(false)}
+                            onClick={() => {
+                              setShowAdminForm(false);
+                              setShowAddAdminPassword(false);
+                              setAdminEmailError("");
+                            }}
                           >
                             Cancel
                           </button>
@@ -12472,7 +12299,7 @@ Subscription Manager HK`;
       {/* Payment Modal */}
       {showPaymentModal && paymentModalInvoice && (
         <div 
-          style={modalOverlayStyle05}
+          className="admin-members-form-overlay"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowPaymentModal(false);
@@ -12490,17 +12317,18 @@ Subscription Manager HK`;
           }}
         >
           <div 
-            className="card"
-            style={{ ...modalContainerStyle, background: "transparent", padding: undefined }}
+            className="card admin-members-form-container"
+           
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={modalHeaderStyle24}>
+            <div className="modal-header">
               <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
                 <i className="fas fa-money-bill-wave" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                 Pay Invoice #{paymentModalInvoice.id}
               </h3>
               <button
                 type="button"
+                className="close-btn close-btn-simple"
                 onClick={() => {
                   setShowPaymentModal(false);
                   setPaymentModalInvoice(null);
@@ -12511,15 +12339,7 @@ Subscription Manager HK`;
                     imageUrl: "",
                   });
                 }}
-                style={closeButtonStyleSimple}
-                onMouseEnter={(e) => {
-                  e.target.style.background = "#f3f4f6";
-                  e.target.style.color = "#1a1a1a";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = "transparent";
-                  e.target.style.color = "#666";
-                }}
+                aria-label="Close payment modal"
               >
                 ×
               </button>
@@ -13241,7 +13061,7 @@ Subscription Manager HK`;
       {/* Payment Details Modal */}
       {showPaymentDetailsModal && selectedPaymentDetails && (
         <div 
-          style={modalOverlayStyle05}
+          className="modal-overlay"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowPaymentDetailsModal(false);
@@ -13250,13 +13070,12 @@ Subscription Manager HK`;
           }}
         >
           <div 
-            className="card"
-            style={{ ...modalContainerStyle, background: undefined, padding: undefined }}
+            className="card modal-container"
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={modalHeaderStyle24}>
-              <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
-                <i className="fas fa-receipt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+            <div className="modal-header mb-2xl">
+              <h3 className="modal-title">
+                <i className="fas fa-receipt icon-spacing-sm text-primary"></i>
                 Payment Details
               </h3>
               <button
@@ -13265,15 +13084,7 @@ Subscription Manager HK`;
                   setShowPaymentDetailsModal(false);
                   setSelectedPaymentDetails(null);
                 }}
-                style={closeButtonStyleSimple}
-                onMouseEnter={(e) => {
-                  e.target.style.background = "#f3f4f6";
-                  e.target.style.color = "#1a1a1a";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = "transparent";
-                  e.target.style.color = "#666";
-                }}
+                className="close-btn-simple"
               >
                 ×
               </button>
@@ -13509,7 +13320,7 @@ Subscription Manager HK`;
       {/* Password Reset Modal */}
       {showPasswordResetModal && selectedPasswordResetRequest && (
         <div
-          style={modalOverlayStyle}
+          className="modal-overlay"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowPasswordResetModal(false);
@@ -13519,29 +13330,21 @@ Subscription Manager HK`;
           }}
         >
           <div
-            className="card"
-            style={modalContainerStyle500}
+            className="card modal-container modal-container-500"
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={modalHeaderStyle}>
-              <h4 style={modalTitleStyle}>
+            <div className="modal-header">
+              <h4 className="modal-title">
                 <i className="fas fa-key" aria-hidden="true"></i>
                 Set New Password
               </h4>
               <button
                 type="button"
-                className="ghost-btn"
+                className="ghost-btn close-btn close-btn-danger"
                 onClick={() => {
                   setShowPasswordResetModal(false);
                   setSelectedPasswordResetRequest(null);
                   setPasswordResetForm({ newPassword: "" });
-                }}
-                style={closeButtonStyleRed}
-                onMouseEnter={(e) => {
-                  e.target.style.background = "#fee2e2";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = "transparent";
                 }}
                 aria-label="Close password reset modal"
               >

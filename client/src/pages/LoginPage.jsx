@@ -317,7 +317,7 @@ export function LoginPage() {
                 <i className="fas fa-info-circle login-icon"></i>Demo Credentials
               </p>
               <p>
-                <strong>Admin:</strong> admin2002@gmail.com / #Admin2204
+                <strong>Admin:</strong> owner1234@gmail.com / #owner1234
               </p>
               {SHOW_MEMBER_LOGIN && (
                 <p>

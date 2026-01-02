@@ -26,13 +26,26 @@ setInterval(() => {
 // POST login
 router.post("/login", async (req, res) => {
   const { email, password, role } = req.body ?? {};
+  
+  // Validate input
   if (!email || !password) {
-    return res.status(400).json({ message: "Email and password required" });
+    return res.status(400).json({ 
+      message: "Email and password required",
+      success: false 
+    });
+  }
+
+  if (!role) {
+    return res.status(400).json({ 
+      message: "Role is required. Please select Admin or Member.",
+      success: false 
+    });
   }
 
   try {
     await ensureConnection();
     const emailLower = email.trim().toLowerCase();
+    const passwordTrimmed = password.trim();
     
     // Check based on the role specified
     if (role === "admin" || role === "Admin") {
@@ -42,6 +55,7 @@ router.post("/login", async (req, res) => {
       });
 
       if (!admin) {
+        console.log(`Login attempt failed: Admin not found for email ${emailLower}`);
         return res.status(401).json({ 
           message: "Invalid email or password",
           success: false 
@@ -64,8 +78,10 @@ router.post("/login", async (req, res) => {
         admin.lockoutUntil = null;
       }
 
-      // Check password
-      if (admin.password !== password) {
+      // Check password (trim both for comparison)
+      const adminPassword = (admin.password || "").trim();
+      if (adminPassword !== passwordTrimmed) {
+        console.log(`Login attempt failed: Password mismatch for admin ${emailLower}`);
         // Increment failed attempts
         admin.failedLoginAttempts = (admin.failedLoginAttempts || 0) + 1;
         
@@ -210,6 +226,7 @@ router.post("/login", async (req, res) => {
       });
     } else {
       // No role specified or invalid role
+      console.log(`Login attempt failed: Invalid role '${role}' for email ${emailLower}`);
       return res.status(400).json({ 
         message: "Invalid role specified. Please select Admin or Member.",
         success: false 
@@ -217,8 +234,14 @@ router.post("/login", async (req, res) => {
     }
   } catch (error) {
     console.error("Login error:", error);
+    console.error("Error details:", {
+      message: error.message,
+      stack: error.stack,
+      email: req.body?.email,
+      role: req.body?.role
+    });
     res.status(500).json({ 
-      message: "Server error during login",
+      message: "Server error during login. Please try again later.",
       success: false 
     });
   }
