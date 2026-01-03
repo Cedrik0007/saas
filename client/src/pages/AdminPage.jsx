@@ -9744,6 +9744,13 @@ Subscription Manager HK`;
                           return;
                         }
                         
+                        // Parse amount to number for formatting
+                        const amountNum = parseFloat(donationForm.amount);
+                        if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
+                          showToast("Amount must be a positive number", "error");
+                          return;
+                        }
+                        
                         try {
                           // Upload image if file exists
                           let imageUrl = donationForm.screenshot;

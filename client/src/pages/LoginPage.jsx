@@ -140,23 +140,16 @@ export function LoginPage() {
           return;
         }
 
-        // Store auth token and user info
+        // Store auth token and user info immediately (batch all sessionStorage writes)
         sessionStorage.setItem('authToken', data.token);
         
         if (data.role === "Admin") {
           sessionStorage.setItem('adminEmail', data.email);
           sessionStorage.setItem('adminName', data.name);
-          if (data.adminId) {
-            sessionStorage.setItem('adminId', data.adminId);
-          }
-          if (data.adminRole) {
-            sessionStorage.setItem('adminRole', data.adminRole);
-          }
+          if (data.adminId) sessionStorage.setItem('adminId', data.adminId);
+          if (data.adminRole) sessionStorage.setItem('adminRole', data.adminRole);
           
-          // Clear loading state before navigation
-          setLoadingRole(null);
-          
-          // Instant redirect - no delay
+          // Navigate immediately - no delays
           navigate("/admin", {
             replace: true,
             state: {
@@ -172,12 +165,9 @@ export function LoginPage() {
           // Member login
           sessionStorage.setItem('memberEmail', data.email);
           sessionStorage.setItem('memberName', data.name);
-          sessionStorage.setItem('memberId', data.memberId);
+          if (data.memberId) sessionStorage.setItem('memberId', data.memberId);
           
-          // Clear loading state before navigation
-          setLoadingRole(null);
-          
-          // Instant redirect - no delay
+          // Navigate immediately - no delays
           navigate("/member", {
             replace: true,
             state: {
@@ -190,6 +180,9 @@ export function LoginPage() {
             },
           });
         }
+        
+        // Clear loading state after navigation (non-blocking)
+        setLoadingRole(null);
       } catch (error) {
         console.error("Login error:", error);
         // Show generic error message for security
