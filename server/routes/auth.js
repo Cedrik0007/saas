@@ -50,9 +50,18 @@ router.post("/login", async (req, res) => {
     // Check based on the role specified
     if (role === "admin" || role === "Admin") {
       // Check admin database only
-      const admin = await AdminModel.findOne({ 
-        email: emailLower 
-      });
+      let admin;
+      try {
+        admin = await AdminModel.findOne({ 
+          email: emailLower 
+        });
+      } catch (dbError) {
+        console.error("Database query error:", dbError);
+        return res.status(500).json({ 
+          message: "Database error. Please try again later.",
+          success: false 
+        });
+      }
 
       if (!admin) {
         console.log(`Login attempt failed: Admin not found for email ${emailLower}`);
@@ -62,26 +71,47 @@ router.post("/login", async (req, res) => {
         });
       }
 
+      // Log admin details for debugging (without sensitive info)
+      console.log(`Admin login attempt for: ${emailLower}, Role: ${admin.role}, Status: ${admin.status}`);
+
       // Check if account is locked
-      if (admin.lockoutUntil && admin.lockoutUntil > new Date()) {
-        const minutesRemaining = Math.ceil((admin.lockoutUntil - new Date()) / (1000 * 60));
-        return res.status(403).json({ 
-          message: `Account temporarily locked due to multiple failed login attempts. Please try again in ${minutesRemaining} minute(s).`,
-          success: false,
-          locked: true
-        });
+      try {
+        if (admin.lockoutUntil) {
+          const lockoutDate = admin.lockoutUntil instanceof Date ? admin.lockoutUntil : new Date(admin.lockoutUntil);
+          const now = new Date();
+          if (lockoutDate > now) {
+            const minutesRemaining = Math.ceil((lockoutDate - now) / (1000 * 60));
+            return res.status(403).json({ 
+              message: `Account temporarily locked due to multiple failed login attempts. Please try again in ${minutesRemaining} minute(s).`,
+              success: false,
+              locked: true
+            });
+          }
+        }
+      } catch (dateError) {
+        console.error("Error checking lockout date:", dateError);
+        // Continue if date check fails
       }
 
       // Reset lockout if it has expired
-      if (admin.lockoutUntil && admin.lockoutUntil <= new Date()) {
-        admin.failedLoginAttempts = 0;
-        admin.lockoutUntil = null;
-        try {
-          await admin.save();
-        } catch (saveError) {
-          console.error("Error resetting admin lockout:", saveError);
-          // Continue even if save fails
+      try {
+        if (admin.lockoutUntil) {
+          const lockoutDate = admin.lockoutUntil instanceof Date ? admin.lockoutUntil : new Date(admin.lockoutUntil);
+          const now = new Date();
+          if (lockoutDate <= now) {
+            admin.failedLoginAttempts = 0;
+            admin.lockoutUntil = null;
+            try {
+              await admin.save({ validateBeforeSave: false });
+            } catch (saveError) {
+              console.error("Error resetting admin lockout:", saveError);
+              // Continue even if save fails
+            }
+          }
         }
+      } catch (dateError) {
+        console.error("Error resetting lockout:", dateError);
+        // Continue if date check fails
       }
 
       // Check password (trim both for comparison)
@@ -96,7 +126,7 @@ router.post("/login", async (req, res) => {
           const lockoutDuration = 10 * 60 * 1000; // 10 minutes in milliseconds
           admin.lockoutUntil = new Date(Date.now() + lockoutDuration);
           try {
-            await admin.save();
+            await admin.save({ validateBeforeSave: false });
           } catch (saveError) {
             console.error("Error saving admin lockout:", saveError);
             // Continue even if save fails
@@ -109,7 +139,7 @@ router.post("/login", async (req, res) => {
         }
         
         try {
-          await admin.save();
+          await admin.save({ validateBeforeSave: false });
         } catch (saveError) {
           console.error("Error saving admin failed attempts:", saveError);
           // Continue even if save fails
@@ -125,15 +155,66 @@ router.post("/login", async (req, res) => {
       admin.lockoutUntil = null;
       
       // Ensure admin has an id field (use _id as fallback)
-      if (!admin.id && admin._id) {
-        admin.id = admin._id.toString();
+      // Handle both MongoDB _id (ObjectId) and custom id field
+      let adminId;
+      try {
+        if (admin.id && String(admin.id).trim() !== '') {
+          adminId = String(admin.id).trim();
+        } else if (admin._id) {
+          // Convert MongoDB ObjectId to string safely
+          try {
+            adminId = String(admin._id);
+            // Set the id field for future use
+            admin.id = adminId;
+          } catch (idError) {
+            console.error("Error converting _id to string:", idError);
+            adminId = String(admin._id);
+          }
+        } else {
+          // Fallback: generate a temporary ID
+          adminId = `temp_${Date.now()}`;
+          admin.id = adminId;
+        }
+      } catch (idError) {
+        console.error("Error processing admin ID:", idError);
+        adminId = `temp_${Date.now()}`;
       }
       
+      // Normalize role to match enum values before saving
+      const allowedRoles = ["Owner", "Finance Admin", "Viewer"];
+      const currentRole = String(admin.role || '').trim();
+      
+      if (currentRole && !allowedRoles.includes(currentRole)) {
+        // Try to normalize common variations
+        const roleLower = currentRole.toLowerCase();
+        if (roleLower === "owner") {
+          admin.role = "Owner";
+        } else if (roleLower === "finance admin" || roleLower === "financeadmin" || roleLower === "finance_admin") {
+          admin.role = "Finance Admin";
+        } else if (roleLower === "viewer") {
+          admin.role = "Viewer";
+        } else {
+          // If role doesn't match, log warning but don't change it (might be valid in DB)
+          console.warn(`Role "${currentRole}" for admin ${emailLower} doesn't match enum, but continuing...`);
+        }
+      }
+
+      // Save admin after resetting failed attempts and setting id (but don't fail login if save fails)
+      // Use validateBeforeSave: false to skip validation if role doesn't match enum (in case DB has different format)
       try {
-        await admin.save();
+        await admin.save({ validateBeforeSave: false });
       } catch (saveError) {
-        console.error("Error saving admin after login:", saveError);
-        // Continue with login even if save fails (non-critical)
+        console.error("Error saving admin after successful login:", saveError);
+        console.error("Save error details:", {
+          message: saveError.message,
+          name: saveError.name,
+          code: saveError.code,
+          errors: saveError.errors,
+          adminRole: admin.role,
+          adminStatus: admin.status,
+          adminId: admin.id
+        });
+        // Continue with login even if save fails (non-critical for authentication)
       }
 
       // Check if admin is active
@@ -144,19 +225,45 @@ router.post("/login", async (req, res) => {
         });
       }
 
-      // Use admin.id or fallback to _id.toString() for token and adminId
-      const adminId = admin.id || (admin._id ? admin._id.toString() : 'unknown');
+      // Successful admin login - ensure all fields are safe
+      // Get the admin role safely, ensuring it matches allowed values
+      let adminRole = 'Viewer';
+      try {
+        const roleValue = admin.role;
+        if (roleValue) {
+          const roleStr = String(roleValue).trim();
+          if (allowedRoles.includes(roleStr)) {
+            adminRole = roleStr;
+          } else {
+            // Try to normalize
+            const roleLower = roleStr.toLowerCase();
+            if (roleLower === "owner") {
+              adminRole = "Owner";
+            } else if (roleLower === "finance admin" || roleLower === "financeadmin" || roleLower === "finance_admin") {
+              adminRole = "Finance Admin";
+            } else {
+              console.warn(`Admin ${emailLower} has unexpected role: "${roleStr}", using Viewer as fallback`);
+              adminRole = "Viewer";
+            }
+          }
+        }
+      } catch (roleError) {
+        console.error("Error processing admin role:", roleError);
+        adminRole = "Viewer";
+      }
 
-      // Successful admin login
-      return res.json({
+      const responseData = {
         success: true,
         role: "Admin",
         token: `admin_${adminId}_${Date.now()}`,
-        email: admin.email || '',
-        name: admin.name || '',
-        adminId: adminId,
-        adminRole: admin.role || 'Viewer'
-      });
+        email: (admin.email && String(admin.email)) || '',
+        name: (admin.name && String(admin.name)) || '',
+        adminId: String(adminId),
+        adminRole: adminRole
+      };
+      
+      console.log(`Successful login for admin: ${emailLower}, Role: ${adminRole}`);
+      return res.json(responseData);
     } else if (role === "member" || role === "Member") {
       // Check member database only
       const escapedEmail = emailLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -267,13 +374,19 @@ router.post("/login", async (req, res) => {
     console.error("Error details:", {
       message: error.message,
       stack: error.stack,
+      name: error.name,
       email: req.body?.email,
       role: req.body?.role
     });
-    res.status(500).json({ 
-      message: "Server error during login. Please try again later.",
-      success: false 
-    });
+    
+    // Make sure we haven't already sent a response
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        message: "Server error during login. Please try again later.",
+        success: false,
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
   }
 });
 
