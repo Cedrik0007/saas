@@ -76,6 +76,12 @@ router.post("/login", async (req, res) => {
       if (admin.lockoutUntil && admin.lockoutUntil <= new Date()) {
         admin.failedLoginAttempts = 0;
         admin.lockoutUntil = null;
+        try {
+          await admin.save();
+        } catch (saveError) {
+          console.error("Error resetting admin lockout:", saveError);
+          // Continue even if save fails
+        }
       }
 
       // Check password (trim both for comparison)
@@ -89,7 +95,12 @@ router.post("/login", async (req, res) => {
         if (admin.failedLoginAttempts >= 5) {
           const lockoutDuration = 10 * 60 * 1000; // 10 minutes in milliseconds
           admin.lockoutUntil = new Date(Date.now() + lockoutDuration);
-          await admin.save();
+          try {
+            await admin.save();
+          } catch (saveError) {
+            console.error("Error saving admin lockout:", saveError);
+            // Continue even if save fails
+          }
           return res.status(403).json({ 
             message: "Account temporarily locked due to multiple failed login attempts. Please try again in 10 minutes.",
             success: false,
@@ -97,7 +108,12 @@ router.post("/login", async (req, res) => {
           });
         }
         
-        await admin.save();
+        try {
+          await admin.save();
+        } catch (saveError) {
+          console.error("Error saving admin failed attempts:", saveError);
+          // Continue even if save fails
+        }
         return res.status(401).json({ 
           message: "Invalid email or password",
           success: false 
@@ -107,7 +123,18 @@ router.post("/login", async (req, res) => {
       // Successful login - reset failed attempts
       admin.failedLoginAttempts = 0;
       admin.lockoutUntil = null;
-      await admin.save();
+      
+      // Ensure admin has an id field (use _id as fallback)
+      if (!admin.id && admin._id) {
+        admin.id = admin._id.toString();
+      }
+      
+      try {
+        await admin.save();
+      } catch (saveError) {
+        console.error("Error saving admin after login:", saveError);
+        // Continue with login even if save fails (non-critical)
+      }
 
       // Check if admin is active
       if (admin.status && admin.status !== 'Active') {
@@ -117,14 +144,17 @@ router.post("/login", async (req, res) => {
         });
       }
 
+      // Use admin.id or fallback to _id.toString() for token and adminId
+      const adminId = admin.id || (admin._id ? admin._id.toString() : 'unknown');
+
       // Successful admin login
       return res.json({
         success: true,
         role: "Admin",
-        token: `admin_${admin.id}_${Date.now()}`,
-        email: admin.email,
-        name: admin.name,
-        adminId: admin.id,
+        token: `admin_${adminId}_${Date.now()}`,
+        email: admin.email || '',
+        name: admin.name || '',
+        adminId: adminId,
         adminRole: admin.role || 'Viewer'
       });
     } else if (role === "member" || role === "Member") {
