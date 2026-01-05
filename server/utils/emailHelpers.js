@@ -3,6 +3,7 @@ import { ensureConnection } from "../config/database.js";
 import EmailTemplateModel from "../models/EmailTemplate.js";
 import EmailSettingsModel from "../models/EmailSettings.js";
 import nodemailer from "nodemailer";
+import { generatePaymentReceiptPDF } from "./pdfReceipt.js";
 
 // Function to send account approval email
 export async function sendAccountApprovalEmail(member) {
@@ -48,47 +49,116 @@ export async function sendAccountApprovalEmail(member) {
   }
 }
 
-// Function to send payment approval email
+// Function to send payment approval email with PDF receipt
 export async function sendPaymentApprovalEmail(member, payment, invoice) {
-  const transporter = getTransporter();
-  if (!transporter) {
-    console.warn(`⚠️ Email not configured. Skipping payment approval email to ${member.email}`);
-    return false;
-  }
-
   try {
+    await ensureConnection();
+    
+    // Get email settings from database
+    const emailSettings = await EmailSettingsModel.findOne({});
+    
+    // Initialize transporter from database settings if not already set
+    let transporter = getTransporter();
+    if (!transporter && emailSettings && emailSettings.emailUser && emailSettings.emailPassword) {
+      console.log("📧 Initializing email transporter from database settings...");
+      const newTransporter = nodemailer.createTransport({
+        service: emailSettings.emailService || 'gmail',
+        auth: {
+          user: emailSettings.emailUser,
+          pass: emailSettings.emailPassword,
+        },
+      });
+      setTransporter(newTransporter);
+      transporter = newTransporter;
+      console.log("✓ Email transporter initialized from database settings");
+    }
+    
+    // Fallback to environment variables if database settings not available
+    if (!transporter && process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+      console.log("📧 Initializing email transporter from environment variables...");
+      const newTransporter = nodemailer.createTransport({
+        service: process.env.EMAIL_SERVICE || 'gmail',
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASSWORD,
+        },
+      });
+      setTransporter(newTransporter);
+      transporter = newTransporter;
+      console.log("✓ Email transporter initialized from environment variables");
+    }
+    
+    if (!transporter) {
+      console.error(`❌ Email not configured. Cannot send payment approval email to ${member?.email || member?.memberEmail || 'N/A'}`);
+      console.error("   Please configure email settings in the admin panel or set EMAIL_USER and EMAIL_PASSWORD environment variables.");
+      return false;
+    }
+
+    // Generate PDF receipt
+    let pdfBuffer = null;
+    try {
+      pdfBuffer = await generatePaymentReceiptPDF(member, invoice, payment);
+      console.log(`✓ PDF receipt generated for payment ${payment?.id || payment?.invoiceId || 'N/A'}`);
+    } catch (pdfError) {
+      console.error(`❌ Error generating PDF receipt:`, pdfError);
+      // Continue without PDF if generation fails
+    }
+
+    // Get email settings for from address
+    const fromEmail = emailSettings?.emailUser || process.env.EMAIL_USER || 'noreply@subscriptionhk.org';
+    const toEmail = member.email || member.memberEmail;
+    
+    if (!toEmail) {
+      console.error(`❌ Member email not found. Cannot send payment approval email.`);
+      return false;
+    }
+    
+    console.log(`📧 Preparing to send payment confirmation email to ${toEmail}...`);
+
     const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: member.email || member.memberEmail,
-      subject: "Payment Approved - Subscription Manager HK",
+      from: `"Subscription Manager HK" <${fromEmail}>`,
+      to: toEmail,
+      subject: `Payment Confirmed - Receipt ${invoice?.id || payment?.invoiceId || 'N/A'}`,
       html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
-    Payment Approved
+    Payment Confirmed
   </h2>
   <p>Dear ${member.name || member.member || 'Member'},</p>
-  <p>Your payment has been approved and processed successfully.</p>
+  <p>Your payment has been confirmed and processed successfully.</p>
   <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
-    <p><strong>Invoice ID:</strong> ${invoice?.id || payment.invoiceId || 'N/A'}</p>
-    <p><strong>Period:</strong> ${invoice?.period || payment.period || 'N/A'}</p>
-    <p><strong>Amount:</strong> <span style="color: #4caf50; font-size: 18px; font-weight: bold;">${payment.amount || invoice?.amount || '$0'}</span></p>
-    <p><strong>Payment Method:</strong> ${payment.method || 'N/A'}</p>
-    <p><strong>Status:</strong> <span style="color: #4caf50; font-weight: bold;">Approved</span></p>
+    <p><strong>Invoice ID:</strong> ${invoice?.id || payment?.invoiceId || 'N/A'}</p>
+    <p><strong>Period:</strong> ${invoice?.period || payment?.period || 'N/A'}</p>
+    <p><strong>Amount:</strong> <span style="color: #4caf50; font-size: 18px; font-weight: bold;">${payment?.amount || invoice?.amount || '$0'}</span></p>
+    <p><strong>Payment Method:</strong> ${payment?.method || invoice?.method || 'N/A'}</p>
+    <p><strong>Payment Date:</strong> ${payment?.date || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+    <p><strong>Status:</strong> <span style="color: #4caf50; font-weight: bold;">Confirmed</span></p>
   </div>
+  ${pdfBuffer ? '<p style="color: #4caf50; font-weight: bold;">📎 Your payment receipt is attached as a PDF file.</p>' : ''}
   <p>Your invoice has been marked as paid. Thank you for your payment!</p>
-  <p style="text-align: center; margin: 30px 0;">
-    <a href="${process.env.MEMBER_PORTAL_URL || 'http://localhost:5173/member'}" style="background: #000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
-      View Invoice
-    </a>
-  </p>
   <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
 </div>`,
+      attachments: pdfBuffer ? [
+        {
+          filename: `Payment_Receipt_${invoice?.id || payment?.invoiceId || Date.now()}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        }
+      ] : []
     };
 
-    await transporter.sendMail(mailOptions);
-    console.log(`✓ Payment approval email sent to ${member.email || member.memberEmail}`);
+    const emailResult = await transporter.sendMail(mailOptions);
+    console.log(`✓ Payment confirmation email with PDF receipt sent successfully to ${toEmail}`);
+    console.log(`   Message ID: ${emailResult.messageId}`);
     return true;
   } catch (error) {
-    console.error(`Error sending payment approval email:`, error);
+    console.error(`❌ Error sending payment approval email:`, error);
+    console.error(`   Error details:`, {
+      message: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      responseCode: error.responseCode,
+    });
     return false;
   }
 }

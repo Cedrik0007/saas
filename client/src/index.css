@@ -9450,6 +9450,10 @@ button[disabled] {
   color: #666;
 }
 
+.fa-user{
+  margin-right: 6px;
+}
+
 .admin-confirmation-button-success {
   background: #10b981;
   color: #ffffff;

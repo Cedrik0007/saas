@@ -14,6 +14,10 @@ const InvoiceSchema = new mongoose.Schema({
   screenshot: String,
   paidToAdmin: String,
   paidToAdminName: String,
+  // Payment confirmation fields
+  payment_mode: { type: String, default: null }, // online, cash
+  payment_proof: { type: String, default: null }, // URL to payment proof image
+  last_payment_date: { type: Date, default: null },
 }, {
   timestamps: true
 });

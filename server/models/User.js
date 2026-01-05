@@ -11,6 +11,13 @@ const UserSchema = new mongoose.Schema({
   nextDue: String,
   lastPayment: String,
   subscriptionType: { type: String, default: "Lifetime" },
+  // Payment management fields
+  start_date: { type: Date, default: null },
+  payment_status: { type: String, default: "unpaid" }, // unpaid, paid
+  payment_mode: { type: String, default: null }, // online, cash
+  last_payment_date: { type: Date, default: null },
+  next_due_date: { type: Date, default: null },
+  payment_proof: { type: String, default: null }, // URL to payment proof image
   // Account lockout fields
   failedLoginAttempts: { type: Number, default: 0 },
   lockoutUntil: { type: Date, default: null },

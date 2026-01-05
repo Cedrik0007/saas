@@ -1,11 +1,14 @@
 import express from "express";
 import { ensureConnection } from "../config/database.js";
 import InvoiceModel from "../models/Invoice.js";
+import UserModel from "../models/User.js";
+import PaymentModel from "../models/Payment.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { generateSubscriptionInvoices } from "../services/invoiceService.js";
 import EmailSettingsModel from "../models/EmailSettings.js";
 import EmailTemplateModel from "../models/EmailTemplate.js";
 import { generateUniqueMessageId } from "../config/email.js";
+import { sendPaymentApprovalEmail } from "../utils/emailHelpers.js";
 import nodemailer from "nodemailer";
 
 const router = express.Router();
@@ -271,6 +274,70 @@ router.delete("/:id", async (req, res) => {
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting invoice:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST send payment confirmation email with PDF receipt
+router.post("/:id/send-payment-confirmation", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    const invoice = await InvoiceModel.findOne({ id: req.params.id });
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+
+    if (invoice.status !== "Paid") {
+      return res.status(400).json({ message: "Invoice is not marked as paid" });
+    }
+
+    const member = await UserModel.findOne({ id: invoice.memberId });
+    if (!member) {
+      return res.status(404).json({ message: "Member not found" });
+    }
+
+    // Find the most recent payment for this invoice
+    const payment = await PaymentModel.findOne({ 
+      invoiceId: invoice.id 
+    }).sort({ createdAt: -1 });
+
+    // Prepare payment object with screenshot from payment or invoice
+    const paymentData = payment ? {
+      ...payment.toObject(),
+      screenshot: payment.screenshot || invoice.screenshot || invoice.payment_proof || null,
+    } : {
+      invoiceId: invoice.id,
+      amount: invoice.amount,
+      method: invoice.method || 'Payment',
+      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      reference: invoice.reference || invoice.id,
+      screenshot: invoice.screenshot || invoice.payment_proof || null,
+    };
+
+    // Send email with PDF receipt
+    console.log(`📧 Attempting to send payment confirmation email for invoice ${invoice.id} to member ${member.email}...`);
+    const emailSent = await sendPaymentApprovalEmail(
+      member, 
+      paymentData, 
+      invoice
+    );
+
+    if (emailSent) {
+      console.log(`✅ Payment confirmation email sent successfully to ${member.email}`);
+      res.json({ 
+        success: true, 
+        message: `Payment confirmation email with PDF receipt sent to ${member.email}` 
+      });
+    } else {
+      console.error(`❌ Failed to send payment confirmation email to ${member.email}`);
+      res.status(500).json({ 
+        error: "Failed to send payment confirmation email. Please check email configuration in settings.",
+        details: "Email may not be configured. Please check server logs for details."
+      });
+    }
+  } catch (error) {
+    console.error("Error sending payment confirmation email:", error);
     res.status(500).json({ error: error.message });
   }
 });

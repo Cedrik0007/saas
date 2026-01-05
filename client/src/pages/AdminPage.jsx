@@ -181,6 +181,13 @@ function AdminPage() {
   const [lastCreatedInvoice, setLastCreatedInvoice] = useState(null);
   const [showInvoiceSuccessCard, setShowInvoiceSuccessCard] = useState(false);
   
+  // Import preview state
+  const [showImportPreview, setShowImportPreview] = useState(false);
+  const [importPreviewData, setImportPreviewData] = useState([]);
+  const [importFileName, setImportFileName] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [importErrors, setImportErrors] = useState([]);
+  
   // Confirmation dialog state
   const [confirmationDialog, setConfirmationDialog] = useState({
     isOpen: false,
@@ -191,13 +198,22 @@ function AdminPage() {
   });
   
   // Form states
+  // Get today's date in YYYY-MM-DD format for date input
+  const getTodayDate = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const [memberForm, setMemberForm] = useState({
     name: "",
     email: "",
     phone: "",
     status: "Active",
     balance: "250", // default for Lifetime (numeric string)
-    nextDue: "",
+    nextDue: getTodayDate(), // Default to today's date
     lastPayment: "",
     subscriptionType: "Lifetime",
   });
@@ -523,7 +539,7 @@ function AdminPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentModalInvoice, setPaymentModalInvoice] = useState(null);
   const [paymentModalData, setPaymentModalData] = useState({
-    paymentMethod: "", // "Admin" or "Online" - empty by default
+    paymentMethod: "", // "Cash" or "Online" - empty by default
     imageFile: null,
     imagePreview: null,
     imageUrl: "",
@@ -2061,34 +2077,29 @@ function AdminPage() {
           )
           .join("\n");
 
-        // Create WhatsApp message
-        const message = `السلام عليكم ورحمة الله وبركاته
+        // Create WhatsApp-friendly message (English only)
+        const message = `Hi *${member.name}* 👋
 
-Dear *${member.name}*,
+Payment Reminder
 
-This is a friendly reminder about your outstanding subscription payments.
+*Total Outstanding:* $${totalDue.toFixed(2)}
 
-*Member ID:* ${member.id}
-*Email:* ${member.email}
-*Total Outstanding:* $${totalDue}
-
-*📋 Outstanding Invoices (${memberUnpaidInvoices.length}):*
+*Invoices (${memberUnpaidInvoices.length}):*
 ${invoiceList}
 
-*💳 Payment Methods Available:*
+*Payment Options:*
 • FPS: ID 1234567
-• PayMe: Scan QR code in portal
+• PayMe: Scan QR in portal
 • Bank Transfer: HSBC 123-456789-001
 
-*🔗 Member Portal:*
+*Pay Online:*
 ${window.location.origin}/member
 
-Please settle your outstanding balance at your earliest convenience.
+Please settle your balance at your earliest convenience.
 
-جزاك الله خيرا
+Thank you! 🙏
 
-_Best regards,_
-*Finance Team*
+_Finance Team_
 Subscription Manager HK`;
 
         // Clean phone number
@@ -2395,6 +2406,112 @@ Subscription Manager HK`;
     });
   };
 
+  // Handle CSV/Excel import for members - shows preview first
+  const handleImportMembers = async (file) => {
+    try {
+      const fileName = file.name.toLowerCase();
+      const isCSV = fileName.endsWith('.csv');
+      const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+
+      if (!isCSV && !isExcel) {
+        showToast("Please select a CSV or Excel file (.csv, .xlsx, .xls)", "error");
+        return;
+      }
+
+      // showToast("Processing file...", "success");
+
+      // Send file to server for parsing (handles both CSV and Excel)
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${apiUrl}/api/members/import`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to parse file');
+      }
+
+      const result = await response.json();
+      const membersData = result.members || [];
+      const errors = result.errors || [];
+
+      if (membersData.length === 0 && errors.length === 0) {
+        showToast("No valid member data found in file", "error");
+        return;
+      }
+
+      // Show preview popup instead of direct import
+      setImportPreviewData(membersData);
+      setImportErrors(errors);
+      setImportFileName(file.name);
+      setShowImportPreview(true);
+    } catch (error) {
+      console.error("File import error:", error);
+      showToast(error.message || "Failed to import file. Please check the file format.", "error");
+    }
+  };
+
+  // Confirm import from preview
+  const handleConfirmImport = async () => {
+    if (importPreviewData.length === 0) {
+      showToast("No data to import", "error");
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      let successCount = 0;
+      let errorCount = 0;
+      const errors = [];
+
+      showToast(`Importing ${importPreviewData.length} members...`, "success");
+
+      // Add members one by one
+      for (const memberData of importPreviewData) {
+        try {
+          await addMember(memberData);
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          errors.push(`${memberData.name || memberData.email}: ${error.message || 'Failed'}`);
+          console.error(`Failed to add member ${memberData.name}:`, error);
+        }
+      }
+
+      // Refresh members list and related data
+      await Promise.all([
+        fetchMembers(),
+        fetchInvoices(),
+        fetchPayments(),
+      ]);
+
+      // Close preview
+      setShowImportPreview(false);
+      setImportPreviewData([]);
+      setImportErrors([]);
+      setImportFileName("");
+
+      if (errorCount > 0) {
+        showToast(
+          `Import completed: ${successCount} added, ${errorCount} failed. Check console for details.`,
+          "error"
+        );
+        console.error("Import errors:", errors);
+      } else {
+        showToast(`Successfully imported ${successCount} member(s)!`, "success");
+      }
+    } catch (error) {
+      console.error("Import error:", error);
+      showToast("Error during import. Please try again.", "error");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   // Member CRUD Operations
   const handleAddMember = async (e) => {
     e.preventDefault();
@@ -2407,14 +2524,23 @@ Subscription Manager HK`;
     try {
       setIsMemberSubmitting(true);
 
-      await addMember(memberForm);
+      const newMember = await addMember(memberForm);
+      
+      // Refresh all related data to ensure complete member details are available
+      // This ensures invoices, payments, and all member data is up-to-date
+      await Promise.all([
+        fetchMembers(), // Refresh members list - this will update the members state
+        fetchInvoices(), // Refresh invoices (new member might have invoice created)
+        fetchPayments(), // Refresh payments
+      ]);
+      
       setMemberForm({
         name: "",
         email: "",
         phone: "",
         status: "Active",
         balance: "250",
-        nextDue: "",
+        nextDue: getTodayDate(), // Reset to today's date
         lastPayment: "",
         subscriptionType: "Lifetime",
       });
@@ -2428,7 +2554,7 @@ Subscription Manager HK`;
       });
       setCurrentInvalidField(null);
       setShowMemberForm(false);
-      showToast("Member added successfully!", "success");
+      showToast("Member added successfully! Data refreshed.", "success");
     } catch (error) {
       console.error("Failed to add member:", error);
       showToast("Failed to add member. Please try again.", "error");
@@ -2612,6 +2738,9 @@ Subscription Manager HK`;
       const adminId = sessionStorage.getItem('adminId') || currentAdmin?.id || 'Admin';
       const adminName = sessionStorage.getItem('adminName') || currentAdmin?.name || 'Admin';
       
+      // Map UI method to payment_mode (online or cash)
+      const paymentMode = method === "Online" ? "online" : "cash";
+      
       // Map UI method to stored payment method + reference
       let paymentMethod = "Cash to Admin";
       let reference;
@@ -2622,6 +2751,12 @@ Subscription Manager HK`;
       } else {
         reference = `CASH_${Date.now()}`;
       }
+      
+      // Calculate payment dates
+      const lastPaymentDate = new Date(); // Exact date/time of confirmation
+      const nextDueDate = new Date(lastPaymentDate);
+      nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); // Add 1 year
+      
       // In development, use empty string to use Vite proxy (localhost:4000)
       // In production, use VITE_API_URL if set
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
@@ -2660,27 +2795,131 @@ Subscription Manager HK`;
 
       const newPayment = await paymentResponse.json();
 
-      // Step 2: Update invoice to Paid status (this will trigger balance recalculation on backend)
+      // Step 2: Update invoice with payment confirmation fields
       await updateInvoice(invoiceId, {
         status: "Paid",
         method: paymentMethod,
         reference: reference,
         paidToAdmin: adminId,
         paidToAdminName: adminName,
+        payment_mode: paymentMode,
+        payment_proof: screenshotUrl || invoice.screenshot || null,
+        last_payment_date: lastPaymentDate.toISOString(),
       });
 
-      // Step 3: Refresh all data to get updated balances
+      // Step 3: Update member with payment confirmation fields
+      if (invoice.memberId) {
+        // Format dates for display strings
+        const lastPaymentDateFormatted = lastPaymentDate.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        }).replace(',', '');
+        
+        const nextDueDateFormatted = nextDueDate.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        }).replace(',', '');
+        
+        const memberUpdateResponse = await fetch(`${apiUrl}/api/members/${invoice.memberId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            payment_status: 'paid',
+            payment_mode: paymentMode,
+            last_payment_date: lastPaymentDate.toISOString(),
+            next_due_date: nextDueDate.toISOString(),
+            payment_proof: screenshotUrl || invoice.screenshot || null,
+            // Also update the display string fields
+            lastPayment: lastPaymentDateFormatted,
+            nextDue: nextDueDateFormatted,
+          }),
+        });
+
+        if (!memberUpdateResponse.ok) {
+          console.error('Failed to update member payment fields');
+          // Continue anyway - invoice is already updated
+        }
+      }
+
+      // Step 4: Send payment confirmation email with PDF receipt
+      try {
+        const emailResponse = await fetch(`${apiUrl}/api/invoices/${invoiceId}/send-payment-confirmation`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        
+        if (emailResponse.ok) {
+          const emailData = await emailResponse.json();
+          console.log('✅ Payment confirmation email sent:', emailData.message);
+          showToast(`Payment confirmation email sent to ${invoice.memberEmail || 'member'}`, "success");
+        } else {
+          const errorText = await emailResponse.text();
+          console.error('❌ Failed to send payment confirmation email:', errorText);
+          try {
+            const errorData = JSON.parse(errorText);
+            showToast(`Email not sent: ${errorData.error || 'Email configuration issue'}`, "error");
+          } catch {
+            showToast(`Email not sent: ${errorText}`, "error");
+          }
+          // Don't fail the payment process if email fails
+        }
+      } catch (emailError) {
+        console.error('Error sending payment confirmation email:', emailError);
+        // Don't fail the payment process if email fails
+      }
+
+      // Step 5: Refresh all data to get updated balances and dates
       await Promise.all([
         fetchInvoices(),
         fetchPayments(),
-        fetchMembers(), // Refresh members to get updated balance
+        fetchMembers(), // Refresh members to get updated balance, next_due_date, and last_payment_date
       ]);
 
-      // Step 4: Get updated member data to verify balance was updated
+      // Step 6: Update selectedMember if we're currently viewing this member's details
+      if (invoice.memberId && selectedMember && selectedMember.id === invoice.memberId) {
+        // Fetch the updated member directly to ensure we have the latest data
+        const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+        try {
+          const memberResponse = await fetch(`${apiUrl}/api/members`);
+          if (memberResponse.ok) {
+            const allMembers = await memberResponse.json();
+            const updatedMember = allMembers.find(m => m.id === invoice.memberId);
+            if (updatedMember) {
+              setSelectedMember(updatedMember);
+            }
+          }
+        } catch (error) {
+          console.warn("Could not refresh selected member:", error);
+          // Fallback: find from members state
+          const updatedMember = members.find(m => m.id === invoice.memberId);
+          if (updatedMember) {
+            setSelectedMember(updatedMember);
+          }
+        }
+      }
+
+      // Step 7: Show success message
       if (invoice.memberId) {
         const updatedMember = members.find(m => m.id === invoice.memberId);
         if (updatedMember) {
-          showToast(`Invoice marked as paid (${paymentMethod})! Balance updated.`, "success");
+          // Format dates for display
+          const lastPaymentDateStr = updatedMember.last_payment_date 
+            ? new Date(updatedMember.last_payment_date).toLocaleDateString('en-GB', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+              })
+            : 'N/A';
+          const nextDueDateStr = updatedMember.next_due_date
+            ? new Date(updatedMember.next_due_date).toLocaleDateString('en-GB', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+              })
+            : 'N/A';
+          showToast(`Invoice marked as paid (${paymentMethod})! Last payment: ${lastPaymentDateStr}, Next due: ${nextDueDateStr}`, "success");
         } else {
           showToast(`Invoice marked as paid (${paymentMethod})!`, "success");
         }
@@ -2756,34 +2995,29 @@ Subscription Manager HK`;
       )
       .join("\n");
 
-    // Create WhatsApp message with proper formatting
-    const message = `السلام عليكم ورحمة الله وبركاته
+    // Create WhatsApp-friendly message (English only)
+    const message = `Hi *${memberData.name}* 👋
 
-Dear *${memberData.name}*,
+Payment Reminder
 
-This is a friendly reminder about your outstanding subscription payments.
+*Total Outstanding:* $${totalDue.toFixed(2)}
 
-*Member ID:* ${memberData.id}
-*Email:* ${memberData.email}
-*Total Outstanding:* $${totalDue}
-
-*📋 Outstanding Invoices (${memberUnpaidInvoices.length}):*
+*Invoices (${memberUnpaidInvoices.length}):*
 ${invoiceList}
 
-*💳 Payment Methods Available:*
+*Payment Options:*
 • FPS: ID 1234567
-• PayMe: Scan QR code in portal
+• PayMe: Scan QR in portal
 • Bank Transfer: HSBC 123-456789-001
 
-*🔗 Member Portal:*
+*Pay Online:*
 ${window.location.origin}/member
 
-Please settle your outstanding balance at your earliest convenience.
+Please settle your balance at your earliest convenience.
 
-جزاك الله خيرا
+Thank you! 🙏
 
-_Best regards,_
-*Finance Team*
+_Finance Team_
 Subscription Manager HK`;
 
     // Clean phone number (remove all non-numeric except +)
@@ -3025,9 +3259,65 @@ Subscription Manager HK`;
     }
   };
 
-  const handleViewMemberDetail = (member) => {
+  const handleViewMemberDetail = async (member) => {
+    try {
+      // First, refresh all data to ensure we have the latest information
+      await Promise.all([
+        fetchMembers(),
+        fetchInvoices(),
+        fetchPayments(),
+      ]);
+      
+      // Fetch the specific member directly from API to ensure we have the latest data
+      // This is more reliable than relying on state updates
+      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+      let memberToView = member;
+      
+      if (member.id) {
+        try {
+          const response = await fetch(`${apiUrl}/api/members`);
+          if (response.ok) {
+            const allMembers = await response.json();
+            const latestMember = allMembers.find(m => m.id === member.id);
+            if (latestMember) {
+              memberToView = latestMember;
+            }
+          }
+        } catch (fetchError) {
+          console.warn("Could not fetch member directly, using provided member:", fetchError);
+        }
+      }
+      
+      // Fallback: Find from current members state
+      if (!memberToView || memberToView === member) {
+        const foundMember = members.find(m => 
+          (member.id && m.id === member.id) ||
+          (member.email && m.email && m.email.toLowerCase() === member.email.toLowerCase())
+        );
+        if (foundMember) {
+          memberToView = foundMember;
+        }
+      }
+      
+      // Ensure we have a valid member object
+      if (!memberToView || !memberToView.id) {
+        console.error("Member not found:", member);
+        showToast("Member data not available. Please refresh the page.", "error");
+        return;
+      }
+      
+      setSelectedMember(memberToView);
+      setActiveSection("member-detail");
+    } catch (error) {
+      console.error("Error viewing member detail:", error);
+      // Fallback to using the provided member object
+      if (member && member.id) {
     setSelectedMember(member);
     setActiveSection("member-detail");
+      } else {
+        showToast("Failed to load member details. Please try again.", "error");
+      }
+    }
   };
 
   // Get member's invoices
@@ -3639,6 +3929,28 @@ Subscription Manager HK`;
                         🔄 Reset Data
                       </button> */}
                       <button
+                        className="secondary-btn"
+                        onClick={() => {
+                          const fileInput = document.createElement('input');
+                          fileInput.type = 'file';
+                          fileInput.accept = '.csv,.xlsx,.xls';
+                          fileInput.style.display = 'none';
+                          fileInput.onchange = async (e) => {
+                            const file = e.target.files[0];
+                            if (!file) return;
+                            
+                            await handleImportMembers(file);
+                            document.body.removeChild(fileInput);
+                          };
+                          document.body.appendChild(fileInput);
+                          fileInput.click();
+                        }}
+                        style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                      >
+                        <i className="fas fa-file-import"></i>
+                        Import CSV/Excel
+                      </button>
+                      <button
                         className="primary-btn"
                         onClick={() => {
                           setShowMemberForm(true);
@@ -3650,7 +3962,7 @@ Subscription Manager HK`;
                             phone: "",
                             status: "Active",
                             balance: "250", // default based on Lifetime subscription
-                            nextDue: "",
+                            nextDue: getTodayDate(), // Default to today's date
                             lastPayment: "",
                             subscriptionType: "Lifetime",
                           });
@@ -4247,7 +4559,7 @@ Subscription Manager HK`;
                                     { value: "Active", label: "Active" },
                                     { value: "Overdue", label: "Overdue" },
                                     { value: "Inactive", label: "Inactive" },
-                                    { value: "Pending", label: "Pending" }
+                                    // { value: "Pending", label: "Pending" }
                                   ].map((option) => (
                                     <button
                                       key={option.value}
@@ -4584,14 +4896,54 @@ Subscription Manager HK`;
                         <i className="fas fa-calendar-day admin-dashboard-kpi-icon"></i>
                         Next Due Date
                       </p>
-                      <h4 className="admin-dashboard-kpi-value">{selectedMember.nextDue}</h4>
+                      <h4 className="admin-dashboard-kpi-value">
+                        {(() => {
+                          // Show N/A if payment_status is unpaid or next_due_date is null
+                          if (selectedMember.payment_status === 'unpaid' || !selectedMember.next_due_date) {
+                            return 'N/A';
+                          }
+                          // Format next_due_date if it exists (DD/MM/YYYY format)
+                          if (selectedMember.next_due_date) {
+                            try {
+                              const date = new Date(selectedMember.next_due_date);
+                              return date.toLocaleDateString('en-GB', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric'
+                              });
+                            } catch (e) {
+                              // Fallback to nextDue if date parsing fails
+                              return selectedMember.nextDue || 'N/A';
+                            }
+                          }
+                          // Fallback to nextDue field
+                          return selectedMember.nextDue || 'N/A';
+                        })()}
+                      </h4>
                     </div>
                     <div className="admin-dashboard-kpi-card">
                       <p className="admin-dashboard-kpi-label">
                         <i className="fas fa-dollar-sign admin-dashboard-kpi-icon--green"></i>
                         Last Payment
                       </p>
-                      <h4 className="admin-dashboard-kpi-value">{selectedMember.lastPayment}</h4>
+                      <h4 className="admin-dashboard-kpi-value">
+                        {(() => {
+                          // Use last_payment_date if available, otherwise fallback to lastPayment
+                          if (selectedMember.last_payment_date) {
+                            try {
+                              const date = new Date(selectedMember.last_payment_date);
+                              return date.toLocaleDateString('en-GB', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric'
+                              });
+                            } catch (e) {
+                              return selectedMember.lastPayment || 'N/A';
+                            }
+                          }
+                          return selectedMember.lastPayment || 'N/A';
+                        })()}
+                      </h4>
                     </div>
                     <div className="admin-dashboard-kpi-card">
                       <p className="admin-dashboard-kpi-label">
@@ -4743,6 +5095,27 @@ Subscription Manager HK`;
                             effectiveStatus === "Paid" ||
                             effectiveStatus === "Completed";
                           
+                          // Calculate Due Date: Show member's next_due_date if paid, otherwise N/A
+                          const getDueDateDisplay = () => {
+                            // If member is unpaid or has no next_due_date, show N/A
+                            if (selectedMember.payment_status === 'unpaid' || !selectedMember.next_due_date) {
+                              return 'N/A';
+                            }
+                            
+                            // Format next_due_date for display
+                            try {
+                              const date = new Date(selectedMember.next_due_date);
+                              return date.toLocaleDateString('en-GB', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric'
+                              });
+                            } catch (e) {
+                              // Fallback to nextDue field or invoice.due
+                              return selectedMember.nextDue || invoice.due || 'N/A';
+                            }
+                          };
+                          
                           return {
                           "Invoice #": invoice.id,
                           Period: invoice.period,
@@ -4754,7 +5127,7 @@ Subscription Manager HK`;
                               </span>
                             ),
                           },
-                          "Due Date": invoice.due,
+                          "Due Date": getDueDateDisplay(),
                           Screenshot: invoice.screenshot ? {
                             render: () => (
                               <button
@@ -8787,7 +9160,7 @@ Subscription Manager HK`;
                       className="primary-btn"
                       onClick={() => {
                         handleNavClick("invoice-builder");
-                        showToast("Redirecting to Invoice Builder...");
+                        // showToast("Redirecting to Invoice Builder...");
                       }}
                     >
                       <i className="fas fa-plus" style={{ marginRight: "8px" }}></i>Create Invoice
@@ -12312,7 +12685,7 @@ Subscription Manager HK`;
               setShowPaymentModal(false);
               setPaymentModalInvoice(null);
               setPaymentModalData({
-                paymentMethod: "Admin",
+                paymentMethod: "",
                 imageFile: null,
                 imagePreview: null,
                 imageUrl: "",
@@ -12340,7 +12713,7 @@ Subscription Manager HK`;
                   setShowPaymentModal(false);
                   setPaymentModalInvoice(null);
                   setPaymentModalData({
-                    paymentMethod: "Admin",
+                    paymentMethod: "",
                     imageFile: null,
                     imagePreview: null,
                     imageUrl: "",
@@ -12390,7 +12763,7 @@ Subscription Manager HK`;
                     type="button"
                     onClick={() => setPaymentModalData({ 
                       ...paymentModalData, 
-                      paymentMethod: "Admin" 
+                      paymentMethod: "Cash" 
                     })}
                     style={{
                       flex: "1",
@@ -12398,11 +12771,11 @@ Subscription Manager HK`;
                       padding: "12px 20px",
                       borderRadius: "8px",
                       border: "none",
-                      background: paymentModalData.paymentMethod === "Admin" 
+                      background: paymentModalData.paymentMethod === "Cash" 
                         ? "#5a31ea" 
                         : "#f8f9ff",
-                      color: paymentModalData.paymentMethod === "Admin" ? "#ffffff" : "#1a1a1a",
-                      boxShadow: paymentModalData.paymentMethod === "Admin" 
+                      color: paymentModalData.paymentMethod === "Cash" ? "#ffffff" : "#1a1a1a",
+                      boxShadow: paymentModalData.paymentMethod === "Cash" 
                         ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
                         : "0 2px 4px rgba(90, 49, 234, 0.08)",
                       fontWeight: "600",
@@ -12415,8 +12788,8 @@ Subscription Manager HK`;
                       gap: "8px",
                     }}
                   >
-                    <i className="fas fa-user-shield"></i>
-                    Paid Cash
+                    <i className="fas fa-money-bill-wave"></i>
+                    Cash
                   </button>
                   <button
                     type="button"
@@ -12448,13 +12821,13 @@ Subscription Manager HK`;
                     }}
                   >
                     <i className="fas fa-globe"></i>
-                    Paid Online
+                    Online
                   </button>
                 </div>
               </div>
 
-              {/* Admin Selection - Shown for both Paid Cash and Paid Online */}
-              {(paymentModalData.paymentMethod === "Admin" || paymentModalData.paymentMethod === "Online") && (
+              {/* Admin Selection - Shown for both Cash and Online */}
+              {(paymentModalData.paymentMethod === "Cash" || paymentModalData.paymentMethod === "Online") && (
                 <div style={{ marginBottom: "20px" }}>
                   <div style={{ marginBottom: "16px" }}>
                     <label style={{ 
@@ -12549,7 +12922,7 @@ Subscription Manager HK`;
               )}
 
               {/* Attachment Upload - Required for both payment methods */}
-              {(paymentModalData.paymentMethod === "Admin" || paymentModalData.paymentMethod === "Online") && (
+              {(paymentModalData.paymentMethod === "Cash" || paymentModalData.paymentMethod === "Online") && (
                 <div>
                   <label style={{ 
                     display: "block", 
@@ -12877,7 +13250,7 @@ Subscription Manager HK`;
                           }
 
                           // Mark invoice as paid
-                          const paymentMethod = paymentModalData.paymentMethod === "Admin" ? "Cash" : "Online";
+                          const paymentMethod = paymentModalData.paymentMethod; // Already "Cash" or "Online"
                           await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl, null);
 
                           // Close modal and reset
@@ -13427,6 +13800,197 @@ Subscription Manager HK`;
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Import Preview Modal */}
+      {showImportPreview && (
+        <div
+          className="modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isImporting) {
+              setShowImportPreview(false);
+              setImportPreviewData([]);
+              setImportErrors([]);
+              setImportFileName("");
+            }
+          }}
+        >
+          <div
+            className="card modal-container"
+            style={{ maxWidth: "90vw", width: "1000px", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header" style={{ flexShrink: 0 }}>
+              <h4 className="modal-title">
+                <i className="fas fa-file-import" aria-hidden="true" style={{ marginRight: "8px" }}></i>
+                Import Preview - {importFileName}
+              </h4>
+              <button
+                type="button"
+                className="modal-close-btn"
+                onClick={() => {
+                  if (!isImporting) {
+                    setShowImportPreview(false);
+                    setImportPreviewData([]);
+                    setImportErrors([]);
+                    setImportFileName("");
+                  }
+                }}
+                disabled={isImporting}
+              >
+                <i className="fas fa-times"></i>
+              </button>
+            </div>
+
+            <div style={{ padding: "20px", overflow: "auto", flex: 1 }}>
+              <div style={{ marginBottom: "16px", padding: "12px", background: "#f0f7ff", borderRadius: "8px", border: "1px solid #b3d9ff" }}>
+                <p style={{ margin: 0, fontSize: "0.875rem", color: "#0066cc" }}>
+                  <i className="fas fa-info-circle" style={{ marginRight: "6px" }}></i>
+                  <strong>{importPreviewData.length}</strong> valid member(s) found.
+                  {importErrors.length > 0 && (
+                    <span style={{ marginLeft: "8px", color: "#d32f2f" }}>
+                      <strong>{importErrors.length}</strong> row(s) with errors.
+                    </span>
+                  )}
+                  {" "}Please review the data below before confirming the import.
+                </p>
+              </div>
+
+              {/* Preview Table */}
+              <div style={{ overflowX: "auto", border: "1px solid #e0e0e0", borderRadius: "8px" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+                  <thead>
+                    <tr style={{ background: "#f5f5f5", borderBottom: "2px solid #ddd" }}>
+                      <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>#</th>
+                      <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Name</th>
+                      <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Email</th>
+                      <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Phone</th>
+                      <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Subscription Type</th>
+                      <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333" }}>Start Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreviewData.map((member, index) => (
+                      <tr key={index} style={{ borderBottom: "1px solid #e0e0e0" }}>
+                        <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#666" }}>{index + 1}</td>
+                        <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333", fontWeight: "500" }}>
+                          {member.name || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                        </td>
+                        <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
+                          {member.email || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                        </td>
+                        <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
+                          {member.phone || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                        </td>
+                        <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
+                          {member.subscriptionType || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}
+                        </td>
+                        <td style={{ padding: "12px", color: "#333" }}>
+                          {member.start_date ? new Date(member.start_date).toLocaleDateString('en-GB', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          }) : <span style={{ color: "#999", fontStyle: "italic" }}>Today</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Errors Table */}
+              {importErrors.length > 0 && (
+                <div style={{ marginTop: "24px" }}>
+                  <div style={{ marginBottom: "12px", padding: "12px", background: "#ffebee", borderRadius: "8px", border: "1px solid #ffcdd2" }}>
+                    <p style={{ margin: 0, fontSize: "0.875rem", color: "#c62828", fontWeight: "600" }}>
+                      <i className="fas fa-exclamation-triangle" style={{ marginRight: "6px" }}></i>
+                      Rows with Errors ({importErrors.length})
+                    </p>
+                  </div>
+                  <div style={{ overflowX: "auto", border: "1px solid #ffcdd2", borderRadius: "8px" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+                      <thead>
+                        <tr style={{ background: "#ffebee", borderBottom: "2px solid #ffcdd2" }}>
+                          <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828", borderRight: "1px solid #ffcdd2" }}>Row #</th>
+                          <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828", borderRight: "1px solid #ffcdd2" }}>Name</th>
+                          <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828", borderRight: "1px solid #ffcdd2" }}>Email</th>
+                          <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828", borderRight: "1px solid #ffcdd2" }}>Phone</th>
+                          <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828", borderRight: "1px solid #ffcdd2" }}>Subscription Type</th>
+                          <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828" }}>Errors</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importErrors.map((errorRow, index) => (
+                          <tr key={index} style={{ borderBottom: "1px solid #ffcdd2", background: index % 2 === 0 ? "#fff" : "#fff5f5" }}>
+                            <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#666", fontWeight: "600" }}>{errorRow.row}</td>
+                            <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
+                              {errorRow.data.name || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                            </td>
+                            <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
+                              {errorRow.data.email || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                            </td>
+                            <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
+                              {errorRow.data.phone || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                            </td>
+                            <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
+                              {errorRow.data.subscriptionType || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}
+                            </td>
+                            <td style={{ padding: "12px", color: "#c62828" }}>
+                              <ul style={{ margin: 0, paddingLeft: "20px" }}>
+                                {errorRow.errors.map((error, errIndex) => (
+                                  <li key={errIndex} style={{ marginBottom: "4px", fontSize: "0.8rem" }}>
+                                    {error}
+                                  </li>
+                                ))}
+                              </ul>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ padding: "20px", borderTop: "1px solid #e0e0e0", display: "flex", justifyContent: "flex-end", gap: "12px", flexShrink: 0 }}>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => {
+                  if (!isImporting) {
+                    setShowImportPreview(false);
+                    setImportPreviewData([]);
+                    setImportErrors([]);
+                    setImportFileName("");
+                  }
+                }}
+                disabled={isImporting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={handleConfirmImport}
+                disabled={isImporting || importPreviewData.length === 0}
+              >
+                {isImporting ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin" style={{ marginRight: "6px" }}></i>
+                    Importing...
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-check" style={{ marginRight: "6px" }}></i>
+                    Confirm Import ({importPreviewData.length} members)
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

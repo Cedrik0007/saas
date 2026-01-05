@@ -1,4 +1,6 @@
 import express from "express";
+import multer from "multer";
+import xlsx from "xlsx";
 import { ensureConnection } from "../config/database.js";
 import UserModel from "../models/User.js";
 import InvoiceModel from "../models/Invoice.js";
@@ -6,6 +8,9 @@ import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { sendAccountApprovalEmail } from "../utils/emailHelpers.js";
 
 const router = express.Router();
+
+// Configure multer for file uploads (memory storage)
+const upload = multer({ storage: multer.memoryStorage() });
 
 // GET all members
 router.get("/", async (req, res) => {
@@ -62,6 +67,18 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ message: "Member ID already exists" });
     }
     
+    // Parse start_date if provided, otherwise use current date
+    let startDate = null;
+    if (req.body.start_date) {
+      startDate = new Date(req.body.start_date);
+    } else if (req.body.nextDue) {
+      // Fallback: use nextDue if start_date not provided (for backward compatibility)
+      startDate = new Date(req.body.nextDue);
+    } else {
+      // Default to current date if neither provided
+      startDate = new Date();
+    }
+
     const newMember = new UserModel({
       id: memberId,
       name: req.body.name || '',
@@ -73,6 +90,13 @@ router.post("/", async (req, res) => {
       nextDue: req.body.nextDue || '',
       lastPayment: req.body.lastPayment || '',
       subscriptionType: req.body.subscriptionType || 'Lifetime',
+      // Payment management fields - set defaults on creation
+      start_date: startDate,
+      payment_status: 'unpaid',
+      payment_mode: null,
+      last_payment_date: null,
+      next_due_date: null, // Do NOT calculate during creation
+      payment_proof: null,
     });
     
     const savedMember = await newMember.save();
@@ -208,6 +232,335 @@ router.delete("/:id", async (req, res) => {
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting member:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST import members from CSV/Excel file
+router.post("/import", upload.single("file"), async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const fileName = req.file.originalname.toLowerCase();
+    const isCSV = fileName.endsWith('.csv');
+    const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+
+    if (!isCSV && !isExcel) {
+      return res.status(400).json({ error: "File must be CSV or Excel format (.csv, .xlsx, .xls)" });
+    }
+
+    let membersData = [];
+    let rowErrors = []; // Track errors for each row
+
+    if (isCSV) {
+      // Parse CSV
+      const text = req.file.buffer.toString('utf-8');
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        return res.status(400).json({ error: "CSV file must have at least a header row and one data row" });
+      }
+
+      // Parse header row
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+      
+      // Find column indices
+      const nameIndex = headers.findIndex(h => h.includes('name'));
+      const emailIndex = headers.findIndex(h => h.includes('email'));
+      const phoneIndex = headers.findIndex(h => h.includes('phone') || h.includes('whatsapp') || h.includes('mobile'));
+      const statusIndex = headers.findIndex(h => h.includes('status'));
+      const subscriptionTypeIndex = headers.findIndex(h => h.includes('subscription') || h.includes('type'));
+      const startDateIndex = headers.findIndex(h => h.includes('start') || h.includes('date'));
+
+      if (nameIndex === -1 || emailIndex === -1) {
+        return res.status(400).json({ error: "CSV must have 'name' and 'email' columns" });
+      }
+
+      // Parse data rows
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        const rowNumber = i + 1; // Row number for error reporting (1-indexed, +1 for header)
+        const errors = [];
+
+        // Handle CSV with quoted fields
+        const values = [];
+        let current = '';
+        let inQuotes = false;
+        
+        for (let j = 0; j < line.length; j++) {
+          const char = line[j];
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            values.push(current.trim().replace(/^"|"$/g, ''));
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        values.push(current.trim().replace(/^"|"$/g, ''));
+
+        const name = values[nameIndex]?.trim();
+        const email = values[emailIndex]?.trim();
+        
+        // Validate required fields
+        if (!name) {
+          errors.push("Name is required");
+        } else if (name.length < 2) {
+          errors.push("Name must be at least 2 characters");
+        }
+        
+        if (!email) {
+          errors.push("Email is required");
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          errors.push("Invalid email format");
+        }
+
+        // Parse start date
+        let startDate = new Date();
+        if (startDateIndex !== -1 && values[startDateIndex]?.trim()) {
+          const dateStr = values[startDateIndex].trim();
+          const parsedDate = new Date(dateStr);
+          if (!isNaN(parsedDate.getTime())) {
+            startDate = parsedDate;
+          } else {
+            errors.push("Invalid start date format");
+          }
+        }
+
+        // Store row data with errors
+        if (errors.length > 0) {
+          rowErrors.push({
+            row: rowNumber,
+            errors: errors,
+            data: {
+              name: name || '',
+              email: email || '',
+              phone: phoneIndex !== -1 ? (values[phoneIndex]?.trim() || '') : '',
+              subscriptionType: subscriptionTypeIndex !== -1 ? (values[subscriptionTypeIndex]?.trim() || 'Lifetime') : 'Lifetime',
+              start_date: startDate.toISOString().split('T')[0],
+            }
+          });
+        } else {
+          membersData.push({
+            name: name,
+            email: email.toLowerCase(),
+            phone: phoneIndex !== -1 ? (values[phoneIndex]?.trim() || '') : '',
+            status: statusIndex !== -1 ? (values[statusIndex]?.trim() || 'Active') : 'Active',
+            subscriptionType: subscriptionTypeIndex !== -1 ? (values[subscriptionTypeIndex]?.trim() || 'Lifetime') : 'Lifetime',
+            start_date: startDate.toISOString().split('T')[0], // Format as YYYY-MM-DD
+            payment_status: 'unpaid',
+            next_due_date: null,
+            _rowNumber: rowNumber, // Store original row number for error reporting
+          });
+        }
+      }
+    } else {
+      // Parse Excel file
+      const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+
+      if (data.length < 2) {
+        return res.status(400).json({ error: "Excel file must have at least a header row and one data row" });
+      }
+
+      // Get headers from first row
+      const headers = data[0].map(h => String(h || '').trim().toLowerCase());
+      
+      // Find column indices
+      const nameIndex = headers.findIndex(h => h.includes('name'));
+      const emailIndex = headers.findIndex(h => h.includes('email'));
+      const phoneIndex = headers.findIndex(h => h.includes('phone') || h.includes('whatsapp') || h.includes('mobile'));
+      const statusIndex = headers.findIndex(h => h.includes('status'));
+      const subscriptionTypeIndex = headers.findIndex(h => h.includes('subscription') || h.includes('type'));
+      const startDateIndex = headers.findIndex(h => h.includes('start') || h.includes('date'));
+
+      if (nameIndex === -1 || emailIndex === -1) {
+        return res.status(400).json({ error: "Excel file must have 'name' and 'email' columns" });
+      }
+
+      // Parse data rows
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row || row.length === 0) continue;
+
+        const rowNumber = i + 1; // Row number for error reporting (1-indexed, +1 for header)
+        const errors = [];
+
+        const name = String(row[nameIndex] || '').trim();
+        const email = String(row[emailIndex] || '').trim();
+        
+        // Validate required fields
+        if (!name) {
+          errors.push("Name is required");
+        } else if (name.length < 2) {
+          errors.push("Name must be at least 2 characters");
+        }
+        
+        if (!email) {
+          errors.push("Email is required");
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          errors.push("Invalid email format");
+        }
+
+        // Parse start date
+        let startDate = new Date();
+        if (startDateIndex !== -1 && row[startDateIndex] !== undefined && row[startDateIndex] !== null) {
+          const dateValue = row[startDateIndex];
+          let parsedDate;
+          
+          // Excel dates are numbers (serial date), regular dates are strings
+          if (typeof dateValue === 'number') {
+            // Excel date serial number - convert to JavaScript date
+            // Excel epoch is 1900-01-01, but Excel incorrectly treats 1900 as a leap year
+            const excelEpoch = new Date(1899, 11, 30); // Dec 30, 1899
+            parsedDate = new Date(excelEpoch.getTime() + (dateValue - 1) * 86400000);
+          } else if (typeof dateValue === 'string' && dateValue.trim()) {
+            parsedDate = new Date(dateValue);
+          } else if (dateValue instanceof Date) {
+            parsedDate = dateValue;
+          }
+          
+          if (parsedDate && !isNaN(parsedDate.getTime())) {
+            startDate = parsedDate;
+          } else if (startDateIndex !== -1 && row[startDateIndex] !== undefined && row[startDateIndex] !== null) {
+            errors.push("Invalid start date format");
+          }
+        }
+
+        // Store row data with errors
+        if (errors.length > 0) {
+          rowErrors.push({
+            row: rowNumber,
+            errors: errors,
+            data: {
+              name: name || '',
+              email: email || '',
+              phone: phoneIndex !== -1 ? String(row[phoneIndex] || '').trim() : '',
+              subscriptionType: subscriptionTypeIndex !== -1 ? String(row[subscriptionTypeIndex] || 'Lifetime').trim() : 'Lifetime',
+              start_date: startDate.toISOString().split('T')[0],
+            }
+          });
+        } else {
+          membersData.push({
+            name: name,
+            email: email.toLowerCase(),
+            phone: phoneIndex !== -1 ? String(row[phoneIndex] || '').trim() : '',
+            status: statusIndex !== -1 ? String(row[statusIndex] || 'Active').trim() : 'Active',
+            subscriptionType: subscriptionTypeIndex !== -1 ? String(row[subscriptionTypeIndex] || 'Lifetime').trim() : 'Lifetime',
+            start_date: startDate.toISOString().split('T')[0], // Format as YYYY-MM-DD
+            payment_status: 'unpaid',
+            next_due_date: null,
+            _rowNumber: rowNumber, // Store original row number for error reporting
+          });
+        }
+      }
+    }
+
+    // Check for duplicate emails within the file and against database
+    const emailMap = new Map(); // Track emails within file: email -> {row, memberIndex}
+    const emailsToCheck = []; // Collect all valid emails to check against DB
+    
+    // First pass: Check for duplicates within the file
+    const membersToRemove = new Set(); // Track indices to remove
+    
+    for (let i = 0; i < membersData.length; i++) {
+      const member = membersData[i];
+      const emailLower = member.email.toLowerCase();
+      const rowNumber = member._rowNumber || (i + 2);
+      
+      if (emailMap.has(emailLower)) {
+        // This email was seen before in the file
+        const firstOccurrence = emailMap.get(emailLower);
+        // Add error to current row
+        rowErrors.push({
+          row: rowNumber,
+          errors: [`Email "${member.email}" already exists in row ${firstOccurrence.row}`],
+          data: {
+            name: member.name || '',
+            email: member.email || '',
+            phone: member.phone || '',
+            subscriptionType: member.subscriptionType || 'Lifetime',
+            start_date: member.start_date || '',
+          }
+        });
+        membersToRemove.add(i);
+      } else {
+        emailMap.set(emailLower, { row: rowNumber, memberIndex: i });
+        emailsToCheck.push(emailLower);
+      }
+    }
+
+    // Remove duplicates from membersData (in reverse order to maintain indices)
+    for (let i = membersData.length - 1; i >= 0; i--) {
+      if (membersToRemove.has(i)) {
+        membersData.splice(i, 1);
+      }
+    }
+
+    // Check against database for existing emails
+    if (emailsToCheck.length > 0) {
+      const existingMembers = await UserModel.find({
+        email: { $in: emailsToCheck }
+      }).select('email').lean();
+
+      const existingEmails = new Set(
+        existingMembers.map(m => m.email.toLowerCase())
+      );
+
+      // Check each member's email against database
+      const dbDuplicatesToRemove = [];
+      for (let i = 0; i < membersData.length; i++) {
+        const member = membersData[i];
+        const emailLower = member.email.toLowerCase();
+        
+        if (existingEmails.has(emailLower)) {
+          // Email exists in database
+          const rowNumber = member._rowNumber || (i + 2);
+          rowErrors.push({
+            row: rowNumber,
+            errors: [`Email "${member.email}" already exists in the system`],
+            data: {
+              name: member.name || '',
+              email: member.email || '',
+              phone: member.phone || '',
+              subscriptionType: member.subscriptionType || 'Lifetime',
+              start_date: member.start_date || '',
+            }
+          });
+          dbDuplicatesToRemove.push(i);
+        }
+      }
+
+      // Remove database duplicates (in reverse order)
+      for (let i = dbDuplicatesToRemove.length - 1; i >= 0; i--) {
+        membersData.splice(dbDuplicatesToRemove[i], 1);
+      }
+    }
+
+    // Clean up _rowNumber from membersData before sending response
+    membersData = membersData.map(({ _rowNumber, ...member }) => member);
+
+    if (membersData.length === 0 && rowErrors.length === 0) {
+      return res.status(400).json({ error: "No valid member data found in file" });
+    }
+
+    res.json({ 
+      success: true, 
+      count: membersData.length,
+      members: membersData,
+      errors: rowErrors // Include errors in response
+    });
+  } catch (error) {
+    console.error("Error importing members:", error);
     res.status(500).json({ error: error.message });
   }
 });
