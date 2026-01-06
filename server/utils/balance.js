@@ -15,14 +15,15 @@ export async function calculateAndUpdateMemberBalance(memberId) {
     
     // Calculate total outstanding
     const outstandingTotal = unpaidInvoices.reduce((sum, inv) => {
-      const amount = parseFloat(inv.amount.replace("$", "").replace(",", "")) || 0;
+      // Handle both "$" and "HK$" formats
+      const amount = parseFloat(inv.amount.replace(/HK\$|\$/g, "").replace(",", "")) || 0;
       return sum + amount;
     }, 0);
     
     // Format balance string
-    let balanceString = `$${outstandingTotal.toFixed(2)}`;
+    let balanceString = `HK$${outstandingTotal.toFixed(2)}`;
     if (outstandingTotal === 0) {
-      balanceString = "$0";
+      balanceString = "HK$0";
     } else {
       // Check if any are overdue
       const hasOverdue = unpaidInvoices.some(inv => inv.status === "Overdue");

@@ -945,7 +945,12 @@ function AdminPage() {
       .map(payment => ({
         Member: payment.member || "Unknown",
         Period: payment.period || "N/A",
-        Amount: payment.amount || "$0",
+        Amount: payment.amount
+          ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}`
+          : "HK$0.00",
         Method: getPaymentMethodDisplay(payment),
         Status: payment.status || "Pending",
         Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString() : "N/A"),
@@ -1128,10 +1133,10 @@ function AdminPage() {
       let csvContent = "Financial Report\n";
       csvContent += `Period,${dateRange.from} to ${dateRange.to}\n\n`;
       csvContent += "Summary\n";
-      csvContent += `Collected,$${reportStats.collected.toFixed(2)}\n`;
-      csvContent += `Expected,$${reportStats.expected.toFixed(2)}\n`;
-      csvContent += `Outstanding,$${dashboardMetrics.outstanding.toFixed(2)}\n`;
-      csvContent += `Average per Member,$${reportStats.averagePerMember.toFixed(2)}\n`;
+      csvContent += `Collected,HK$${reportStats.collected.toFixed(2)}\n`;
+      csvContent += `Expected,HK$${reportStats.expected.toFixed(2)}\n`;
+      csvContent += `Outstanding,HK$${dashboardMetrics.outstanding.toFixed(2)}\n`;
+      csvContent += `Average per Member,HK$${reportStats.averagePerMember.toFixed(2)}\n`;
       csvContent += `Total Transactions,${reportStats.transactionCount}\n\n`;
       
       // Payment method breakdown - Hidden
@@ -1149,7 +1154,7 @@ function AdminPage() {
           const date = payment.date || "N/A";
           const member = payment.member || "Unknown";
           const period = payment.period || "N/A";
-          const amount = payment.amount || "$0";
+          const amount = payment.amount || "HK$0";
           const method = getPaymentMethodDisplay(payment);
           const status = payment.status || "N/A";
           const reference = payment.reference || "N/A";
@@ -1222,13 +1227,13 @@ function AdminPage() {
 
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
-      doc.text(`Collected: $${reportStats.collected.toFixed(2)}`, margin, yPos);
+      doc.text(`Collected: HK$${reportStats.collected.toFixed(2)}`, margin, yPos);
       yPos += lineHeight;
-      doc.text(`Expected: $${reportStats.expected.toFixed(2)}`, margin, yPos);
+      doc.text(`Expected: HK$${reportStats.expected.toFixed(2)}`, margin, yPos);
       yPos += lineHeight;
-      doc.text(`Outstanding: $${dashboardMetrics.outstanding.toFixed(2)}`, margin, yPos);
+      doc.text(`Outstanding: HK$${dashboardMetrics.outstanding.toFixed(2)}`, margin, yPos);
       yPos += lineHeight;
-      doc.text(`Average per Member: $${reportStats.averagePerMember.toFixed(2)}`, margin, yPos);
+      doc.text(`Average per Member: HK$${reportStats.averagePerMember.toFixed(2)}`, margin, yPos);
       yPos += lineHeight;
       doc.text(`Total Transactions: ${reportStats.transactionCount}`, margin, yPos);
       yPos += 10;
@@ -1291,7 +1296,7 @@ function AdminPage() {
           }
           doc.text(payment.date || "N/A", margin, yPos);
           doc.text((payment.member || "Unknown").substring(0, 15), margin + 40, yPos);
-          doc.text(payment.amount || "$0", margin + 90, yPos);
+          doc.text(payment.amount || "HK$0", margin + 90, yPos);
           doc.text(getPaymentMethodDisplay(payment).substring(0, 15), margin + 130, yPos);
           yPos += lineHeight;
         });
@@ -1527,21 +1532,21 @@ function AdminPage() {
       .replace(/\{\{member_name\}\}/g, "John Doe")
       .replace(/\{\{member_id\}\}/g, "MEMBER001")
       .replace(/\{\{member_email\}\}/g, "john.doe@example.com")
-      .replace(/\{\{total_due\}\}/g, "$250.00")
+      .replace(/\{\{total_due\}\}/g, "HK$250.00")
       .replace(/\{\{invoice_count\}\}/g, "3")
       .replace(/\{\{invoice_list\}\}/g, `
         <li style="margin-bottom: 10px;">
-          <strong>January 2025</strong>: $100.00 
+          <strong>January 2025</strong>: HK$100.00 
           <span style="color: #666;">(Due: 15 Jan 2025)</span> - 
           <strong style="color: #ef4444">Overdue</strong>
         </li>
         <li style="margin-bottom: 10px;">
-          <strong>February 2025</strong>: $100.00 
+          <strong>February 2025</strong>: HK$100.00 
           <span style="color: #666;">(Due: 15 Feb 2025)</span> - 
           <strong style="color: #ef4444">Unpaid</strong>
         </li>
         <li style="margin-bottom: 10px;">
-          <strong>March 2025</strong>: $50.00 
+          <strong>March 2025</strong>: HK$50.00 
           <span style="color: #666;">(Due: 15 Mar 2025)</span> - 
           <strong style="color: #ef4444">Unpaid</strong>
         </li>
@@ -1711,7 +1716,7 @@ function AdminPage() {
       const payment = paymentHistory.find(p => p.id === paymentId) || payments.find(p => p.id === paymentId);
       if (payment && payment.memberId) {
         const newBalance = calculateMemberBalance(payment.memberId);
-        const balanceText = newBalance > 0 ? `$${newBalance.toFixed(2)} Outstanding` : "$0";
+        const balanceText = newBalance > 0 ? `HK$${newBalance.toFixed(2)} Outstanding` : "HK$0";
         
         try {
           await updateMember(payment.memberId, { balance: balanceText });
@@ -2080,7 +2085,7 @@ function AdminPage() {
 
 Payment Reminder
 
-*Total Outstanding:* $${totalDue.toFixed(2)}
+*Total Outstanding:* HK$${totalDue.toFixed(2)}
 
 *Invoices (${memberUnpaidInvoices.length}):*
 ${invoiceList}
@@ -2636,7 +2641,7 @@ Subscription Manager HK`;
         phone: "",
         password: "",
         status: "Active",
-        balance: "$0",
+        balance: "HK$0",
         nextDue: "",
         lastPayment: "",
         subscriptionType: "Lifetime",
@@ -2691,7 +2696,7 @@ Subscription Manager HK`;
       memberId: invoiceForm.memberId,
       memberName: member?.name || "",
       period: invoiceForm.period,
-      amount: `$${amountNum.toFixed(2)}`,
+      amount: `HK$${amountNum.toFixed(2)}`,
       status: "Unpaid",
       due: invoiceForm.due,
       method: "-",
@@ -2998,7 +3003,7 @@ Subscription Manager HK`;
 
 Payment Reminder
 
-*Total Outstanding:* $${totalDue.toFixed(2)}
+*Total Outstanding:* HK$${totalDue.toFixed(2)}
 
 *Invoices (${memberUnpaidInvoices.length}):*
 ${invoiceList}
@@ -3172,19 +3177,37 @@ Subscription Manager HK`;
     // Create invoice list for email
     const invoiceListText = memberUnpaidInvoices
       .map(
-        (inv) =>
-          `• ${inv.period}: ${inv.amount} (Due: ${inv.due}) - ${inv.status}`
+        (inv) => {
+          // Convert $ to HK$ in amount for display
+          let formattedAmount = inv.amount || 'HK$0';
+          formattedAmount = String(formattedAmount).trim();
+          if (formattedAmount.includes('$') && !formattedAmount.includes('HK$')) {
+            formattedAmount = formattedAmount.replace(/\$/g, 'HK$');
+          } else if (!formattedAmount.startsWith('HK$') && !formattedAmount.startsWith('$')) {
+            formattedAmount = `HK$${formattedAmount}`;
+          }
+          return `• ${inv.period}: ${formattedAmount} (Due: ${inv.due}) - ${inv.status}`;
+        }
       )
       .join("\n");
 
     const invoiceListHTML = memberUnpaidInvoices
       .map(
-        (inv) =>
-          `<li style="margin-bottom: 10px;">
-            <strong>${inv.period}</strong>: ${inv.amount} 
+        (inv) => {
+          // Convert $ to HK$ in amount for display
+          let formattedAmount = inv.amount || 'HK$0';
+          formattedAmount = String(formattedAmount).trim();
+          if (formattedAmount.includes('$') && !formattedAmount.includes('HK$')) {
+            formattedAmount = formattedAmount.replace(/\$/g, 'HK$');
+          } else if (!formattedAmount.startsWith('HK$') && !formattedAmount.startsWith('$')) {
+            formattedAmount = `HK$${formattedAmount}`;
+          }
+          return `<li style="margin-bottom: 10px;">
+            <strong>${inv.period}</strong>: ${formattedAmount} 
             <span style="color: #666;">(Due: ${inv.due})</span> - 
             <strong style="color: ${inv.status === 'Overdue' ? '#ef4444' : '#ef4444'}">${inv.status}</strong>
-          </li>`
+          </li>`;
+        }
       )
       .join("");
 
@@ -3203,7 +3226,7 @@ Subscription Manager HK`;
           toEmail: memberData.email,
           toName: memberData.name,
           memberId: memberData.id,
-          totalDue: `$${totalDue.toFixed(2)}`,
+          totalDue: `HK$${totalDue.toFixed(2)}`,
           invoiceCount: memberUnpaidInvoices.length,
           invoiceListText: invoiceListText,
           invoiceListHTML: invoiceListHTML,
@@ -3227,13 +3250,13 @@ Subscription Manager HK`;
         memberId: memberData.id,
         memberEmail: memberData.email,
         memberName: memberData.name,
-        message: `Payment reminder: ${memberData.name} (${memberData.email}) - $${totalDue.toFixed(2)} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
+        message: `Payment reminder: ${memberData.name} (${memberData.email}) - HK$${totalDue.toFixed(2)} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
         status: "Delivered",
       };
       addCommunication(comm);
 
       showToast(
-        `✓ Reminder email sent to ${memberData.name} for $${totalDue.toFixed(2)} outstanding!`
+        `✓ Reminder email sent to ${memberData.name} for HK$${totalDue.toFixed(2)} outstanding!`
       );
     } catch (error) {
       console.error("✗ Email send error:", error);
@@ -3245,7 +3268,7 @@ Subscription Manager HK`;
         memberId: memberData.id,
         memberEmail: memberData.email,
         memberName: memberData.name,
-        message: `Reminder attempt to ${memberData.name} - $${totalDue.toFixed(2)} due`,
+        message: `Reminder attempt to ${memberData.name} - HK$${totalDue.toFixed(2)} due`,
         status: "Failed",
       };
       addCommunication(comm);
@@ -3723,11 +3746,11 @@ Subscription Manager HK`;
                       icon="fas fa-dollar-sign"
                       iconClass="admin-dashboard-kpi-icon--green"
                       label="Total Collected"
-                      value={`$${formatNumber(dashboardMetrics.collectedMonth, {
+                      value={`HK$${formatNumber(dashboardMetrics.collectedMonth, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}`}
-                      description={`$${formatNumber(dashboardMetrics.collectedYear, {
+                      description={`HK$${formatNumber(dashboardMetrics.collectedYear, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })} YTD`}
@@ -3737,11 +3760,11 @@ Subscription Manager HK`;
                       icon="fas fa-exclamation-triangle"
                       iconClass="admin-dashboard-kpi-icon--red"
                       label="Total Outstanding"
-                      value={`$${formatNumber(dashboardMetrics.outstanding, {
+                      value={`HK$${formatNumber(dashboardMetrics.outstanding, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}`}
-                      description={`Expected $${formatNumber(dashboardMetrics.expectedAnnual, {
+                      description={`Expected HK$${formatNumber(dashboardMetrics.expectedAnnual, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}`}
@@ -3768,7 +3791,7 @@ Subscription Manager HK`;
                     <div className="card-header">
                       <div>
                         <h4><i className="fas fa-chart-bar admin-dashboard-chart-header-icon"></i>Monthly Collections · Last 12 Months</h4>
-                        <p>Expected contribution is $800 per member per year</p>
+                        <p>Expected contribution is HK$800 per member per year</p>
                       </div>
                     </div>
                     <div 
@@ -4163,8 +4186,8 @@ Subscription Manager HK`;
                             value={memberForm.subscriptionType || "Lifetime"}
                             onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
                           >
-                            <option value="Lifetime">Lifetime - $250/year</option>
-                            <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - $500/year</option>
+                            <option value="Lifetime">Lifetime - HK$250/year</option>
+                            <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - HK$500/year</option>
                           </select>
                         </label>
                       )}
@@ -4682,7 +4705,7 @@ Subscription Manager HK`;
                                                 fontWeight: numericOutstanding > 0 ? 600 : 500,
                                               }}
                                             >
-                                              $
+                                              HK$
                                               {formatNumber(numericOutstanding, {
                                                 minimumFractionDigits: 2,
                                                 maximumFractionDigits: 2,
@@ -4885,7 +4908,7 @@ Subscription Manager HK`;
                             const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
                             return sum + amount;
                           }, 0);
-                          return `$${outstandingTotal.toFixed(2)}`;
+                          return `HK$${outstandingTotal.toFixed(2)}`;
                         })()}
                       </h4>
                     </div>
@@ -4987,7 +5010,7 @@ Subscription Manager HK`;
                           <strong>{overdueInvoices.length} overdue invoice{overdueInvoices.length > 1 ? "s" : ""}</strong>{" "}
                           totaling{" "}
                           <strong>
-                            $
+                            HK$
                             {formatNumber(outstandingTotal, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
@@ -5057,7 +5080,7 @@ Subscription Manager HK`;
                                 color: "#666",
                                 fontWeight: "500"
                               }}>
-                                Total Outstanding: <strong style={{ color: "#1a1a1a" }}>${outstandingTotal.toFixed(2)}</strong>
+                                Total Outstanding: <strong style={{ color: "#1a1a1a" }}>HK${outstandingTotal.toFixed(2)}</strong>
                                 {unpaidInvoices.length > 0 && (
                                   <span style={{ marginLeft: "8px", color: "#666" }}>
                                     ({unpaidInvoices.length} unpaid invoice{unpaidInvoices.length > 1 ? 's' : ''})
@@ -5119,7 +5142,12 @@ Subscription Manager HK`;
                           return {
                           "Invoice #": invoice.id,
                           Period: invoice.period,
-                          Amount: invoice.amount,
+                          Amount: invoice.amount
+                            ? `HK$${formatNumber(parseFloat(invoice.amount.replace(/[^0-9.]/g, '') || 0), {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}`
+                            : "HK$0.00",
                           Status: {
                             render: () => (
                               <span className={statusClass[invoice.status]}>
@@ -6065,9 +6093,9 @@ Subscription Manager HK`;
                       }}
                     >
                       <option value="">Select Invoice Type</option>
-                      <option value="Lifetime">Lifetime - $250</option>
-                      <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - $500</option>
-                      {/* <option value="Eid">Eid - $100</option> */}
+                      <option value="Lifetime">Lifetime - HK$250</option>
+                      <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - HK$500</option>
+                      {/* <option value="Eid">Eid - HK$100</option> */}
                     </select>
                   </label>
 
@@ -6232,8 +6260,8 @@ Subscription Manager HK`;
                     <p style={{ margin: "4px 0" }}>
                       <strong>Amount:</strong>{" "}
                       {invoiceForm.amount
-                        ? `$${Number(invoiceForm.amount || 0).toFixed(2)}`
-                        : "$0.00"}
+                        ? `HK$${Number(invoiceForm.amount || 0).toFixed(2)}`
+                        : "HK$0.00"}
                     </p>
                     <p style={{ margin: "4px 0" }}>
                       <strong>Due Date:</strong>{" "}
@@ -6287,7 +6315,7 @@ Subscription Manager HK`;
                           memberId: invoiceForm.memberId,
                           memberName: member?.name || "",
                           period: invoiceForm.period,
-                          amount: `$${amountNum.toFixed(2)}`,
+                          amount: `HK$${amountNum.toFixed(2)}`,
                           status: "Unpaid",
                           due: invoiceForm.due,
                           method: "-",
@@ -6320,19 +6348,37 @@ Subscription Manager HK`;
                         // Create invoice list for email
                         const invoiceListText = allUnpaidInvoices
                           .map(
-                            (inv) =>
-                              `• ${inv.period}: ${inv.amount} (Due: ${inv.due}) - ${inv.status}`
+                            (inv) => {
+                              // Convert $ to HK$ in amount for display
+                              let formattedAmount = inv.amount || 'HK$0';
+                              formattedAmount = String(formattedAmount).trim();
+                              if (formattedAmount.includes('$') && !formattedAmount.includes('HK$')) {
+                                formattedAmount = formattedAmount.replace(/\$/g, 'HK$');
+                              } else if (!formattedAmount.startsWith('HK$') && !formattedAmount.startsWith('$')) {
+                                formattedAmount = `HK$${formattedAmount}`;
+                              }
+                              return `• ${inv.period}: ${formattedAmount} (Due: ${inv.due}) - ${inv.status}`;
+                            }
                           )
                           .join("\n");
 
                         const invoiceListHTML = allUnpaidInvoices
                           .map(
-                            (inv) =>
-                              `<li style="margin-bottom: 10px;">
-                                <strong>${inv.period}</strong>: ${inv.amount} 
+                            (inv) => {
+                              // Convert $ to HK$ in amount for display
+                              let formattedAmount = inv.amount || 'HK$0';
+                              formattedAmount = String(formattedAmount).trim();
+                              if (formattedAmount.includes('$') && !formattedAmount.includes('HK$')) {
+                                formattedAmount = formattedAmount.replace(/\$/g, 'HK$');
+                              } else if (!formattedAmount.startsWith('HK$') && !formattedAmount.startsWith('$')) {
+                                formattedAmount = `HK$${formattedAmount}`;
+                              }
+                              return `<li style="margin-bottom: 10px;">
+                                <strong>${inv.period}</strong>: ${formattedAmount} 
                                 <span style="color: #666;">(Due: ${inv.due})</span> - 
                                 <strong>${inv.status}</strong>
-                              </li>`
+                              </li>`;
+                            }
                           )
                           .join("");
 
@@ -6351,7 +6397,7 @@ Subscription Manager HK`;
                               toEmail: member.email,
                               toName: member.name,
                               memberId: member.id,
-                              totalDue: `$${totalDue.toFixed(2)}`,
+                              totalDue: `HK$${totalDue.toFixed(2)}`,
                               invoiceCount: allUnpaidInvoices.length,
                               invoiceListText: invoiceListText,
                               invoiceListHTML: invoiceListHTML,
@@ -6793,7 +6839,7 @@ Subscription Manager HK`;
                                 color: "#666"
                               }}>
                                 <span>
-                                  <strong style={{ color: "#000" }}>${totalDue.toFixed(2)}</strong> outstanding
+                                  <strong style={{ color: "#000" }}>HK${totalDue.toFixed(2)}</strong> outstanding
                                 </span>
                                 {overdueCount > 0 && (
                                   <span style={{ color: "#ef4444", fontWeight: "600" }}>
@@ -8797,7 +8843,7 @@ Subscription Manager HK`;
                                 amount: e.target.value,
                               })
                             }
-                            placeholder="$50"
+                            placeholder="HK$50"
                             required
                           />
                         </label>
@@ -8999,7 +9045,12 @@ Subscription Manager HK`;
                                 }) : "N/A"),
                                 Member: payment.member || "Unknown",
                                 "Invoice ID": payment.invoiceId || "N/A",
-                                Amount: payment.amount || "$0",
+                                Amount: payment.amount
+                                  ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}`
+                                  : "HK$0.00",
                                 Method: getPaymentMethodDisplay(payment),
                                 Screenshot: {
                                   render: () => payment.screenshot ? (
@@ -9228,7 +9279,7 @@ Subscription Manager HK`;
                           Total Unpaid
                         </p>
                         <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">
-                          ${formatNumber(totalUnpaidAmount, {
+                          HK${formatNumber(totalUnpaidAmount, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
@@ -9240,7 +9291,7 @@ Subscription Manager HK`;
                           Total Collected
                         </p>
                         <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--green">
-                          ${formatNumber(totalPaidAmount, {
+                          HK${formatNumber(totalPaidAmount, {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
@@ -9356,7 +9407,12 @@ Subscription Manager HK`;
                                   "Invoice ID": invoice.id || invoice.invoiceId || "N/A",
                                   "Member": invoice.memberName || invoice.member || "Unknown",
                                   "Period": invoice.period || "N/A",
-                                  "Amount": invoice.amount || "$0",
+                                  "Amount": invoice.amount
+                                    ? `HK$${formatNumber(parseFloat(invoice.amount.replace(/[^0-9.]/g, '') || 0), {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}`
+                                    : "HK$0.00",
                                   "Due Date": invoice.due ? new Date(invoice.due).toLocaleDateString('en-GB', {
                                     day: '2-digit',
                                     month: 'short',
@@ -9801,7 +9857,12 @@ Subscription Manager HK`;
                                 }) : "N/A"),
                                 Member: payment.member || "Unknown",
                                 "Invoice ID": payment.invoiceId || "N/A",
-                                Amount: payment.amount || "$0",
+                                Amount: payment.amount
+                                  ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}`
+                                  : "HK$0.00",
                                 Method: getPaymentMethodDisplay(payment),
                                 Screenshot: {
                                   render: () => payment.screenshot ? (
@@ -11042,7 +11103,7 @@ Subscription Manager HK`;
                               <div className="text-sm text-muted">
                                 Total donations:{" "}
                                 <strong>
-                                  $
+                                  HK$
                                   {formatNumber(filteredDonations.reduce((sum, d) => {
                                     const val = parseFloat(d?.amount || 0);
                                     return sum + (isNaN(val) ? 0 : val);
@@ -11134,11 +11195,11 @@ Subscription Manager HK`;
                                     <span className="badge badge-inactive">Non-Member</span>
                                   ),
                                   Amount: donation.amount
-                                    ? `$${formatNumber(Number(donation.amount), {
+                                    ? `HK$${formatNumber(Number(donation.amount), {
                                         minimumFractionDigits: 2,
                                         maximumFractionDigits: 2,
                                       })}`
-                                    : "$0.00",
+                                    : "HK$0.00",
                                   Method: donation.method || "-",
                                   Notes: donation.notes || "-",
                                   Actions: {
@@ -11412,10 +11473,10 @@ Subscription Manager HK`;
                       Total Collected
                     </p>
                     <h4>
-                      ${reportStats.collected.toLocaleString()}
+                      HK${reportStats.collected.toLocaleString()}
                     </h4>
                     <small>
-                      {Math.round((reportStats.collected / reportStats.expected) * 100)}% of ${reportStats.expected.toLocaleString()} expected
+                      {Math.round((reportStats.collected / reportStats.expected) * 100)}% of HK${reportStats.expected.toLocaleString()} expected
                     </small>
                   </div> */}
                   <div className="card kpi">
@@ -11424,7 +11485,10 @@ Subscription Manager HK`;
                       Total Amount
                     </p>
                     <h4>
-                      ${reportStats.collected.toLocaleString()}
+                      HK${formatNumber(reportStats.collected, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </h4>
                     <small>Subscriptions + Donations</small>
                   </div>
@@ -11434,7 +11498,10 @@ Subscription Manager HK`;
                       Total Subscription Amount
                     </p>
                     <h4>
-                      ${reportStats.paymentsTotal.toLocaleString()}
+                      HK${formatNumber(reportStats.paymentsTotal, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </h4>
                     <small>{reportStats.paymentsCount} payment{reportStats.paymentsCount !== 1 ? 's' : ''}</small>
                   </div>
@@ -11444,7 +11511,10 @@ Subscription Manager HK`;
                       Total Donation Amount
                     </p>
                     <h4>
-                      ${reportStats.donationsTotal.toLocaleString()}
+                      HK${formatNumber(reportStats.donationsTotal, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </h4>
                     <small>{reportStats.donationsCount} donation{reportStats.donationsCount !== 1 ? 's' : ''}</small>
                   </div>
@@ -11454,7 +11524,10 @@ Subscription Manager HK`;
                       Outstanding
                     </p>
                     <h4>
-                      ${formatNumber(dashboardMetrics.outstanding)}
+                      HK${formatNumber(dashboardMetrics.outstanding, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </h4>
                     <small>Pending collection</small>
                   </div>
@@ -11465,9 +11538,9 @@ Subscription Manager HK`;
                       Avg per Member
                     </p>
                     <h4>
-                      ${reportStats.averagePerMember}
+                      HK${reportStats.averagePerMember}
                     </h4>
-                    <small>Goal: $800</small>
+                    <small>Goal: HK$800</small>
                   </div> */}
                   {/* Transactions card hidden */}
                   {/* <div className="card kpi">
@@ -11937,7 +12010,12 @@ Subscription Manager HK`;
                                 },
                                 "Member / Donor": transaction.source || "Unknown",
                                 "Invoice ID": transaction.invoiceId || (transaction.type === "Donation" ? "N/A" : "N/A"),
-                                Amount: transaction.amount || "$0",
+                                Amount: transaction.amount
+                                  ? `HK$${formatNumber(parseFloat(transaction.amount.toString().replace(/[^0-9.]/g, '') || 0), {
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}`
+                                  : "HK$0.00",
                                 Method: transaction.type === "Payment" 
                                   ? getPaymentMethodDisplay(transaction)
                                   : (transaction.method || "N/A"),

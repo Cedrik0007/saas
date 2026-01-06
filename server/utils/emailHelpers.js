@@ -128,7 +128,7 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
   <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
     <p><strong>Invoice ID:</strong> ${invoice?.id || payment?.invoiceId || 'N/A'}</p>
     <p><strong>Period:</strong> ${invoice?.period || payment?.period || 'N/A'}</p>
-    <p><strong>Amount:</strong> <span style="color: #4caf50; font-size: 18px; font-weight: bold;">${payment?.amount || invoice?.amount || '$0'}</span></p>
+    <p><strong>Amount:</strong> <span style="color: #4caf50; font-size: 18px; font-weight: bold;">${payment?.amount || invoice?.amount || 'HK$0'}</span></p>
     <p><strong>Payment Method:</strong> ${payment?.method || invoice?.method || 'N/A'}</p>
     <p><strong>Payment Date:</strong> ${payment?.date || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
     <p><strong>Status:</strong> <span style="color: #4caf50; font-weight: bold;">Confirmed</span></p>
@@ -185,7 +185,7 @@ export async function sendPaymentRejectionEmail(member, payment, invoice, reason
   <div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #ffc107;">
     <p><strong>Invoice ID:</strong> ${invoice?.id || payment.invoiceId || 'N/A'}</p>
     <p><strong>Period:</strong> ${invoice?.period || payment.period || 'N/A'}</p>
-    <p><strong>Amount:</strong> ${payment.amount || invoice?.amount || '$0'}</p>
+    <p><strong>Amount:</strong> ${payment.amount || invoice?.amount || 'HK$0'}</p>
     <p><strong>Payment Method:</strong> ${payment.method || 'N/A'}</p>
     ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ''}
   </div>
@@ -234,7 +234,7 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
   <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
     <p><strong>Member ID:</strong> {{member_id}}</p>
     <p><strong>Email:</strong> {{member_email}}</p>
-    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">${{total_due}}</span></p>
+    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">HK${{total_due}}</span></p>
   </div>
   <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
   <ul style="list-style: none; padding: 0;">
@@ -259,13 +259,24 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
 
     // Generate invoice list HTML
     const invoiceListHTML = unpaidInvoices
-      .map((inv) => 
-        `<li style="margin-bottom: 10px;">
-          <strong>${inv.period}</strong>: ${inv.amount} 
+      .map((inv) => {
+        // Convert $ to HK$ in amount for display (handle both $ and HK$ formats)
+        let formattedAmount = inv.amount || 'HK$0';
+        // Trim whitespace first
+        formattedAmount = String(formattedAmount).trim();
+        // If amount contains $ but not HK$, replace all $ with HK$
+        if (formattedAmount.includes('$') && !formattedAmount.includes('HK$')) {
+          formattedAmount = formattedAmount.replace(/\$/g, 'HK$');
+        } else if (!formattedAmount.startsWith('HK$') && !formattedAmount.startsWith('$')) {
+          // If amount doesn't start with currency symbol, add HK$
+          formattedAmount = `HK$${formattedAmount}`;
+        }
+        return `<li style="margin-bottom: 10px;">
+          <strong>${inv.period}</strong>: ${formattedAmount} 
           <span style="color: #666;">(Due: ${inv.due})</span> - 
           <strong style="color: ${inv.status === 'Overdue' ? '#d32f2f' : '#f57c00'}">${inv.status}</strong>
-        </li>`
-      )
+        </li>`;
+      })
       .join('');
 
     // Get payment methods from database (if available) or use default
@@ -304,7 +315,20 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
       to: member.email,
       subject: uniqueSubject,
       html: emailHTML,
-      text: `Dear ${member.name},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${member.id}\nTotal Outstanding: $${totalDue.toFixed(2)}\n\nOutstanding Invoices (${unpaidInvoices.length}):\n${unpaidInvoices.map(inv => `• ${inv.period}: ${inv.amount} (Due: ${inv.due}) - ${inv.status}`).join('\n')}\n\nPayment Methods: Available in member portal\n\nAccess Member Portal: ${portalLink}/member\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+      text: `Dear ${member.name},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${member.id}\nTotal Outstanding: HK$${totalDue.toFixed(2)}\n\nOutstanding Invoices (${unpaidInvoices.length}):\n${unpaidInvoices.map(inv => {
+        // Convert $ to HK$ in amount for display (handle both $ and HK$ formats)
+        let formattedAmount = inv.amount || 'HK$0';
+        // Trim whitespace first
+        formattedAmount = String(formattedAmount).trim();
+        // If amount contains $ but not HK$, replace all $ with HK$
+        if (formattedAmount.includes('$') && !formattedAmount.includes('HK$')) {
+          formattedAmount = formattedAmount.replace(/\$/g, 'HK$');
+        } else if (!formattedAmount.startsWith('HK$') && !formattedAmount.startsWith('$')) {
+          // If amount doesn't start with currency symbol, add HK$
+          formattedAmount = `HK$${formattedAmount}`;
+        }
+        return `• ${inv.period}: ${formattedAmount} (Due: ${inv.due}) - ${inv.status}`;
+      }).join('\n')}\n\nPayment Methods: Available in member portal\n\nAccess Member Portal: ${portalLink}/member\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
       // Add unique headers to prevent email threading
       messageId: generateUniqueMessageId(),
       headers: {

@@ -121,7 +121,7 @@ router.post("/send-reminder", async (req, res) => {
         <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
           <p><strong>Member ID:</strong> {{member_id}}</p>
           <p><strong>Email:</strong> {{member_email}}</p>
-          <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">\${{total_due}}</span></p>
+          <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">HK\${{total_due}}</span></p>
         </div>
         <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
         <ul style="list-style: none; padding: 0;">
@@ -143,6 +143,18 @@ router.post("/send-reminder", async (req, res) => {
       </div>
     `;
 
+    // Convert $ to HK$ in invoice lists if needed (safety check)
+    let finalInvoiceListHTML = invoiceListHTML || invoiceListText || '';
+    let finalInvoiceListText = invoiceListText || '';
+    
+    // Replace $ with HK$ in invoice lists (handle both HTML and text)
+    if (finalInvoiceListHTML.includes('$') && !finalInvoiceListHTML.includes('HK$')) {
+      finalInvoiceListHTML = finalInvoiceListHTML.replace(/\$/g, 'HK$');
+    }
+    if (finalInvoiceListText.includes('$') && !finalInvoiceListText.includes('HK$')) {
+      finalInvoiceListText = finalInvoiceListText.replace(/\$/g, 'HK$');
+    }
+
     // Replace template variables
     emailHTML = emailHTML
       .replace(/\{\{member_name\}\}/g, toName)
@@ -150,7 +162,7 @@ router.post("/send-reminder", async (req, res) => {
       .replace(/\{\{member_email\}\}/g, toEmail)
       .replace(/\{\{total_due\}\}/g, totalDue)
       .replace(/\{\{invoice_count\}\}/g, invoiceCount)
-      .replace(/\{\{invoice_list\}\}/g, invoiceListHTML || invoiceListText)
+      .replace(/\{\{invoice_list\}\}/g, finalInvoiceListHTML)
       .replace(/\{\{payment_methods\}\}/g, paymentMethods || 'Available in member portal')
       .replace(/\{\{portal_link\}\}/g, portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`);
 
@@ -173,7 +185,7 @@ router.post("/send-reminder", async (req, res) => {
       to: toEmail,
       subject: uniqueSubject,
       html: emailHTML,
-      text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${invoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+      text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
       // Add unique headers to prevent email threading
       messageId: generateUniqueMessageId(),
       headers: {

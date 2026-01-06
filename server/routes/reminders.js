@@ -93,7 +93,8 @@ router.post("/send", async (req, res) => {
         }
 
         const totalDue = unpaidInvoices.reduce((sum, inv) => {
-          return sum + parseFloat(inv.amount.replace('$', '').replace(',', '')) || 0;
+          // Handle both "$" and "HK$" formats
+          return sum + parseFloat(inv.amount.replace(/HK\$|\$/g, '').replace(',', '')) || 0;
         }, 0);
 
         const sent = await sendReminderEmail(member, unpaidInvoices, totalDue);
@@ -104,7 +105,7 @@ router.post("/send", async (req, res) => {
             memberEmail: member.email,
             sentAt: new Date(),
             reminderType: unpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming',
-            amount: `$${totalDue}`,
+            amount: `HK$${totalDue}`,
             invoiceCount: unpaidInvoices.length,
             status: "Delivered",
           });
@@ -116,7 +117,7 @@ router.post("/send", async (req, res) => {
             memberEmail: member.email,
             sentAt: new Date(),
             reminderType: unpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming',
-            amount: `$${totalDue}`,
+            amount: `HK$${totalDue}`,
             invoiceCount: unpaidInvoices.length,
             status: "Failed",
           });
@@ -140,7 +141,8 @@ router.post("/send", async (req, res) => {
       }
 
       const totalDue = unpaidInvoices.reduce((sum, inv) => {
-        return sum + parseFloat(inv.amount.replace('$', '').replace(',', '')) || 0;
+        // Handle both "$" and "HK$" formats
+        return sum + parseFloat(inv.amount.replace(/HK\$|\$/g, '').replace(',', '')) || 0;
       }, 0);
 
       const sent = await sendReminderEmail(member, unpaidInvoices, totalDue);
@@ -151,7 +153,7 @@ router.post("/send", async (req, res) => {
           memberEmail: member.email,
           sentAt: new Date(),
           reminderType: unpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming',
-          amount: `$${totalDue}`,
+          amount: `HK$${totalDue}`,
           invoiceCount: unpaidInvoices.length,
         });
         results.sent = 1;

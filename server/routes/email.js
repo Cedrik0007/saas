@@ -193,7 +193,7 @@ router.get("/template", async (req, res) => {
   <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
     <p><strong>Member ID:</strong> {{member_id}}</p>
     <p><strong>Email:</strong> {{member_email}}</p>
-    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">${{total_due}}</span></p>
+    <p><strong>Total Outstanding:</strong> <span style="color: #d32f2f; font-size: 18px; font-weight: bold;">HK${{total_due}}</span></p>
   </div>
   <h3 style="color: #333;">Outstanding Invoices ({{invoice_count}}):</h3>
   <ul style="list-style: none; padding: 0;">

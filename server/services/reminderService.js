@@ -82,7 +82,8 @@ export async function checkAndSendReminders() {
 
       // Calculate total due
       const totalDue = unpaidInvoices.reduce((sum, inv) => {
-        return sum + parseFloat(inv.amount.replace('$', '').replace(',', '')) || 0;
+        // Handle both "$" and "HK$" formats
+        return sum + parseFloat(inv.amount.replace(/HK\$|\$/g, '').replace(',', '')) || 0;
       }, 0);
 
       // Determine reminder type
@@ -132,11 +133,11 @@ export async function checkAndSendReminders() {
             memberEmail: member.email,
             sentAt: new Date(),
             reminderType: reminderType,
-            amount: `$${totalDue}`,
+            amount: `HK$${totalDue}`,
             invoiceCount: unpaidInvoices.length,
             status: "Delivered",
           });
-          console.log(`✓ Automated reminder sent to ${member.name} (${member.email}) - $${totalDue} due`);
+          console.log(`✓ Automated reminder sent to ${member.name} (${member.email}) - HK$${totalDue} due`);
           remindersSent++;
         } else {
           // Log failed reminder attempt
@@ -145,7 +146,7 @@ export async function checkAndSendReminders() {
             memberEmail: member.email,
             sentAt: new Date(),
             reminderType: reminderType,
-            amount: `$${totalDue}`,
+            amount: `HK$${totalDue}`,
             invoiceCount: unpaidInvoices.length,
             status: "Failed",
           });

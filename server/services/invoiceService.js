@@ -7,7 +7,7 @@ import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 // Helper function to create a subscription invoice
 async function createSubscriptionInvoice(member, subscriptionType, customPeriod = null) {
   try {
-    const invoiceAmount = subscriptionType === 'Yearly + Janaza Fund' ? '$500' : '$250';
+    const invoiceAmount = subscriptionType === 'Yearly + Janaza Fund' ? 'HK$500' : 'HK$250';
     const invoicePeriod = customPeriod || (subscriptionType === 'Yearly + Janaza Fund' ? 'Yearly Subscription + Janaza Fund' : 'Lifetime Subscription');
     
     // Calculate due date (1 year for both types)

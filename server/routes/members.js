@@ -86,7 +86,7 @@ router.post("/", async (req, res) => {
       phone: req.body.phone || '',
       password: req.body.password || '',
       status: req.body.status || 'Pending',
-      balance: req.body.balance || '$0',
+      balance: req.body.balance || 'HK$0',
       nextDue: req.body.nextDue || '',
       lastPayment: req.body.lastPayment || '',
       subscriptionType: req.body.subscriptionType || 'Lifetime',
@@ -111,12 +111,12 @@ router.post("/", async (req, res) => {
     if (!existingInvoice) {
       // Create initial invoice based on subscription type
       const subscriptionType = req.body.subscriptionType || 'Lifetime';
-      let invoiceAmount = '$250';
+      let invoiceAmount = 'HK$250';
       let invoicePeriod = 'Lifetime Subscription';
       let dueDate = new Date();
       
       if (subscriptionType === 'Yearly + Janaza Fund') {
-        invoiceAmount = '$500';
+        invoiceAmount = 'HK$500';
         invoicePeriod = 'Yearly Subscription + Janaza Fund';
       }
       // Both types are yearly, set due date to 1 year from now
