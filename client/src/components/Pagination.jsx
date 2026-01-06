@@ -7,8 +7,9 @@ export function Pagination({
   totalItems,
   pageSizeOptions = [5, 10, 20, 50, 100]
 }) {
-  if (totalPages <= 1 && pageSize >= totalItems) {
-    return null; // Don't show pagination if all items fit on one page
+  // Always show pagination when there are items
+  if (totalItems === 0) {
+    return null; // Only hide if there are no items
   }
 
   const startItem = (currentPage - 1) * pageSize + 1;

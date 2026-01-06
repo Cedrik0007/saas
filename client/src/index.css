@@ -278,8 +278,8 @@ h5, h6 {
 }
 
 .secondary-btn {
-  background: #ffffff;
-  color: #5a31ea;
+  background:#5a31ea;
+  color:  #ffffff;
   border: 2px solid #5a31ea;
 }
 
@@ -9452,6 +9452,10 @@ button[disabled] {
 
 .fa-user{
   margin-right: 6px;
+}
+
+.fa-image{
+  color: #5a31ea;
 }
 
 .admin-confirmation-button-success {

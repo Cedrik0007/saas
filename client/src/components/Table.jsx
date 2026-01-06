@@ -368,21 +368,28 @@ export function Table({ columns, rows }) {
         <tr>
           {columns.map((col) => {
             const align = getAlignmentForColumn(col);
+            const isActionsColumn = col === "Actions";
             const isSorted = sortConfig.column === col;
             const sortIndicator = isSorted ? (sortConfig.direction === "asc" ? "▲" : "▼") : "↕";
 
             return (
               <th
                 key={col}
-                style={{ textAlign: align, cursor: "pointer", whiteSpace: "nowrap" }}
-                onClick={() => handleSort(col)}
+                style={{ textAlign: align, cursor: isActionsColumn ? "default" : "pointer", whiteSpace: "nowrap" }}
+                onClick={isActionsColumn ? undefined : () => handleSort(col)}
                 aria-sort={
-                  isSorted ? (sortConfig.direction === "asc" ? "ascending" : "descending") : "none"
+                  isActionsColumn
+                    ? undefined
+                    : isSorted
+                      ? (sortConfig.direction === "asc" ? "ascending" : "descending")
+                      : "none"
                 }
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
                   <span>{col}</span>
-                  <span style={{ fontSize: "0.7rem", opacity: 0.7 }}>{sortIndicator}</span>
+                  {!isActionsColumn && (
+                    <span style={{ fontSize: "0.7rem", opacity: 0.7 }}>{sortIndicator}</span>
+                  )}
                 </span>
               </th>
             );

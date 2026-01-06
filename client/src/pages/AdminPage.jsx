@@ -599,6 +599,7 @@ function AdminPage() {
   const [pendingReminderAction, setPendingReminderAction] = useState(null); // { type: 'single'|'bulk', memberData?: member }
   const [selectedChannels, setSelectedChannels] = useState([]); // Track selected channels for bulk send (can be multiple)
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
+  const [paymentSearchTerm, setPaymentSearchTerm] = useState(""); // Search filter for payments
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("All"); // All, Paid, Unpaid, Overdue, Pending
   const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
   const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
@@ -621,6 +622,8 @@ function AdminPage() {
   const [showMemberDropdown, setShowMemberDropdown] = useState(false); // Show/hide member dropdown
   const [showDonationMemberDropdown, setShowDonationMemberDropdown] = useState(false); // Show/hide donation member dropdown
   const [showDonationPaymentMethodDropdown, setShowDonationPaymentMethodDropdown] = useState(false); // Show/hide donation payment method dropdown
+  const [showImagePopup, setShowImagePopup] = useState(false); // Show/hide image popup
+  const [selectedImageUrl, setSelectedImageUrl] = useState(""); // Selected image URL for popup
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
   
   // Payment form state
@@ -657,10 +660,13 @@ function AdminPage() {
   const [membersPageSize, setMembersPageSize] = useState(10);
   const [paymentsPage, setPaymentsPage] = useState(1);
   const [paymentsPageSize, setPaymentsPageSize] = useState(10);
+  const [paymentsSearchTerm, setPaymentsSearchTerm] = useState(""); // search filter for payments
   const [donationsPage, setDonationsPage] = useState(1);
   const [donationsPageSize, setDonationsPageSize] = useState(10);
   const [remindersPage, setRemindersPage] = useState(1);
   const [remindersPageSize, setRemindersPageSize] = useState(10);
+  const [outstandingMembersPage, setOutstandingMembersPage] = useState(1);
+  const [outstandingMembersPageSize, setOutstandingMembersPageSize] = useState(5);
   const [invoicesPage, setInvoicesPage] = useState(1);
   const [invoicesPageSize, setInvoicesPageSize] = useState(10);
   const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed, Pending
@@ -873,8 +879,31 @@ function AdminPage() {
             const balanceStr = member.balance.toString();
             const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0);
             
-            // Member is overdue if balance string contains "overdue" or has outstanding > 0
-            if (balanceStr.toLowerCase().includes("overdue") || numericOutstanding > 0) {
+            // Only mark as overdue if payment_status is unpaid AND next_due_date has passed
+            if (member.payment_status === "unpaid" && numericOutstanding > 0) {
+              if (member.next_due_date) {
+                try {
+                  const dueDate = new Date(member.next_due_date);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  dueDate.setHours(0, 0, 0, 0);
+                  
+                  // Only mark as overdue if due date has passed
+                  if (dueDate < today) {
+                    isOverdue = true;
+                  }
+                } catch (e) {
+                  // If date parsing fails, check balance string
+                  if (balanceStr.toLowerCase().includes("overdue")) {
+                    isOverdue = true;
+                  }
+                }
+              } else if (balanceStr.toLowerCase().includes("overdue")) {
+                // No due date but balance string says "overdue"
+                isOverdue = true;
+              }
+            } else if (balanceStr.toLowerCase().includes("overdue")) {
+              // Fallback: if balance string explicitly says "overdue"
               isOverdue = true;
             }
           }
@@ -1018,12 +1047,61 @@ function AdminPage() {
 
     // Filter donations within date range
     const donationsInRange = (Array.isArray(donations) ? donations : []).filter(donation => {
-      if (!donation || (!donation.date && !donation.createdAt)) return false;
+      if (!donation) return false;
+      
       try {
-        const donationDate = donation.createdAt ? new Date(donation.createdAt) : new Date(donation.date);
-        return donationDate >= fromDate && donationDate <= toDate;
+        let donationDate = null;
+        
+        // Try to parse donation.date first (user-provided date, usually in YYYY-MM-DD format)
+        if (donation.date) {
+          const dateStr = String(donation.date).trim();
+          
+          // Handle ISO format (YYYY-MM-DD) - most common from date input
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            donationDate = new Date(dateStr + 'T00:00:00'); // Add time to avoid timezone issues
+          } else {
+            // Try parsing as general date string
+            donationDate = new Date(dateStr);
+            
+            // If that fails, try parsing as "DD MMM YYYY" format
+            if (isNaN(donationDate.getTime())) {
+              const parts = dateStr.split(' ');
+              if (parts.length === 3) {
+                const day = parseInt(parts[0], 10);
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                const month = monthNames.indexOf(parts[1]);
+                const year = parseInt(parts[2], 10);
+                if (month !== -1 && !isNaN(day) && !isNaN(year)) {
+                  donationDate = new Date(year, month, day);
+                }
+              }
+            }
+          }
+        }
+        
+        // Fallback to createdAt if date is not available or invalid
+        if (!donationDate || isNaN(donationDate.getTime())) {
+          if (donation.createdAt) {
+            donationDate = new Date(donation.createdAt);
+          } else {
+            // If no date at all, include it (might be a recent donation without date set)
+            // But only if it's within a reasonable recent timeframe (last 30 days)
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            return fromDate <= thirtyDaysAgo && toDate >= new Date();
+          }
+        }
+        
+        // Normalize dates to midnight for proper comparison (ignore time)
+        const normalizedDonationDate = new Date(donationDate.getFullYear(), donationDate.getMonth(), donationDate.getDate());
+        const normalizedFromDate = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+        const normalizedToDate = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
+        
+        return normalizedDonationDate >= normalizedFromDate && normalizedDonationDate <= normalizedToDate;
       } catch (e) {
-        return false;
+        console.error('Error filtering donation by date:', e, donation);
+        // Include donation if date parsing fails (better to show than hide)
+        return true;
       }
     });
 
@@ -2758,7 +2836,11 @@ Subscription Manager HK`;
       // Calculate payment dates
       const lastPaymentDate = new Date(); // Exact date/time of confirmation
       const nextDueDate = new Date(lastPaymentDate);
-      nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); // Add 1 year
+      // Set to January 17 of the next year (fixed date and month, only year changes)
+      nextDueDate.setFullYear(nextDueDate.getFullYear() + 1);
+      nextDueDate.setMonth(0); // January (0-indexed, 0 = January)
+      nextDueDate.setDate(1); // 1th day
+      nextDueDate.setHours(0, 0, 0, 0); // Reset time to midnight for consistency
       
       // In development, use empty string to use Vite proxy (localhost:4000)
       // In production, use VITE_API_URL if set
@@ -4216,7 +4298,7 @@ Subscription Manager HK`;
                         <label>
                           <span>
                             <i className="fas fa-calendar-day" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                            Start Date <span style={{ color: "#ef4444" }}>*</span>
+                            Joining Date <span style={{ color: "#ef4444" }}>*</span>
                           </span>
                           <input
                             type="date"
@@ -4279,72 +4361,6 @@ Subscription Manager HK`;
                         </label>
                       )}
 
-                      {!editingMember && (
-                        <label>
-                          <span>
-                            <i className="fas fa-calendar-day" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                            End Date (optional)
-                          </span>
-                          <input
-                            type="date"
-                            value={memberForm.lastPayment}
-                            onChange={(e) => {
-                              const selectedDate = e.target.value;
-                              handleMemberFieldChange("lastPayment", selectedDate);
-                              // Clear error when user starts typing
-                              if (memberFieldErrors.lastPayment || currentInvalidField === "lastPayment") {
-                                setMemberFieldErrors(prev => ({ ...prev, lastPayment: false }));
-                                if (currentInvalidField === "lastPayment") {
-                                  setCurrentInvalidField(null);
-                                }
-                              }
-                            }}
-                            onBlur={(e) => {
-                              const dateValue = e.target.value;
-                              if (dateValue) {
-                                const date = new Date(dateValue);
-                                if (isNaN(date.getTime())) {
-                                  showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
-                                  return;
-                                }
-                                // Validate date components
-                                const [year, month, day] = dateValue.split('-').map(Number);
-                                if (month < 1 || month > 12) {
-                                  showToast("Invalid month. Please enter a month between 01 and 12", "error");
-                                  return;
-                                }
-                                if (day < 1 || day > 31) {
-                                  showToast("Invalid day. Please enter a valid day for the selected month", "error");
-                                  return;
-                                }
-                                // Check if day is valid for the month
-                                const daysInMonth = new Date(year, month, 0).getDate();
-                                if (day > daysInMonth) {
-                                  showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
-                                  return;
-                                }
-                              }
-                            }}
-                            style={{
-                              borderRadius: "4px",
-                              width: "100%",
-                              borderColor: (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") ? "#ef4444" : undefined,
-                              borderWidth: (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") ? "2px" : undefined,
-                              borderStyle: (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") ? "solid" : undefined,
-                              outline: (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") ? "none" : undefined,
-                              boxShadow: (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
-                            }}
-                            aria-invalid={memberFieldErrors.lastPayment && currentInvalidField === "lastPayment"}
-                            onFocus={(e) => {
-                              if (memberFieldErrors.lastPayment && currentInvalidField === "lastPayment") {
-                                e.target.style.borderColor = "#ef4444";
-                                e.target.style.outline = "none";
-                                e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
-                              }
-                            }}
-                          />
-                        </label>
-                      )}
 
                       <div className="form-actions">
                         <button
@@ -4452,8 +4468,8 @@ Subscription Manager HK`;
                   </div>
                 )}
 
-                {/* Search Filter */}
-                <div className="admin-members-search-card">
+                {/* Search Filter - Hidden */}
+                {/* <div className="admin-members-search-card">
                   <div className="admin-members-search-container">
                     <label className="admin-members-search-label">
                       <span className="admin-members-search-label-text">🔍 Search Members:</span>
@@ -4502,7 +4518,7 @@ Subscription Manager HK`;
                       })()}
                     </div>
                   </div>
-                </div>
+                </div> */}
 
                   <div className="admin-members-table-card">
                     <div className="table-wrapper">
@@ -4521,36 +4537,54 @@ Subscription Manager HK`;
                               balanceStr.replace(/[^0-9.]/g, "") || 0
                             ) || 0;
 
-                            const derivedStatus =
-                              member.status === "Inactive"
-                                ? "Inactive"
-                                : member.status === "Pending"
-                                ? "Pending"
-                                : balanceStr.toLowerCase().includes("overdue") || numericOutstanding > 0
-                                ? "Overdue"
-                                : "Active";
+                            // Derive status: Active / Overdue / Unpaid / Inactive / Pending
+                            let derivedStatus = "Active";
+                            
+                            if (member.status === "Inactive") {
+                              derivedStatus = "Inactive";
+                            } else if (member.status === "Pending") {
+                              derivedStatus = "Pending";
+                            } else if (member.payment_status === "unpaid" && numericOutstanding > 0) {
+                              // Check if next_due_date has passed
+                              if (member.next_due_date) {
+                                try {
+                                  const dueDate = new Date(member.next_due_date);
+                                  const today = new Date();
+                                  today.setHours(0, 0, 0, 0); // Reset time to midnight for comparison
+                                  dueDate.setHours(0, 0, 0, 0);
+                                  
+                                  // Only mark as Overdue if due date has passed
+                                  if (dueDate < today) {
+                                    derivedStatus = "Overdue";
+                                  } else {
+                                    derivedStatus = "Unpaid";
+                                  }
+                                } catch (e) {
+                                  // If date parsing fails, check balance string
+                                  if (balanceStr.toLowerCase().includes("overdue")) {
+                                    derivedStatus = "Overdue";
+                                  } else {
+                                    derivedStatus = "Unpaid";
+                                  }
+                                }
+                              } else {
+                                // No due date set, check balance string for "overdue"
+                                if (balanceStr.toLowerCase().includes("overdue")) {
+                                  derivedStatus = "Overdue";
+                                } else {
+                                  derivedStatus = "Unpaid";
+                                }
+                              }
+                            } else if (balanceStr.toLowerCase().includes("overdue")) {
+                              // Fallback: if balance string explicitly says "overdue"
+                              derivedStatus = "Overdue";
+                            }
 
                             return derivedStatus === memberStatusFilter;
                           });
 
-                        // Sort by outstanding amount if requested
-                        const sortedMembers = [...filteredMembers].sort((a, b) => {
-                          if (memberSortByOutstanding === "none") return 0;
-
-                          const parseOutstanding = (balance) => {
-                            if (!balance) return 0;
-                            const str = balance.toString();
-                            const num = parseFloat(str.replace(/[^0-9.]/g, "") || 0);
-                            return isNaN(num) ? 0 : num;
-                          };
-
-                          const aVal = parseOutstanding(a.balance);
-                          const bVal = parseOutstanding(b.balance);
-
-                          if (memberSortByOutstanding === "asc") return aVal - bVal;
-                          if (memberSortByOutstanding === "desc") return bVal - aVal;
-                          return 0;
-                        });
+                        // No sorting - use filtered members as-is
+                        const sortedMembers = filteredMembers;
                         
                         // Calculate pagination
                         const totalPages = Math.ceil(sortedMembers.length / membersPageSize) || 1;
@@ -4578,6 +4612,7 @@ Subscription Manager HK`;
                                   {[
                                     { value: "All", label: "All" },
                                     { value: "Active", label: "Active" },
+                                    { value: "Unpaid", label: "Unpaid" },
                                     { value: "Overdue", label: "Overdue" },
                                     { value: "Inactive", label: "Inactive" },
                                     // { value: "Pending", label: "Pending" }
@@ -4620,24 +4655,59 @@ Subscription Manager HK`;
                                   ))}
                                 </div>
                               </div>
-                              <label className="member-sort-by-outstanding text-sm text-muted">
-                                Sort by Outstanding:&nbsp;
-                                <select
-                                  value={memberSortByOutstanding}
-                                  onChange={(e) => setMemberSortByOutstanding(e.target.value)}
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <label className="text-sm text-muted" style={{ whiteSpace: "nowrap" }}>
+                                  🔍 Search:&nbsp;
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="Search by member name..."
+                                  value={memberSearchTerm}
+                                  onChange={(e) => {
+                                    setMemberSearchTerm(e.target.value);
+                                    setMembersPage(1); // Reset to first page when searching
+                                  }}
                                   style={{
                                     padding: "8px 12px",
                                     borderRadius: "4px",
                                     border: "1px solid #e5e7eb",
                                     background: "#ffffff",
                                     fontSize: "0.875rem",
+                                    minWidth: "200px",
+                                    outline: "none",
+                                    transition: "border-color 0.2s"
                                   }}
-                                >
-                                  <option value="none">None</option>
-                                  <option value="asc">Lowest first</option>
-                                  <option value="desc">Highest first</option>
-                                </select>
-                              </label>
+                                  onFocus={(e) => {
+                                    e.target.style.borderColor = "#5a31ea";
+                                    e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                  }}
+                                  onBlur={(e) => {
+                                    e.target.style.borderColor = "#e5e7eb";
+                                    e.target.style.boxShadow = "none";
+                                  }}
+                                />
+                                {memberSearchTerm && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setMemberSearchTerm("");
+                                      setMembersPage(1);
+                                    }}
+                                    style={{
+                                      padding: "8px 12px",
+                                      background: "#f9fafb",
+                                      border: "1px solid #e5e7eb",
+                                      borderRadius: "4px",
+                                      cursor: "pointer",
+                                      fontSize: "0.875rem",
+                                      color: "#666"
+                                    }}
+                                    title="Clear search"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             {/* Empty State */}
@@ -4663,21 +4733,56 @@ Subscription Manager HK`;
                                     const balanceStr = member.balance?.toString() || "";
                                     const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0) || 0;
 
-                                    // Derive status: Active / Overdue / Inactive / Pending
-                                    const derivedStatus =
-                                      member.status === "Inactive"
-                                        ? "Inactive"
-                                        : member.status === "Pending"
-                                        ? "Pending"
-                                        : balanceStr.toLowerCase().includes("overdue") || numericOutstanding > 0
-                                        ? "Overdue"
-                                        : "Active";
+                                    // Derive status: Active / Overdue / Unpaid / Inactive / Pending
+                                    let derivedStatus = "Active";
+                                    
+                                    if (member.status === "Inactive") {
+                                      derivedStatus = "Inactive";
+                                    } else if (member.status === "Pending") {
+                                      derivedStatus = "Pending";
+                                    } else if (member.payment_status === "unpaid" && numericOutstanding > 0) {
+                                      // Check if next_due_date has passed
+                                      if (member.next_due_date) {
+                                        try {
+                                          const dueDate = new Date(member.next_due_date);
+                                          const today = new Date();
+                                          today.setHours(0, 0, 0, 0); // Reset time to midnight for comparison
+                                          dueDate.setHours(0, 0, 0, 0);
+                                          
+                                          // Only mark as Overdue if due date has passed
+                                          if (dueDate < today) {
+                                            derivedStatus = "Overdue";
+                                          } else {
+                                            derivedStatus = "Unpaid";
+                                          }
+                                        } catch (e) {
+                                          // If date parsing fails, check balance string
+                                          if (balanceStr.toLowerCase().includes("overdue")) {
+                                            derivedStatus = "Overdue";
+                                          } else {
+                                            derivedStatus = "Unpaid";
+                                          }
+                                        }
+                                      } else {
+                                        // No due date set, check balance string for "overdue"
+                                        if (balanceStr.toLowerCase().includes("overdue")) {
+                                          derivedStatus = "Overdue";
+                                        } else {
+                                          derivedStatus = "Unpaid";
+                                        }
+                                      }
+                                    } else if (balanceStr.toLowerCase().includes("overdue")) {
+                                      // Fallback: if balance string explicitly says "overdue"
+                                      derivedStatus = "Overdue";
+                                    }
 
                                     const statusBadgeClass =
                                       derivedStatus === "Active"
                                         ? "badge badge-active"
                                         : derivedStatus === "Overdue"
                                         ? "badge badge-overdue"
+                                        : derivedStatus === "Unpaid"
+                                        ? "badge badge-unpaid"
                                         : derivedStatus === "Inactive"
                                         ? "badge badge-inactive"
                                         : "badge badge-pending";
@@ -4716,7 +4821,7 @@ Subscription Manager HK`;
                                       },
                                       Actions: {
                                         render: () => (
-                                          <div className="flex gap-sm flex-wrap justify-end">
+                                          <div className="flex gap-sm flex-wrap justify-center">
                                             <button
                                               className="ghost-btn icon-btn icon-btn--view"
                                               onClick={() => handleViewMemberDetail(member)}
@@ -4756,7 +4861,7 @@ Subscription Manager HK`;
                                     };
                                   })}
                                 />
-                                {totalPages > 0 && sortedMembers.length > 0 && (
+                                {sortedMembers.length > 0 && (
                                   <Pagination
                                     currentPage={currentPage}
                                     totalPages={totalPages}
@@ -5105,7 +5210,7 @@ Subscription Manager HK`;
                       <Table
                         columns={[
                           "Invoice #",
-                          "Period",
+                          "Subscription Type",
                           "Amount",
                           "Status",
                           "Due Date",
@@ -5141,7 +5246,7 @@ Subscription Manager HK`;
                           
                           return {
                           "Invoice #": invoice.id,
-                          Period: invoice.period,
+                          "Subscription Type": selectedMember.subscriptionType || invoice.subscriptionType || "N/A",
                           Amount: invoice.amount
                             ? `HK$${formatNumber(parseFloat(invoice.amount.replace(/[^0-9.]/g, '') || 0), {
                                 minimumFractionDigits: 2,
@@ -5198,7 +5303,7 @@ Subscription Manager HK`;
                           } : "-",
                           Actions: {
                             render: () => (
-                                <div className="flex gap-sm flex-wrap">
+                                <div className="flex gap-sm flex-wrap justify-center">
                                   {isUnpaid && !isViewer && (
                                     <button
                                       className="primary-btn"
@@ -6773,136 +6878,178 @@ Subscription Manager HK`;
                     </div>
                   </div>
 
-                  {/* Members List */}
+                  {/* Members List with pagination */}
                   <div style={{
                     display: "flex",
                     flexDirection: "column",
                     gap: "12px"
                   }}>
-                    {members
-                      .filter(member => {
-                        // Only show members with outstanding invoices
-                        const memberInvoices = invoices.filter(inv => 
-                          inv.memberId === member.id && 
-                          (inv.status === "Unpaid" || inv.status === "Overdue")
-                        );
-                        return memberInvoices.length > 0;
-                      })
-                      .map(member => {
-                        const memberInvoices = invoices.filter(inv => 
-                          inv.memberId === member.id && 
-                          (inv.status === "Unpaid" || inv.status === "Overdue")
-                        );
-                        const totalDue = memberInvoices.reduce((sum, inv) => {
-                          const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
-                          return sum + amount;
-                        }, 0);
-                        const overdueCount = memberInvoices.filter(inv => inv.status === "Overdue").length;
-                        const unpaidCount = memberInvoices.filter(inv => inv.status === "Unpaid").length;
-                        const isSending = sendingEmails[member.id];
+                    {(() => {
+                      const outstandingMembers = members
+                        .map((member) => {
+                          const memberInvoices = invoices.filter(
+                            (inv) =>
+                              inv.memberId === member.id &&
+                              (inv.status === "Unpaid" || inv.status === "Overdue")
+                          );
+                          if (memberInvoices.length === 0) return null;
+                          const totalDue = memberInvoices.reduce((sum, inv) => {
+                            const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, "") || 0);
+                            return sum + amount;
+                          }, 0);
+                          const overdueCount = memberInvoices.filter((inv) => inv.status === "Overdue").length;
+                          const unpaidCount = memberInvoices.filter((inv) => inv.status === "Unpaid").length;
+                          return { member, totalDue, overdueCount, unpaidCount };
+                        })
+                        .filter(Boolean);
 
+                      if (outstandingMembers.length === 0) {
                         return (
                           <div
-                            key={member.id}
                             style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              padding: "16px",
-                              background: "#f9f9f9",
-                              borderRadius: "4px",
-                              border: "1px solid #e0e0e0",
-                              gap: "16px",
-                              flexWrap: "wrap"
+                              padding: "24px",
+                              textAlign: "center",
+                              color: "#666",
+                              fontSize: "0.9375rem",
                             }}
                           >
-                            <div style={{ flex: "1 1 300px", minWidth: "200px" }}>
-                              <div style={{
-                                fontSize: "1rem",
-                                fontWeight: "600",
-                                color: "#000",
-                                marginBottom: "4px"
-                              }}>
-                                {member.name}
-                              </div>
-                              <div style={{
-                                fontSize: "0.875rem",
-                                color: "#666",
-                                marginBottom: "4px"
-                              }}>
-                                {member.email}
-                              </div>
-                              <div style={{
-                                display: "flex",
-                                gap: "12px",
-                                fontSize: "0.8125rem",
-                                color: "#666"
-                              }}>
-                                <span>
-                                  <strong style={{ color: "#000" }}>HK${totalDue.toFixed(2)}</strong> outstanding
-                                </span>
-                                {overdueCount > 0 && (
-                                  <span style={{ color: "#ef4444", fontWeight: "600" }}>
-                                    {overdueCount} overdue
-                                  </span>
-                                )}
-                                {unpaidCount > 0 && (
-                                  <span style={{ color: "#ef4444", fontWeight: "600" }}>
-                                    {unpaidCount} unpaid
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div style={{
-                              display: "flex",
-                              gap: "8px",
-                              flexShrink: 0
-                            }}>
-                              <button
-                                className="secondary-btn"
-                                onClick={() => handleRequestReminder(member, false)}
-                                disabled={isSending || sendingWhatsApp[member.id]}
-                                style={{
-                                  padding: "12px 20px",
-                                  borderRadius: "4px",
-                                  fontWeight: "600",
-                                  fontSize: "0.875rem",
-                                  opacity: (isSending || sendingWhatsApp[member.id]) ? 0.5 : 1,
-                                  cursor: (isSending || sendingWhatsApp[member.id]) ? "not-allowed" : "pointer"
-                                }}
-                              >
-                                {(isSending || sendingWhatsApp[member.id]) ? (
-                                  "Sending..."
-                                ) : (
-                                  <>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                                      <path d="M12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.89 22 12 22ZM18 16V11C18 7.93 16.36 5.36 13.5 4.68V4C13.5 3.17 12.83 2.5 12 2.5C11.17 2.5 10.5 3.17 10.5 4V4.68C7.63 5.36 6 7.92 6 11V16L4 18V19H20V18L18 16Z" fill="#5a31ea"/>
-                                    </svg>
-                                    Send Reminder
-                                  </>
-                                )}
-                              </button>
-                            </div>
+                            No members with outstanding invoices
                           </div>
                         );
-                      })}
-                    
-                    {members.filter(member => {
-                      const memberInvoices = invoices.filter(inv => 
-                        inv.memberId === member.id && 
-                        (inv.status === "Unpaid" || inv.status === "Overdue")
+                      }
+
+                      const totalPages = Math.max(
+                        1,
+                        Math.ceil(outstandingMembers.length / outstandingMembersPageSize)
                       );
-                      return memberInvoices.length > 0;
-                    }).length === 0 && (
-                      <div style={{
-                        padding: "24px",
-                        textAlign: "center",
-                        color: "#666",
-                        fontSize: "0.9375rem"
-                      }}>
-                        No members with outstanding invoices
-                      </div>
-                    )}
+                      const currentPage = Math.min(outstandingMembersPage, totalPages);
+                      const startIndex = (currentPage - 1) * outstandingMembersPageSize;
+                      const endIndex = startIndex + outstandingMembersPageSize;
+                      const paginatedMembers = outstandingMembers.slice(startIndex, endIndex);
+
+                      return (
+                        <>
+                          {paginatedMembers.map(({ member, totalDue, overdueCount, unpaidCount }) => {
+                            const isSending = sendingEmails[member.id];
+                            return (
+                              <div
+                                key={member.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  padding: "16px",
+                                  background: "#f9f9f9",
+                                  borderRadius: "4px",
+                                  border: "1px solid #e0e0e0",
+                                  gap: "16px",
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <div style={{ flex: "1 1 300px", minWidth: "200px" }}>
+                                  <div
+                                    style={{
+                                      fontSize: "1rem",
+                                      fontWeight: "600",
+                                      color: "#000",
+                                      marginBottom: "4px",
+                                    }}
+                                  >
+                                    {member.name}
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: "0.875rem",
+                                      color: "#666",
+                                      marginBottom: "4px",
+                                    }}
+                                  >
+                                    {member.email}
+                                  </div>
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      gap: "12px",
+                                      fontSize: "0.8125rem",
+                                      color: "#666",
+                                    }}
+                                  >
+                                    <span>
+                                      <strong style={{ color: "#000" }}>
+                                        HK${totalDue.toFixed(2)}
+                                      </strong>{" "}
+                                      outstanding
+                                    </span>
+                                    {overdueCount > 0 && (
+                                      <span style={{ color: "#ef4444", fontWeight: "600" }}>
+                                        {overdueCount} overdue
+                                      </span>
+                                    )}
+                                    {unpaidCount > 0 && (
+                                      <span style={{ color: "#ef4444", fontWeight: "600" }}>
+                                        {unpaidCount} unpaid
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: "8px",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <button
+                                    className="secondary-btn"
+                                    onClick={() => handleRequestReminder(member, false)}
+                                    disabled={isSending || sendingWhatsApp[member.id]}
+                                    style={{
+                                      padding: "12px 20px",
+                                      borderRadius: "4px",
+                                      fontWeight: "600",
+                                      fontSize: "0.875rem",
+                                      opacity: isSending || sendingWhatsApp[member.id] ? 0.5 : 1,
+                                      cursor:
+                                        isSending || sendingWhatsApp[member.id] ? "not-allowed" : "pointer",
+                                    }}
+                                  >
+                                    {isSending || sendingWhatsApp[member.id] ? (
+                                      "Sending..."
+                                    ) : (
+                                      <>
+                                        <svg
+                                          width="16"
+                                          height="16"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          xmlns="http://www.w3.org/2000/svg"
+                                          style={{ marginRight: "8px", verticalAlign: "middle" }}
+                                        >
+                                          <path
+                                            d="M12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.89 22 12 22ZM18 16V11C18 7.93 16.36 5.36 13.5 4.68V4C13.5 3.17 12.83 2.5 12 2.5C11.17 2.5 10.5 3.17 10.5 4V4.68C7.63 5.36 6 7.92 6 11V16L4 18V19H20V18L18 16Z"
+                                            fill="#5a31ea"
+                                          />
+                                        </svg>
+                                        Send Reminder
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          <Pagination
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            onPageChange={setOutstandingMembersPage}
+                            pageSize={outstandingMembersPageSize}
+                            onPageSizeChange={setOutstandingMembersPageSize}
+                            totalItems={outstandingMembers.length}
+                          />
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -7880,48 +8027,14 @@ Subscription Manager HK`;
                                   </div>
 
                                   {/* Pagination controls */}
-                                  <div
-                                    style={{
-                                      marginTop: "16px",
-                                      display: "flex",
-                                      justifyContent: "space-between",
-                                      alignItems: "center",
-                                      flexWrap: "wrap",
-                                      gap: "8px",
-                                    }}
-                                  >
-                                    <div style={{ fontSize: "0.875rem", color: "#555" }}>
-                                      Showing{" "}
-                                      <strong>
-                                        {start + 1}-{Math.min(end, total)}
-                                      </strong>{" "}
-                                      of <strong>{total}</strong> reminders
-                                    </div>
-
-                                    <div className="flex items-center gap-sm">
-                                      <button
-                                        type="button"
-                                        className="secondary-btn"
-                                        disabled={currentPage <= 1}
-                                        onClick={() => setRemindersPage(Math.max(1, currentPage - 1))}
-                                      >
-                                        Previous
-                                      </button>
-                                      <span style={{ fontSize: "0.875rem" }}>
-                                        Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
-                                      </span>
-                                      <button
-                                        type="button"
-                                        className="secondary-btn"
-                                        disabled={currentPage >= totalPages}
-                                        onClick={() =>
-                                          setRemindersPage(Math.min(totalPages, currentPage + 1))
-                                        }
-                                      >
-                                        Next
-                                      </button>
-                                    </div>
-                                  </div>
+                                  <Pagination
+                                    currentPage={currentPage}
+                                    totalPages={totalPages}
+                                    onPageChange={setRemindersPage}
+                                    pageSize={pageSize}
+                                    onPageSizeChange={setRemindersPageSize}
+                                    totalItems={total}
+                                  />
                                 </>
                               );
                             })()}
@@ -9031,7 +9144,6 @@ Subscription Manager HK`;
                               "Method",
                               "Screenshot",
                               "Status",
-                              "Actions",
                             ]}
                             rows={paginatedPayments.map((payment) => {
                               const paymentId = payment._id || payment.id;
@@ -9075,7 +9187,7 @@ Subscription Manager HK`;
                                 },
                                 Actions: {
                                   render: () => (
-                                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
                                       {payment.status === "Pending" && (
                                         <>
                                           <button
@@ -9280,8 +9392,8 @@ Subscription Manager HK`;
                         </p>
                         <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">
                           HK${formatNumber(totalUnpaidAmount, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
                           })}
                         </h4>
                       </div>
@@ -9292,8 +9404,8 @@ Subscription Manager HK`;
                         </p>
                         <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--green">
                           HK${formatNumber(totalPaidAmount, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0,
                           })}
                         </h4>
                       </div>
@@ -9435,7 +9547,9 @@ Subscription Manager HK`;
                                       <div style={{ display: "flex", gap: "8px", justifyContent: "flex-start" }}>
                                         <button
                                           className="icon-btn icon-btn--view"
-                                          onClick={() => {
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
                                             const member = members.find(m => 
                                               m.id === invoice.memberId || 
                                               m.email === invoice.memberEmail ||
@@ -9445,6 +9559,9 @@ Subscription Manager HK`;
                                               handleViewMemberDetail(member);
                                               setActiveSection("member-detail");
                                               setActiveTab("Invoices");
+                                              showToast(`Viewing invoice ${invoice.id || invoice.invoiceId || 'details'}`, "success");
+                                            } else {
+                                              showToast("Member not found for this invoice", "error");
                                             }
                                           }}
                                           title="View Invoice Details"
@@ -9741,68 +9858,78 @@ Subscription Manager HK`;
 
                 <div className=" card-payments">
                   <div style={{ padding: "2px" }}>
-                    {/* Payment Status Filter - Segmented Buttons */}
+                    {/* Payment Search Filter */}
                     <div style={{ marginBottom: "20px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                      <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
-                      <div style={{ 
-                        display: "flex", 
-                        gap: "4px", 
-                        background: "#f3f4f6", 
-                        padding: "4px", 
-                        borderRadius: "4px",
-                        flexWrap: "wrap"
-                      }}>
-                        {[
-                          { value: "All", label: "All" },
-                          { value: "Pending", label: "Pending" },
-                          { value: "Completed", label: "Completed" },
-                          { value: "Paid", label: "Paid" },
-                          { value: "Rejected", label: "Rejected" }
-                        ].map((option) => (
+                      <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Search Payments:</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <input
+                          type="text"
+                          value={paymentSearchTerm}
+                          onChange={(e) => {
+                            setPaymentSearchTerm(e.target.value);
+                            setPaymentsPage(1);
+                          }}
+                          placeholder="Search by member, invoice ID, method, or reference..."
+                          style={{
+                            padding: "10px 12px",
+                            borderRadius: "4px",
+                            border: "1px solid #e5e7eb",
+                            minWidth: "260px",
+                            fontSize: "0.95rem",
+                            outline: "none",
+                            transition: "border-color 0.2s, box-shadow 0.2s",
+                            background: "#fff"
+                          }}
+                          onFocus={(e) => {
+                            e.target.style.borderColor = "#5a31ea";
+                            e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                          }}
+                          onBlur={(e) => {
+                            e.target.style.borderColor = "#e5e7eb";
+                            e.target.style.boxShadow = "none";
+                          }}
+                        />
+                        {/* {paymentSearchTerm && (
                           <button
-                            key={option.value}
                             type="button"
-                            onClick={() => setPaymentStatusFilter(option.value)}
+                            onClick={() => {
+                              setPaymentSearchTerm("");
+                              setPaymentsPage(1);
+                            }}
                             style={{
-                              padding: "8px 16px",
+                              padding: "8px 12px",
+                              background: "#f9fafb",
+                              border: "1px solid #e5e7eb",
                               borderRadius: "4px",
-                              border: "none",
-                              fontSize: "0.875rem",
-                              fontWeight: "500",
                               cursor: "pointer",
-                              transition: "all 0.2s ease",
-                              background: paymentStatusFilter === option.value
-                                ? "#5a31ea"
-                                : "transparent",
-                              color: paymentStatusFilter === option.value ? "#ffffff" : "#6b7280",
-                              boxShadow: paymentStatusFilter === option.value
-                                ? "0 2px 8px rgba(90, 49, 234, 0.3)"
-                                : "none",
+                              fontSize: "0.875rem",
+                              color: "#666"
                             }}
-                            onMouseEnter={(e) => {
-                              if (paymentStatusFilter !== option.value) {
-                                e.target.style.background = "#e5e7eb";
-                                e.target.style.color = "#374151";
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (paymentStatusFilter !== option.value) {
-                                e.target.style.background = "transparent";
-                                e.target.style.color = "#6b7280";
-                              }
-                            }}
+                            title="Clear search"
                           >
-                            {option.label}
+                            ✕
                           </button>
-                        ))}
+                        )} */}
                       </div>
                     </div>
 
                     {(() => {
                       const filteredPayments = (payments || [])
                         .filter(payment => {
-                          if (paymentStatusFilter === "All") return true;
-                          return payment.status === paymentStatusFilter;
+                          const term = paymentSearchTerm.trim().toLowerCase();
+                          if (!term) return true;
+                          const member = (payment.member || "").toLowerCase();
+                          const invoiceId = (payment.invoiceId || "").toLowerCase();
+                          const method = (getPaymentMethodDisplay(payment) || "").toLowerCase();
+                          const reference = (payment.reference || "").toLowerCase();
+                          const amount = (payment.amount || "").toString().toLowerCase();
+                          return (
+                            member.includes(term) ||
+                            invoiceId.includes(term) ||
+                            method.includes(term) ||
+                            reference.includes(term) ||
+                            amount.includes(term)
+                          );
                         })
                         .sort((a, b) => {
                           // Sort by date, pending first
@@ -9843,7 +9970,6 @@ Subscription Manager HK`;
                               "Method",
                               "Screenshot",
                               "Status",
-                              "Actions",
                             ]}
                             rows={paginatedPayments.map((payment) => {
                               const paymentId = payment._id || payment.id;
@@ -9886,28 +10012,6 @@ Subscription Manager HK`;
                                     }>
                                       {payment.status}
                                     </span>
-                                  )
-                                },
-                                Actions: {
-                                  render: () => (
-                                    <div style={{ display: "flex", gap: "8px" }}>
-                                      <button
-                                        className="ghost-btn icon-btn icon-btn--edit"
-                                        onClick={() => handleEditPayment(payment)}
-                                        title="Edit Payment"
-                                      >
-                                        <i className="fas fa-pen" aria-hidden="true"></i>
-                                      </button>
-                                      <button
-                                        className="ghost-btn icon-btn icon-btn--delete"
-                                        onClick={() => {
-                                          if (paymentIdString) handleDeletePayment(paymentIdString);
-                                        }}
-                                        title="Delete Payment"
-                                      >
-                                        <i className="fas fa-trash" aria-hidden="true"></i>
-                                      </button>
-                                    </div>
                                   )
                                 },
                               };
@@ -11069,6 +11173,40 @@ Subscription Manager HK`;
                   </div>
                 )}
 
+                {/* Total Donation Card */}
+                <div style={{ marginBottom: "24px" }}>
+                  {(() => {
+                    const donationsArray = Array.isArray(donations) ? donations : [];
+                    const filteredDonations = donationsArray.filter(donation => donation !== null);
+                    const totalDonationAmount = filteredDonations.reduce((sum, d) => {
+                      const val = parseFloat(d?.amount || 0);
+                      return sum + (isNaN(val) ? 0 : val);
+                    }, 0);
+                    
+                    return (
+                      <div className="admin-dashboard-kpi-card" style={{ maxWidth: "400px" }}>
+                        <div className="admin-dashboard-kpi-header">
+                          <div className="admin-dashboard-kpi-icon admin-dashboard-kpi-icon--green">
+                            <i className="fas fa-heart"></i>
+                          </div>
+                          <div className="admin-dashboard-kpi-content">
+                            <div className="admin-dashboard-kpi-label">Total Donation</div>
+                            <div className="admin-dashboard-kpi-value">
+                              HK${formatNumber(totalDonationAmount, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </div>
+                            <div className="admin-dashboard-kpi-description">
+                              {filteredDonations.length} donation{filteredDonations.length !== 1 ? 's' : ''} recorded
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
                 {/* Donations Table */}
                 <div className="card-donations">
                   {!donations || (Array.isArray(donations) && donations.length === 0) ? (
@@ -11100,19 +11238,6 @@ Subscription Manager HK`;
                         return (
                           <>
                             <div style={{ marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                              <div className="text-sm text-muted">
-                                Total donations:{" "}
-                                <strong>
-                                  HK$
-                                  {formatNumber(filteredDonations.reduce((sum, d) => {
-                                    const val = parseFloat(d?.amount || 0);
-                                    return sum + (isNaN(val) ? 0 : val);
-                                  }, 0), {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })}
-                                </strong>
-                              </div>
                               <button
                                 type="button"
                                 className="ghost-btn"
@@ -11173,7 +11298,7 @@ Subscription Manager HK`;
                             </div>
 
                             <Table
-                              columns={["Date", "Donor Name", "Type", "Amount", "Method", "Notes", "Actions"]}
+                              columns={["Date", "Donor Name", "Type", "Amount", "Method", "Screenshot", "Notes", "Actions"]}
                               rows={paginatedDonations.map((donation) => {
                                 if (!donation) return null;
                                 const donationDate =
@@ -11200,15 +11325,45 @@ Subscription Manager HK`;
                                         maximumFractionDigits: 2,
                                       })}`
                                     : "HK$0.00",
-                                  Method: donation.method || "-",
+                                  Method: donation.method || "N/A",
+                                  Screenshot: {
+                                    render: () => donation.screenshot ? (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          setSelectedImageUrl(donation.screenshot);
+                                          setShowImagePopup(true);
+                                        }}
+                                        style={{ 
+                                          background: "none", 
+                                          border: "none", 
+                                          color: "#000", 
+                                          textDecoration: "none", 
+                                          display: "inline-flex", 
+                                          alignItems: "center", 
+                                          gap: "6px",
+                                          cursor: "pointer",
+                                          padding: 0,
+                                          fontSize: "inherit"
+                                        }}
+                                        title="View screenshot"
+                                        aria-label="View screenshot"
+                                      >
+                                        <i className="fas fa-image" aria-hidden="true"></i>
+                                        <span>View</span>
+                                      </button>
+                                    ) : "N/A"
+                                  },
                                   Notes: donation.notes || "-",
                                   Actions: {
                                     render: () => (
-                                      <button
-                                        className="ghost-btn icon-btn icon-btn--delete"
-                                        onClick={async () => {
-                                          showConfirmation(
-                                            "Are you sure you want to delete this donation?",
+                                      <div style={{ display: "flex", justifyContent: "center" }}>
+                                        <button
+                                          className="ghost-btn icon-btn icon-btn--delete"
+                                          onClick={async () => {
+                                            showConfirmation(
+                                              "Are you sure you want to delete this donation?",
                                             async () => {
                                               try {
                                                 const donationId = donation._id || donation.id;
@@ -11226,6 +11381,7 @@ Subscription Manager HK`;
                                       >
                                         <i className="fas fa-trash" aria-hidden="true"></i>
                                       </button>
+                                      </div>
                                     ),
                                   },
                                 };
@@ -12042,7 +12198,7 @@ Subscription Manager HK`;
                                 },
                                 Actions: {
                                   render: () => (
-                                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
                                       {transaction.type === "Payment" && transaction.invoiceId && (
                                         <button
                                           className="ghost-btn icon-btn icon-btn--view"
@@ -12545,7 +12701,7 @@ Subscription Manager HK`;
                           },
                           Actions: {
                             render: () => (
-                              <div className="settings-table__actions">
+                              <div className="settings-table__actions" style={{ justifyContent: "center" }}>
                                 {(user.status || 'Active') === "Active" ? (
                                   <button
                                     className="ghost-btn settings-table__action-btn"
@@ -14059,6 +14215,89 @@ Subscription Manager HK`;
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Popup Modal */}
+      {showImagePopup && (
+        <div
+          className="modal-overlay modal-overlay-high"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowImagePopup(false);
+              setSelectedImageUrl("");
+            }
+          }}
+          style={{
+            background: "rgba(0, 0, 0, 0.8)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+              maxWidth: "90vw",
+              maxHeight: "90vh",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={selectedImageUrl}
+              alt="Donation proof"
+              style={{
+                maxWidth: "100%",
+                maxHeight: "90vh",
+                borderRadius: "8px",
+                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.5)"
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setShowImagePopup(false);
+                setSelectedImageUrl("");
+              }}
+              style={{
+                position: "absolute",
+                bottom: "16px",
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                background: "#ffffff",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "1.5rem",
+                fontWeight: "bold",
+                color: "#000",
+                boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+                transition: "all 0.2s ease",
+                zIndex: 10001
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.background = "#f5f5f5";
+                e.target.style.transform = "translateX(-50%) scale(1.1)";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = "#ffffff";
+                e.target.style.transform = "translateX(-50%) scale(1)";
+              }}
+              title="Close"
+              aria-label="Close"
+            >
+              ×
+            </button>
           </div>
         </div>
       )}
