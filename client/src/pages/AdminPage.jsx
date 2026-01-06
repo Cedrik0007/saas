@@ -1199,8 +1199,9 @@ function AdminPage() {
   const handleExportPDF = () => {
     try {
       const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
+      // jsPDF 4.0.0 compatible API
+      const pageWidth = doc.internal.pageSize.width;
+      const pageHeight = doc.internal.pageSize.height;
       let yPos = 20;
       const margin = 20;
       const lineHeight = 7;
@@ -1305,6 +1306,7 @@ function AdminPage() {
       }
 
       // Footer
+      // jsPDF 4.0.0 compatible API
       const totalPages = doc.internal.pages.length - 1;
       for (let i = 1; i <= totalPages; i++) {
         doc.setPage(i);

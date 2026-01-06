@@ -1,6 +1,6 @@
 import express from "express";
 import multer from "multer";
-import xlsx from "xlsx";
+import ExcelJS from "exceljs";
 import { ensureConnection } from "../config/database.js";
 import UserModel from "../models/User.js";
 import InvoiceModel from "../models/Invoice.js";
@@ -362,11 +362,41 @@ router.post("/import", upload.single("file"), async (req, res) => {
         }
       }
     } else {
-      // Parse Excel file
-      const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+      // Parse Excel file using exceljs
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(req.file.buffer);
+      const worksheet = workbook.worksheets[0];
+      
+      // Find maximum column count by checking all rows
+      let maxColumnCount = 0;
+      worksheet.eachRow((row) => {
+        if (row.cellCount > maxColumnCount) {
+          maxColumnCount = row.cellCount;
+        }
+      });
+      
+      // Convert worksheet to array of arrays
+      const data = [];
+      worksheet.eachRow((row, rowNumber) => {
+        const rowData = new Array(maxColumnCount).fill(''); // Initialize with empty strings
+        
+        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+          // Get cell value, handling different types
+          let value = cell.value;
+          if (value === null || value === undefined) {
+            value = '';
+          } else if (typeof value === 'object' && value.text !== undefined) {
+            // Rich text cell
+            value = value.text;
+          } else if (value instanceof Date) {
+            // Date cell - keep as Date object
+            value = value;
+          }
+          // colNumber is 1-indexed, convert to 0-indexed
+          rowData[colNumber - 1] = value;
+        });
+        data.push(rowData);
+      });
 
       if (data.length < 2) {
         return res.status(400).json({ error: "Excel file must have at least a header row and one data row" });
