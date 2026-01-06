@@ -9455,7 +9455,7 @@ Subscription Manager HK`;
                                 { value: "Paid", label: "Paid" },
                                 { value: "Unpaid", label: "Unpaid" },
                                 { value: "Overdue", label: "Overdue" },
-                                { value: "Pending", label: "Pending" }
+                                // { value: "Pending", label: "Pending" }
                               ].map((option) => (
                                 <button
                                   key={option.value}
@@ -12474,7 +12474,7 @@ Subscription Manager HK`;
 
                     <div className="table-wrapper">
                       <Table
-                        columns={["Name", "Email", "Role", "Status", "Actions"]}
+                        columns={["Name", "Email", "Role", "Status"]}
                         rows={admins.map((admin) => ({
                           Name: admin.name || "N/A",
                           Email: admin.email || "N/A",
