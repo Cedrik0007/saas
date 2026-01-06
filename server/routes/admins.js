@@ -40,6 +40,7 @@ router.post("/", async (req, res) => {
       id: adminId,
       name: req.body.name || "",
       email: req.body.email || "",
+      phone: req.body.phone || "",
       password: req.body.password || "",
       role: safeRole,
       status: req.body.status || "Active",

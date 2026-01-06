@@ -467,7 +467,7 @@ function AdminPage() {
 
   const [orgForm, setOrgForm] = useState(organizationInfo);
   const [showAdminForm, setShowAdminForm] = useState(false);
-  const [adminForm, setAdminForm] = useState({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
+  const [adminForm, setAdminForm] = useState({ name: "", email: "", phone: "", password: "", role: "Viewer", status: "Active" });
   const [showAddAdminPassword, setShowAddAdminPassword] = useState(false);
   const [adminEmailError, setAdminEmailError] = useState("");
 
@@ -5022,18 +5022,20 @@ Subscription Manager HK`;
                     >
                       Communication
                     </button>
-                    <button
+                    {/* Activity tab hidden */}
+                    {/* <button
                       className={`tab ${activeTab === "Activity" ? "active" : ""}`}
                       onClick={() => setActiveTab("Activity")}
                     >
                       Activity
-                    </button>
-                    <button
+                    </button> */}
+                    {/* Notes tab hidden */}
+                    {/* <button
                       className={`tab ${activeTab === "Notes" ? "active" : ""}`}
                       onClick={() => setActiveTab("Notes")}
                     >
                       Notes
-                    </button>
+                    </button> */}
                   </div>
 
                   {activeTab === "Invoices" && (
@@ -5551,7 +5553,8 @@ Subscription Manager HK`;
                     </div>
                   )}
 
-                  {activeTab === "Activity" && (
+                  {/* Activity tab panel hidden */}
+                  {/* {activeTab === "Activity" && (
                     <div className="tab-panel">
                       <h4>Activity Timeline</h4>
                       {(() => {
@@ -5651,9 +5654,10 @@ Subscription Manager HK`;
                         );
                       })()}
                     </div>
-                  )}
+                  )} */}
 
-                  {activeTab === "Notes" && (
+                  {/* Notes tab panel hidden */}
+                  {/* {activeTab === "Notes" && (
                     <div className="tab-panel">
                       <h4>Internal Notes</h4>
                       <p className="text-sm mb-md" style={{ color: "#6b7280" }}>
@@ -5688,7 +5692,7 @@ Subscription Manager HK`;
                         </p>
                       )}
                     </div>
-                  )}
+                  )} */}
                 </div>
               </article>
             )}
@@ -12407,7 +12411,7 @@ Subscription Manager HK`;
                               return;
                             }
                             setShowAdminForm(true);
-                            setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
+                            setAdminForm({ name: "", email: "", phone: "", password: "", role: "Viewer", status: "Active" });
                             setShowAddAdminPassword(false);
                             setAdminEmailError("");
                           }}
@@ -12548,6 +12552,12 @@ Subscription Manager HK`;
                           }
                           setAdminEmailError("");
                           
+                          // Validate phone
+                          if (!adminForm.phone || !adminForm.phone.trim()) {
+                            showToast("Please enter mobile number", "error");
+                            return;
+                          }
+                          
                           if (!adminForm.password || !adminForm.password.trim()) {
                             showToast("Please enter password", "error");
                             return;
@@ -12555,7 +12565,7 @@ Subscription Manager HK`;
                           try {
                             await addAdminUser(adminForm);
                             setShowAdminForm(false);
-                            setAdminForm({ name: "", email: "", password: "", role: "Viewer", status: "Active" });
+                            setAdminForm({ name: "", email: "", phone: "", password: "", role: "Viewer", status: "Active" });
                             setShowAddAdminPassword(false);
                             setAdminEmailError("");
                             showToast("Admin user added!");
@@ -12611,6 +12621,22 @@ Subscription Manager HK`;
                               </span>
                             )}
                           </label>
+                        </div>
+                        <div className="settings-form__group">
+                          <PhoneInput
+                            label={
+                              <span className="admin-phone-input-label">
+                                <i className="fas fa-phone admin-phone-input-label-icon" aria-hidden="true"></i>
+                                Mobile Number <span className="admin-phone-input-required">*</span>
+                              </span>
+                            }
+                            value={adminForm.phone}
+                            onChange={(e) => {
+                              setAdminForm({ ...adminForm, phone: e.target.value });
+                            }}
+                            required={true}
+                            placeholder="Enter mobile number"
+                          />
                         </div>
                         <div className="settings-form__group">
                           <label className="settings-form__label">
@@ -12772,7 +12798,7 @@ Subscription Manager HK`;
                       minWidth: "150px",
                       padding: "12px 20px",
                       borderRadius: "8px",
-                      border: "none",
+                      border: "1px solid rgb(224, 224, 224)",
                       background: paymentModalData.paymentMethod === "Cash" 
                         ? "#5a31ea" 
                         : "#f8f9ff",
@@ -12804,7 +12830,7 @@ Subscription Manager HK`;
                       minWidth: "150px",
                       padding: "12px 20px",
                       borderRadius: "8px",
-                      border: "none",
+                      border: "1px solid rgb(224, 224, 224)",
                       background: paymentModalData.paymentMethod === "Online" 
                         ? "#5a31ea" 
                         : "#f8f9ff",
@@ -12830,8 +12856,8 @@ Subscription Manager HK`;
 
               {/* Admin Selection - Shown for both Cash and Online */}
               {(paymentModalData.paymentMethod === "Cash" || paymentModalData.paymentMethod === "Online") && (
-                <div style={{ marginBottom: "20px" }}>
-                  <div style={{ marginBottom: "16px" }}>
+                <div style={{ marginBottom: "2px" }}>
+                  <div style={{ marginBottom: "2px" }}>
                     <label style={{ 
                       display: "block", 
                       fontSize: "0.875rem", 
@@ -12882,43 +12908,10 @@ Subscription Manager HK`;
                       <option value="">Select an admin</option>
                       {admins.filter(admin => admin.status === "Active").map((admin) => (
                         <option key={admin.id} value={admin.id}>
-                          {admin.name} ({admin.email})
+                          {admin.name} ({admin.phone || 'N/A'})
                         </option>
                       ))}
                     </select>
-                  </div>
-                  <div>
-                    <PhoneInput
-                      label={
-                        <span style={{ 
-                          display: "block", 
-                          fontSize: "0.875rem", 
-                          fontWeight: "600", 
-                          color: "#333", 
-                          marginBottom: "8px" 
-                        }}>
-                          Mobile Number <span style={{ color: "#ef4444" }}>*</span>
-                        </span>
-                      }
-                      value={paymentModalData.adminMobile}
-                      onChange={(e) => {
-                        setPaymentModalData({ ...paymentModalData, adminMobile: e.target.value });
-                        if (paymentModalErrors.adminMobile || currentInvalidPaymentModalField === "adminMobile") {
-                          setPaymentModalErrors(prev => ({ ...prev, adminMobile: false }));
-                          if (currentInvalidPaymentModalField === "adminMobile") {
-                            setCurrentInvalidPaymentModalField(null);
-                          }
-                        }
-                      }}
-                      onError={(error) => {
-                        showToast(error, "error");
-                        setPaymentModalErrors(prev => ({ ...prev, adminMobile: true }));
-                        setCurrentInvalidPaymentModalField("adminMobile");
-                      }}
-                      required={true}
-                      className={paymentModalErrors.adminMobile && currentInvalidPaymentModalField === "adminMobile" ? "admin-phone-input-error" : ""}
-                      placeholder="Enter mobile number"
-                    />
                   </div>
                 </div>
               )}
@@ -12933,7 +12926,7 @@ Subscription Manager HK`;
                     color: "#333", 
                     marginBottom: "12px" 
                   }}>
-                    Attachment Image <span style={{ color: "#ef4444" }}>*</span>
+                    Attachment Image <span style={{ color: "#999", fontSize: "0.75rem" }}>(Optional)</span>
                   </label>
                 <div style={{ 
                   border: paymentModalErrors.image ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
@@ -13090,8 +13083,8 @@ Subscription Manager HK`;
                     onClick={async () => {
                     // Progressive validation for payment modal
                     const validatePaymentModal = () => {
-                      // Define field order for validation - both methods need admin and mobile
-                      const fieldOrder = ["selectedAdminId", "adminMobile", "image"];
+                      // Define field order for validation - only admin is required, image is optional
+                      const fieldOrder = ["selectedAdminId"];
                       
                       // If we have a current invalid field, check if it's now valid
                       if (currentInvalidPaymentModalField) {
@@ -13101,15 +13094,6 @@ Subscription Manager HK`;
                         if (currentInvalidPaymentModalField === "selectedAdminId" && !paymentModalData.selectedAdminId) {
                           isValid = false;
                           errorMsg = "Please select an admin";
-                        } else if (currentInvalidPaymentModalField === "adminMobile" && !paymentModalData.adminMobile.trim()) {
-                          isValid = false;
-                          errorMsg = "Mobile number is required";
-                        } else if (currentInvalidPaymentModalField === "image") {
-                          const hasImage = paymentModalData.imageFile || paymentModalData.imageUrl || paymentModalInvoice?.screenshot;
-                          if (!hasImage) {
-                            isValid = false;
-                            errorMsg = "Image has not been uploaded. Please upload an image attachment.";
-                          }
                         }
                         
                         if (isValid) {
@@ -13130,15 +13114,6 @@ Subscription Manager HK`;
                         if (field === "selectedAdminId" && !paymentModalData.selectedAdminId) {
                           isValid = false;
                           errorMsg = "Please select an admin";
-                        } else if (field === "adminMobile" && !paymentModalData.adminMobile.trim()) {
-                          isValid = false;
-                          errorMsg = "Mobile number is required";
-                        } else if (field === "image") {
-                          const hasImage = paymentModalData.imageFile || paymentModalData.imageUrl || paymentModalInvoice?.screenshot;
-                          if (!hasImage) {
-                            isValid = false;
-                            errorMsg = "Image has not been uploaded. Please upload an image attachment.";
-                          }
                         }
                         
                         if (!isValid) {
@@ -13163,19 +13138,6 @@ Subscription Manager HK`;
                               );
                               adminSelect?.focus();
                               adminSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
-                            } else if (field === "adminMobile") {
-                              const phoneInputs = document.querySelectorAll('.phone-input-field');
-                              const mobileInput = Array.from(phoneInputs).find(input => 
-                                input.placeholder?.includes("mobile number")
-                              );
-                              mobileInput?.focus();
-                              mobileInput?.scrollIntoView({ behavior: "smooth", block: "center" });
-                            } else if (field === "image") {
-                              const uploadAreas = document.querySelectorAll('[style*="border"]');
-                              const imageArea = Array.from(uploadAreas).find(area => 
-                                area.style.border.includes("dashed")
-                              );
-                              imageArea?.scrollIntoView({ behavior: "smooth", block: "center" });
                             }
                           }, 100);
                           
@@ -13239,10 +13201,7 @@ Subscription Manager HK`;
                             imageUrl = uploadData.url;
                           }
 
-                          // Validate required fields (double check)
-                          if (!imageUrl) {
-                            throw new Error("Image upload is required for all payments");
-                          }
+                          // Image is optional, so no validation needed here
 
                           // Update invoice with screenshot if image was uploaded
                           if (imageUrl && imageUrl !== paymentModalInvoice.screenshot) {

@@ -645,6 +645,7 @@ export function AppProvider({ children }) {
         body: JSON.stringify({
           name: user.name,
           email: user.email || '',
+          phone: user.phone || '',
           role: user.role || 'Viewer',
           status: user.status || 'Active',
           password: user.password || ''
