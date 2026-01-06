@@ -1134,11 +1134,11 @@ function AdminPage() {
       csvContent += `Average per Member,$${reportStats.averagePerMember.toFixed(2)}\n`;
       csvContent += `Total Transactions,${reportStats.transactionCount}\n\n`;
       
-      // Payment method breakdown
-      csvContent += "Payment Method Breakdown\n";
-      reportStats.methodMix.forEach(item => {
-        csvContent += `${item.label},${item.value}\n`;
-      });
+      // Payment method breakdown - Hidden
+      // csvContent += "Payment Method Breakdown\n";
+      // reportStats.methodMix.forEach(item => {
+      //   csvContent += `${item.label},${item.value}\n`;
+      // });
       
       // Detailed transactions (only completed/paid)
       csvContent += "\nDetailed Transactions (Completed Payments Only)\n";
@@ -1233,18 +1233,18 @@ function AdminPage() {
       doc.text(`Total Transactions: ${reportStats.transactionCount}`, margin, yPos);
       yPos += 10;
 
-      // Payment method breakdown
-      doc.setFontSize(14);
-      doc.setFont(undefined, 'bold');
-      doc.text('Payment Method Breakdown', margin, yPos);
-      yPos += 8;
+      // Payment method breakdown - Hidden
+      // doc.setFontSize(14);
+      // doc.setFont(undefined, 'bold');
+      // doc.text('Payment Method Breakdown', margin, yPos);
+      // yPos += 8;
 
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
-      reportStats.methodMix.forEach(item => {
-        doc.text(`${item.label}: ${item.value}`, margin, yPos);
-        yPos += lineHeight;
-      });
+      // doc.setFontSize(10);
+      // doc.setFont(undefined, 'normal');
+      // reportStats.methodMix.forEach(item => {
+      //   doc.text(`${item.label}: ${item.value}`, margin, yPos);
+      //   yPos += lineHeight;
+      // });
 
       // Check if we need a new page for transactions
       const fromDate = new Date(dateRange.from);
@@ -11405,7 +11405,8 @@ Subscription Manager HK`;
 
                 {/* Key Metrics - Clean Minimal KPI Cards */}
                 <div className="kpi-grid" style={{ marginBottom: "24px" }}>
-                  <div className="card kpi">
+                  {/* Total Collected card hidden */}
+                  {/* <div className="card kpi">
                     <p>
                       <i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                       Total Collected
@@ -11416,6 +11417,36 @@ Subscription Manager HK`;
                     <small>
                       {Math.round((reportStats.collected / reportStats.expected) * 100)}% of ${reportStats.expected.toLocaleString()} expected
                     </small>
+                  </div> */}
+                  <div className="card kpi">
+                    <p>
+                      <i className="fas fa-chart-line" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                      Total Amount
+                    </p>
+                    <h4>
+                      ${reportStats.collected.toLocaleString()}
+                    </h4>
+                    <small>Subscriptions + Donations</small>
+                  </div>
+                  <div className="card kpi">
+                    <p>
+                      <i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#10b981" }}></i>
+                      Total Subscription Amount
+                    </p>
+                    <h4>
+                      ${reportStats.paymentsTotal.toLocaleString()}
+                    </h4>
+                    <small>{reportStats.paymentsCount} payment{reportStats.paymentsCount !== 1 ? 's' : ''}</small>
+                  </div>
+                  <div className="card kpi">
+                    <p>
+                      <i className="fas fa-heart" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                      Total Donation Amount
+                    </p>
+                    <h4>
+                      ${reportStats.donationsTotal.toLocaleString()}
+                    </h4>
+                    <small>{reportStats.donationsCount} donation{reportStats.donationsCount !== 1 ? 's' : ''}</small>
                   </div>
                   <div className="card kpi">
                     <p>
@@ -11427,7 +11458,8 @@ Subscription Manager HK`;
                     </h4>
                     <small>Pending collection</small>
                   </div>
-                  <div className="card kpi">
+                  {/* Avg per Member card hidden */}
+                  {/* <div className="card kpi">
                     <p>
                       <i className="fas fa-users" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                       Avg per Member
@@ -11436,8 +11468,9 @@ Subscription Manager HK`;
                       ${reportStats.averagePerMember}
                     </h4>
                     <small>Goal: $800</small>
-                  </div>
-                  <div className="card kpi">
+                  </div> */}
+                  {/* Transactions card hidden */}
+                  {/* <div className="card kpi">
                     <p>
                       <i className="fas fa-exchange-alt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                       Transactions
@@ -11446,7 +11479,7 @@ Subscription Manager HK`;
                       {reportStats.transactionCount}
                     </h4>
                     <small>In selected period</small>
-                  </div>
+                  </div> */}
                 </div>
 
                 {/* Charts Section - Clean Design */}
@@ -11583,8 +11616,8 @@ Subscription Manager HK`;
                     </div>
                   </div>
 
-                {/* Payment Method Breakdown - Enhanced */}
-                <div className="card card-reports" style={{ 
+                {/* Payment Method Breakdown - Hidden */}
+                {/* <div className="card card-reports" style={{ 
                   marginBottom: "24px", 
                   padding: "24px",
                   background: "#ffffff",
@@ -11645,7 +11678,7 @@ Subscription Manager HK`;
                       );
                     })}
                   </div>
-                </div>
+                </div> */}
 
                 {/* Filters and Transactions Section */}
                 <div className="card card-reports" style={{ 
@@ -11657,7 +11690,7 @@ Subscription Manager HK`;
                   <div style={{ marginBottom: "24px", display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center" }}>
                     <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                       <label style={{ fontWeight: "600", color: "#1a1a1a", fontSize: "0.9375rem" }}>
-                        <i className="fas fa-filter" style={{ marginRight: "6px", color: "#5a31ea" }}></i>
+                        {/* <i className="fas fa-filter" style={{ marginRight: "6px", color: "#5a31ea" }}></i> */}
                         Filter by Type:
                       </label>
                       <div style={{ 
