@@ -8,7 +8,6 @@ import { Notie } from "../components/Notie.jsx";
 import { Tooltip } from "../components/Tooltip.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
-import { useAutoLogout } from "../hooks/useAutoLogout.js";
 import jsPDF from "jspdf";
 import { statusClass } from "../statusClasses";
 import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
@@ -668,9 +667,6 @@ function AdminPage() {
   const [remindersChannelFilter, setRemindersChannelFilter] = useState("All"); // All, Email, WhatsApp
 
   const navigate = useNavigate();
-  
-  // Auto-logout on inactivity (15 minutes)
-  useAutoLogout(15);
 
   // Sync URL with activeSection changes
   useEffect(() => {
