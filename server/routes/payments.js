@@ -41,7 +41,7 @@ router.get("/member/:memberId", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     await ensureConnection();
-    
+
     const paymentData = {
       ...req.body,
       date: req.body.date || new Date().toLocaleDateString("en-GB", {
@@ -51,10 +51,10 @@ router.post("/", async (req, res) => {
       }),
       status: req.body.status || "Pending",
     };
-    
+
     const newPayment = new PaymentModel(paymentData);
     await newPayment.save();
-    
+
     res.status(201).json(newPayment);
   } catch (error) {
     console.error("Error creating payment:", error);
@@ -66,7 +66,7 @@ router.post("/", async (req, res) => {
 router.put("/:id/approve", async (req, res) => {
   try {
     await ensureConnection();
-    
+
     // Try to find by _id first, then by id field
     let payment = await PaymentModel.findById(req.params.id);
     if (!payment) {
@@ -85,15 +85,15 @@ router.put("/:id/approve", async (req, res) => {
     // Get related invoice and member for email
     let invoice = null;
     let member = null;
-    
+
     if (payment.invoiceId) {
       invoice = await InvoiceModel.findOne({ id: payment.invoiceId });
     }
-    
+
     if (payment.memberId) {
       member = await UserModel.findOne({ id: payment.memberId });
     }
-    
+
     if (!member && payment.memberEmail) {
       member = await UserModel.findOne({ email: payment.memberEmail.toLowerCase() });
     }
@@ -106,7 +106,7 @@ router.put("/:id/approve", async (req, res) => {
         reference: payment.reference,
         screenshot: payment.screenshot
       };
-      
+
       // Preserve paidToAdmin fields for cash payments
       if (payment.paidToAdmin) {
         invoiceUpdate.paidToAdmin = payment.paidToAdmin;
@@ -114,14 +114,66 @@ router.put("/:id/approve", async (req, res) => {
       if (payment.paidToAdminName) {
         invoiceUpdate.paidToAdminName = payment.paidToAdminName;
       }
-      
+
       await InvoiceModel.findOneAndUpdate(
         { id: payment.invoiceId },
         { $set: invoiceUpdate }
       );
-      
+
       // Update member balance
       await calculateAndUpdateMemberBalance(payment.memberId);
+
+      // AUTOMATIC NEXT DUE DATE UPDATE LOGIC
+      if (member && invoice) {
+        let nextDueYear = null;
+        const periodStr = String(invoice.period || "").trim();
+
+        // Attempt to extract year from period (e.g. "2025" or "Jan 2025 Yearly...")
+        const yearMatch = periodStr.match(/\d{4}/);
+        if (yearMatch) {
+          nextDueYear = parseInt(yearMatch[0]) + 1;
+        }
+        // Fallback for yearly/lifetime subscriptions without a specific year
+        else if (periodStr.toLowerCase().includes("yearly") || periodStr.toLowerCase().includes("lifetime")) {
+          // Default to next year from now if generic yearly/lifetime
+          nextDueYear = new Date().getFullYear() + 1;
+        }
+
+        if (nextDueYear) {
+          const newNextDueDate = new Date(nextDueYear, 0, 1); // Jan 1st of next year
+
+          // Format as YYYY-MM-DD for consistency
+          const year = newNextDueDate.getFullYear();
+          const month = String(newNextDueDate.getMonth() + 1).padStart(2, '0');
+          const day = String(newNextDueDate.getDate()).padStart(2, '0');
+          const nextDueStr = `${year}-${month}-${day}`;
+
+          const memberUpdate = {
+            payment_status: 'paid',
+            last_payment_date: new Date(),
+            next_due_date: newNextDueDate,
+            nextDue: nextDueStr
+          };
+
+          await UserModel.findOneAndUpdate(
+            { id: member.id },
+            { $set: memberUpdate }
+          );
+
+          console.log(`✓ Updated next due date for member ${member.name} to ${nextDueYear} (Invoice Period: ${periodStr})`);
+        } else {
+          // Standard update for non-yearly payments, just mark as paid
+          await UserModel.findOneAndUpdate(
+            { id: member.id },
+            {
+              $set: {
+                payment_status: 'paid',
+                last_payment_date: new Date()
+              }
+            }
+          );
+        }
+      }
     }
 
     // Send approval email
@@ -140,7 +192,7 @@ router.put("/:id/approve", async (req, res) => {
 router.put("/:id/reject", async (req, res) => {
   try {
     await ensureConnection();
-    
+
     // Try to find by _id first, then by id field
     let payment = await PaymentModel.findById(req.params.id);
     if (!payment) {
@@ -160,15 +212,15 @@ router.put("/:id/reject", async (req, res) => {
     // Get related invoice and member for email
     let invoice = null;
     let member = null;
-    
+
     if (payment.invoiceId) {
       invoice = await InvoiceModel.findOne({ id: payment.invoiceId });
     }
-    
+
     if (payment.memberId) {
       member = await UserModel.findOne({ id: payment.memberId });
     }
-    
+
     if (!member && payment.memberEmail) {
       member = await UserModel.findOne({ email: payment.memberEmail.toLowerCase() });
     }
@@ -177,8 +229,8 @@ router.put("/:id/reject", async (req, res) => {
     if (payment.invoiceId) {
       await InvoiceModel.findOneAndUpdate(
         { id: payment.invoiceId },
-        { 
-          $set: { 
+        {
+          $set: {
             status: "Unpaid",
             method: "",
             reference: "",
@@ -186,7 +238,7 @@ router.put("/:id/reject", async (req, res) => {
           }
         }
       );
-      
+
       // Update member balance
       await calculateAndUpdateMemberBalance(payment.memberId);
     }
@@ -207,7 +259,7 @@ router.put("/:id/reject", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     await ensureConnection();
-    
+
     // Try to find by _id first, then by id field
     let payment = await PaymentModel.findById(req.params.id);
     if (!payment) {
@@ -221,7 +273,7 @@ router.put("/:id", async (req, res) => {
     const updateData = { ...req.body };
     delete updateData._id; // Don't allow _id updates
     delete updateData.id; // Don't allow id updates
-    
+
     Object.assign(payment, updateData);
     await payment.save();
 
@@ -236,7 +288,7 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     await ensureConnection();
-    
+
     // Try to find by _id first, then by id field
     let payment = await PaymentModel.findById(req.params.id);
     if (!payment) {
@@ -250,8 +302,8 @@ router.delete("/:id", async (req, res) => {
     if (payment.status === "Completed" && payment.invoiceId) {
       await InvoiceModel.findOneAndUpdate(
         { id: payment.invoiceId },
-        { 
-          $set: { 
+        {
+          $set: {
             status: "Unpaid",
             method: "",
             reference: "",
@@ -259,7 +311,7 @@ router.delete("/:id", async (req, res) => {
           }
         }
       );
-      
+
       // Update member balance
       if (payment.memberId) {
         await calculateAndUpdateMemberBalance(payment.memberId);

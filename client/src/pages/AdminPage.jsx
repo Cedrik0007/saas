@@ -156,7 +156,7 @@ function AdminPage() {
   ];
 
   const [searchParams, setSearchParams] = useSearchParams();
-  
+
   // Initialize activeSection from URL or default to dashboard
   const [activeSection, setActiveSection] = useState(() => {
     const sectionFromUrl = searchParams.get('section');
@@ -179,14 +179,14 @@ function AdminPage() {
   const [notieType, setNotieType] = useState("success");
   const [lastCreatedInvoice, setLastCreatedInvoice] = useState(null);
   const [showInvoiceSuccessCard, setShowInvoiceSuccessCard] = useState(false);
-  
+
   // Import preview state
   const [showImportPreview, setShowImportPreview] = useState(false);
   const [importPreviewData, setImportPreviewData] = useState([]);
   const [importFileName, setImportFileName] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [importErrors, setImportErrors] = useState([]);
-  
+
   // Confirmation dialog state
   const [confirmationDialog, setConfirmationDialog] = useState({
     isOpen: false,
@@ -195,7 +195,7 @@ function AdminPage() {
     onCancel: null,
     confirmButtonText: "Confirm", // Default button text
   });
-  
+
   // Form states
   // Get today's date in YYYY-MM-DD format for date input
   const getTodayDate = () => {
@@ -213,6 +213,7 @@ function AdminPage() {
     status: "Active",
     balance: "250", // default for Lifetime (numeric string)
     nextDue: getTodayDate(), // Default to today's date
+    subscriptionYear: new Date().getFullYear().toString(),
     lastPayment: "",
     subscriptionType: "Lifetime",
   });
@@ -279,10 +280,10 @@ function AdminPage() {
   // Progressive validation - validate one field at a time, starting from name
   const validateMemberForm = () => {
     // Define field order for validation (only validate fields that exist in the form)
-    const fieldOrder = editingMember 
+    const fieldOrder = editingMember
       ? ["name", "email", "phone"] // Edit Member: no date fields
       : ["name", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields
-    
+
     // Clear all errors first
     setMemberFieldErrors({
       name: false,
@@ -291,7 +292,7 @@ function AdminPage() {
       nextDue: false,
       lastPayment: false,
     });
-    
+
     // Find first invalid field starting from the beginning
     for (const field of fieldOrder) {
       const error = validateMemberField(field, memberForm[field]);
@@ -304,10 +305,10 @@ function AdminPage() {
         setTimeout(() => {
           const formElement = document.querySelector('form.form-grid');
           if (!formElement) return;
-          
+
           const fieldIndex = fieldOrder.indexOf(field);
           let targetInput = null;
-          
+
           if (fieldIndex === 0) {
             // Name field - first required text input
             targetInput = formElement.querySelector('input[type="text"][required]');
@@ -326,7 +327,7 @@ function AdminPage() {
             const dateInputs = formElement.querySelectorAll('input[type="date"]');
             targetInput = dateInputs[1];
           }
-          
+
           if (targetInput) {
             targetInput.focus();
             targetInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -335,7 +336,7 @@ function AdminPage() {
         return false;
       }
     }
-    
+
     // All fields valid
     setMemberFieldErrors({
       name: false,
@@ -414,6 +415,7 @@ function AdminPage() {
     invoiceType: "Lifetime",
     due: "",
     notes: "",
+    subscriptionYear: new Date().getFullYear().toString(),
   });
 
   // Auto-generate invoice numbers like INV-2025-001 based on existing invoices
@@ -481,7 +483,7 @@ function AdminPage() {
     }
     return "";
   };
-  
+
   // Email template state
   const [emailTemplate, setEmailTemplate] = useState({
     subject: "Payment Reminder - Outstanding Balance",
@@ -515,7 +517,7 @@ function AdminPage() {
   <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
 </div>`,
   });
-  
+
   // Email automation settings state
   const [emailSettings, setEmailSettings] = useState({
     emailService: "gmail",
@@ -529,9 +531,12 @@ function AdminPage() {
   const [testingEmail, setTestingEmail] = useState(false);
   const [emailConfigStatus, setEmailConfigStatus] = useState('not_connected');
   const [showEmailPassword, setShowEmailPassword] = useState(false);
-  const [dateRange, setDateRange] = useState({
-    from: "2025-01-01",
-    to: "2025-12-31",
+  const [dateRange, setDateRange] = useState(() => {
+    const today = new Date();
+    return {
+      from: `${today.getFullYear()}-01-01`,
+      to: `${today.getFullYear()}-12-31`,
+    };
   });
   const [uploadingQR, setUploadingQR] = useState({});
   const [selectedPeriod, setSelectedPeriod] = useState("This Year");
@@ -567,9 +572,9 @@ function AdminPage() {
   const updateChartMousePosition = (e) => {
     if (chartContainerRef.current) {
       const rect = chartContainerRef.current.getBoundingClientRect();
-      setMousePosition({ 
-        x: e.clientX - rect.left, 
-        y: e.clientY - rect.top 
+      setMousePosition({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
       });
     }
   };
@@ -625,7 +630,7 @@ function AdminPage() {
   const [showImagePopup, setShowImagePopup] = useState(false); // Show/hide image popup
   const [selectedImageUrl, setSelectedImageUrl] = useState(""); // Selected image URL for popup
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
-  
+
   // Payment form state
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [editingPayment, setEditingPayment] = useState(null);
@@ -654,7 +659,7 @@ function AdminPage() {
     screenshot: "",
     notes: "",
   });
-  
+
   // Pagination states
   const [membersPage, setMembersPage] = useState(1);
   const [membersPageSize, setMembersPageSize] = useState(10);
@@ -698,7 +703,7 @@ function AdminPage() {
 
     // Listen for popstate events (back/forward button)
     window.addEventListener('popstate', handlePopState);
-    
+
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
@@ -718,13 +723,13 @@ function AdminPage() {
     const now = new Date();
     const months = [];
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    
+
     // Get last 12 months
     for (let i = 11; i >= 0; i--) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthKey = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
       const monthLabel = monthNames[date.getMonth()];
-      
+
       // Filter payments for this month (only completed/paid)
       const monthPayments = paymentHistory.filter((payment) => {
         // Only count completed or paid payments
@@ -732,16 +737,16 @@ function AdminPage() {
         if (!isCompleted) return false;
         if (!payment.date) return false;
         const paymentDate = new Date(payment.date);
-        return paymentDate.getMonth() === date.getMonth() && 
-               paymentDate.getFullYear() === date.getFullYear();
+        return paymentDate.getMonth() === date.getMonth() &&
+          paymentDate.getFullYear() === date.getFullYear();
       });
-      
+
       // Calculate total for this month
       const total = monthPayments.reduce((sum, payment) => {
         const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
         return sum + amount;
       }, 0);
-      
+
       months.push({
         month: monthLabel,
         monthKey: monthKey,
@@ -749,10 +754,10 @@ function AdminPage() {
         count: monthPayments.length
       });
     }
-    
+
     // Calculate max value for percentage calculation
     const maxValue = Math.max(...months.map(m => m.value), 1);
-    
+
     // Convert to percentage for chart display
     return months.map(m => ({
       ...m,
@@ -765,12 +770,12 @@ function AdminPage() {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
-    
+
     // Create Sets for member lookup
     const memberIds = new Set(members.map(m => m.id).filter(Boolean));
     const memberEmails = new Set(members.map(m => m.email?.toLowerCase()).filter(Boolean));
     const memberNames = new Set(members.map(m => m.name?.toLowerCase()).filter(Boolean));
-    
+
     // Calculate Total Collected - from paymentHistory (only completed/paid)
     const allPayments = paymentHistory || [];
     const totalCollectedAllTime = allPayments.reduce((sum, payment) => {
@@ -781,7 +786,7 @@ function AdminPage() {
       }
       return sum;
     }, 0);
-    
+
     // Calculate collected this month
     const thisMonthPayments = allPayments.filter((payment) => {
       // Only count completed or paid payments
@@ -789,8 +794,8 @@ function AdminPage() {
       if (!isCompleted) return false;
       if (!payment.date) return false;
       const paymentDate = new Date(payment.date);
-      return paymentDate.getMonth() === currentMonth && 
-             paymentDate.getFullYear() === currentYear;
+      return paymentDate.getMonth() === currentMonth &&
+        paymentDate.getFullYear() === currentYear;
     });
     const collectedThisMonth = thisMonthPayments.reduce((sum, payment) => {
       // Only count completed or paid payments
@@ -800,7 +805,7 @@ function AdminPage() {
       }
       return sum;
     }, 0);
-    
+
     // Calculate collected this year
     const thisYearPayments = allPayments.filter((payment) => {
       // Only count completed or paid payments
@@ -818,55 +823,55 @@ function AdminPage() {
       }
       return sum;
     }, 0);
-    
+
     // Calculate Total Outstanding - from members' balance field (not from invoices)
     // Parse member balance which might be in formats like: "$250 Outstanding", "$250", "$0", "$250 Overdue"
     const totalOutstanding = members.reduce((sum, member) => {
       if (!member.balance) return sum;
-      
+
       // Extract numeric value from balance string
       // Handles formats like: "$250 Outstanding", "$250", "$0", "$250 Overdue"
       const balanceStr = member.balance.toString();
       const numericValue = parseFloat(balanceStr.replace(/[^0-9.]/g, '') || 0);
-      
+
       // Only count if balance is greater than 0
       return sum + (numericValue > 0 ? numericValue : 0);
     }, 0);
-    
+
     // Calculate Overdue Members - members with overdue invoices OR members with Overdue status
     // First, get all overdue invoices
     const overdueInvoices = invoices.filter(inv => {
-      const isMemberInvoice = 
+      const isMemberInvoice =
         (inv.memberId && memberIds.has(inv.memberId)) ||
         (inv.memberEmail && memberEmails.has(inv.memberEmail?.toLowerCase())) ||
         (inv.memberName && memberNames.has(inv.memberName?.toLowerCase()));
-      
+
       return isMemberInvoice && inv.status === "Overdue";
     });
-    
+
     // Create sets to track members with overdue invoices
     const overdueMemberIdsFromInvoices = new Set();
     const overdueMemberEmailsFromInvoices = new Set();
     const overdueMemberNamesFromInvoices = new Set();
-    
+
     overdueInvoices.forEach(inv => {
       if (inv.memberId) overdueMemberIdsFromInvoices.add(inv.memberId);
       if (inv.memberEmail) overdueMemberEmailsFromInvoices.add(inv.memberEmail.toLowerCase());
       if (inv.memberName) overdueMemberNamesFromInvoices.add(inv.memberName.toLowerCase());
     });
-    
+
     // Count unique overdue members - either from invoices or from status
     const overdueMemberSet = new Set();
-    
+
     members.forEach(member => {
       let isOverdue = false;
-      
+
       // Check if member has overdue invoice
-      const hasOverdueInvoice = 
+      const hasOverdueInvoice =
         (member.id && overdueMemberIdsFromInvoices.has(member.id)) ||
         (member.email && overdueMemberEmailsFromInvoices.has(member.email?.toLowerCase())) ||
         (member.name && overdueMemberNamesFromInvoices.has(member.name?.toLowerCase()));
-      
+
       if (hasOverdueInvoice) {
         isOverdue = true;
       } else {
@@ -878,7 +883,7 @@ function AdminPage() {
           if (member.balance) {
             const balanceStr = member.balance.toString();
             const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0);
-            
+
             // Only mark as overdue if payment_status is unpaid AND next_due_date has passed
             if (member.payment_status === "unpaid" && numericOutstanding > 0) {
               if (member.next_due_date) {
@@ -887,7 +892,7 @@ function AdminPage() {
                   const today = new Date();
                   today.setHours(0, 0, 0, 0);
                   dueDate.setHours(0, 0, 0, 0);
-                  
+
                   // Only mark as overdue if due date has passed
                   if (dueDate < today) {
                     isOverdue = true;
@@ -909,7 +914,7 @@ function AdminPage() {
           }
         }
       }
-      
+
       // Add to set using ID, email, or name as identifier
       if (isOverdue) {
         if (member.id) {
@@ -921,13 +926,13 @@ function AdminPage() {
         }
       }
     });
-    
+
     const overdueMembersCount = overdueMemberSet.size;
-    
+
     // Calculate expected annual (all members * expected per member)
     // Assuming $800 per member per year as mentioned in the UI
     const expectedAnnual = members.length * 800;
-    
+
     return {
       totalCollected: totalCollectedAllTime,
       collectedMonth: collectedThisMonth,
@@ -945,19 +950,19 @@ function AdminPage() {
     if (payment.paidToAdmin || payment.paidToAdminName) {
       return "Cash";
     }
-    
+
     // If method is "Cash to Admin", show as "Cash"
     if (payment.method === "Cash to Admin") {
       return "Cash";
     }
-    
+
     // For online payment methods (Screenshot, Bank Transfer, FPS, PayMe, etc.)
     // Show as "Online Payment"
     const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
     if (onlineMethods.includes(payment.method)) {
       return "Online Payment";
     }
-    
+
     // Return method as-is if it doesn't match above
     return payment.method || "N/A";
   };
@@ -975,11 +980,8 @@ function AdminPage() {
         Member: payment.member || "Unknown",
         Period: payment.period || "N/A",
         Amount: payment.amount
-          ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}`
-          : "HK$0.00",
+          ? formatCurrency(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0))
+          : formatCurrency(0),
         Method: getPaymentMethodDisplay(payment),
         Status: payment.status || "Pending",
         Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString() : "N/A"),
@@ -1013,7 +1015,7 @@ function AdminPage() {
 
   // Auto-expand parent group when activeSection changes (e.g., from URL)
   useEffect(() => {
-    const parentGroup = navigationGroups.find(group => 
+    const parentGroup = navigationGroups.find(group =>
       group.items.some(item => item.id === activeSection)
     );
     if (parentGroup) {
@@ -1048,21 +1050,21 @@ function AdminPage() {
     // Filter donations within date range
     const donationsInRange = (Array.isArray(donations) ? donations : []).filter(donation => {
       if (!donation) return false;
-      
+
       try {
         let donationDate = null;
-        
+
         // Try to parse donation.date first (user-provided date, usually in YYYY-MM-DD format)
         if (donation.date) {
           const dateStr = String(donation.date).trim();
-          
+
           // Handle ISO format (YYYY-MM-DD) - most common from date input
           if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
             donationDate = new Date(dateStr + 'T00:00:00'); // Add time to avoid timezone issues
           } else {
             // Try parsing as general date string
             donationDate = new Date(dateStr);
-            
+
             // If that fails, try parsing as "DD MMM YYYY" format
             if (isNaN(donationDate.getTime())) {
               const parts = dateStr.split(' ');
@@ -1078,7 +1080,7 @@ function AdminPage() {
             }
           }
         }
-        
+
         // Fallback to createdAt if date is not available or invalid
         if (!donationDate || isNaN(donationDate.getTime())) {
           if (donation.createdAt) {
@@ -1091,12 +1093,12 @@ function AdminPage() {
             return fromDate <= thirtyDaysAgo && toDate >= new Date();
           }
         }
-        
+
         // Normalize dates to midnight for proper comparison (ignore time)
         const normalizedDonationDate = new Date(donationDate.getFullYear(), donationDate.getMonth(), donationDate.getDate());
         const normalizedFromDate = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
         const normalizedToDate = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
-        
+
         return normalizedDonationDate >= normalizedFromDate && normalizedDonationDate <= normalizedToDate;
       } catch (e) {
         console.error('Error filtering donation by date:', e, donation);
@@ -1124,12 +1126,12 @@ function AdminPage() {
     // Lifetime: $250/year, Yearly + Janaza Fund: $500/year
     const activeMembers = members.filter(m => m.status === 'Active');
     let expected = 0;
-    
+
     activeMembers.forEach(member => {
       const subscriptionType = member.subscriptionType || 'Lifetime';
       // Try to get member creation date or use a default
       const memberStartDate = member.createdAt ? new Date(member.createdAt) : new Date('2025-01-01');
-      
+
       if (subscriptionType === 'Yearly + Janaza Fund') {
         // For yearly + janaza fund: $500 per year
         // Calculate how many years in the date range
@@ -1154,8 +1156,8 @@ function AdminPage() {
     }
 
     // Calculate average per member
-    const averagePerMember = activeMembers.length > 0 
-      ? Math.round(collected / activeMembers.length) 
+    const averagePerMember = activeMembers.length > 0
+      ? Math.round(collected / activeMembers.length)
       : 0;
 
     // Calculate payment method breakdown
@@ -1200,7 +1202,7 @@ function AdminPage() {
       const fromDate = new Date(dateRange.from);
       const toDate = new Date(dateRange.to);
       toDate.setHours(23, 59, 59, 999);
-      
+
       const paymentsInRange = paymentHistory.filter(payment => {
         if (!payment.date) return false;
         const paymentDate = new Date(payment.date);
@@ -1211,31 +1213,31 @@ function AdminPage() {
       let csvContent = "Financial Report\n";
       csvContent += `Period,${dateRange.from} to ${dateRange.to}\n\n`;
       csvContent += "Summary\n";
-      csvContent += `Collected,HK$${reportStats.collected.toFixed(2)}\n`;
-      csvContent += `Expected,HK$${reportStats.expected.toFixed(2)}\n`;
-      csvContent += `Outstanding,HK$${dashboardMetrics.outstanding.toFixed(2)}\n`;
-      csvContent += `Average per Member,HK$${reportStats.averagePerMember.toFixed(2)}\n`;
+      csvContent += `Collected,${formatCurrency(reportStats.collected)}\n`;
+      csvContent += `Expected,${formatCurrency(reportStats.expected)}\n`;
+      csvContent += `Outstanding,${formatCurrency(dashboardMetrics.outstanding)}\n`;
+      csvContent += `Average per Member,${formatCurrency(reportStats.averagePerMember)}\n`;
       csvContent += `Total Transactions,${reportStats.transactionCount}\n\n`;
-      
+
       // Payment method breakdown - Hidden
       // csvContent += "Payment Method Breakdown\n";
       // reportStats.methodMix.forEach(item => {
       //   csvContent += `${item.label},${item.value}\n`;
       // });
-      
+
       // Detailed transactions (only completed/paid)
       csvContent += "\nDetailed Transactions (Completed Payments Only)\n";
       csvContent += "Date,Member,Period,Amount,Method,Status,Reference\n";
       paymentsInRange
         .filter(payment => payment.status === "Completed" || payment.status === "Paid")
         .forEach(payment => {
-          const date = payment.date || "N/A";
+          const date = payment.date || "-";
           const member = payment.member || "Unknown";
-          const period = payment.period || "N/A";
-          const amount = payment.amount || "HK$0";
-          const method = getPaymentMethodDisplay(payment);
-          const status = payment.status || "N/A";
-          const reference = payment.reference || "N/A";
+          const period = payment.period || "-";
+          const amount = payment.amount || "0";
+          const method = payment.method || "Cash";
+          const status = payment.status || "-";
+          const reference = payment.reference || "-";
           csvContent += `"${date}","${member}","${period}","${amount}","${method}","${status}","${reference}"\n`;
         });
 
@@ -1249,7 +1251,7 @@ function AdminPage() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+
       showToast("CSV report downloaded successfully!");
     } catch (error) {
       console.error('Error exporting CSV:', error);
@@ -1305,13 +1307,13 @@ function AdminPage() {
 
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
-      doc.text(`Collected: HK$${reportStats.collected.toFixed(2)}`, margin, yPos);
+      doc.text(`Collected: ${formatCurrency(reportStats.collected)}`, margin, yPos);
       yPos += lineHeight;
-      doc.text(`Expected: HK$${reportStats.expected.toFixed(2)}`, margin, yPos);
+      doc.text(`Expected: ${formatCurrency(reportStats.expected)}`, margin, yPos);
       yPos += lineHeight;
-      doc.text(`Outstanding: HK$${dashboardMetrics.outstanding.toFixed(2)}`, margin, yPos);
+      doc.text(`Outstanding: ${formatCurrency(dashboardMetrics.outstanding)}`, margin, yPos);
       yPos += lineHeight;
-      doc.text(`Average per Member: HK$${reportStats.averagePerMember.toFixed(2)}`, margin, yPos);
+      doc.text(`Average per Member: ${formatCurrency(reportStats.averagePerMember)}`, margin, yPos);
       yPos += lineHeight;
       doc.text(`Total Transactions: ${reportStats.transactionCount}`, margin, yPos);
       yPos += 10;
@@ -1333,7 +1335,7 @@ function AdminPage() {
       const fromDate = new Date(dateRange.from);
       const toDate = new Date(dateRange.to);
       toDate.setHours(23, 59, 59, 999);
-      
+
       const paymentsInRange = paymentHistory.filter(payment => {
         if (!payment.date) return false;
         const paymentDate = new Date(payment.date);
@@ -1354,7 +1356,7 @@ function AdminPage() {
 
         doc.setFontSize(9);
         doc.setFont(undefined, 'normal');
-        
+
         // Table headers
         doc.setFont(undefined, 'bold');
         doc.text('Date', margin, yPos);
@@ -1362,7 +1364,7 @@ function AdminPage() {
         doc.text('Amount', margin + 90, yPos);
         doc.text('Method', margin + 130, yPos);
         yPos += lineHeight;
-        
+
         doc.setFont(undefined, 'normal');
         // Add transactions (limit to fit on page, only completed/paid)
         const completedPayments = paymentsInRange.filter(p => p.status === "Completed" || p.status === "Paid");
@@ -1372,13 +1374,13 @@ function AdminPage() {
             doc.addPage();
             yPos = 20;
           }
-          doc.text(payment.date || "N/A", margin, yPos);
+          doc.text(payment.date || "-", margin, yPos);
           doc.text((payment.member || "Unknown").substring(0, 15), margin + 40, yPos);
-          doc.text(payment.amount || "HK$0", margin + 90, yPos);
+          doc.text(payment.amount || formatCurrency(0), margin + 90, yPos);
           doc.text(getPaymentMethodDisplay(payment).substring(0, 15), margin + 130, yPos);
           yPos += lineHeight;
         });
-        
+
         if (completedPayments.length > maxTransactions) {
           doc.text(`... and ${completedPayments.length - maxTransactions} more transactions`, margin, yPos);
         }
@@ -1401,7 +1403,7 @@ function AdminPage() {
       showToast("Failed to export PDF", "error");
     }
   };
-  
+
   // Get recent payments in date range
   const recentPaymentsInRange = paymentHistory
     .filter(payment => {
@@ -1434,7 +1436,7 @@ function AdminPage() {
           const period = hours >= 12 ? 'PM' : 'AM';
           const displayHours = hours % 12 || 12;
           const displayTime = `${displayHours}:${minutes.toString().padStart(2, '0')}`;
-          
+
           setEmailSettings({
             emailService: data.emailService || "gmail",
             emailUser: data.emailUser || "",
@@ -1446,7 +1448,7 @@ function AdminPage() {
           setSchedulePeriod(period);
           // Set the time input value (we'll handle this in the component)
           setEmailConfigStatus(data.emailUser ? 'connected' : 'not_connected');
-          
+
           // Set automationEnabled from database
           if (data.automationEnabled !== undefined) {
             setAutomationEnabled(data.automationEnabled);
@@ -1469,7 +1471,7 @@ function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(emailSettings),
       });
-      
+
       if (response.ok) {
         showToast('Email settings saved successfully!');
         setEmailConfigStatus(emailSettings.emailUser ? 'connected' : 'not_connected');
@@ -1490,7 +1492,7 @@ function AdminPage() {
     try {
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const errors = [];
-      
+
       // Save email settings
       try {
         const emailResponse = await fetch(`${apiUrl}/api/email-settings`, {
@@ -1507,7 +1509,7 @@ function AdminPage() {
       } catch (error) {
         errors.push('Failed to save email settings');
       }
-      
+
       // Save reminder rules
       try {
         for (const rule of reminderRules) {
@@ -1516,7 +1518,7 @@ function AdminPage() {
       } catch (error) {
         errors.push('Failed to save reminder rules');
       }
-      
+
       // Save payment methods
       try {
         for (const method of paymentMethods) {
@@ -1525,14 +1527,14 @@ function AdminPage() {
       } catch (error) {
         errors.push('Failed to save payment methods');
       }
-      
+
       // Save organization info
       try {
         await updateOrganizationInfo(orgForm);
       } catch (error) {
         errors.push('Failed to save organization info');
       }
-      
+
       if (errors.length > 0) {
         showToast(`Some settings failed to save: ${errors.join(', ')}`, 'error');
       } else {
@@ -1605,7 +1607,7 @@ function AdminPage() {
   // Process template with sample data for preview
   const getPreviewTemplate = () => {
     if (!emailTemplate.htmlTemplate) return "";
-    
+
     return emailTemplate.htmlTemplate
       .replace(/\{\{member_name\}\}/g, "John Doe")
       .replace(/\{\{member_id\}\}/g, "MEMBER001")
@@ -1648,7 +1650,7 @@ function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(emailTemplate),
       });
-      
+
       if (response.ok) {
         showToast('Email template saved successfully!');
       } else {
@@ -1683,7 +1685,7 @@ function AdminPage() {
           testEmail: emailSettings.emailUser, // Send test to the configured email
         }),
       });
-      
+
       if (response.ok) {
         showToast('Test email sent successfully! Check your inbox.');
       } else {
@@ -1720,9 +1722,13 @@ function AdminPage() {
       });
 
       const data = await response.json();
-      
+
       if (response.ok) {
         const member = members.find(m => m.id === memberId);
+        
+        // Refresh reminder logs to show the new entry
+        fetchReminderLogs();
+        
         // Log to communication
         const comm = {
           channel: "Email",
@@ -1748,23 +1754,23 @@ function AdminPage() {
 
   // Helper function to calculate member balance based on unpaid invoices
   const calculateMemberBalance = (memberId) => {
-    const memberInvoices = invoices.filter(inv => 
+    const memberInvoices = invoices.filter(inv =>
       inv.memberId === memberId ||
       (inv.memberEmail && members.find(m => m.id === memberId)?.email?.toLowerCase() === inv.memberEmail.toLowerCase()) ||
       (inv.memberName && members.find(m => m.id === memberId)?.name?.toLowerCase() === inv.memberName.toLowerCase())
     );
-    
+
     // Use effective invoice status (considering completed payments)
     const unpaidInvoices = memberInvoices.filter(inv => {
       const effectiveStatus = getEffectiveInvoiceStatus(inv);
       return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
     });
-    
+
     const totalOutstanding = unpaidInvoices.reduce((sum, inv) => {
       const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
       return sum + amount;
     }, 0);
-    
+
     return totalOutstanding;
   };
 
@@ -1775,7 +1781,7 @@ function AdminPage() {
       // In production, use VITE_API_URL if set
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
-      
+
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}/approve`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -1786,23 +1792,23 @@ function AdminPage() {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to approve payment');
       }
-      
+
       await fetchPayments(); // Refresh payments
       await fetchInvoices(); // Refresh invoices
-      
+
       // Update member balance after payment approval
       const payment = paymentHistory.find(p => p.id === paymentId) || payments.find(p => p.id === paymentId);
       if (payment && payment.memberId) {
         const newBalance = calculateMemberBalance(payment.memberId);
-        const balanceText = newBalance > 0 ? `HK$${newBalance.toFixed(2)} Outstanding` : "HK$0";
-        
+        const balanceText = newBalance > 0 ? `${formatCurrency(newBalance)} Outstanding` : formatCurrency(0);
+
         try {
           await updateMember(payment.memberId, { balance: balanceText });
         } catch (error) {
           console.error('Error updating member balance:', error);
         }
       }
-      
+
       showToast("Payment approved successfully!");
     } catch (error) {
       console.error('Error approving payment:', error);
@@ -1817,7 +1823,7 @@ function AdminPage() {
       // In production, use VITE_API_URL if set
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
-      
+
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}/reject`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -1828,7 +1834,7 @@ function AdminPage() {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to reject payment');
       }
-      
+
       await fetchPayments(); // Refresh payments
       await fetchInvoices(); // Refresh invoices
       showToast("Payment rejected successfully!");
@@ -1842,12 +1848,12 @@ function AdminPage() {
   const validatePaymentForm = () => {
     // Define field order for validation
     const fieldOrder = ["memberId", "amount", "method", "screenshot"];
-    
+
     // If we have a current invalid field, check if it's now valid
     if (currentInvalidPaymentField) {
       let isValid = true;
       let errorMsg = "";
-      
+
       if (currentInvalidPaymentField === "memberId" && !paymentForm.memberId) {
         isValid = false;
         errorMsg = "Member is required";
@@ -1861,7 +1867,7 @@ function AdminPage() {
         isValid = false;
         errorMsg = "Screenshot upload is required for Cash payments";
       }
-      
+
       if (isValid) {
         setPaymentFieldErrors(prev => ({ ...prev, [currentInvalidPaymentField]: false }));
         setCurrentInvalidPaymentField(null);
@@ -1871,12 +1877,12 @@ function AdminPage() {
         return false;
       }
     }
-    
+
     // Find first invalid field
     for (const field of fieldOrder) {
       let isValid = true;
       let errorMsg = "";
-      
+
       if (field === "memberId" && !paymentForm.memberId) {
         isValid = false;
         errorMsg = "Member is required";
@@ -1890,7 +1896,7 @@ function AdminPage() {
         isValid = false;
         errorMsg = "Screenshot upload is required for Cash payments";
       }
-      
+
       if (!isValid) {
         // Clear all errors first
         setPaymentFieldErrors({
@@ -1906,7 +1912,7 @@ function AdminPage() {
         return false;
       }
     }
-    
+
     // All fields valid
     setPaymentFieldErrors({
       memberId: false,
@@ -1921,12 +1927,12 @@ function AdminPage() {
   // Payment CRUD handlers
   const handleAddPayment = async (e) => {
     e.preventDefault();
-    
+
     if (!validatePaymentForm()) {
       // Validation error already shown via Notie
       return;
     }
-    
+
     try {
 
       await addPayment(paymentForm);
@@ -1998,7 +2004,7 @@ function AdminPage() {
       // In production, use VITE_API_URL if set
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const paymentId = editingPayment._id || editingPayment.id;
-      
+
       const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -2045,7 +2051,7 @@ function AdminPage() {
           // In development, use empty string to use Vite proxy (localhost:4000)
           // In production, use VITE_API_URL if set
           const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-          
+
           const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
@@ -2093,8 +2099,10 @@ function AdminPage() {
       });
 
       const data = await response.json();
-      
+
       if (response.ok) {
+        // Refresh reminder logs to show the new entries
+        fetchReminderLogs();
         showToast(data.message || 'Reminder emails sent successfully!');
       } else {
         showToast(data.error || 'Failed to send reminder emails', 'error');
@@ -2116,11 +2124,11 @@ function AdminPage() {
     const outstandingMembers = members.filter(member => {
       // Check member balance field instead of invoices
       if (!member.balance || !member.phone) return false;
-      
+
       // Parse balance - handles formats like: "$250 Outstanding", "$250", "$0", "$250 Overdue"
       const balanceStr = member.balance.toString();
       const numericValue = parseFloat(balanceStr.replace(/[^0-9.]/g, '') || 0);
-      
+
       // Member is outstanding if balance > 0
       return numericValue > 0;
     });
@@ -2132,12 +2140,12 @@ function AdminPage() {
 
     // Confirmation is now handled in handleSendReminderWithChannel
     setSendingWhatsAppToAll(true);
-    
+
     try {
       // Open WhatsApp for each member with a small delay to avoid browser blocking
       for (let i = 0; i < outstandingMembers.length; i++) {
         const member = outstandingMembers[i];
-        
+
         // Get member's unpaid/overdue invoices
         const memberUnpaidInvoices = invoices.filter(
           (inv) =>
@@ -2163,7 +2171,7 @@ function AdminPage() {
 
 Payment Reminder
 
-*Total Outstanding:* HK$${totalDue.toFixed(2)}
+*Total Outstanding:* ${formatCurrency(totalDue)}
 
 *Invoices (${memberUnpaidInvoices.length}):*
 ${invoiceList}
@@ -2185,14 +2193,14 @@ Subscription Manager HK`;
 
         // Clean phone number
         const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
-        
+
         // WhatsApp Click-to-Chat URL
         const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 
         // Open WhatsApp with delay between each
         setTimeout(() => {
           window.open(whatsappUrl, '_blank');
-          
+
           // Log to communication with member metadata
           const comm = {
             channel: "WhatsApp",
@@ -2258,8 +2266,8 @@ Subscription Manager HK`;
 
   // Handle pagination bounds checking for members
   useEffect(() => {
-    const filteredMembers = members.filter(member => 
-      !memberSearchTerm || 
+    const filteredMembers = members.filter(member =>
+      !memberSearchTerm ||
       member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
     );
     const totalPages = Math.ceil(filteredMembers.length / membersPageSize);
@@ -2317,7 +2325,7 @@ Subscription Manager HK`;
     if (sectionId === "dashboard") {
       return [{ id: "dashboard", label: "Dashboard" }];
     }
-    
+
     // Find the section in navigation groups and include parent group
     for (const group of navigationGroups) {
       const item = group.items.find(item => item.id === sectionId);
@@ -2329,7 +2337,7 @@ Subscription Manager HK`;
         ];
       }
     }
-    
+
     // Fallback: just show the section label if found in sections
     const section = sections.find(s => s.id === sectionId);
     if (section) {
@@ -2338,19 +2346,19 @@ Subscription Manager HK`;
         { id: sectionId, label: section.label }
       ];
     }
-    
+
     return [{ id: "dashboard", label: "Dashboard" }];
   };
 
   // Render breadcrumb component with tab-like navigation
   const renderBreadcrumb = (sectionId) => {
     const breadcrumbPath = getBreadcrumbPath(sectionId);
-    
+
     // Get parent group for tab navigation
-    const parentGroup = navigationGroups.find(group => 
+    const parentGroup = navigationGroups.find(group =>
       group.items.some(item => item.id === sectionId)
     );
-    
+
     return (
       <div className="admin-breadcrumb-tabs-container">
         {/* Breadcrumb path - only show if not dashboard */}
@@ -2362,7 +2370,7 @@ Subscription Manager HK`;
                 {index === breadcrumbPath.length - 1 ? (
                   <span className="admin-breadcrumb-current">{item.label}</span>
                 ) : index === 0 ? (
-                  <span 
+                  <span
                     onClick={() => handleNavClick(item.id)}
                     className="admin-breadcrumb-link--inline"
                   >
@@ -2377,7 +2385,7 @@ Subscription Manager HK`;
             ))}
           </div>
         )}
-        
+
         {/* Tab navigation for sibling sections in the same group */}
         {parentGroup && parentGroup.items.length > 1 && (
           <div className="admin-breadcrumb-tabs">
@@ -2404,9 +2412,9 @@ Subscription Manager HK`;
     setShowDonationForm(false);
     // Close mobile menu when navigating
     setIsMobileMenuOpen(false);
-    
+
     // Auto-expand the parent group if clicking a nested item (maintain accordion behavior)
-    const parentGroup = navigationGroups.find(group => 
+    const parentGroup = navigationGroups.find(group =>
       group.items.some(item => item.id === id)
     );
     if (parentGroup && !expandedGroups[parentGroup.id]) {
@@ -2435,7 +2443,7 @@ Subscription Manager HK`;
         ? ""
         : import.meta.env.VITE_API_URL || "";
       const currentAdminEmail = sessionStorage.getItem("adminEmail") || "Owner";
-      
+
       const response = await fetch(`${apiUrl}/api/auth/password-reset-requests/${requestId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -2606,7 +2614,9 @@ Subscription Manager HK`;
       setIsMemberSubmitting(true);
 
       const newMember = await addMember(memberForm);
-      
+
+
+
       // Refresh all related data to ensure complete member details are available
       // This ensures invoices, payments, and all member data is up-to-date
       await Promise.all([
@@ -2614,7 +2624,7 @@ Subscription Manager HK`;
         fetchInvoices(), // Refresh invoices (new member might have invoice created)
         fetchPayments(), // Refresh payments
       ]);
-      
+
       setMemberForm({
         name: "",
         email: "",
@@ -2669,12 +2679,12 @@ Subscription Manager HK`;
 
   const handleUpdateMember = async (e) => {
     e.preventDefault();
-    
+
     if (!validateMemberForm()) {
       // Validation error already shown via Notie in validateMemberForm
       return;
     }
-    
+
     try {
       if (!editingMember) {
         showToast("No member selected for editing.", "error");
@@ -2684,7 +2694,7 @@ Subscription Manager HK`;
       // Only include fields that have actually changed
       const updateData = {};
       const originalMember = editingMember;
-      
+
       // Compare each field and only include if changed
       if (memberForm.name !== (originalMember.name || "")) {
         updateData.name = memberForm.name;
@@ -2699,18 +2709,18 @@ Subscription Manager HK`;
         updateData.status = memberForm.status;
       }
       // Do not update nextDue, lastPayment, subscriptionType, or balance in Edit Member - these are subscription details
-      
+
       // Only include password in update if it's provided
       if (memberForm.password && memberForm.password.trim() !== "") {
         updateData.password = memberForm.password;
       }
-      
+
       // Only send update if there are actual changes
       if (Object.keys(updateData).length === 0) {
         showToast("No changes to update.", "error");
         return;
       }
-      
+
       await updateMember(editingMember.id, updateData);
       setEditingMember(null);
       setMemberForm({
@@ -2757,7 +2767,7 @@ Subscription Manager HK`;
   // Invoice CRUD Operations
   const handleAddInvoice = (e) => {
     e.preventDefault();
-    if (!invoiceForm.memberId || !invoiceForm.period || !invoiceForm.due) {
+    if (!invoiceForm.memberId || !invoiceForm.subscriptionYear) {
       showToast("Please fill all required fields", "error");
       return;
     }
@@ -2769,25 +2779,51 @@ Subscription Manager HK`;
     }
 
     const member = members.find((m) => m.id === invoiceForm.memberId);
+
+    // Generate period from subscription year and invoice type
+    const subscriptionYear = invoiceForm.subscriptionYear;
+    const period = subscriptionYear; // Use subscription year as period
+
+    // Check if an invoice for the same period already exists for this member
+    const existingInvoice = invoices.find(
+      (inv) => inv.memberId === invoiceForm.memberId &&
+        inv.period === period &&
+        inv.status !== "Rejected"
+    );
+
+    if (existingInvoice) {
+      showToast(`An invoice for "${period}" already exists for ${member?.name || 'this member'}`, "error");
+      return;
+    }
+
+    // Calculate due date: 1 year from subscription year (Jan 1st of next year)
+    const dueYear = parseInt(subscriptionYear) + 1;
+    const dueDate = new Date(dueYear, 0, 1); // Jan 1st of next year
+    const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    }).replace(',', '');
+
     const newInvoice = {
       id: generateInvoiceId(),
       memberId: invoiceForm.memberId,
       memberName: member?.name || "",
-      period: invoiceForm.period,
-      amount: `HK$${amountNum.toFixed(2)}`,
+      period: period,
+      amount: formatCurrency(amountNum),
       status: "Unpaid",
-      due: invoiceForm.due,
+      due: dueDateFormatted,
       method: "-",
       reference: "-",
-      notes: invoiceForm.notes || "",
+      notes: "",
     };
 
     addInvoice(newInvoice);
-    
+
     // Store the created invoice and show success card
     setLastCreatedInvoice({ ...newInvoice, member });
     setShowInvoiceSuccessCard(true);
-    
+
     setInvoiceForm({
       memberId: "",
       period: getCurrentPeriod(),
@@ -2795,6 +2831,7 @@ Subscription Manager HK`;
       invoiceType: "Lifetime",
       due: "",
       notes: "",
+      subscriptionYear: new Date().getFullYear().toString(),
     });
     setShowInvoiceForm(false);
     showToast("Invoice created successfully!");
@@ -2818,10 +2855,10 @@ Subscription Manager HK`;
       const currentAdmin = admins.find(a => a.email === adminEmail);
       const adminId = sessionStorage.getItem('adminId') || currentAdmin?.id || 'Admin';
       const adminName = sessionStorage.getItem('adminName') || currentAdmin?.name || 'Admin';
-      
+
       // Map UI method to payment_mode (online or cash)
       const paymentMode = method === "Online" ? "online" : "cash";
-      
+
       // Map UI method to stored payment method + reference
       let paymentMethod = "Cash to Admin";
       let reference;
@@ -2832,16 +2869,23 @@ Subscription Manager HK`;
       } else {
         reference = `CASH_${Date.now()}`;
       }
-      
+
       // Calculate payment dates
       const lastPaymentDate = new Date(); // Exact date/time of confirmation
-      const nextDueDate = new Date(lastPaymentDate);
-      // Set to January 17 of the next year (fixed date and month, only year changes)
-      nextDueDate.setFullYear(nextDueDate.getFullYear() + 1);
-      nextDueDate.setMonth(0); // January (0-indexed, 0 = January)
-      nextDueDate.setDate(1); // 1th day
+
+      // Calculate next due year based on the invoice period if possible (e.g. "2025" or "Jan 2025 Yearly...")
+      let nextDueYear = lastPaymentDate.getFullYear() + 1;
+      const periodStr = String(invoice.period || "").trim();
+      const yearMatch = periodStr.match(/\d{4}/);
+      if (yearMatch) {
+        nextDueYear = parseInt(yearMatch[0]) + 1;
+      } else if (periodStr.toLowerCase().includes("yearly") || periodStr.toLowerCase().includes("lifetime")) {
+        nextDueYear = lastPaymentDate.getFullYear() + 1;
+      }
+
+      const nextDueDate = new Date(nextDueYear, 0, 1); // Jan 1st of next year
       nextDueDate.setHours(0, 0, 0, 0); // Reset time to midnight for consistency
-      
+
       // In development, use empty string to use Vite proxy (localhost:4000)
       // In production, use VITE_API_URL if set
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
@@ -2900,13 +2944,13 @@ Subscription Manager HK`;
           month: 'short',
           year: 'numeric'
         }).replace(',', '');
-        
+
         const nextDueDateFormatted = nextDueDate.toLocaleDateString('en-GB', {
           day: '2-digit',
           month: 'short',
           year: 'numeric'
         }).replace(',', '');
-        
+
         const memberUpdateResponse = await fetch(`${apiUrl}/api/members/${invoice.memberId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -2934,7 +2978,7 @@ Subscription Manager HK`;
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
         });
-        
+
         if (emailResponse.ok) {
           const emailData = await emailResponse.json();
           console.log('✅ Payment confirmation email sent:', emailData.message);
@@ -2990,19 +3034,19 @@ Subscription Manager HK`;
         const updatedMember = members.find(m => m.id === invoice.memberId);
         if (updatedMember) {
           // Format dates for display
-          const lastPaymentDateStr = updatedMember.last_payment_date 
+          const lastPaymentDateStr = updatedMember.last_payment_date
             ? new Date(updatedMember.last_payment_date).toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric'
-              })
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric'
+            })
             : 'N/A';
           const nextDueDateStr = updatedMember.next_due_date
             ? new Date(updatedMember.next_due_date).toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric'
-              })
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric'
+            })
             : 'N/A';
           showToast(`Invoice marked as paid (${paymentMethod})! Last payment: ${lastPaymentDateStr}, Next due: ${nextDueDateStr}`, "success");
         } else {
@@ -3085,7 +3129,7 @@ Subscription Manager HK`;
 
 Payment Reminder
 
-*Total Outstanding:* HK$${totalDue.toFixed(2)}
+*Total Outstanding:* ${formatCurrency(totalDue)}
 
 *Invoices (${memberUnpaidInvoices.length}):*
 ${invoiceList}
@@ -3107,7 +3151,7 @@ Subscription Manager HK`;
 
     // Clean phone number (remove all non-numeric except +)
     const cleanPhone = memberData.phone.replace(/[^0-9+]/g, "");
-    
+
     // WhatsApp Click-to-Chat URL
     const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 
@@ -3127,7 +3171,7 @@ Subscription Manager HK`;
     addCommunication(comm);
 
     showToast(`✓ WhatsApp opened for ${memberData.name}! Review and send the message.`);
-    
+
     // Reset sending state after a short delay
     setTimeout(() => {
       setSendingWhatsApp(prev => ({ ...prev, [memberData.id]: false }));
@@ -3141,9 +3185,9 @@ Subscription Manager HK`;
     if (isBulk) {
       return; // Bulk sending is now handled inline with icon buttons
     }
-    
-    setPendingReminderAction({ 
-      type: memberId ? 'manual' : 'single', 
+
+    setPendingReminderAction({
+      type: memberId ? 'manual' : 'single',
       memberData: memberData || null,
       memberId: memberId || null
     });
@@ -3174,14 +3218,14 @@ Subscription Manager HK`;
       showToast("Please select at least one channel", "error");
       return;
     }
-    
+
     // Show confirmation for bulk send
     const confirmationMessage = selectedChannels.length === 2
       ? `Are you sure you want to send reminders via Email AND WhatsApp to ALL outstanding members?`
       : selectedChannels.includes('Email')
-      ? 'Are you sure you want to send reminder emails to ALL outstanding members?'
-      : `Are you sure you want to open WhatsApp for all outstanding members? This will open multiple WhatsApp windows.`;
-    
+        ? 'Are you sure you want to send reminder emails to ALL outstanding members?'
+        : `Are you sure you want to open WhatsApp for all outstanding members? This will open multiple WhatsApp windows.`;
+
     showConfirmation(
       confirmationMessage,
       async () => {
@@ -3190,7 +3234,7 @@ Subscription Manager HK`;
           if (selectedChannels.includes('Email')) {
             await handleSendToAllOutstanding();
           }
-          
+
           if (selectedChannels.includes('WhatsApp')) {
             // Add a small delay if both channels are selected
             if (selectedChannels.includes('Email')) {
@@ -3198,7 +3242,7 @@ Subscription Manager HK`;
             }
             await handleSendWhatsAppToAllOutstanding();
           }
-          
+
           setSelectedChannels([]);
         } catch (error) {
           console.error("Error sending bulk reminders:", error);
@@ -3210,7 +3254,7 @@ Subscription Manager HK`;
   // Handle channel selection and send reminder (for single members)
   const handleSendReminderWithChannel = async (channel) => {
     setShowChannelSelection(false);
-    
+
     if (pendingReminderAction?.memberData) {
       if (channel === 'Email') {
         await handleSendReminder(pendingReminderAction.memberData);
@@ -3228,7 +3272,7 @@ Subscription Manager HK`;
         }
       }
     }
-    
+
     setPendingReminderAction(null);
     setSelectedChannels([]);
   };
@@ -3308,7 +3352,7 @@ Subscription Manager HK`;
           toEmail: memberData.email,
           toName: memberData.name,
           memberId: memberData.id,
-          totalDue: `HK$${totalDue.toFixed(2)}`,
+          totalDue: formatCurrency(totalDue),
           invoiceCount: memberUnpaidInvoices.length,
           invoiceListText: invoiceListText,
           invoiceListHTML: invoiceListHTML,
@@ -3325,6 +3369,9 @@ Subscription Manager HK`;
 
       console.log("✓ Email sent successfully:", data);
 
+      // Refresh reminder logs to show the new entry
+      fetchReminderLogs();
+
       // Log to communication with member metadata
       const comm = {
         channel: "Email",
@@ -3332,13 +3379,13 @@ Subscription Manager HK`;
         memberId: memberData.id,
         memberEmail: memberData.email,
         memberName: memberData.name,
-        message: `Payment reminder: ${memberData.name} (${memberData.email}) - HK$${totalDue.toFixed(2)} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
+        message: `Payment reminder: ${memberData.name} (${memberData.email}) - ${formatCurrency(totalDue)} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
         status: "Delivered",
       };
       addCommunication(comm);
 
       showToast(
-        `✓ Reminder email sent to ${memberData.name} for HK$${totalDue.toFixed(2)} outstanding!`
+        `✓ Reminder email sent to ${memberData.name} for ${formatCurrency(totalDue)} outstanding!`
       );
     } catch (error) {
       console.error("✗ Email send error:", error);
@@ -3350,7 +3397,7 @@ Subscription Manager HK`;
         memberId: memberData.id,
         memberEmail: memberData.email,
         memberName: memberData.name,
-        message: `Reminder attempt to ${memberData.name} - HK$${totalDue.toFixed(2)} due`,
+        message: `Reminder attempt to ${memberData.name} - ${formatCurrency(totalDue)} due`,
         status: "Failed",
       };
       addCommunication(comm);
@@ -3370,12 +3417,12 @@ Subscription Manager HK`;
         fetchInvoices(),
         fetchPayments(),
       ]);
-      
+
       // Fetch the specific member directly from API to ensure we have the latest data
       // This is more reliable than relying on state updates
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       let memberToView = member;
-      
+
       if (member.id) {
         try {
           const response = await fetch(`${apiUrl}/api/members`);
@@ -3390,10 +3437,10 @@ Subscription Manager HK`;
           console.warn("Could not fetch member directly, using provided member:", fetchError);
         }
       }
-      
+
       // Fallback: Find from current members state
       if (!memberToView || memberToView === member) {
-        const foundMember = members.find(m => 
+        const foundMember = members.find(m =>
           (member.id && m.id === member.id) ||
           (member.email && m.email && m.email.toLowerCase() === member.email.toLowerCase())
         );
@@ -3401,22 +3448,22 @@ Subscription Manager HK`;
           memberToView = foundMember;
         }
       }
-      
+
       // Ensure we have a valid member object
       if (!memberToView || !memberToView.id) {
         console.error("Member not found:", member);
         showToast("Member data not available. Please refresh the page.", "error");
         return;
       }
-      
+
       setSelectedMember(memberToView);
       setActiveSection("member-detail");
     } catch (error) {
       console.error("Error viewing member detail:", error);
       // Fallback to using the provided member object
       if (member && member.id) {
-    setSelectedMember(member);
-    setActiveSection("member-detail");
+        setSelectedMember(member);
+        setActiveSection("member-detail");
       } else {
         showToast("Failed to load member details. Please try again.", "error");
       }
@@ -3430,12 +3477,12 @@ Subscription Manager HK`;
     const relatedPayment = (paymentHistory || []).find(
       (p) => p.invoiceId === invoice.id && (p.status === "Completed" || p.status === "Paid")
     );
-    
+
     // If there's a completed payment, invoice is effectively paid
     if (relatedPayment) {
       return "Paid";
     }
-    
+
     // Otherwise use the invoice's own status
     return invoice.status;
   };
@@ -3459,10 +3506,10 @@ Subscription Manager HK`;
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to approve member');
       }
-      
+
       // Refresh members list
       await fetchMembers();
-      
+
       showToast("Member approved successfully! Approval email sent.");
     } catch (error) {
       console.error('Error approving member:', error);
@@ -3475,27 +3522,27 @@ Subscription Manager HK`;
 
   return (
     <>
-      <SiteHeader 
-        showCTA={false} 
-        showLogout={true} 
+      <SiteHeader
+        showCTA={false}
+        showLogout={true}
         onLogout={handleLogout}
         showMobileMenu={true}
         isMobileMenuOpen={isMobileMenuOpen}
         onMobileMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         isSticky={true}
       />
-      
+
       {/* Toast Notification */}
       {/* Confirmation Dialog */}
       {confirmationDialog.isOpen && (
-        <div 
+        <div
           className="confirmation-dialog-overlay"
           onClick={(e) => {
             // Prevent closing on background click
             e.stopPropagation();
           }}
         >
-          <div 
+          <div
             className="confirmation-dialog"
             onClick={(e) => e.stopPropagation()}
           >
@@ -3572,21 +3619,21 @@ Subscription Manager HK`;
 
       {/* Channel Selection Modal */}
       {showChannelSelection && (
-        <div 
+        <div
           className="modal-overlay modal-overlay-high"
           onClick={() => {
             setShowChannelSelection(false);
             setPendingReminderAction(null);
           }}
         >
-          <div 
+          <div
             className="admin-modal-card admin-modal-card--small"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header mb-2xl">
               <h3 className="modal-title">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="icon-spacing-sm" style={{ verticalAlign: "middle", display: "inline-block" }}>
-                  <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#5a31ea"/>
+                  <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#5a31ea" />
                 </svg>
                 Select Channel
               </h3>
@@ -3602,10 +3649,10 @@ Subscription Manager HK`;
               </button>
             </div>
             <p className="mb-2xl text-muted">
-              {pendingReminderAction?.type === 'bulk' 
-                ? (selectedChannels.length > 0 
-                    ? `Selected: ${selectedChannels.join(" and ")}. Click "Send" to send reminders to all outstanding members.`
-                    : "Select one or both channels to send reminders to all outstanding members:")
+              {pendingReminderAction?.type === 'bulk'
+                ? (selectedChannels.length > 0
+                  ? `Selected: ${selectedChannels.join(" and ")}. Click "Send" to send reminders to all outstanding members.`
+                  : "Select one or both channels to send reminders to all outstanding members:")
                 : `Select the channel to send reminder to ${pendingReminderAction?.memberData?.name || 'member'}:`}
             </p>
             <div className="admin-channel-buttons-container">
@@ -3618,13 +3665,13 @@ Subscription Manager HK`;
                   >
                     <div className="admin-channel-button-content">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                        <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="#ffffff"/>
+                        <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="#ffffff" />
                       </svg>
                       <span className="admin-channel-button-text-white">Email</span>
                     </div>
                     {selectedChannels.includes('Email') && (
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginLeft: "8px" }}>
-                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#ffffff"/>
+                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#ffffff" />
                       </svg>
                     )}
                   </button>
@@ -3638,11 +3685,11 @@ Subscription Manager HK`;
                     </div>
                     {selectedChannels.includes('WhatsApp') && (
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginLeft: "8px" }}>
-                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#ffffff"/>
+                        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#ffffff" />
                       </svg>
                     )}
                   </button>
-                  
+
                   {/* Send All button - shown when at least one channel is selected */}
                   {selectedChannels.length > 0 && (
                     <button
@@ -3652,11 +3699,11 @@ Subscription Manager HK`;
                     >
                       {sendingToAll || sendingWhatsAppToAll ? (
                         <>
-                          <svg 
+                          <svg
                             className="login-btn-spinner"
-                            viewBox="0 0 24 24" 
-                            fill="none" 
-                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
                             strokeWidth="2"
                           >
                             <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
@@ -3667,7 +3714,7 @@ Subscription Manager HK`;
                       ) : (
                         <>
                           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                            <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#ffffff"/>
+                            <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#ffffff" />
                           </svg>
                           Send
                         </>
@@ -3683,7 +3730,7 @@ Subscription Manager HK`;
                     onClick={() => handleSelectChannel('Email')}
                   >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                      <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor"/>
+                      <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor" />
                     </svg>
                     Email
                   </button>
@@ -3723,7 +3770,7 @@ Subscription Manager HK`;
       <main className="admin-main admin-main--sticky-header">
         {/* Mobile Menu Overlay */}
         {isMobileMenuOpen && (
-          <div 
+          <div
             className="mobile-menu-overlay"
             onClick={() => setIsMobileMenuOpen(false)}
           ></div>
@@ -3731,7 +3778,7 @@ Subscription Manager HK`;
 
         <div className="admin-layout">
           {/* Desktop Sidebar / Mobile Menu */}
-          <aside 
+          <aside
             className={`admin-menu ${isMobileMenuOpen ? "mobile-open" : ""}`}
             onClick={(e) => e.stopPropagation()}
           >
@@ -3779,11 +3826,11 @@ Subscription Manager HK`;
                   >
                     <i className={`fas ${group.icon} admin-nav-icon`}></i>
                     <span className="nav-group-label">{group.label}</span>
-                    <i 
+                    <i
                       className={`fas fa-chevron-down nav-group-chevron admin-nav-chevron ${expandedGroups[group.id] ? 'expanded' : ''}`}
                     ></i>
                   </button>
-                  <div 
+                  <div
                     className={`nav-group-items ${expandedGroups[group.id] ? 'expanded' : ''}`}
                   >
                     {group.items.map((item) => (
@@ -3828,28 +3875,16 @@ Subscription Manager HK`;
                       icon="fas fa-dollar-sign"
                       iconClass="admin-dashboard-kpi-icon--green"
                       label="Total Collected"
-                      value={`HK$${formatNumber(dashboardMetrics.collectedMonth, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}`}
-                      description={`HK$${formatNumber(dashboardMetrics.collectedYear, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })} YTD`}
+                      value={formatCurrency(dashboardMetrics.collectedMonth)}
+                      description={`${formatCurrency(dashboardMetrics.collectedYear)} YTD`}
                       onClick={() => handleNavClick("payments")}
                     />
                     <DashboardKPICard
                       icon="fas fa-exclamation-triangle"
                       iconClass="admin-dashboard-kpi-icon--red"
                       label="Total Outstanding"
-                      value={`HK$${formatNumber(dashboardMetrics.outstanding, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}`}
-                      description={`Expected HK$${formatNumber(dashboardMetrics.expectedAnnual, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}`}
+                      value={formatCurrency(dashboardMetrics.outstanding)}
+                      description={`Expected ${formatCurrency(dashboardMetrics.expectedAnnual)}`}
                       onClick={() => handleNavClick("members")}
                       valueClass={dashboardMetrics.outstanding > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}
                     />
@@ -3876,9 +3911,9 @@ Subscription Manager HK`;
                         <p>Expected contribution is HK$800 per member per year</p>
                       </div>
                     </div>
-                    <div 
+                    <div
                       ref={chartContainerRef}
-                      className="chart admin-dashboard-chart-container" 
+                      className="chart admin-dashboard-chart-container"
                       onMouseMove={(e) => {
                         if (hoveredMonth) {
                           updateChartMousePosition(e);
@@ -3910,23 +3945,23 @@ Subscription Manager HK`;
                         const tooltipHeight = 80;
                         const chartRect = chartContainerRef.current.getBoundingClientRect();
                         const viewportHeight = window.innerHeight;
-                        
+
                         // Position on the left side of the cursor
                         let left = mousePosition.x - tooltipWidth - 15;
-                        
+
                         // Ensure tooltip doesn't go off the left edge
                         if (left < 10) {
                           left = 10;
                         }
-                        
+
                         // Center tooltip vertically relative to cursor
                         let top = mousePosition.y - tooltipHeight / 2;
-                        
+
                         // Prevent vertical overflow - check top edge
                         if (chartRect.top + top < 10) {
                           top = 10 - chartRect.top;
                         }
-                        
+
                         // Prevent bottom overflow
                         const tooltipBottomEdge = chartRect.top + top + tooltipHeight;
                         if (tooltipBottomEdge > viewportHeight - 10) {
@@ -3936,9 +3971,9 @@ Subscription Manager HK`;
                             top = 10 - chartRect.top;
                           }
                         }
-                        
+
                         return (
-                          <div 
+                          <div
                             className="admin-dashboard-chart-tooltip"
                             style={{
                               left: `${left}px`,
@@ -3968,7 +4003,7 @@ Subscription Manager HK`;
 
                   <div className="admin-dashboard-payments-card">
                     <div className="card-header">
-                      <h4><i className="fas fa-clock admin-icon" style={{marginRight: "10px"}}></i>Recent Payments</h4>
+                      <h4><i className="fas fa-clock admin-icon" style={{ marginRight: "10px" }}></i>Recent Payments</h4>
                       <button className="text-btn" onClick={() => handleNavClick("members")}>
                         View all
                       </button>
@@ -4041,7 +4076,7 @@ Subscription Manager HK`;
                           fileInput.onchange = async (e) => {
                             const file = e.target.files[0];
                             if (!file) return;
-                            
+
                             await handleImportMembers(file);
                             document.body.removeChild(fileInput);
                           };
@@ -4066,6 +4101,7 @@ Subscription Manager HK`;
                             status: "Active",
                             balance: "250", // default based on Lifetime subscription
                             nextDue: getTodayDate(), // Default to today's date
+                            subscriptionYear: new Date().getFullYear().toString(),
                             lastPayment: "",
                             subscriptionType: "Lifetime",
                           });
@@ -4103,269 +4139,13 @@ Subscription Manager HK`;
                     >
                       <div className="admin-members-form-header">
                         <div className="admin-members-form-header-top">
-                        <h4 className="admin-members-form-title">
-                          <i className="fas fa-user-plus" aria-hidden="true"></i>
-                          {editingMember ? "Edit Member" : "Add New Member"}
-                        </h4>
-                        <button
-                          type="button"
-                          className="admin-members-form-close"
-                          onClick={() => {
-                            // Clear validation state when closing
-                            setMemberFieldErrors({
-                              name: false,
-                              email: false,
-                              phone: false,
-                              nextDue: false,
-                              lastPayment: false,
-                            });
-                            setCurrentInvalidField(null);
-                            setShowMemberForm(false);
-                            setEditingMember(null);
-                          }}
-                          aria-label="Close add member form"
-                        >
-                          ×
-                        </button>
-                      </div>
-
-                      <form
-                        className="form-grid"
-                        onSubmit={editingMember ? handleUpdateMember : handleAddMember}
-                        noValidate
-                      >
-                      <label>
-                        <span>
-                          <i className="fas fa-user admin-members-form-icon" aria-hidden="true"></i>
-                        Name <span className="admin-members-form-required">*</span>
-                        </span>
-                        <input
-                          type="text"
-                          required
-                          value={memberForm.name}
-                          onChange={(e) => {
-                            handleMemberFieldChange("name", e.target.value);
-                            // Clear error when user starts typing
-                            if (memberFieldErrors.name || currentInvalidField === "name") {
-                              setMemberFieldErrors(prev => ({ ...prev, name: false }));
-                              if (currentInvalidField === "name") {
-                                setCurrentInvalidField(null);
-                              }
-                            }
-                          }}
-                          className={(memberFieldErrors.name && currentInvalidField === "name") ? "admin-members-form-input-error" : ""}
-                          aria-invalid={memberFieldErrors.name}
-                          onFocus={(e) => {
-                            if (memberFieldErrors.name && currentInvalidField === "name") {
-                              e.target.style.borderColor = "#ef4444";
-                              e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
-                            }
-                          }}
-                          onBlur={(e) => {
-                            if (memberFieldErrors.name && currentInvalidField === "name") {
-                              e.target.style.borderColor = "#ef4444";
-                            }
-                          }}
-                        />
-                      </label>
-
-                      <label>
-                        <span>
-                          <i className="fas fa-envelope" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                        Email <span style={{ color: "#ef4444" }}>*</span>
-                        </span>
-                        <input
-                          type="email"
-                          required
-                          value={memberForm.email}
-                          onChange={(e) => {
-                            handleMemberFieldChange("email", e.target.value);
-                            // Clear error when user starts typing
-                            if (memberFieldErrors.email || currentInvalidField === "email") {
-                              setMemberFieldErrors(prev => ({ ...prev, email: false }));
-                              if (currentInvalidField === "email") {
-                                setCurrentInvalidField(null);
-                              }
-                            }
-                          }}
-                          style={{
-                            borderColor: (memberFieldErrors.email && currentInvalidField === "email") ? "#ef4444" : undefined,
-                            borderWidth: (memberFieldErrors.email && currentInvalidField === "email") ? "2px" : undefined,
-                            borderStyle: (memberFieldErrors.email && currentInvalidField === "email") ? "solid" : undefined,
-                            outline: (memberFieldErrors.email && currentInvalidField === "email") ? "none" : undefined,
-                            boxShadow: (memberFieldErrors.email && currentInvalidField === "email") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
-                          }}
-                          aria-invalid={memberFieldErrors.email}
-                          onFocus={(e) => {
-                            if (memberFieldErrors.email && currentInvalidField === "email") {
-                              e.target.style.borderColor = "#ef4444";
-                              e.target.style.outline = "none";
-                              e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
-                            }
-                          }}
-                          onBlur={(e) => {
-                            if (memberFieldErrors.email && currentInvalidField === "email") {
-                              e.target.style.borderColor = "#ef4444";
-                              e.target.style.outline = "none";
-                            }
-                          }}
-                        />
-                      </label>
-
-                      <div>
-                        <PhoneInput
-                          label={
-                            <span className="admin-phone-input-label">
-                              <i className="fas fa-phone admin-phone-input-label-icon" aria-hidden="true"></i>
-                              WhatsApp Number <span className="admin-phone-input-required">*</span>
-                            </span>
-                          }
-                          value={memberForm.phone}
-                          onChange={(e) => {
-                            handleMemberFieldChange("phone", e.target.value);
-                            // Clear error when user starts typing
-                            if (memberFieldErrors.phone || currentInvalidField === "phone") {
-                              setMemberFieldErrors(prev => ({ ...prev, phone: false }));
-                              if (currentInvalidField === "phone") {
-                                setCurrentInvalidField(null);
-                              }
-                            }
-                          }}
-                          onError={(error) => {
-                            showToast(error, "error");
-                            setMemberFieldErrors(prev => ({ ...prev, phone: true }));
-                            setCurrentInvalidField("phone");
-                          }}
-                          required={true}
-                          className={memberFieldErrors.phone && currentInvalidField === "phone" ? "admin-phone-input-error" : ""}
-                          placeholder="Enter phone number"
-                        />
-                      </div>
-
-                      {/* Password removed from Add Member form as requested */}
-                      <label>
-                        <span>
-                          <i className="fas fa-toggle-on" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                        Status
-                        </span>
-                        <select
-                          value={memberForm.status}
-                          onChange={(e) => handleMemberFieldChange("status", e.target.value)}
-                        >
-                          <option>Active</option>
-                          <option>Inactive</option>
-                          <option>Pending</option>
-                        </select>
-                      </label>
-
-                      {!editingMember && (
-                        <label>
-                          <span>
-                            <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                          Subscription Type
-                          </span>
-                          <select
-                            value={memberForm.subscriptionType || "Lifetime"}
-                            onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
-                          >
-                            <option value="Lifetime">Lifetime - HK$250/year</option>
-                            <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - HK$500/year</option>
-                          </select>
-                        </label>
-                      )}
-
-                      {!editingMember && (
-                        <label>
-                          <span>
-                            <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                            Balance
-                          </span>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            value={memberForm.balance}
-                            readOnly
-                            style={{
-                              background: "#f9fafb",
-                              cursor: "not-allowed",
-                              color: "#666"
-                            }}
-                          />
-                        </label>
-                      )}
-
-                      {!editingMember && (
-                        <label>
-                          <span>
-                            <i className="fas fa-calendar-day" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                            Joining Date <span style={{ color: "#ef4444" }}>*</span>
-                          </span>
-                          <input
-                            type="date"
-                            value={memberForm.nextDue}
-                            onChange={(e) => {
-                              const selectedDate = e.target.value;
-                              handleMemberFieldChange("nextDue", selectedDate);
-                              // Clear error when user starts typing
-                              if (memberFieldErrors.nextDue || currentInvalidField === "nextDue") {
-                                setMemberFieldErrors(prev => ({ ...prev, nextDue: false }));
-                                if (currentInvalidField === "nextDue") {
-                                  setCurrentInvalidField(null);
-                                }
-                              }
-                            }}
-                            onBlur={(e) => {
-                              const dateValue = e.target.value;
-                              if (dateValue) {
-                                const date = new Date(dateValue);
-                                if (isNaN(date.getTime())) {
-                                  showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
-                                  return;
-                                }
-                                // Validate date components
-                                const [year, month, day] = dateValue.split('-').map(Number);
-                                if (month < 1 || month > 12) {
-                                  showToast("Invalid month. Please enter a month between 01 and 12", "error");
-                                  return;
-                                }
-                                if (day < 1 || day > 31) {
-                                  showToast("Invalid day. Please enter a valid day for the selected month", "error");
-                                  return;
-                                }
-                                // Check if day is valid for the month
-                                const daysInMonth = new Date(year, month, 0).getDate();
-                                if (day > daysInMonth) {
-                                  showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
-                                  return;
-                                }
-                              }
-                            }}
-                            style={{
-                              borderRadius: "4px",
-                              width: "100%",
-                              borderColor: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "#ef4444" : undefined,
-                              borderWidth: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "2px" : undefined,
-                              borderStyle: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "solid" : undefined,
-                              outline: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "none" : undefined,
-                              boxShadow: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
-                            }}
-                            aria-invalid={memberFieldErrors.nextDue}
-                            onFocus={(e) => {
-                              if (memberFieldErrors.nextDue && currentInvalidField === "nextDue") {
-                                e.target.style.borderColor = "#ef4444";
-                                e.target.style.outline = "none";
-                                e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
-                              }
-                            }}
-                          />
-                        </label>
-                      )}
-
-
-                      <div className="form-actions">
-                        <button
-                          type="button"
-                          className="ghost-btn"
+                          <h4 className="admin-members-form-title">
+                            <i className="fas fa-user-plus" aria-hidden="true"></i>
+                            {editingMember ? "Edit Member" : "Add New Member"}
+                          </h4>
+                          <button
+                            type="button"
+                            className="admin-members-form-close"
                             onClick={() => {
                               // Clear validation state when closing
                               setMemberFieldErrors({
@@ -4379,28 +4159,301 @@ Subscription Manager HK`;
                               setShowMemberForm(false);
                               setEditingMember(null);
                             }}
+                            aria-label="Close add member form"
                           >
-                            Cancel
+                            ×
                           </button>
-                        <button
-                          type="submit"
-                          className="primary-btn"
-                          disabled={isMemberSubmitting}
-                          style={{
-                            position: "sticky",
-                            bottom: 0,
-                            backgroundColor: "#5a31ea",
-                            zIndex: 1,
-                          }}
+                        </div>
+
+                        <form
+                          className="form-grid"
+                          onSubmit={editingMember ? handleUpdateMember : handleAddMember}
+                          noValidate
                         >
-                          {isMemberSubmitting
-                            ? "Saving..."
-                            : editingMember
-                            ? "Update Member"
-                            : "Add Member"}
-                        </button>
-                      </div>
-                    </form>
+                          <label>
+                            <span>
+                              <i className="fas fa-user admin-members-form-icon" aria-hidden="true"></i>
+                              Name <span className="admin-members-form-required">*</span>
+                            </span>
+                            <input
+                              type="text"
+                              required
+                              value={memberForm.name}
+                              onChange={(e) => {
+                                handleMemberFieldChange("name", e.target.value);
+                                // Clear error when user starts typing
+                                if (memberFieldErrors.name || currentInvalidField === "name") {
+                                  setMemberFieldErrors(prev => ({ ...prev, name: false }));
+                                  if (currentInvalidField === "name") {
+                                    setCurrentInvalidField(null);
+                                  }
+                                }
+                              }}
+                              className={(memberFieldErrors.name && currentInvalidField === "name") ? "admin-members-form-input-error" : ""}
+                              aria-invalid={memberFieldErrors.name}
+                              onFocus={(e) => {
+                                if (memberFieldErrors.name && currentInvalidField === "name") {
+                                  e.target.style.borderColor = "#ef4444";
+                                  e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                                }
+                              }}
+                              onBlur={(e) => {
+                                if (memberFieldErrors.name && currentInvalidField === "name") {
+                                  e.target.style.borderColor = "#ef4444";
+                                }
+                              }}
+                            />
+                          </label>
+
+                          <label>
+                            <span>
+                              <i className="fas fa-envelope" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                              Email <span style={{ color: "#ef4444" }}>*</span>
+                            </span>
+                            <input
+                              type="email"
+                              required
+                              value={memberForm.email}
+                              onChange={(e) => {
+                                handleMemberFieldChange("email", e.target.value);
+                                // Clear error when user starts typing
+                                if (memberFieldErrors.email || currentInvalidField === "email") {
+                                  setMemberFieldErrors(prev => ({ ...prev, email: false }));
+                                  if (currentInvalidField === "email") {
+                                    setCurrentInvalidField(null);
+                                  }
+                                }
+                              }}
+                              style={{
+                                borderColor: (memberFieldErrors.email && currentInvalidField === "email") ? "#ef4444" : undefined,
+                                borderWidth: (memberFieldErrors.email && currentInvalidField === "email") ? "2px" : undefined,
+                                borderStyle: (memberFieldErrors.email && currentInvalidField === "email") ? "solid" : undefined,
+                                outline: (memberFieldErrors.email && currentInvalidField === "email") ? "none" : undefined,
+                                boxShadow: (memberFieldErrors.email && currentInvalidField === "email") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
+                              }}
+                              aria-invalid={memberFieldErrors.email}
+                              onFocus={(e) => {
+                                if (memberFieldErrors.email && currentInvalidField === "email") {
+                                  e.target.style.borderColor = "#ef4444";
+                                  e.target.style.outline = "none";
+                                  e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                                }
+                              }}
+                              onBlur={(e) => {
+                                if (memberFieldErrors.email && currentInvalidField === "email") {
+                                  e.target.style.borderColor = "#ef4444";
+                                  e.target.style.outline = "none";
+                                }
+                              }}
+                            />
+                          </label>
+
+                          <div>
+                            <PhoneInput
+                              label={
+                                <span className="admin-phone-input-label">
+                                  <i className="fas fa-phone admin-phone-input-label-icon" aria-hidden="true"></i>
+                                  WhatsApp Number <span className="admin-phone-input-required">*</span>
+                                </span>
+                              }
+                              value={memberForm.phone}
+                              onChange={(e) => {
+                                handleMemberFieldChange("phone", e.target.value);
+                                // Clear error when user starts typing
+                                if (memberFieldErrors.phone || currentInvalidField === "phone") {
+                                  setMemberFieldErrors(prev => ({ ...prev, phone: false }));
+                                  if (currentInvalidField === "phone") {
+                                    setCurrentInvalidField(null);
+                                  }
+                                }
+                              }}
+                              onError={(error) => {
+                                showToast(error, "error");
+                                setMemberFieldErrors(prev => ({ ...prev, phone: true }));
+                                setCurrentInvalidField("phone");
+                              }}
+                              required={true}
+                              className={memberFieldErrors.phone && currentInvalidField === "phone" ? "admin-phone-input-error" : ""}
+                              placeholder="Enter phone number"
+                            />
+                          </div>
+
+                          {/* Password removed from Add Member form as requested */}
+                          <label>
+                            <span>
+                              <i className="fas fa-toggle-on" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                              Status
+                            </span>
+                            <select
+                              value={memberForm.status}
+                              onChange={(e) => handleMemberFieldChange("status", e.target.value)}
+                            >
+                              <option>Active</option>
+                              <option>Inactive</option>
+                              <option>Pending</option>
+                            </select>
+                          </label>
+
+                          {!editingMember && (
+                            <label>
+                              <span>
+                                <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                Subscription Type
+                              </span>
+                              <select
+                                value={memberForm.subscriptionType || "Lifetime"}
+                                onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
+                              >
+                                <option value="Lifetime">Lifetime - HK$250/year</option>
+                                <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - HK$500/year</option>
+                              </select>
+                            </label>
+                          )}
+
+                          {!editingMember && (
+                            <label>
+                              <span>
+                                <i className="fas fa-calendar" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                Subscription Year
+                              </span>
+                              <input
+                                type="number"
+                                min="2000"
+                                max="2100"
+                                value={memberForm.subscriptionYear}
+                                onChange={(e) => handleMemberFieldChange("subscriptionYear", e.target.value)}
+                                placeholder="YYYY"
+                              />
+                            </label>
+                          )}
+
+                          {!editingMember && (
+                            <label>
+                              <span>
+                                <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                Balance
+                              </span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                value={memberForm.balance}
+                                readOnly
+                                style={{
+                                  background: "#f9fafb",
+                                  cursor: "not-allowed",
+                                  color: "#666"
+                                }}
+                              />
+                            </label>
+                          )}
+
+                          {!editingMember && (
+                            <label>
+                              <span>
+                                <i className="fas fa-calendar-day" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                Joining Date <span style={{ color: "#ef4444" }}>*</span>
+                              </span>
+                              <input
+                                type="date"
+                                value={memberForm.nextDue}
+                                onChange={(e) => {
+                                  const selectedDate = e.target.value;
+                                  handleMemberFieldChange("nextDue", selectedDate);
+                                  // Clear error when user starts typing
+                                  if (memberFieldErrors.nextDue || currentInvalidField === "nextDue") {
+                                    setMemberFieldErrors(prev => ({ ...prev, nextDue: false }));
+                                    if (currentInvalidField === "nextDue") {
+                                      setCurrentInvalidField(null);
+                                    }
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  const dateValue = e.target.value;
+                                  if (dateValue) {
+                                    const date = new Date(dateValue);
+                                    if (isNaN(date.getTime())) {
+                                      showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
+                                      return;
+                                    }
+                                    // Validate date components
+                                    const [year, month, day] = dateValue.split('-').map(Number);
+                                    if (month < 1 || month > 12) {
+                                      showToast("Invalid month. Please enter a month between 01 and 12", "error");
+                                      return;
+                                    }
+                                    if (day < 1 || day > 31) {
+                                      showToast("Invalid day. Please enter a valid day for the selected month", "error");
+                                      return;
+                                    }
+                                    // Check if day is valid for the month
+                                    const daysInMonth = new Date(year, month, 0).getDate();
+                                    if (day > daysInMonth) {
+                                      showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
+                                      return;
+                                    }
+                                  }
+                                }}
+                                style={{
+                                  borderRadius: "4px",
+                                  width: "100%",
+                                  borderColor: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "#ef4444" : undefined,
+                                  borderWidth: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "2px" : undefined,
+                                  borderStyle: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "solid" : undefined,
+                                  outline: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "none" : undefined,
+                                  boxShadow: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
+                                }}
+                                aria-invalid={memberFieldErrors.nextDue}
+                                onFocus={(e) => {
+                                  if (memberFieldErrors.nextDue && currentInvalidField === "nextDue") {
+                                    e.target.style.borderColor = "#ef4444";
+                                    e.target.style.outline = "none";
+                                    e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                                  }
+                                }}
+                              />
+                            </label>
+                          )}
+
+
+                          <div className="form-actions">
+                            <button
+                              type="button"
+                              className="ghost-btn"
+                              onClick={() => {
+                                // Clear validation state when closing
+                                setMemberFieldErrors({
+                                  name: false,
+                                  email: false,
+                                  phone: false,
+                                  nextDue: false,
+                                  lastPayment: false,
+                                });
+                                setCurrentInvalidField(null);
+                                setShowMemberForm(false);
+                                setEditingMember(null);
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="submit"
+                              className="primary-btn"
+                              disabled={isMemberSubmitting}
+                              style={{
+                                position: "sticky",
+                                bottom: 0,
+                                backgroundColor: "#5a31ea",
+                                zIndex: 1,
+                              }}
+                            >
+                              {isMemberSubmitting
+                                ? "Saving..."
+                                : editingMember
+                                  ? "Update Member"
+                                  : "Add Member"}
+                            </button>
+                          </div>
+                        </form>
                       </div>
                     </div>
                   </div>
@@ -4520,364 +4573,405 @@ Subscription Manager HK`;
                   </div>
                 </div> */}
 
-                  <div className="admin-members-table-card">
-                    <div className="table-wrapper">
-                      {(() => {
-                        // Filter members based on search term and status (using derived status)
-                        const filteredMembers = members
-                          .filter((member) =>
-                            !memberSearchTerm ||
-                            member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
-                          )
-                          .filter((member) => {
-                            if (memberStatusFilter === "All") return true;
+                <div className="admin-members-table-card">
+                  <div className="table-wrapper">
+                    {(() => {
+                      // Filter members based on search term and status (using derived status)
+                      const filteredMembers = members
+                        .filter((member) =>
+                          !memberSearchTerm ||
+                          member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
+                        )
+                        .filter((member) => {
+                          if (memberStatusFilter === "All") return true;
 
-                            const balanceStr = member.balance?.toString() || "";
-                            const numericOutstanding = parseFloat(
-                              balanceStr.replace(/[^0-9.]/g, "") || 0
-                            ) || 0;
+                          const balanceStr = member.balance?.toString() || "";
+                          const numericOutstanding = parseFloat(
+                            balanceStr.replace(/[^0-9.]/g, "") || 0
+                          ) || 0;
 
-                            // Derive status: Active / Overdue / Unpaid / Inactive / Pending
-                            let derivedStatus = "Active";
-                            
-                            if (member.status === "Inactive") {
-                              derivedStatus = "Inactive";
-                            } else if (member.status === "Pending") {
-                              derivedStatus = "Pending";
-                            } else if (member.payment_status === "unpaid" && numericOutstanding > 0) {
-                              // Check if next_due_date has passed
-                              if (member.next_due_date) {
-                                try {
-                                  const dueDate = new Date(member.next_due_date);
-                                  const today = new Date();
-                                  today.setHours(0, 0, 0, 0); // Reset time to midnight for comparison
-                                  dueDate.setHours(0, 0, 0, 0);
-                                  
-                                  // Only mark as Overdue if due date has passed
-                                  if (dueDate < today) {
-                                    derivedStatus = "Overdue";
-                                  } else {
-                                    derivedStatus = "Unpaid";
-                                  }
-                                } catch (e) {
-                                  // If date parsing fails, check balance string
-                                  if (balanceStr.toLowerCase().includes("overdue")) {
-                                    derivedStatus = "Overdue";
-                                  } else {
-                                    derivedStatus = "Unpaid";
-                                  }
+                          // Derive status: Active / Overdue / Unpaid / Inactive / Pending
+                          let derivedStatus = "Active";
+
+                          if (member.status === "Inactive") {
+                            derivedStatus = "Inactive";
+                          } else if (member.status === "Pending") {
+                            derivedStatus = "Pending";
+                          } else if (member.payment_status === "unpaid" && numericOutstanding > 0) {
+                            // Check if next_due_date has passed
+                            if (member.next_due_date) {
+                              try {
+                                const dueDate = new Date(member.next_due_date);
+                                const today = new Date();
+                                today.setHours(0, 0, 0, 0); // Reset time to midnight for comparison
+                                dueDate.setHours(0, 0, 0, 0);
+
+                                // Only mark as Overdue if due date has passed
+                                if (dueDate < today) {
+                                  derivedStatus = "Overdue";
+                                } else {
+                                  derivedStatus = "Unpaid";
                                 }
-                              } else {
-                                // No due date set, check balance string for "overdue"
+                              } catch (e) {
+                                // If date parsing fails, check balance string
                                 if (balanceStr.toLowerCase().includes("overdue")) {
                                   derivedStatus = "Overdue";
                                 } else {
                                   derivedStatus = "Unpaid";
                                 }
                               }
-                            } else if (balanceStr.toLowerCase().includes("overdue")) {
-                              // Fallback: if balance string explicitly says "overdue"
-                              derivedStatus = "Overdue";
+                            } else {
+                              // No due date set, check balance string for "overdue"
+                              if (balanceStr.toLowerCase().includes("overdue")) {
+                                derivedStatus = "Overdue";
+                              } else {
+                                derivedStatus = "Unpaid";
+                              }
                             }
+                          } else if (balanceStr.toLowerCase().includes("overdue")) {
+                            // Fallback: if balance string explicitly says "overdue"
+                            derivedStatus = "Overdue";
+                          }
 
-                            return derivedStatus === memberStatusFilter;
-                          });
+                          return derivedStatus === memberStatusFilter;
+                        });
 
-                        // No sorting - use filtered members as-is
-                        const sortedMembers = filteredMembers;
-                        
-                        // Calculate pagination
-                        const totalPages = Math.ceil(sortedMembers.length / membersPageSize) || 1;
-                        const currentPage = Math.min(membersPage, totalPages);
-                        const startIndex = (currentPage - 1) * membersPageSize;
-                        const endIndex = startIndex + membersPageSize;
-                        const paginatedMembers = sortedMembers.slice(startIndex, endIndex);
-                        
-                        const isOwner = currentAdminRole === "Owner";
+                      // No sorting - use filtered members as-is
+                      const sortedMembers = filteredMembers;
 
-                        return (
-                          <>
-                            {/* Filters above table */}
-                            <div className="mb-lg flex gap-md flex-wrap items-center justify-between">
-                              <div className="flex gap-md flex-wrap items-center">
-                                <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Status:</label>
-                                <div style={{ 
-                                  display: "flex", 
-                                  gap: "4px", 
-                                  background: "#f3f4f6", 
-                                  padding: "4px", 
-                                  borderRadius: "4px",
-                                  flexWrap: "wrap"
-                                }}>
-                                  {[
-                                    { value: "All", label: "All" },
-                                    { value: "Active", label: "Active" },
-                                    { value: "Unpaid", label: "Unpaid" },
-                                    { value: "Overdue", label: "Overdue" },
-                                    { value: "Inactive", label: "Inactive" },
-                                    // { value: "Pending", label: "Pending" }
-                                  ].map((option) => (
-                                    <button
-                                      key={option.value}
-                                      type="button"
-                                      onClick={() => setMemberStatusFilter(option.value)}
-                                      style={{
-                                        padding: "8px 16px",
-                                        borderRadius: "4px",
-                                        border: "none",
-                                        fontSize: "0.875rem",
-                                        fontWeight: "500",
-                                        cursor: "pointer",
-                                        transition: "all 0.2s ease",
-                                        background: memberStatusFilter === option.value
-                                          ? "#5a31ea"
-                                          : "transparent",
-                                        color: memberStatusFilter === option.value ? "#ffffff" : "#6b7280",
-                                        boxShadow: memberStatusFilter === option.value
-                                          ? "0 2px 8px rgba(90, 49, 234, 0.3)"
-                                          : "none",
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        if (memberStatusFilter !== option.value) {
-                                          e.target.style.background = "#e5e7eb";
-                                          e.target.style.color = "#374151";
-                                        }
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        if (memberStatusFilter !== option.value) {
-                                          e.target.style.background = "transparent";
-                                          e.target.style.color = "#6b7280";
-                                        }
-                                      }}
-                                    >
-                                      {option.label}
-                                    </button>
-                                  ))}
-                                </div>
+                      // Calculate pagination
+                      const totalPages = Math.ceil(sortedMembers.length / membersPageSize) || 1;
+                      const currentPage = Math.min(membersPage, totalPages);
+                      const startIndex = (currentPage - 1) * membersPageSize;
+                      const endIndex = startIndex + membersPageSize;
+                      const paginatedMembers = sortedMembers.slice(startIndex, endIndex);
+
+                      const isOwner = currentAdminRole === "Owner";
+
+                      return (
+                        <>
+                          {/* Filters above table */}
+                          <div className="mb-lg flex gap-md flex-wrap items-center justify-between">
+                            <div className="flex gap-md flex-wrap items-center">
+                              <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Status:</label>
+                              <div style={{
+                                display: "flex",
+                                gap: "4px",
+                                background: "#f3f4f6",
+                                padding: "4px",
+                                borderRadius: "4px",
+                                flexWrap: "wrap"
+                              }}>
+                                {[
+                                  { value: "All", label: "All" },
+                                  { value: "Active", label: "Active" },
+                                  { value: "Unpaid", label: "Unpaid" },
+                                  { value: "Overdue", label: "Overdue" },
+                                  { value: "Inactive", label: "Inactive" },
+                                  // { value: "Pending", label: "Pending" }
+                                ].map((option) => (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => setMemberStatusFilter(option.value)}
+                                    style={{
+                                      padding: "8px 16px",
+                                      borderRadius: "4px",
+                                      border: "none",
+                                      fontSize: "0.875rem",
+                                      fontWeight: "500",
+                                      cursor: "pointer",
+                                      transition: "all 0.2s ease",
+                                      background: memberStatusFilter === option.value
+                                        ? "#5a31ea"
+                                        : "transparent",
+                                      color: memberStatusFilter === option.value ? "#ffffff" : "#6b7280",
+                                      boxShadow: memberStatusFilter === option.value
+                                        ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                        : "none",
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (memberStatusFilter !== option.value) {
+                                        e.target.style.background = "#e5e7eb";
+                                        e.target.style.color = "#374151";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (memberStatusFilter !== option.value) {
+                                        e.target.style.background = "transparent";
+                                        e.target.style.color = "#6b7280";
+                                      }
+                                    }}
+                                  >
+                                    {option.label}
+                                  </button>
+                                ))}
                               </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                <label className="text-sm text-muted" style={{ whiteSpace: "nowrap" }}>
-                                  🔍 Search:&nbsp;
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="Search by member name..."
-                                  value={memberSearchTerm}
-                                  onChange={(e) => {
-                                    setMemberSearchTerm(e.target.value);
-                                    setMembersPage(1); // Reset to first page when searching
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <label className="text-sm text-muted" style={{ whiteSpace: "nowrap" }}>
+                                🔍 Search:&nbsp;
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Search by member name..."
+                                value={memberSearchTerm}
+                                onChange={(e) => {
+                                  setMemberSearchTerm(e.target.value);
+                                  setMembersPage(1); // Reset to first page when searching
+                                }}
+                                style={{
+                                  padding: "8px 12px",
+                                  borderRadius: "4px",
+                                  border: "1px solid #e5e7eb",
+                                  background: "#ffffff",
+                                  fontSize: "0.875rem",
+                                  minWidth: "200px",
+                                  outline: "none",
+                                  transition: "border-color 0.2s"
+                                }}
+                                onFocus={(e) => {
+                                  e.target.style.borderColor = "#5a31ea";
+                                  e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                }}
+                                onBlur={(e) => {
+                                  e.target.style.borderColor = "#e5e7eb";
+                                  e.target.style.boxShadow = "none";
+                                }}
+                              />
+                              {memberSearchTerm && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMemberSearchTerm("");
+                                    setMembersPage(1);
                                   }}
                                   style={{
                                     padding: "8px 12px",
-                                    borderRadius: "4px",
+                                    background: "#f9fafb",
                                     border: "1px solid #e5e7eb",
-                                    background: "#ffffff",
+                                    borderRadius: "4px",
+                                    cursor: "pointer",
                                     fontSize: "0.875rem",
-                                    minWidth: "200px",
-                                    outline: "none",
-                                    transition: "border-color 0.2s"
+                                    color: "#666"
                                   }}
-                                  onFocus={(e) => {
-                                    e.target.style.borderColor = "#5a31ea";
-                                    e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                                  }}
-                                  onBlur={(e) => {
-                                    e.target.style.borderColor = "#e5e7eb";
-                                    e.target.style.boxShadow = "none";
-                                  }}
-                                />
-                                {memberSearchTerm && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setMemberSearchTerm("");
-                                      setMembersPage(1);
-                                    }}
-                                    style={{
-                                      padding: "8px 12px",
-                                      background: "#f9fafb",
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: "4px",
-                                      cursor: "pointer",
-                                      fontSize: "0.875rem",
-                                      color: "#666"
-                                    }}
-                                    title="Clear search"
-                                  >
-                                    ✕
-                                  </button>
-                                )}
-                              </div>
+                                  title="Clear search"
+                                >
+                                  ✕
+                                </button>
+                              )}
                             </div>
+                          </div>
 
-                            {/* Empty State */}
-                            {sortedMembers.length === 0 ? (
-                              <div className="admin-empty-state">
-                                <p className="admin-empty-state-message">
-                                  {memberStatusFilter !== "All" 
-                                    ? `No ${memberStatusFilter.toLowerCase()} members found.`
-                                    : "No members found."}
-                                </p>
-                              </div>
-                            ) : (
-                              <>
-                                <Table
-                                  columns={[
-                                    "Member Name",
-                                    "Status",
-                                    "Outstanding",
-                                    "Actions",
-                                  ]}
-                                  rows={paginatedMembers.map((member) => {
-                                    // Derive outstanding numeric amount
-                                    const balanceStr = member.balance?.toString() || "";
-                                    const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0) || 0;
+                          {/* Empty State */}
+                          {sortedMembers.length === 0 ? (
+                            <div className="admin-empty-state">
+                              <p className="admin-empty-state-message">
+                                {memberStatusFilter !== "All"
+                                  ? `No ${memberStatusFilter.toLowerCase()} members found.`
+                                  : "No members found."}
+                              </p>
+                            </div>
+                          ) : (
+                            <>
+                              <Table
+                                columns={[
+                                  "Name",
+                                  "Year",
+                                  "Subscription Type",
+                                  "Joined Year",
+                                  "Status",
+                                  "Outstanding",
+                                  "Actions",
+                                ]}
+                                rows={paginatedMembers.map((member) => {
+                                  // Derive outstanding numeric amount
+                                  const balanceStr = member.balance?.toString() || "";
+                                  const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0) || 0;
 
-                                    // Derive status: Active / Overdue / Unpaid / Inactive / Pending
-                                    let derivedStatus = "Active";
-                                    
-                                    if (member.status === "Inactive") {
-                                      derivedStatus = "Inactive";
-                                    } else if (member.status === "Pending") {
-                                      derivedStatus = "Pending";
-                                    } else if (member.payment_status === "unpaid" && numericOutstanding > 0) {
-                                      // Check if next_due_date has passed
-                                      if (member.next_due_date) {
-                                        try {
-                                          const dueDate = new Date(member.next_due_date);
-                                          const today = new Date();
-                                          today.setHours(0, 0, 0, 0); // Reset time to midnight for comparison
-                                          dueDate.setHours(0, 0, 0, 0);
-                                          
-                                          // Only mark as Overdue if due date has passed
-                                          if (dueDate < today) {
-                                            derivedStatus = "Overdue";
-                                          } else {
-                                            derivedStatus = "Unpaid";
-                                          }
-                                        } catch (e) {
-                                          // If date parsing fails, check balance string
-                                          if (balanceStr.toLowerCase().includes("overdue")) {
-                                            derivedStatus = "Overdue";
-                                          } else {
-                                            derivedStatus = "Unpaid";
-                                          }
+                                  // Joined Year
+                                  const joinedYear = member.start_date
+                                    ? new Date(member.start_date).getFullYear()
+                                    : (member.createdAt ? new Date(member.createdAt).getFullYear() : "-");
+
+                                  // Subscription Year - extract from latest invoice period, or fallback to next_due_date/nextDue
+                                  let subYear = "-";
+                                  // First, try to get year from member's latest invoice period
+                                  const memberInvoices = invoices.filter(inv => 
+                                    inv.memberId === member.id || 
+                                    inv.memberEmail === member.email || 
+                                    inv.memberName === member.name
+                                  );
+                                  if (memberInvoices.length > 0) {
+                                    // Get the most recent invoice (by date or use the first one)
+                                    const latestInvoice = memberInvoices[0];
+                                    if (latestInvoice.period) {
+                                      const periodStr = String(latestInvoice.period).trim();
+                                      const yearMatch = periodStr.match(/\d{4}/);
+                                      if (yearMatch) {
+                                        subYear = yearMatch[0];
+                                      }
+                                    }
+                                  }
+                                  // Fallback to next_due_date or nextDue if no invoice found or no year in period
+                                  if (subYear === "-") {
+                                    if (member.next_due_date) {
+                                      subYear = new Date(member.next_due_date).getFullYear().toString();
+                                    } else if (member.nextDue) {
+                                      const nextDueStr = String(member.nextDue).trim();
+                                      const yearMatch = nextDueStr.match(/\d{4}/);
+                                      subYear = yearMatch ? yearMatch[0] : nextDueStr.split('-')[0] || "-";
+                                    }
+                                  }
+
+                                  // Derive status: Active / Overdue / Unpaid / Inactive / Pending
+                                  let derivedStatus = "Active";
+
+                                  if (member.status === "Inactive") {
+                                    derivedStatus = "Inactive";
+                                  } else if (member.status === "Pending") {
+                                    derivedStatus = "Pending";
+                                  } else if (member.payment_status === "unpaid" && numericOutstanding > 0) {
+                                    // Check if next_due_date has passed
+                                    if (member.next_due_date) {
+                                      try {
+                                        const dueDate = new Date(member.next_due_date);
+                                        const today = new Date();
+                                        today.setHours(0, 0, 0, 0); // Reset time to midnight for comparison
+                                        dueDate.setHours(0, 0, 0, 0);
+
+                                        // Only mark as Overdue if due date has passed
+                                        if (dueDate < today) {
+                                          derivedStatus = "Overdue";
+                                        } else {
+                                          derivedStatus = "Unpaid";
                                         }
-                                      } else {
-                                        // No due date set, check balance string for "overdue"
+                                      } catch (e) {
+                                        // If date parsing fails, check balance string
                                         if (balanceStr.toLowerCase().includes("overdue")) {
                                           derivedStatus = "Overdue";
                                         } else {
                                           derivedStatus = "Unpaid";
                                         }
                                       }
-                                    } else if (balanceStr.toLowerCase().includes("overdue")) {
-                                      // Fallback: if balance string explicitly says "overdue"
-                                      derivedStatus = "Overdue";
+                                    } else {
+                                      // No due date set, check balance string for "overdue"
+                                      if (balanceStr.toLowerCase().includes("overdue")) {
+                                        derivedStatus = "Overdue";
+                                      } else {
+                                        derivedStatus = "Unpaid";
+                                      }
                                     }
+                                  } else if (balanceStr.toLowerCase().includes("overdue")) {
+                                    // Fallback: if balance string explicitly says "overdue"
+                                    derivedStatus = "Overdue";
+                                  }
 
-                                    const statusBadgeClass =
-                                      derivedStatus === "Active"
-                                        ? "badge badge-active"
-                                        : derivedStatus === "Overdue"
+                                  const statusBadgeClass =
+                                    derivedStatus === "Active"
+                                      ? "badge badge-active"
+                                      : derivedStatus === "Overdue"
                                         ? "badge badge-overdue"
                                         : derivedStatus === "Unpaid"
-                                        ? "badge badge-unpaid"
-                                        : derivedStatus === "Inactive"
-                                        ? "badge badge-inactive"
-                                        : "badge badge-pending";
+                                          ? "badge badge-unpaid"
+                                          : derivedStatus === "Inactive"
+                                            ? "badge badge-inactive"
+                                            : "badge badge-pending";
 
-                                    return {
-                                      "Member Name": member.name,
-                                      Status: {
-                                        render: () => (
-                                          <span className={statusBadgeClass}>
-                                            {derivedStatus}
+                                  return {
+                                    "Name": member.name,
+                                    "Year": subYear,
+                                    "Subscription Type": member.subscriptionType || "-",
+                                    "Joined Year": joinedYear,
+                                    Status: {
+                                      render: () => (
+                                        <span className={statusBadgeClass}>
+                                          {derivedStatus}
+                                        </span>
+                                      ),
+                                    },
+                                    Outstanding: {
+                                      render: () => (
+                                        <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                          <span
+                                            style={{
+                                              color:
+                                                numericOutstanding > 0
+                                                  ? derivedStatus === "Overdue"
+                                                    ? "#ef4444"
+                                                    : "#ef4444"
+                                                  : "#111827",
+                                              fontWeight: numericOutstanding > 0 ? 600 : 500,
+                                            }}
+                                          >
+                                            HK$
+                                            {formatNumber(numericOutstanding, {
+                                              minimumFractionDigits: 2,
+                                              maximumFractionDigits: 2,
+                                            })}
                                           </span>
-                                        ),
-                                      },
-                                      Outstanding: {
-                                        render: () => (
-                                          <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                                            <span
-                                              style={{
-                                                color:
-                                                  numericOutstanding > 0
-                                                    ? derivedStatus === "Overdue"
-                                                      ? "#ef4444"
-                                                      : "#ef4444"
-                                                    : "#111827",
-                                                fontWeight: numericOutstanding > 0 ? 600 : 500,
+                                        </div>
+                                      ),
+                                    },
+                                    Actions: {
+                                      render: () => (
+                                        <div className="flex gap-sm flex-wrap justify-center">
+                                          <button
+                                            className="ghost-btn icon-btn icon-btn--view"
+                                            onClick={() => handleViewMemberDetail(member)}
+                                            title="View member"
+                                            aria-label="View member"
+                                          >
+                                            <i className="fas fa-eye" aria-hidden="true"></i>
+                                          </button>
+                                          <button
+                                            className="secondary-btn icon-btn icon-btn--edit"
+                                            onClick={() => handleEditMember(member)}
+                                            title="Edit member"
+                                            aria-label="Edit member"
+                                          >
+                                            <i className="fas fa-pen" aria-hidden="true"></i>
+                                          </button>
+                                          {isOwner && (
+                                            <button
+                                              className="ghost-btn icon-btn icon-btn--delete"
+                                              style={{ color: "#ef4444" }}
+                                              onClick={() => {
+                                                showConfirmation(
+                                                  `Delete member ${member.name}? This cannot be undone.`,
+                                                  () => handleDeleteMember(member.id)
+                                                );
                                               }}
+                                              aria-label="Delete member"
                                             >
-                                              HK$
-                                              {formatNumber(numericOutstanding, {
-                                                minimumFractionDigits: 2,
-                                                maximumFractionDigits: 2,
-                                              })}
-                                            </span>
-                                          </div>
-                                        ),
-                                      },
-                                      Actions: {
-                                        render: () => (
-                                          <div className="flex gap-sm flex-wrap justify-center">
-                                            <button
-                                              className="ghost-btn icon-btn icon-btn--view"
-                                              onClick={() => handleViewMemberDetail(member)}
-                                              title="View member"
-                                              aria-label="View member"
-                                            >
-                                              <i className="fas fa-eye" aria-hidden="true"></i>
+                                              <Tooltip text="Delete member" position="top">
+                                                <i className="fas fa-trash" aria-hidden="true"></i>
+                                              </Tooltip>
                                             </button>
-                                            <button
-                                              className="secondary-btn icon-btn icon-btn--edit"
-                                              onClick={() => handleEditMember(member)}
-                                              title="Edit member"
-                                              aria-label="Edit member"
-                                            >
-                                              <i className="fas fa-pen" aria-hidden="true"></i>
-                                            </button>
-                                            {isOwner && (
-                                              <button
-                                                className="ghost-btn icon-btn icon-btn--delete"
-                                                style={{ color: "#ef4444" }}
-                                                onClick={() => {
-                                                  showConfirmation(
-                                                    `Delete member ${member.name}? This cannot be undone.`,
-                                                    () => handleDeleteMember(member.id)
-                                                  );
-                                                }}
-                                                aria-label="Delete member"
-                                              >
-                                                <Tooltip text="Delete member" position="top">
-                                                  <i className="fas fa-trash" aria-hidden="true"></i>
-                                                </Tooltip>
-                                              </button>
-                                            )}
-                                          </div>
-                                        ),
-                                      },
-                                    };
-                                  })}
+                                          )}
+                                        </div>
+                                      ),
+                                    },
+                                  };
+                                })}
+                              />
+                              {sortedMembers.length > 0 && (
+                                <Pagination
+                                  currentPage={currentPage}
+                                  totalPages={totalPages}
+                                  onPageChange={setMembersPage}
+                                  pageSize={membersPageSize}
+                                  onPageSizeChange={setMembersPageSize}
+                                  totalItems={sortedMembers.length}
                                 />
-                                {sortedMembers.length > 0 && (
-                                  <Pagination
-                                    currentPage={currentPage}
-                                    totalPages={totalPages}
-                                    onPageChange={setMembersPage}
-                                    pageSize={membersPageSize}
-                                    onPageSizeChange={setMembersPageSize}
-                                    totalItems={sortedMembers.length}
-                                  />
-                                )}
-                              </>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
+                              )}
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
+                </div>
               </article>
             )}
 
@@ -4987,7 +5081,7 @@ Subscription Manager HK`;
                             title="Send reminder"
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                              <path d="M12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.89 22 12 22ZM18 16V11C18 7.93 16.36 5.36 13.5 4.68V4C13.5 3.17 12.83 2.5 12 2.5C11.17 2.5 10.5 3.17 10.5 4V4.68C7.63 5.36 6 7.92 6 11V16L4 18V19H20V18L18 16Z" fill="#ffffff"/>
+                              <path d="M12 22C13.1 22 14 21.1 14 20H10C10 21.1 10.89 22 12 22ZM18 16V11C18 7.93 16.36 5.36 13.5 4.68V4C13.5 3.17 12.83 2.5 12 2.5C11.17 2.5 10.5 3.17 10.5 4V4.68C7.63 5.36 6 7.92 6 11V16L4 18V19H20V18L18 16Z" fill="#ffffff" />
                             </svg>
                             Send Reminder
                           </button>
@@ -5024,9 +5118,9 @@ Subscription Manager HK`;
                       </p>
                       <h4 className="admin-dashboard-kpi-value">
                         {(() => {
-                          // Show N/A if payment_status is unpaid or next_due_date is null
+                          // Show '-' if payment_status is unpaid or next_due_date is null
                           if (selectedMember.payment_status === 'unpaid' || !selectedMember.next_due_date) {
-                            return 'N/A';
+                            return '-';
                           }
                           // Format next_due_date if it exists (DD/MM/YYYY format)
                           if (selectedMember.next_due_date) {
@@ -5039,11 +5133,11 @@ Subscription Manager HK`;
                               });
                             } catch (e) {
                               // Fallback to nextDue if date parsing fails
-                              return selectedMember.nextDue || 'N/A';
+                              return selectedMember.nextDue || '-';
                             }
                           }
                           // Fallback to nextDue field
-                          return selectedMember.nextDue || 'N/A';
+                          return selectedMember.nextDue || '-';
                         })()}
                       </h4>
                     </div>
@@ -5064,10 +5158,10 @@ Subscription Manager HK`;
                                 year: 'numeric'
                               });
                             } catch (e) {
-                              return selectedMember.lastPayment || 'N/A';
+                              return selectedMember.lastPayment || '-';
                             }
                           }
-                          return selectedMember.lastPayment || 'N/A';
+                          return selectedMember.lastPayment || '-';
                         })()}
                       </h4>
                     </div>
@@ -5077,6 +5171,23 @@ Subscription Manager HK`;
                         Status
                       </p>
                       <h4 className="admin-dashboard-kpi-value">{selectedMember.status}</h4>
+                    </div>
+                    <div className="admin-dashboard-kpi-card">
+                      <p className="admin-dashboard-kpi-label">
+                        <i className="fas fa-calendar-check admin-dashboard-kpi-icon"></i>
+                        Joining Date
+                      </p>
+                      <h4 className="admin-dashboard-kpi-value">
+                        {selectedMember.start_date ? new Date(selectedMember.start_date).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric"
+                        }) : (selectedMember.createdAt ? new Date(selectedMember.createdAt).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric"
+                        }) : "-")}
+                      </h4>
                     </div>
                   </div>
 
@@ -5177,15 +5288,15 @@ Subscription Manager HK`;
                               const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, '') || 0);
                               return sum + amount;
                             }, 0);
-                            
+
                             return (
-                              <p style={{ 
-                                margin: "4px 0 0 0", 
-                                fontSize: "0.875rem", 
+                              <p style={{
+                                margin: "4px 0 0 0",
+                                fontSize: "0.875rem",
                                 color: "#666",
                                 fontWeight: "500"
                               }}>
-                                Total Outstanding: <strong style={{ color: "#1a1a1a" }}>HK${outstandingTotal.toFixed(2)}</strong>
+                                Total Outstanding: <strong style={{ color: "#1a1a1a" }}>{formatCurrency(outstandingTotal)}</strong>
                                 {unpaidInvoices.length > 0 && (
                                   <span style={{ marginLeft: "8px", color: "#666" }}>
                                     ({unpaidInvoices.length} unpaid invoice{unpaidInvoices.length > 1 ? 's' : ''})
@@ -5210,6 +5321,7 @@ Subscription Manager HK`;
                       <Table
                         columns={[
                           "Invoice #",
+                          "Year",
                           "Subscription Type",
                           "Amount",
                           "Status",
@@ -5222,14 +5334,14 @@ Subscription Manager HK`;
                           const isPaid =
                             effectiveStatus === "Paid" ||
                             effectiveStatus === "Completed";
-                          
+
                           // Calculate Due Date: Show member's next_due_date if paid, otherwise N/A
                           const getDueDateDisplay = () => {
-                            // If member is unpaid or has no next_due_date, show N/A
+                            // If member is unpaid or has no next_due_date, show '-'
                             if (selectedMember.payment_status === 'unpaid' || !selectedMember.next_due_date) {
-                              return 'N/A';
+                              return '-';
                             }
-                            
+
                             // Format next_due_date for display
                             try {
                               const date = new Date(selectedMember.next_due_date);
@@ -5240,34 +5352,35 @@ Subscription Manager HK`;
                               });
                             } catch (e) {
                               // Fallback to nextDue field or invoice.due
-                              return selectedMember.nextDue || invoice.due || 'N/A';
+                              return selectedMember.nextDue || invoice.due || '-';
                             }
                           };
-                          
+
                           return {
-                          "Invoice #": invoice.id,
-                          "Subscription Type": selectedMember.subscriptionType || invoice.subscriptionType || "N/A",
-                          Amount: invoice.amount
-                            ? `HK$${formatNumber(parseFloat(invoice.amount.replace(/[^0-9.]/g, '') || 0), {
+                            "Invoice #": invoice.id,
+                            "Year": invoice.period || "-",
+                            "Subscription Type": selectedMember.subscriptionType || invoice.subscriptionType || "-",
+                            Amount: invoice.amount
+                              ? `HK$${formatNumber(parseFloat(invoice.amount.replace(/[^0-9.]/g, '') || 0), {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
                               })}`
-                            : "HK$0.00",
-                          Status: {
-                            render: () => (
-                              <span className={statusClass[invoice.status]}>
-                                {invoice.status}
-                              </span>
-                            ),
-                          },
-                          "Due Date": getDueDateDisplay(),
-                          Screenshot: invoice.screenshot ? {
-                            render: () => (
-                              <button
-                                onClick={() => {
-                                  const newWindow = window.open();
-                                  if (newWindow) {
-                                    newWindow.document.write(`
+                              : "HK$0.00",
+                            Status: {
+                              render: () => (
+                                <span className={statusClass[invoice.status]}>
+                                  {invoice.status}
+                                </span>
+                              ),
+                            },
+                            "Due Date": getDueDateDisplay(),
+                            Screenshot: invoice.screenshot ? {
+                              render: () => (
+                                <button
+                                  onClick={() => {
+                                    const newWindow = window.open();
+                                    if (newWindow) {
+                                      newWindow.document.write(`
                                       <html>
                                         <head><title>Payment Screenshot - ${invoice.id}</title></head>
                                         <body style="margin:0;padding:20px;background:#f9fafb;display:flex;justify-content:center;align-items:center;min-height:100vh;">
@@ -5275,40 +5388,40 @@ Subscription Manager HK`;
                                         </body>
                                       </html>
                                     `);
-                                  }
-                                }}
-                                style={{
-                                  padding: "4px 10px",
-                                  background: "#5a31ea",
-                                  color: "#ffffff",
-                                  border: "none",
-                                  borderRadius: "4px",
-                                  fontSize: "0.85rem",
-                                  cursor: "pointer",
-                                  transition: "all 0.2s ease",
-                                  boxShadow: "0 2px 4px rgba(90, 49, 234, 0.3)"
-                                }}
-                                onMouseEnter={(e) => {
-                                  e.target.style.background = "#4a28d0";
-                                  e.target.style.boxShadow = "0 4px 8px rgba(90, 49, 234, 0.4)";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.target.style.background = "#5a31ea";
-                                  e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.3)";
-                                }}
-                              >
+                                    }
+                                  }}
+                                  style={{
+                                    padding: "4px 10px",
+                                    background: "#5a31ea",
+                                    color: "#ffffff",
+                                    border: "none",
+                                    borderRadius: "4px",
+                                    fontSize: "0.85rem",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s ease",
+                                    boxShadow: "0 2px 4px rgba(90, 49, 234, 0.3)"
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.target.style.background = "#4a28d0";
+                                    e.target.style.boxShadow = "0 4px 8px rgba(90, 49, 234, 0.4)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.target.style.background = "#5a31ea";
+                                    e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.3)";
+                                  }}
+                                >
                                   <i className="fas fa-image" aria-hidden="true"></i>
-                              </button>
-                            )
-                          } : "-",
-                          Actions: {
-                            render: () => (
+                                </button>
+                              )
+                            } : "-",
+                            Actions: {
+                              render: () => (
                                 <div className="flex gap-sm flex-wrap justify-center">
                                   {isUnpaid && !isViewer && (
                                     <button
                                       className="primary-btn"
-                                      style={{ 
-                                        padding: "4px 10px", 
+                                      style={{
+                                        padding: "4px 10px",
                                         fontSize: "0.85rem",
                                         background: "#10b981",
                                         border: "none",
@@ -5339,13 +5452,13 @@ Subscription Manager HK`;
                                           adminMobile: "",
                                         });
                                         setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
-                    setCurrentInvalidPaymentModalField(null);
+                                        setCurrentInvalidPaymentModalField(null);
                                         setShowPaymentModal(true);
                                       }}
                                     >
                                       Pay
                                     </button>
-                                )}
+                                  )}
                                   {!isPaid && !isViewer && (
                                     <button
                                       className="ghost-btn icon-btn icon-btn--delete"
@@ -5361,9 +5474,9 @@ Subscription Manager HK`;
                                       <i className="fas fa-trash" aria-hidden="true"></i>
                                     </button>
                                   )}
-                              </div>
-                            ),
-                          },
+                                </div>
+                              ),
+                            },
                           };
                         })}
                       />
@@ -5470,82 +5583,81 @@ Subscription Manager HK`;
                                       }}
                                     >
                                       {item.amount && (
-                                          <strong
-                                            style={{
+                                        <strong
+                                          style={{
                                             fontSize: "1.125rem",
-                                              fontWeight: "700",
+                                            fontWeight: "700",
                                             color: "#5a31ea",
-                                            }}
-                                          >
-                                            {item.amount}
-                                          </strong>
+                                          }}
+                                        >
+                                          {item.amount}
+                                        </strong>
                                       )}
                                       {item.status && (
-                                          <span
-                                            className={`badge ${
-                                            item.status === "Paid" ||
+                                        <span
+                                          className={`badge ${item.status === "Paid" ||
                                             item.status === "Completed"
-                                                ? "badge-paid"
-                                                : item.status ===
-                                                "Pending Verification" ||
-                                                item.status === "Pending"
-                                                ? "badge-pending"
-                                                : "badge-unpaid"
+                                            ? "badge-paid"
+                                            : item.status ===
+                                              "Pending Verification" ||
+                                              item.status === "Pending"
+                                              ? "badge-pending"
+                                              : "badge-unpaid"
                                             }`}
-                                            style={{
-                                              fontSize: "0.75rem",
-                                              padding: "4px 10px",
-                                            }}
-                                          >
-                                            {item.status}
-                                          </span>
+                                          style={{
+                                            fontSize: "0.75rem",
+                                            padding: "4px 10px",
+                                          }}
+                                        >
+                                          {item.status}
+                                        </span>
                                       )}
                                       <i
                                         className="fas fa-chevron-right"
-                                          style={{
-                                            fontSize: "0.875rem",
+                                        style={{
+                                          fontSize: "0.875rem",
                                           color: "#999",
                                         }}
                                       ></i>
-                                      </div>
-                                          </div>
-                                  
+                                    </div>
+                                  </div>
+
                                   {/* Quick preview info */}
-                                        <div
-                                          style={{
+                                  <div
+                                    style={{
                                       marginTop: "12px",
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
-                                          }}
-                                        >
-                                        <div
-                                          style={{
-                                            display: "flex",
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        display: "flex",
                                         flexDirection: "column",
                                         gap: "4px",
                                         flex: 1,
+                                      }}
+                                    >
+                                      {item.date && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.8125rem",
+                                            color: "#666",
                                           }}
                                         >
-                                      {item.date && (
-                                          <span
-                                            style={{
-                                            fontSize: "0.8125rem",
-                                              color: "#666",
-                                            }}
-                                          >
                                           {item.date}
-                                          </span>
+                                        </span>
                                       )}
-                                          <span
-                                            style={{
+                                      <span
+                                        style={{
                                           fontSize: "0.8125rem",
-                                              color: "#666",
-                                            }}
-                                          >
+                                          color: "#666",
+                                        }}
+                                      >
                                         {getPaymentMethodDisplay(item)}
-                                          </span>
-                                        </div>
+                                      </span>
+                                    </div>
                                     {item.screenshot && (
                                       <div
                                         style={{
@@ -5665,8 +5777,8 @@ Subscription Manager HK`;
                                     {item.date
                                       ? new Date(item.date).toLocaleString()
                                       : item.timestamp
-                                      ? new Date(item.timestamp).toLocaleString()
-                                      : "N/A"}
+                                        ? new Date(item.timestamp).toLocaleString()
+                                        : "N/A"}
                                   </p>
                                   {item.status && (
                                     <span className={statusClass[item.status] || "badge"}>
@@ -5836,7 +5948,7 @@ Subscription Manager HK`;
                     <p>Create invoices for Lifetime or Yearly + Janaza Fund subscriptions.</p>
                   </div>
                 </header>
-                
+
                 {/* Invoice Success Card */}
                 {showInvoiceSuccessCard && lastCreatedInvoice && (
                   <div style={{
@@ -5852,7 +5964,7 @@ Subscription Manager HK`;
                       alignItems: "center",
                       justifyContent: "space-between"
                     }}
-                    className="mb-lg">
+                      className="mb-lg">
                       <div className="flex items-center gap-md">
                         <div style={{
                           width: "48px",
@@ -5887,7 +5999,7 @@ Subscription Manager HK`;
                         ×
                       </button> */}
                     </div>
-                    
+
                     <div className="success-card-actions" style={{
                       display: "grid",
                       gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
@@ -5908,7 +6020,7 @@ Subscription Manager HK`;
                         <i className="fas fa-user" style={{ marginRight: "8px" }}></i>
                         Member Detail
                       </button>
-                      
+
                       {/* <button
                         className="secondary-btn"
                         onClick={() => {
@@ -5924,7 +6036,7 @@ Subscription Manager HK`;
                         <i className="fas fa-file-invoice" style={{ marginRight: "8px" }}></i>
                         View Invoice
                       </button> */}
-                      
+
                       <button
                         className="secondary-btn"
                         onClick={async () => {
@@ -5935,11 +6047,11 @@ Subscription Manager HK`;
                         style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                          <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor"/>
+                          <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor" />
                         </svg>
                         Send Reminder
                       </button>
-                      
+
                       <button
                         className="ghost-btn"
                         onClick={() => {
@@ -5953,7 +6065,7 @@ Subscription Manager HK`;
                     </div>
                   </div>
                 )}
-                
+
                 <form className="card form-grid" onSubmit={handleAddInvoice} noValidate style={{ padding: "20px", background: "#ffffff", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
                   <label style={{ marginBottom: "24px" }}>
                     <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}>
@@ -5998,20 +6110,20 @@ Subscription Manager HK`;
                         <span>
                           {invoiceForm.memberId
                             ? (() => {
-                                const selected = members.find(m => m.id === invoiceForm.memberId);
-                                return selected ? `${selected.name} (${selected.id})` : "Select Member";
-                              })()
+                              const selected = members.find(m => m.id === invoiceForm.memberId);
+                              return selected ? `${selected.name} (${selected.id})` : "Select Member";
+                            })()
                             : "Select Member"}
                         </span>
-                        <span style={{ 
-                          fontSize: "0.75rem", 
+                        <span style={{
+                          fontSize: "0.75rem",
                           color: "#5a31ea",
                           transition: "transform 0.2s ease",
                           transform: showMemberDropdown ? "rotate(180deg)" : "rotate(0deg)",
                           display: "inline-block"
                         }}>▼</span>
                       </div>
-                      
+
                       {showMemberDropdown && (
                         <div
                           style={{
@@ -6030,8 +6142,8 @@ Subscription Manager HK`;
                           }}
                         >
                           {/* Search Input */}
-                          <div style={{ 
-                            padding: "12px", 
+                          <div style={{
+                            padding: "12px",
                             borderBottom: "none",
                             background: "#ffffff",
                             boxShadow: "0 2px 4px rgba(90, 49, 234, 0.05)"
@@ -6093,10 +6205,10 @@ Subscription Manager HK`;
                               )}
                             </div>
                             {invoiceMemberSearch && (
-                              <div style={{ 
-                                marginTop: "8px", 
-                                fontSize: "0.75rem", 
-                                color: "#666" 
+                              <div style={{
+                                marginTop: "8px",
+                                fontSize: "0.75rem",
+                                color: "#666"
                               }}>
                                 {members.filter(member =>
                                   !invoiceMemberSearch ||
@@ -6110,7 +6222,7 @@ Subscription Manager HK`;
                               </div>
                             )}
                           </div>
-                          
+
                           {/* Member List */}
                           <div style={{ maxHeight: "250px", overflowY: "auto" }}>
                             {members
@@ -6152,16 +6264,16 @@ Subscription Manager HK`;
                                   </div>
                                 </div>
                               ))}
-                            
+
                             {members.filter(member =>
                               !invoiceMemberSearch ||
                               member.name?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
                               member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase())
                             ).length === 0 && (
-                              <div style={{ padding: "16px", textAlign: "center", color: "#999", fontSize: "0.875rem" }}>
-                                No members found
-                              </div>
-                            )}
+                                <div style={{ padding: "16px", textAlign: "center", color: "#999", fontSize: "0.875rem" }}>
+                                  No members found
+                                </div>
+                              )}
                           </div>
                         </div>
                       )}
@@ -6183,7 +6295,7 @@ Subscription Manager HK`;
                         const amount = type === "Yearly + Janaza Fund" ? "500" : "250";
                         setInvoiceForm({ ...invoiceForm, invoiceType: type, amount: amount });
                       }}
-                      style={{ 
+                      style={{
                         color: "#1a1a1a",
                         background: "#ffffff",
                         boxShadow: "0 2px 4px rgba(90, 49, 234, 0.08)",
@@ -6205,60 +6317,20 @@ Subscription Manager HK`;
                   </label>
 
                   <label style={{ marginBottom: "24px" }}>
-                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Period <span style={{ color: "#ef4444" }}>*</span></span>
+                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar-alt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Subscription Year <span style={{ color: "#ef4444" }}>*</span></span>
                     <input
-                      type="month"
+                      type="number"
                       required
-                      value={invoiceForm.period ? (() => {
-                        try {
-                          // Convert "MMM YYYY" format (e.g., "Nov 2025") to "YYYY-MM" for month input
-                          if (invoiceForm.period.match(/^[A-Za-z]{3} \d{4}$/)) {
-                            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                            const parts = invoiceForm.period.split(' ');
-                            const monthName = parts[0];
-                            const year = parseInt(parts[1], 10);
-                            const monthIndex = monthNames.findIndex(m => m.toLowerCase() === monthName.toLowerCase());
-                            
-                            if (monthIndex !== -1 && !isNaN(year) && year > 0) {
-                              const month = String(monthIndex + 1).padStart(2, "0");
-                              return `${year}-${month}`;
-                            }
-                          }
-                          // If already in YYYY-MM format, return as is
-                          if (invoiceForm.period.match(/^\d{4}-\d{2}$/)) {
-                            return invoiceForm.period;
-                          }
-                        } catch (error) {
-                          console.error("Error parsing period:", error);
-                        }
-                        return "";
-                      })() : ""}
+                      min="2000"
+                      max="2100"
+                      value={invoiceForm.subscriptionYear}
                       onChange={(e) => {
-                        // Convert "YYYY-MM" to "MMM YYYY" format (e.g., "Nov 2025")
-                        const dateValue = e.target.value;
-                        if (dateValue && dateValue.match(/^\d{4}-\d{2}$/)) {
-                          try {
-                            const date = new Date(dateValue + "-01");
-                            if (!isNaN(date.getTime())) {
-                              const formatted = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                              setInvoiceForm({ ...invoiceForm, period: formatted });
-                            } else {
-                              // If date is invalid, clear the period
-                              setInvoiceForm({ ...invoiceForm, period: "" });
-                            }
-                          } catch (error) {
-                            console.error("Error formatting period:", error);
-                            setInvoiceForm({ ...invoiceForm, period: "" });
-                          }
-                        } else if (!dateValue) {
-                          // If input is cleared, clear the period
-                          setInvoiceForm({ ...invoiceForm, period: "" });
+                        const year = e.target.value;
+                        if (year === "" || (parseInt(year) >= 2000 && parseInt(year) <= 2100)) {
+                          setInvoiceForm({ ...invoiceForm, subscriptionYear: year });
                         }
                       }}
-                      onFocus={(e) => {
-                        // Allow manual typing - don't auto-open picker
-                        e.currentTarget.select();
-                      }}
+                      placeholder="YYYY"
                       className="mono-input"
                       style={{ color: "#1a1a1a" }}
                     />
@@ -6280,57 +6352,6 @@ Subscription Manager HK`;
                     />
                   </label>
 
-                  <label style={{ marginBottom: "24px" }}>
-                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar-check" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Due Date <span style={{ color: "#ef4444" }}>*</span></span>
-                    <input
-                      type="date"
-                      required
-                      value={invoiceForm.due}
-                      onChange={(e) => {
-                        const selectedDate = e.target.value;
-                        setInvoiceForm({ ...invoiceForm, due: selectedDate });
-                      }}
-                      onBlur={(e) => {
-                        const dateValue = e.target.value;
-                        if (dateValue) {
-                          const date = new Date(dateValue);
-                          if (isNaN(date.getTime())) {
-                            showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
-                            return;
-                          }
-                          // Validate date components
-                          const [year, month, day] = dateValue.split('-').map(Number);
-                          if (month < 1 || month > 12) {
-                            showToast("Invalid month. Please enter a month between 01 and 12", "error");
-                            return;
-                          }
-                          if (day < 1 || day > 31) {
-                            showToast("Invalid day. Please enter a valid day for the selected month", "error");
-                            return;
-                          }
-                          // Check if day is valid for the month
-                          const daysInMonth = new Date(year, month, 0).getDate();
-                          if (day > daysInMonth) {
-                            showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
-                            return;
-                          }
-                        }
-                      }}
-                      className="mono-input"
-                      style={{ color: "#1a1a1a", borderRadius: "4px", width: "100%" }}
-                    />
-                  </label>
-
-                  <label className="notes" style={{ marginBottom: "24px" }}>
-                    <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-sticky-note" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Notes</span>
-                    <textarea
-                      placeholder="Add context for this invoice"
-                      value={invoiceForm.notes}
-                      onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
-                      className="mono-input"
-                      style={{ color: "#1a1a1a", minHeight: "100px" }}
-                    ></textarea>
-                  </label>
 
                   {/* Live invoice preview */}
                   <div
@@ -6354,29 +6375,19 @@ Subscription Manager HK`;
                       <strong>Member:</strong>{" "}
                       {invoiceForm.memberId
                         ? (() => {
-                            const selected = members.find((m) => m.id === invoiceForm.memberId);
-                            return selected ? `${selected.name} (${selected.id})` : "Not selected";
-                          })()
+                          const selected = members.find((m) => m.id === invoiceForm.memberId);
+                          return selected ? `${selected.name} (${selected.id})` : "Not selected";
+                        })()
                         : "Not selected"}
                     </p>
                     <p style={{ margin: "4px 0" }}>
-                      <strong>Period:</strong> {invoiceForm.period || "N/A"}
+                      <strong>Subscription Year:</strong> {invoiceForm.subscriptionYear || "N/A"}
                     </p>
                     <p style={{ margin: "4px 0" }}>
                       <strong>Amount:</strong>{" "}
                       {invoiceForm.amount
                         ? `HK$${Number(invoiceForm.amount || 0).toFixed(2)}`
                         : "HK$0.00"}
-                    </p>
-                    <p style={{ margin: "4px 0" }}>
-                      <strong>Due Date:</strong>{" "}
-                      {invoiceForm.due
-                        ? new Date(invoiceForm.due).toLocaleDateString("en-GB", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          })
-                        : "N/A"}
                     </p>
                     <p style={{ margin: "4px 0" }}>
                       <strong>Status:</strong> Unpaid
@@ -6401,7 +6412,7 @@ Subscription Manager HK`;
                           showToast("Please select a member", "error");
                           return;
                         }
-                        
+
                         // Validate form first
                         if (!invoiceForm.memberId || !invoiceForm.period || !invoiceForm.due) {
                           showToast("Please fill all required fields", "error");
@@ -6414,27 +6425,40 @@ Subscription Manager HK`;
                           return;
                         }
 
+                        // Generate period from subscription year
+                        const subscriptionYear = invoiceForm.subscriptionYear;
+                        const period = subscriptionYear;
+                        
+                        // Calculate due date: 1 year from subscription year (Jan 1st of next year)
+                        const dueYear = parseInt(subscriptionYear) + 1;
+                        const dueDate = new Date(dueYear, 0, 1);
+                        const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric'
+                        }).replace(',', '');
+
                         // Create the invoice object from form data
                         const newInvoice = {
                           id: generateInvoiceId(),
                           memberId: invoiceForm.memberId,
                           memberName: member?.name || "",
-                          period: invoiceForm.period,
+                          period: period,
                           amount: `HK$${amountNum.toFixed(2)}`,
                           status: "Unpaid",
-                          due: invoiceForm.due,
+                          due: dueDateFormatted,
                           method: "-",
                           reference: "-",
-                          notes: invoiceForm.notes || "",
+                          notes: "",
                         };
 
                         // Add invoice to state
                         addInvoice(newInvoice);
-                        
+
                         // Store the created invoice and show success card
                         setLastCreatedInvoice({ ...newInvoice, member });
                         setShowInvoiceSuccessCard(true);
-                        
+
                         // Get existing unpaid invoices for this member
                         const existingUnpaidInvoices = invoices.filter(
                           (inv) =>
@@ -6491,8 +6515,8 @@ Subscription Manager HK`;
                           showToast("Sending reminder email...");
 
                           // In development, use empty string to use Vite proxy (localhost:4000)
-      // In production, use VITE_API_URL if set
-      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                          // In production, use VITE_API_URL if set
+                          const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
                           const response = await fetch(`${apiUrl}/api/invoices/send-reminder`, {
                             method: "POST",
                             headers: {
@@ -6535,13 +6559,14 @@ Subscription Manager HK`;
                             invoiceType: "Lifetime",
                             due: "",
                             notes: "",
+                            subscriptionYear: new Date().getFullYear().toString(),
                           });
                           setShowInvoiceForm(false);
 
                           showToast(
                             `✓ Invoice created and reminder sent to ${member.name} for $${totalDue.toFixed(2)}!`
                           );
-                          
+
                           // Show success card with the created invoice
                           setLastCreatedInvoice({ ...newInvoice, member });
                           setShowInvoiceSuccessCard(true);
@@ -6560,7 +6585,7 @@ Subscription Manager HK`;
                             error.message || "Invoice created but failed to send email. Please check email configuration.",
                             "error"
                           );
-                          
+
                           // Show success card even if email failed
                           setLastCreatedInvoice({ ...newInvoice, member });
                           setShowInvoiceSuccessCard(true);
@@ -6602,9 +6627,9 @@ Subscription Manager HK`;
                     gap: "clamp(16px, 3vw, 24px)",
                     flexWrap: "wrap"
                   }}>
-                    <div style={{ 
-                      flex: "1 1 300px", 
-                      minWidth: "250px" 
+                    <div style={{
+                      flex: "1 1 300px",
+                      minWidth: "250px"
                     }}>
                       <h4 style={{
                         margin: "0 0 8px 0",
@@ -6648,12 +6673,12 @@ Subscription Manager HK`;
                         onClick={async () => {
                           const newValue = !automationEnabled;
                           setAutomationEnabled(newValue);
-                          
+
                           // Save to database
                           try {
                             // In development, use empty string to use Vite proxy (localhost:4000)
-      // In production, use VITE_API_URL if set
-      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                            // In production, use VITE_API_URL if set
+                            const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
                             await fetch(`${apiUrl}/api/email-settings`, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
@@ -6687,8 +6712,8 @@ Subscription Manager HK`;
                           padding: 0,
                           display: "flex",
                           alignItems: "center",
-                          boxShadow: automationEnabled 
-                            ? "0 4px 12px rgba(0,0,0,0.15)" 
+                          boxShadow: automationEnabled
+                            ? "0 4px 12px rgba(0,0,0,0.15)"
                             : "inset 0 2px 4px rgba(0,0,0,0.1)",
                           WebkitTapHighlightColor: "transparent"
                         }}
@@ -6806,7 +6831,7 @@ Subscription Manager HK`;
                       >
                         <i className="fas fa-envelope"></i>
                       </button>
-                      
+
                       {/* WhatsApp Channel Button - Icon Only with Green Background */}
                       <button
                         type="button"
@@ -6856,7 +6881,7 @@ Subscription Manager HK`;
                       >
                         <i className="fab fa-whatsapp"></i>
                       </button>
-                      
+
                       {/* Send All Button - shown when at least one channel is selected */}
                       {selectedChannels.length > 0 && (
                         <button
@@ -6976,7 +7001,7 @@ Subscription Manager HK`;
                                   >
                                     <span>
                                       <strong style={{ color: "#000" }}>
-                                        HK${totalDue.toFixed(2)}
+                                        {formatCurrency(totalDue)}
                                       </strong>{" "}
                                       outstanding
                                     </span>
@@ -7167,7 +7192,7 @@ Subscription Manager HK`;
                         }}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                          <path d="M12 4.5C7 4.5 2.73 7.61 1 12C2.73 16.39 7 19.5 12 19.5C17 19.5 21.27 16.39 23 12C21.27 7.61 17 4.5 12 4.5ZM12 17C9.24 17 7 14.76 7 12C7 9.24 9.24 7 12 7C14.76 7 17 9.24 17 12C17 14.76 14.76 17 12 17ZM12 9C10.34 9 9 10.34 9 12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12C15 10.34 13.66 9 12 9Z" fill="currentColor"/>
+                          <path d="M12 4.5C7 4.5 2.73 7.61 1 12C2.73 16.39 7 19.5 12 19.5C17 19.5 21.27 16.39 23 12C21.27 7.61 17 4.5 12 4.5ZM12 17C9.24 17 7 14.76 7 12C7 9.24 9.24 7 12 7C14.76 7 17 9.24 17 12C17 14.76 14.76 17 12 17ZM12 9C10.34 9 9 10.34 9 12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12C15 10.34 13.66 9 12 9Z" fill="currentColor" />
                         </svg>
                         Preview Template
                       </button>
@@ -7181,7 +7206,7 @@ Subscription Manager HK`;
                         }}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                          <path d="M17 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V7L17 3ZM19 19H5V5H16.17L19 7.83V19ZM12 12C10.34 12 9 13.34 9 15S10.34 18 12 18 15 16.66 15 15 13.66 12 12 12ZM6 6H15V10H6V6Z" fill="#ffffff"/>
+                          <path d="M17 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V7L17 3ZM19 19H5V5H16.17L19 7.83V19ZM12 12C10.34 12 9 13.34 9 15S10.34 18 12 18 15 16.66 15 15 13.66 12 12 12ZM6 6H15V10H6V6Z" fill="#ffffff" />
                         </svg>
                         Save Email Template
                       </button>
@@ -7370,7 +7395,7 @@ Subscription Manager HK`;
                               // Convert 12-hour to 24-hour format
                               const [hours, minutes] = emailSettings.scheduleTime.split(':').map(Number);
                               let newHours = hours;
-                              
+
                               if (newPeriod === 'AM' && hours === 12) {
                                 newHours = 0;
                               } else if (newPeriod === 'PM' && hours !== 12) {
@@ -7380,7 +7405,7 @@ Subscription Manager HK`;
                               } else if (newPeriod === 'PM' && hours < 12) {
                                 newHours = hours + 12;
                               }
-                              
+
                               const newTime = `${newHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
                               setEmailSettings({ ...emailSettings, scheduleTime: newTime });
                             }}
@@ -7466,7 +7491,7 @@ Subscription Manager HK`;
                         ) : (
                           <>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                              <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor"/>
+                              <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor" />
                             </svg>
                             Test Email
                           </>
@@ -7482,7 +7507,7 @@ Subscription Manager HK`;
                         }}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                          <path d="M17 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V7L17 3ZM19 19H5V5H16.17L19 7.83V19ZM12 12C10.34 12 9 13.34 9 15S10.34 18 12 18 15 16.66 15 15 13.66 12 12 12ZM6 6H15V10H6V6Z" fill="#ffffff"/>
+                          <path d="M17 3H5C3.89 3 3 3.9 3 5V19C3 20.1 3.89 21 5 21H19C20.1 21 21 20.1 21 19V7L17 3ZM19 19H5V5H16.17L19 7.83V19ZM12 12C10.34 12 9 13.34 9 15S10.34 18 12 18 15 16.66 15 15 13.66 12 12 12ZM6 6H15V10H6V6Z" fill="#ffffff" />
                         </svg>
                         Save Email Settings
                       </button>
@@ -7496,7 +7521,7 @@ Subscription Manager HK`;
                     className="primary-btn"
                     onClick={handleSaveAllSettings}
                     disabled={savingAllSettings}
-                    style={{ 
+                    style={{
                       padding: "12px 24px",
                       fontSize: "0.9375rem",
                       fontWeight: "600",
@@ -7508,15 +7533,15 @@ Subscription Manager HK`;
                   >
                     {savingAllSettings ? (
                       <span className="flex items-center gap-sm" style={{ color: "#ffffff" }}>
-                        <svg 
-                          style={{ 
+                        <svg
+                          style={{
                             animation: "spin 1s linear infinite",
                             width: "16px",
                             height: "16px"
-                          }} 
-                          viewBox="0 0 24 24" 
-                          fill="none" 
-                          stroke="currentColor" 
+                          }}
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
                           strokeWidth="2"
                         >
                           <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
@@ -7548,7 +7573,7 @@ Subscription Manager HK`;
 
                 {/* Summary Cards */}
                 {(() => {
-                    // Build combined list for summary stats (unfiltered):
+                  // Build combined list for summary stats (unfiltered):
                   const emailItems = (reminderLogs || []).map((log) => {
                     // Normalize status - handle all status variations and ensure consistent format
                     const logStatus = log.status ? String(log.status).trim() : "";
@@ -7633,11 +7658,11 @@ Subscription Manager HK`;
                   <div className="admin-communications-filters-container">
                     <div className="flex gap-md flex-wrap items-center">
                       <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Status:</label>
-                      <div style={{ 
-                        display: "flex", 
-                        gap: "4px", 
-                        background: "#f3f4f6", 
-                        padding: "4px", 
+                      <div style={{
+                        display: "flex",
+                        gap: "4px",
+                        background: "#f3f4f6",
+                        padding: "4px",
                         borderRadius: "4px",
                         flexWrap: "wrap"
                       }}>
@@ -7690,11 +7715,11 @@ Subscription Manager HK`;
                     </div>
                     <div className="flex gap-md flex-wrap items-center">
                       <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Channel:</label>
-                      <div style={{ 
-                        display: "flex", 
-                        gap: "4px", 
-                        background: "#f3f4f6", 
-                        padding: "4px", 
+                      <div style={{
+                        display: "flex",
+                        gap: "4px",
+                        background: "#f3f4f6",
+                        padding: "4px",
                         borderRadius: "4px",
                         flexWrap: "wrap"
                       }}>
@@ -7770,10 +7795,10 @@ Subscription Manager HK`;
                         message: `Email reminder - ${log.amount} · ${log.invoiceCount} invoice(s)`,
                         date: log.sentAt
                           ? new Date(log.sentAt).toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })
                           : "N/A",
                         status: (() => {
                           // Normalize status - handle case variations and ensure consistent format
@@ -7813,7 +7838,7 @@ Subscription Manager HK`;
                     allItems = allItems.filter((item) => {
                       // Normalize status for comparison (handle case variations)
                       const normalizedStatus = item.status ? String(item.status).trim() : "Delivered";
-                      
+
                       // Status filter check - case-insensitive comparison
                       let statusOk = false;
                       if (remindersStatusFilter === "All") {
@@ -7824,13 +7849,13 @@ Subscription Manager HK`;
                         const itemStatusLower = normalizedStatus.toLowerCase();
                         statusOk = filterStatusLower === itemStatusLower;
                       }
-                      
+
                       // Channel filter check
                       const normalizedChannel = item.channel ? String(item.channel).trim() : "";
                       const channelOk =
                         remindersChannelFilter === "All" ||
                         normalizedChannel === remindersChannelFilter;
-                      
+
                       return statusOk && channelOk;
                     });
 
@@ -7858,7 +7883,7 @@ Subscription Manager HK`;
                         .filter((c) => c.channel === "WhatsApp")
                         .map((c) => ({ status: c.status || "Delivered", channel: "WhatsApp" }));
                       const totalUnfiltered = allEmailItems.length + allWhatsappItems.length;
-                      
+
                       let message = "No reminders have been sent yet.";
                       if (totalUnfiltered > 0) {
                         // There are reminders, but they don't match the current filter
@@ -7870,7 +7895,7 @@ Subscription Manager HK`;
                           message = `No ${remindersChannelFilter.toLowerCase()} reminders found.`;
                         }
                       }
-                      
+
                       return (
                         <div style={{ padding: "32px 20px", textAlign: "center", color: "#666" }}>
                           <p style={{ margin: 0 }}>{message}</p>
@@ -7880,164 +7905,164 @@ Subscription Manager HK`;
 
                     return (
                       <>
-                            {/* Paginate results - minimum 10 per page */}
-                            {(() => {
-                              const pageSize = Math.max(remindersPageSize, 10);
-                              const totalPages = Math.max(1, Math.ceil(total / pageSize));
-                              const currentPage = Math.min(remindersPage, totalPages);
-                              const start = (currentPage - 1) * pageSize;
-                              const end = start + pageSize;
-                              const pageItems = allItems.slice(start, end);
+                        {/* Paginate results - minimum 10 per page */}
+                        {(() => {
+                          const pageSize = Math.max(remindersPageSize, 10);
+                          const totalPages = Math.max(1, Math.ceil(total / pageSize));
+                          const currentPage = Math.min(remindersPage, totalPages);
+                          const start = (currentPage - 1) * pageSize;
+                          const end = start + pageSize;
+                          const pageItems = allItems.slice(start, end);
 
-                              return (
-                                <>
-                                  {/* Desktop Table */}
-                                  <div style={{ overflowX: "auto" }} className="reminder-logs-table-wrapper">
-                                    <table className="table data-table">
-                                      <thead>
-                                        <tr>
-                                          <th>Member</th>
-                                          <th>Channel</th>
-                                          <th>Type</th>
-                                          <th>Message</th>
-                                          <th>Date</th>
-                                          <th>Status</th>
-                                          <th>Actions</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {pageItems.map((item, idx) => (
-                                          <tr 
-                                            key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
-                                          >
-                                            <td>
-                                              {item.memberName || item.member || "N/A"}
-                                              {item.memberId ? ` (${item.memberId})` : ""}
-                                            </td>
-                                            <td>{item.channel || "N/A"}</td>
-                                            <td>{item.type || "-"}</td>
-                                            <td style={{ maxWidth: "320px", whiteSpace: "normal" }}>
-                                              {item.message || "N/A"}
-                                            </td>
-                                            <td>{item.date || "N/A"}</td>
-                                            <td>
-                                              <span className={statusClass[item.status] || "badge"}>
-                                                {item.status || "N/A"}
-                                              </span>
-                                            </td>
-                                            <td>
-                                              <div style={{ display: "flex", gap: "6px" }} onClick={(e) => e.stopPropagation()}>
-                                                {/* View full message in modal */}
-                                                <button
-                                                  type="button"
-                                                  className="icon-btn icon-btn--view"
-                                                  title="View full message"
-                                                  aria-label="View full message"
-                                                  onClick={() => {
-                                                    setSelectedReminderLogItem(item);
-                                                  }}
-                                                >
-                                                  <i className="fas fa-eye" aria-hidden="true"></i>
-                                                </button>
-                                                {/* Retry failed email reminders */}
-                                                {item.channel === "Email" && item.status === "Failed" && !isViewer && (
-                                                  <button
-                                                    type="button"
-                                                    className="icon-btn icon-btn--edit"
-                                                    title="Retry sending"
-                                                    aria-label="Retry sending reminder"
-                                                    onClick={async () => {
-                                                      try {
-                                                        // Only backend-stored reminder logs have raw.id or raw._id
-                                                        const raw = item.raw;
-                                                        const reminderId = raw?._id || raw?.id;
-                                                        const apiUrl = import.meta.env.DEV
-                                                          ? ""
-                                                          : import.meta.env.VITE_API_URL || "";
-                                                        const res = await fetch(
-                                                          `${apiUrl}/api/reminders/retry`,
-                                                          {
-                                                            method: "POST",
-                                                            headers: { "Content-Type": "application/json" },
-                                                            body: JSON.stringify({ reminderId }),
-                                                          }
-                                                        );
-                                                        const data = await res.json();
-                                                        if (res.ok) {
-                                                          showToast(data.message || "Reminder retry queued");
-                                                          // Refresh logs
-                                                          if (typeof fetchReminderLogs === "function") {
-                                                            fetchReminderLogs();
-                                                          }
-                                                        } else {
-                                                          showToast(
-                                                            data.error || "Failed to retry reminder",
-                                                            "error"
-                                                          );
-                                                        }
-                                                      } catch (error) {
-                                                        console.error("Retry reminder failed", error);
-                                                        showToast("Failed to retry reminder", "error");
-                                                      }
-                                                    }}
-                                                  >
-                                                    <i className="fas fa-redo" aria-hidden="true"></i>
-                                                  </button>
-                                                )}
-                                              </div>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-
-                                  {/* Mobile Cards */}
-                                  <div className="mobile-table-cards reminder-logs-mobile-cards">
+                          return (
+                            <>
+                              {/* Desktop Table */}
+                              <div style={{ overflowX: "auto" }} className="reminder-logs-table-wrapper">
+                                <table className="table data-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Member</th>
+                                      <th>Channel</th>
+                                      <th>Type</th>
+                                      <th>Message</th>
+                                      <th>Date</th>
+                                      <th>Status</th>
+                                      <th>Actions</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
                                     {pageItems.map((item, idx) => (
-                                      <div
+                                      <tr
                                         key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
-                                        className="mobile-table-card"
-                                        onClick={() => setSelectedReminderLogItem(item)}
                                       >
-                                        <div className="mobile-table-card-header">
-                                          <div className="mobile-table-card-header-content">
-                                            <div className="mobile-table-card-title-section">
-                                              <div className="mobile-table-card-title">
-                                                {item.memberName || item.member || "N/A"}
-                                                {item.memberId ? ` (${item.memberId})` : ""}
-                                              </div>
-                                              <div className="mobile-table-card-metric">
-                                                <i className={`fas ${item.channel === "Email" ? "fa-envelope" : "fa-whatsapp"}`} style={{ fontSize: "0.75rem", marginRight: "4px" }}></i>
-                                                <span>{item.channel || "N/A"}</span>
-                                              </div>
-                                            </div>
-                                            <div className="mobile-table-card-header-right">
-                                              <div className="mobile-table-card-status">
-                                                <span className={statusClass[item.status] || "badge"}>
-                                                  {item.status || "N/A"}
-                                                </span>
-                                              </div>
-                                              <i className="fas fa-chevron-right mobile-table-card-arrow"></i>
-                                            </div>
+                                        <td>
+                                          {item.memberName || item.member || "N/A"}
+                                          {item.memberId ? ` (${item.memberId})` : ""}
+                                        </td>
+                                        <td>{item.channel || "N/A"}</td>
+                                        <td>{item.type || "-"}</td>
+                                        <td style={{ maxWidth: "320px", whiteSpace: "normal" }}>
+                                          {item.message || "N/A"}
+                                        </td>
+                                        <td>{item.date || "N/A"}</td>
+                                        <td>
+                                          <span className={statusClass[item.status] || "badge"}>
+                                            {item.status || "N/A"}
+                                          </span>
+                                        </td>
+                                        <td>
+                                          <div style={{ display: "flex", gap: "6px" }} onClick={(e) => e.stopPropagation()}>
+                                            {/* View full message in modal */}
+                                            <button
+                                              type="button"
+                                              className="icon-btn icon-btn--view"
+                                              title="View full message"
+                                              aria-label="View full message"
+                                              onClick={() => {
+                                                setSelectedReminderLogItem(item);
+                                              }}
+                                            >
+                                              <i className="fas fa-eye" aria-hidden="true"></i>
+                                            </button>
+                                            {/* Retry failed email reminders */}
+                                            {item.channel === "Email" && item.status === "Failed" && !isViewer && (
+                                              <button
+                                                type="button"
+                                                className="icon-btn icon-btn--edit"
+                                                title="Retry sending"
+                                                aria-label="Retry sending reminder"
+                                                onClick={async () => {
+                                                  try {
+                                                    // Only backend-stored reminder logs have raw.id or raw._id
+                                                    const raw = item.raw;
+                                                    const reminderId = raw?._id || raw?.id;
+                                                    const apiUrl = import.meta.env.DEV
+                                                      ? ""
+                                                      : import.meta.env.VITE_API_URL || "";
+                                                    const res = await fetch(
+                                                      `${apiUrl}/api/reminders/retry`,
+                                                      {
+                                                        method: "POST",
+                                                        headers: { "Content-Type": "application/json" },
+                                                        body: JSON.stringify({ reminderId }),
+                                                      }
+                                                    );
+                                                    const data = await res.json();
+                                                    if (res.ok) {
+                                                      showToast(data.message || "Reminder retry queued");
+                                                      // Refresh logs
+                                                      if (typeof fetchReminderLogs === "function") {
+                                                        fetchReminderLogs();
+                                                      }
+                                                    } else {
+                                                      showToast(
+                                                        data.error || "Failed to retry reminder",
+                                                        "error"
+                                                      );
+                                                    }
+                                                  } catch (error) {
+                                                    console.error("Retry reminder failed", error);
+                                                    showToast("Failed to retry reminder", "error");
+                                                  }
+                                                }}
+                                              >
+                                                <i className="fas fa-redo" aria-hidden="true"></i>
+                                              </button>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Mobile Cards */}
+                              <div className="mobile-table-cards reminder-logs-mobile-cards">
+                                {pageItems.map((item, idx) => (
+                                  <div
+                                    key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
+                                    className="mobile-table-card"
+                                    onClick={() => setSelectedReminderLogItem(item)}
+                                  >
+                                    <div className="mobile-table-card-header">
+                                      <div className="mobile-table-card-header-content">
+                                        <div className="mobile-table-card-title-section">
+                                          <div className="mobile-table-card-title">
+                                            {item.memberName || item.member || "N/A"}
+                                            {item.memberId ? ` (${item.memberId})` : ""}
+                                          </div>
+                                          <div className="mobile-table-card-metric">
+                                            <i className={`fas ${item.channel === "Email" ? "fa-envelope" : "fa-whatsapp"}`} style={{ fontSize: "0.75rem", marginRight: "4px" }}></i>
+                                            <span>{item.channel || "N/A"}</span>
                                           </div>
                                         </div>
+                                        <div className="mobile-table-card-header-right">
+                                          <div className="mobile-table-card-status">
+                                            <span className={statusClass[item.status] || "badge"}>
+                                              {item.status || "N/A"}
+                                            </span>
+                                          </div>
+                                          <i className="fas fa-chevron-right mobile-table-card-arrow"></i>
+                                        </div>
                                       </div>
-                                    ))}
+                                    </div>
                                   </div>
+                                ))}
+                              </div>
 
-                                  {/* Pagination controls */}
-                                  <Pagination
-                                    currentPage={currentPage}
-                                    totalPages={totalPages}
-                                    onPageChange={setRemindersPage}
-                                    pageSize={pageSize}
-                                    onPageSizeChange={setRemindersPageSize}
-                                    totalItems={total}
-                                  />
-                                </>
-                              );
-                            })()}
+                              {/* Pagination controls */}
+                              <Pagination
+                                currentPage={currentPage}
+                                totalPages={totalPages}
+                                onPageChange={setRemindersPage}
+                                pageSize={pageSize}
+                                onPageSizeChange={setRemindersPageSize}
+                                totalItems={total}
+                              />
+                            </>
+                          );
+                        })()}
 
                         {/* Old non-paginated table kept for reference (now replaced by paginated view)
                         <div style={{ overflowX: "auto" }}>
@@ -8116,12 +8141,12 @@ Subscription Manager HK`;
                                   <td>
                                     {request.requestedAt
                                       ? new Date(request.requestedAt).toLocaleString("en-GB", {
-                                          day: "2-digit",
-                                          month: "short",
-                                          year: "numeric",
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                        })
+                                        day: "2-digit",
+                                        month: "short",
+                                        year: "numeric",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })
                                       : "N/A"}
                                   </td>
                                   <td>
@@ -8130,8 +8155,8 @@ Subscription Manager HK`;
                                         request.status === "Pending"
                                           ? "badge badge--warning"
                                           : request.status === "Approved"
-                                          ? "badge badge--success"
-                                          : "badge badge--error"
+                                            ? "badge badge--success"
+                                            : "badge badge--error"
                                       }
                                     >
                                       {request.status || "Pending"}
@@ -8139,11 +8164,10 @@ Subscription Manager HK`;
                                   </td>
                                   <td>
                                     {request.handledBy
-                                      ? `${request.handledBy}${
-                                          request.handledAt
-                                            ? ` - ${new Date(request.handledAt).toLocaleDateString("en-GB")}`
-                                            : ""
-                                        }`
+                                      ? `${request.handledBy}${request.handledAt
+                                        ? ` - ${new Date(request.handledAt).toLocaleDateString("en-GB")}`
+                                        : ""
+                                      }`
                                       : "-"}
                                   </td>
                                   <td>
@@ -8201,7 +8225,7 @@ Subscription Manager HK`;
                   }}>
                     <span style={{ color: "#666" }}>Active Methods:</span>
                     <strong style={{ color: "#000" }}>
-                      {paymentMethods.filter(m => 
+                      {paymentMethods.filter(m =>
                         (m.name === "Alipay" || m.name === "PayMe" || m.name === "FPS" || m.name === "Direct Bank Transfer") && m.visible
                       ).length}
                     </strong>
@@ -8214,9 +8238,9 @@ Subscription Manager HK`;
                   marginTop: "32px"
                 }}>
                   {paymentMethods
-                    .filter((method) => 
-                      method.name === "PayMe" || 
-                      method.name === "FPS" || 
+                    .filter((method) =>
+                      method.name === "PayMe" ||
+                      method.name === "FPS" ||
                       method.name === "Direct Bank Transfer"
                     )
                     .map((method) => {
@@ -8257,12 +8281,12 @@ Subscription Manager HK`;
                           }
 
                           const uploadData = await uploadResponse.json();
-                          
+
                           // Check if URL exists in response
                           if (!uploadData.url) {
                             throw new Error("No URL returned from upload. Please try again.");
                           }
-                          
+
                           const qrUrl = uploadData.url;
 
                           // Update payment method with QR code URL
@@ -8278,7 +8302,7 @@ Subscription Manager HK`;
                       };
 
                       return (
-                        <div 
+                        <div
                           key={method.name}
                           style={{
                             background: "#fff",
@@ -8287,8 +8311,8 @@ Subscription Manager HK`;
                             padding: "28px",
                             transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                             position: "relative",
-                            boxShadow: method.visible 
-                              ? "0 10px 30px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.05)" 
+                            boxShadow: method.visible
+                              ? "0 10px 30px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.05)"
                               : "0 2px 8px rgba(0,0,0,0.04)",
                             display: "flex",
                             flexDirection: "column",
@@ -8309,7 +8333,7 @@ Subscription Manager HK`;
                           }}
                         >
                           {/* Status Badge - Clickable */}
-                          <div 
+                          <div
                             onClick={async () => {
                               try {
                                 await updatePaymentMethod(method.name, { visible: !method.visible });
@@ -8325,8 +8349,8 @@ Subscription Manager HK`;
                               borderRadius: "20px",
                               fontSize: "0.7rem",
                               fontWeight: "700",
-                              background: method.visible 
-                                ? "#e8f5e9" 
+                              background: method.visible
+                                ? "#e8f5e9"
                                 : "#f5f5f5",
                               color: method.visible ? "#1b5e20" : "#757575",
                               textTransform: "uppercase",
@@ -8339,14 +8363,14 @@ Subscription Manager HK`;
                             }}
                             onMouseEnter={(e) => {
                               e.target.style.transform = "scale(1.08)";
-                              e.target.style.boxShadow = method.visible 
-                                ? "0 4px 8px rgba(0,0,0,0.15)" 
+                              e.target.style.boxShadow = method.visible
+                                ? "0 4px 8px rgba(0,0,0,0.15)"
                                 : "0 2px 4px rgba(0,0,0,0.1)";
                             }}
                             onMouseLeave={(e) => {
                               e.target.style.transform = "scale(1)";
-                              e.target.style.boxShadow = method.visible 
-                                ? "0 2px 4px rgba(0,0,0,0.1)" 
+                              e.target.style.boxShadow = method.visible
+                                ? "0 2px 4px rgba(0,0,0,0.1)"
                                 : "none";
                             }}
                           >
@@ -8366,11 +8390,11 @@ Subscription Manager HK`;
                               width: "64px",
                               height: "64px",
                               borderRadius: "16px",
-                              background: method.name === "PayMe" 
+                              background: method.name === "PayMe"
                                 ? "#00C300"
-                                : method.name === "FPS" 
-                                ? "#0066CC"
-                                : "#E60012",
+                                : method.name === "FPS"
+                                  ? "#0066CC"
+                                  : "#E60012",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
@@ -8382,7 +8406,7 @@ Subscription Manager HK`;
                             }}>
                               {method.name === "PayMe" ? "P"
                                 : method.name === "FPS" ? "F"
-                                : "B"}
+                                  : "B"}
                               {method.visible && (
                                 <div style={{
                                   position: "absolute",
@@ -8420,7 +8444,7 @@ Subscription Manager HK`;
                               }}>
                                 {method.name === "PayMe" ? "PayMe by HSBC"
                                   : method.name === "FPS" ? "Faster Payment System"
-                                  : "Direct Bank Transfer"}
+                                    : "Direct Bank Transfer"}
                               </p>
                             </div>
                           </div>
@@ -8450,8 +8474,8 @@ Subscription Manager HK`;
                                     boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
                                     border: "1px solid #e0e0e0"
                                   }}>
-                                    <img 
-                                      src={method.qrImageUrl} 
+                                    <img
+                                      src={method.qrImageUrl}
                                       alt={`${method.name} QR Code`}
                                       style={{
                                         maxWidth: "260px",
@@ -8608,7 +8632,7 @@ Subscription Manager HK`;
                                 gap: "10px"
                               }}>
                                 {method.details && method.details.map((detail, index) => (
-                                  <div 
+                                  <div
                                     key={`${method.name}-detail-${index}`}
                                     style={{
                                       padding: "16px 18px",
@@ -8638,7 +8662,7 @@ Subscription Manager HK`;
                           )}
 
                           {/* Toggle Switch */}
-                          <div 
+                          <div
                             onClick={async () => {
                               try {
                                 await updatePaymentMethod(method.name, { visible: !method.visible });
@@ -8651,8 +8675,8 @@ Subscription Manager HK`;
                               alignItems: "center",
                               justifyContent: "space-between",
                               padding: "18px 20px",
-                              background: method.visible 
-                                ? "#f8f9ff" 
+                              background: method.visible
+                                ? "#f8f9ff"
                                 : "#f9fafb",
                               borderRadius: "12px",
                               border: `2px solid ${method.visible ? "#2196F3" : "#e0e0e0"}`,
@@ -8661,15 +8685,15 @@ Subscription Manager HK`;
                               marginTop: "4px"
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = method.visible 
-                                ? "#bbdefb" 
+                              e.currentTarget.style.background = method.visible
+                                ? "#bbdefb"
                                 : "#f3f4f6";
                               e.currentTarget.style.borderColor = method.visible ? "#1976D2" : "#ccc";
                               e.currentTarget.style.transform = "scale(1.01)";
                             }}
                             onMouseLeave={(e) => {
-                              e.currentTarget.style.background = method.visible 
-                                ? "#f8f9ff" 
+                              e.currentTarget.style.background = method.visible
+                                ? "#f8f9ff"
                                 : "#fafafa";
                               e.currentTarget.style.borderColor = method.visible ? "#2196F3" : "#e0e0e0";
                               e.currentTarget.style.transform = "scale(1)";
@@ -8690,13 +8714,13 @@ Subscription Manager HK`;
                                 color: method.visible ? "#1976D2" : "#999",
                                 lineHeight: "1.4"
                               }}>
-                                {method.visible 
-                                  ? "This payment method is visible to all members" 
+                                {method.visible
+                                  ? "This payment method is visible to all members"
                                   : "This payment method is hidden from members"}
                               </span>
                             </div>
-                            <label 
-                              className="switch" 
+                            <label
+                              className="switch"
                               style={{ margin: 0, marginLeft: "16px" }}
                               onClick={(e) => e.stopPropagation()}
                             >
@@ -8760,11 +8784,11 @@ Subscription Manager HK`;
                         + Add Payment
                       </button>
                       {/* Status Filter - Segmented Buttons */}
-                      <div style={{ 
-                        display: "flex", 
-                        gap: "4px", 
-                        background: "#f3f4f6", 
-                        padding: "4px", 
+                      <div style={{
+                        display: "flex",
+                        gap: "4px",
+                        background: "#f3f4f6",
+                        padding: "4px",
                         borderRadius: "4px",
                         flexWrap: "wrap"
                       }}>
@@ -8876,8 +8900,8 @@ Subscription Manager HK`;
                               notes: "",
                             });
                           }}
-                          style={{ 
-                            fontSize: "1.5rem", 
+                          style={{
+                            fontSize: "1.5rem",
                             lineHeight: 1,
                             color: "#ef4444",
                             fontWeight: "bold",
@@ -9026,9 +9050,9 @@ Subscription Manager HK`;
                         </label>
                         <label>
                           <span><i className="fas fa-image" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Screenshot URL{" "}
-                          {paymentForm.method === "Cash" && (
-                            <span style={{ color: "#ef4444" }}>*</span>
-                          )}</span>
+                            {paymentForm.method === "Cash" && (
+                              <span style={{ color: "#ef4444" }}>*</span>
+                            )}</span>
                           <input
                             type="text"
                             value={paymentForm.screenshot}
@@ -9125,14 +9149,14 @@ Subscription Manager HK`;
                           const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.date || 0);
                           return dateB - dateA;
                         });
-                      
+
                       // Calculate pagination
                       const totalPages = Math.ceil(filteredPayments.length / paymentsPageSize) || 1;
                       const currentPage = Math.min(paymentsPage, totalPages);
                       const startIndex = (currentPage - 1) * paymentsPageSize;
                       const endIndex = startIndex + paymentsPageSize;
                       const paginatedPayments = filteredPayments.slice(startIndex, endIndex);
-                      
+
                       return (
                         <>
                           <Table
@@ -9148,7 +9172,7 @@ Subscription Manager HK`;
                             rows={paginatedPayments.map((payment) => {
                               const paymentId = payment._id || payment.id;
                               const paymentIdString = paymentId?.toString ? paymentId.toString() : paymentId;
-                              
+
                               return {
                                 Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
                                   day: '2-digit',
@@ -9159,16 +9183,16 @@ Subscription Manager HK`;
                                 "Invoice ID": payment.invoiceId || "N/A",
                                 Amount: payment.amount
                                   ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })}`
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}`
                                   : "HK$0.00",
                                 Method: getPaymentMethodDisplay(payment),
                                 Screenshot: {
                                   render: () => payment.screenshot ? (
-                                    <a 
-                                      href={payment.screenshot} 
-                                      target="_blank" 
+                                    <a
+                                      href={payment.screenshot}
+                                      target="_blank"
                                       rel="noopener noreferrer"
                                       style={{ color: "#000", textDecoration: "none" }}
                                       title="View screenshot"
@@ -9223,7 +9247,7 @@ Subscription Manager HK`;
                                         // Check if paid online
                                         const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Online Payment"];
                                         const isPaidOnline = onlineMethods.includes(payment.method);
-                                        
+
                                         if (isPaidByAdmin) {
                                           return (
                                             <span
@@ -9265,27 +9289,27 @@ Subscription Manager HK`;
                                         } else {
                                           // Fallback: show approved text
                                           return (
-                                        <span style={{ fontSize: "0.75rem", color: "#4caf50" }}>
-                                          ✓ Approved by {payment.approvedBy || "Admin"}
-                                        </span>
+                                            <span style={{ fontSize: "0.75rem", color: "#4caf50" }}>
+                                              ✓ Approved by {payment.approvedBy || "Admin"}
+                                            </span>
                                           );
                                         }
                                       })()}
                                       <button
-                                      className="secondary-btn icon-btn icon-btn--edit"
+                                        className="secondary-btn icon-btn icon-btn--edit"
                                         onClick={() => handleEditPayment(payment)}
                                         title="Edit Payment"
                                       >
-                                      <i className="fas fa-pen" aria-hidden="true"></i>
+                                        <i className="fas fa-pen" aria-hidden="true"></i>
                                       </button>
                                       <button
-                                      className="ghost-btn icon-btn icon-btn--delete"
+                                        className="ghost-btn icon-btn icon-btn--delete"
                                         onClick={() => {
                                           if (paymentIdString) handleDeletePayment(paymentIdString);
                                         }}
                                         title="Delete Payment"
                                       >
-                                      <i className="fas fa-trash" aria-hidden="true"></i>
+                                        <i className="fas fa-trash" aria-hidden="true"></i>
                                       </button>
                                     </div>
                                   )
@@ -9332,7 +9356,7 @@ Subscription Manager HK`;
                     </button>
                   </div>
                 </header>
-                
+
                 {/* Summary Cards - 2 Mini Cards */}
                 {(() => {
                   const invoicesList = invoices || [];
@@ -9354,7 +9378,7 @@ Subscription Manager HK`;
                     const amount = parseFloat((inv?.amount || "0").replace(/[^0-9.]/g, '') || 0);
                     return sum + amount;
                   }, 0);
-                  
+
                   return (
                     <div className="kpi-grid" style={{ marginBottom: "24px" }}>
                       <div className="admin-dashboard-kpi-card">
@@ -9391,10 +9415,7 @@ Subscription Manager HK`;
                           Total Unpaid
                         </p>
                         <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">
-                          HK${formatNumber(totalUnpaidAmount, {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {formatCurrency(totalUnpaidAmount, "HKD", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </h4>
                       </div>
                       <div className="admin-dashboard-kpi-card">
@@ -9403,16 +9424,13 @@ Subscription Manager HK`;
                           Total Collected
                         </p>
                         <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--green">
-                          HK${formatNumber(totalPaidAmount, {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
+                          {formatCurrency(totalPaidAmount, "HKD", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                         </h4>
                       </div>
                     </div>
                   );
                 })()}
-                
+
                 <div className="card-invoices">
                   <div className="table-wrapper">
                     {(() => {
@@ -9430,23 +9448,23 @@ Subscription Manager HK`;
                           }
                         });
                       }
-                      
+
                       // Calculate pagination
                       const startIndex = (invoicesPage - 1) * invoicesPageSize;
                       const endIndex = startIndex + invoicesPageSize;
                       const paginatedInvoices = filteredInvoices.slice(startIndex, endIndex);
                       const totalPages = Math.ceil(filteredInvoices.length / invoicesPageSize);
-                      
+
                       return (
                         <>
                           {/* Invoice Status Filter - Segmented Buttons */}
                           <div style={{ marginBottom: "20px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                             <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
-                            <div style={{ 
-                              display: "flex", 
-                              gap: "4px", 
-                              background: "#f3f4f6", 
-                              padding: "4px", 
+                            <div style={{
+                              display: "flex",
+                              gap: "4px",
+                              background: "#f3f4f6",
+                              padding: "4px",
                               borderRadius: "4px",
                               flexWrap: "wrap"
                             }}>
@@ -9500,7 +9518,7 @@ Subscription Manager HK`;
                           {filteredInvoices.length === 0 ? (
                             <div className="admin-empty-state">
                               <p className="admin-empty-state-message">
-                                {invoiceStatusFilter !== "All" 
+                                {invoiceStatusFilter !== "All"
                                   ? `No ${invoiceStatusFilter.toLowerCase()} invoices found.`
                                   : "No invoices found."}
                               </p>
@@ -9510,85 +9528,104 @@ Subscription Manager HK`;
                               {/* Invoice Table */}
                               <div className="table-wrapper">
                                 <Table
-                              columns={["Invoice ID", "Member", "Period", "Amount", "Due Date", "Status", "Actions"]}
-                              rows={paginatedInvoices.map((invoice) => {
-                                const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
-                                const isOverdue = invoice.status === "Overdue";
-                                
-                                return {
-                                  "Invoice ID": invoice.id || invoice.invoiceId || "N/A",
-                                  "Member": invoice.memberName || invoice.member || "Unknown",
-                                  "Period": invoice.period || "N/A",
-                                  "Amount": invoice.amount
-                                    ? `HK$${formatNumber(parseFloat(invoice.amount.replace(/[^0-9.]/g, '') || 0), {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                      })}`
-                                    : "HK$0.00",
-                                  "Due Date": invoice.due ? new Date(invoice.due).toLocaleDateString('en-GB', {
-                                    day: '2-digit',
-                                    month: 'short',
-                                    year: 'numeric'
-                                  }) : "N/A",
-                                  "Status": {
-                                    render: () => (
-                                      <span className={
-                                        invoice.status === "Paid" ? "badge badge-paid" :
-                                        invoice.status === "Overdue" ? "badge badge-overdue" :
-                                        invoice.status === "Pending" ? "badge badge-pending" :
-                                        "badge badge-unpaid"
-                                      }>
-                                        {invoice.status || "Unpaid"}
-                                      </span>
-                                    ),
-                                  },
-                                  "Actions": {
-                                    render: () => (
-                                      <div style={{ display: "flex", gap: "8px", justifyContent: "flex-start" }}>
-                                        <button
-                                          className="icon-btn icon-btn--view"
-                                          onClick={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            const member = members.find(m => 
-                                              m.id === invoice.memberId || 
-                                              m.email === invoice.memberEmail ||
-                                              m.name === invoice.memberName
-                                            );
-                                            if (member) {
-                                              handleViewMemberDetail(member);
-                                              setActiveSection("member-detail");
-                                              setActiveTab("Invoices");
-                                              showToast(`Viewing invoice ${invoice.id || invoice.invoiceId || 'details'}`, "success");
-                                            } else {
-                                              showToast("Member not found for this invoice", "error");
-                                            }
-                                          }}
-                                          title="View Invoice Details"
-                                          aria-label="View Invoice Details"
-                                        >
-                                          <i className="fas fa-eye" aria-hidden="true"></i>
-                                        </button>
-                                        {!isPaid && (
-                                          <button
-                                            className="icon-btn icon-btn--delete"
-                                            onClick={() => {
-                                              if (invoice.id || invoice._id) {
-                                                handleDeleteInvoice(invoice.id || invoice._id);
-                                              }
-                                            }}
-                                            title="Delete Invoice"
-                                            aria-label="Delete Invoice"
-                                          >
-                                            <i className="fas fa-trash" aria-hidden="true"></i>
-                                          </button>
-                                        )}
-                                      </div>
-                                    ),
-                                  },
-                                };
-                              })}
-                            />
+                                  columns={["Name", "Year", "Subscription Type", "Joined Year", "Status", "Outstanding", "Actions"]}
+                                  rows={paginatedInvoices.map((invoice) => {
+                                    const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
+                                    const isOverdue = invoice.status === "Overdue";
+
+                                    const member = members.find(m => m.id === invoice.memberId);
+                                    const joinedYear = member?.start_date
+                                      ? new Date(member.start_date).getFullYear()
+                                      : (member?.createdAt ? new Date(member.createdAt).getFullYear() : "-");
+                                    const numericOutstanding = member ? parseFloat(member.balance?.toString().replace(/[^0-9.]/g, "") || 0) : 0;
+                                    
+                                    // Extract year from invoice period
+                                    const periodStr = String(invoice.period || "").trim();
+                                    const yearMatch = periodStr.match(/\d{4}/);
+                                    const subYear = yearMatch ? yearMatch[0] : "-";
+
+                                    return {
+                                      "Name": invoice.memberName || invoice.member || "Unknown",
+                                      "Year": subYear,
+                                      "Subscription Type": member?.subscriptionType || invoice.subscriptionType || "-",
+                                      "Joined Year": joinedYear,
+                                      "Status": {
+                                        render: () => (
+                                          <span className={
+                                            invoice.status === "Paid" ? "badge badge-paid" :
+                                              invoice.status === "Overdue" ? "badge badge-overdue" :
+                                                invoice.status === "Pending" ? "badge badge-pending" :
+                                                  "badge badge-unpaid"
+                                          }>
+                                            {invoice.status || "Unpaid"}
+                                          </span>
+                                        ),
+                                      },
+                                      "Outstanding": {
+                                        render: () => (
+                                          <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                            <span
+                                              style={{
+                                                color: numericOutstanding > 0 ? "#ef4444" : "#111827",
+                                                fontWeight: numericOutstanding > 0 ? 600 : 500,
+                                              }}
+                                            >
+                                              HK$
+                                              {formatNumber(numericOutstanding, {
+                                                minimumFractionDigits: 2,
+                                                maximumFractionDigits: 2,
+                                              })}
+                                            </span>
+                                          </div>
+                                        ),
+                                      },
+                                      "Actions": {
+                                        render: () => (
+                                          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-start" }}>
+                                            <button
+                                              className="icon-btn icon-btn--view"
+                                              onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                const member = members.find(m =>
+                                                  m.id === invoice.memberId ||
+                                                  m.email === invoice.memberEmail ||
+                                                  m.name === invoice.memberName
+                                                );
+                                                if (member) {
+                                                  handleViewMemberDetail(member);
+                                                  setActiveSection("member-detail");
+                                                  setActiveTab("Invoices");
+                                                  showToast(`Viewing invoice ${invoice.id || invoice.invoiceId || 'details'}`, "success");
+                                                } else {
+                                                  showToast("Member not found for this invoice", "error");
+                                                }
+                                              }}
+                                              title="View Invoice Details"
+                                              aria-label="View Invoice Details"
+                                            >
+                                              <i className="fas fa-eye" aria-hidden="true"></i>
+                                            </button>
+                                            {!isPaid && (
+                                              <button
+                                                className="icon-btn icon-btn--delete"
+                                                onClick={() => {
+                                                  if (invoice.id || invoice._id) {
+                                                    handleDeleteInvoice(invoice.id || invoice._id);
+                                                  }
+                                                }}
+                                                title="Delete Invoice"
+                                                aria-label="Delete Invoice"
+                                              >
+                                                <i className="fas fa-trash" aria-hidden="true"></i>
+                                              </button>
+                                            )}
+                                          </div>
+                                        ),
+                                      },
+                                    };
+                                  })}
+                                />
                               </div>
                               {totalPages > 0 && invoices.length > 0 && (
                                 <Pagination
@@ -9625,7 +9662,7 @@ Subscription Manager HK`;
 
                 {/* Payment Form Modal */}
                 {showPaymentForm && (
-                  <div 
+                  <div
                     className="admin-members-form-overlay"
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
@@ -9650,7 +9687,7 @@ Subscription Manager HK`;
                       }
                     }}
                   >
-                    <div 
+                    <div
                       className="payments-card admin-members-form-container"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -9708,150 +9745,150 @@ Subscription Manager HK`;
                         </button>
                       </div>
                       <form className="form-grid" onSubmit={editingPayment ? handleUpdatePayment : handleAddPayment} noValidate>
-                      <label>
-                        <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member <span style={{ color: "#ef4444" }}>*</span></span>
-                        <select
-                          ref={(el) => {
-                            if (el && editingPayment) {
-                              setTimeout(() => el.focus(), 100);
-                            }
-                          }}
-                          value={paymentForm.memberId}
-                          onChange={(e) => {
-                            const selectedMember = members.find(m => m.id === e.target.value);
+                        <label>
+                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Member <span style={{ color: "#ef4444" }}>*</span></span>
+                          <select
+                            ref={(el) => {
+                              if (el && editingPayment) {
+                                setTimeout(() => el.focus(), 100);
+                              }
+                            }}
+                            value={paymentForm.memberId}
+                            onChange={(e) => {
+                              const selectedMember = members.find(m => m.id === e.target.value);
+                              setPaymentForm({
+                                ...paymentForm,
+                                memberId: e.target.value,
+                                member: selectedMember ? selectedMember.name : "",
+                              });
+                            }}
+                            required
+                          >
+                            <option value="">Select Member</option>
+                            {members.map(member => (
+                              <option key={member.id} value={member.id}>
+                                {member.name} ({member.id})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          <span><i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice ID</span>
+                          <input
+                            type="text"
+                            value={paymentForm.invoiceId}
+                            onChange={(e) => setPaymentForm({ ...paymentForm, invoiceId: e.target.value })}
+                            placeholder="INV-2025-001"
+                          />
+                        </label>
+                        <label>
+                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
+                          <input
+                            type="text"
+                            value={paymentForm.amount}
+                            onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                            placeholder="$50"
+                            required
+                          />
+                        </label>
+                        <label>
+                          <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
+                          <select
+                            value={paymentForm.method}
+                            onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })}
+                            required
+                          >
+                            <option value="">Select Method</option>
+                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="FPS">FPS</option>
+                            <option value="PayMe">PayMe</option>
+                            <option value="Alipay">Alipay</option>
+                            <option value="Credit Card">Credit Card</option>
+                            <option value="Cash">Cash</option>
+                          </select>
+                        </label>
+                        <label>
+                          <span><i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Reference Number</span>
+                          <input
+                            type="text"
+                            value={paymentForm.reference}
+                            onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
+                            placeholder="Transaction reference"
+                          />
+                        </label>
+                        <label>
+                          <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date</span>
+                          <input
+                            type="text"
+                            value={paymentForm.date}
+                            onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                            placeholder="01 Jan 2025"
+                          />
+                        </label>
+                        <label>
+                          <span><i className="fas fa-toggle-on" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Status <span style={{ color: "#ef4444" }}>*</span></span>
+                          <select
+                            value={paymentForm.status}
+                            onChange={(e) => setPaymentForm({ ...paymentForm, status: e.target.value })}
+                            required
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Rejected">Rejected</option>
+                          </select>
+                        </label>
+                        <label>
+                          <span><i className="fas fa-image" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Screenshot URL {paymentForm.method === "Cash" && <span style={{ color: "#ef4444" }}>*</span>}</span>
+                          <input
+                            type="text"
+                            value={paymentForm.screenshot}
+                            onChange={(e) => setPaymentForm({ ...paymentForm, screenshot: e.target.value })}
+                            placeholder="https://..."
+                            required={paymentForm.method === "Cash"}
+                          />
+                          {paymentForm.method === "Cash" && !paymentForm.screenshot && (
+                            <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
+                              Screenshot is required for Cash payments
+                            </small>
+                          )}
+                        </label>
+                        <label style={{ gridColumn: "1 / -1" }}>
+                          <span><i className="fas fa-sticky-note" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Notes</span>
+                          <textarea
+                            value={paymentForm.notes}
+                            onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                            rows={3}
+                            placeholder="Additional notes..."
+                          />
+                        </label>
+                        <div className="form-actions" style={{ gridColumn: "1 / -1" }}>
+                          <button type="button" className="ghost-btn" onClick={() => {
+                            setShowPaymentForm(false);
+                            setEditingPayment(null);
                             setPaymentForm({
-                              ...paymentForm,
-                              memberId: e.target.value,
-                              member: selectedMember ? selectedMember.name : "",
+                              memberId: "",
+                              member: "",
+                              invoiceId: "",
+                              amount: "",
+                              method: "",
+                              reference: "",
+                              date: new Date().toLocaleDateString("en-GB", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric"
+                              }),
+                              status: "Pending",
+                              screenshot: "",
+                              notes: "",
                             });
-                          }}
-                          required
-                        >
-                          <option value="">Select Member</option>
-                          {members.map(member => (
-                            <option key={member.id} value={member.id}>
-                              {member.name} ({member.id})
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        <span><i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice ID</span>
-                        <input
-                          type="text"
-                          value={paymentForm.invoiceId}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, invoiceId: e.target.value })}
-                          placeholder="INV-2025-001"
-                        />
-                      </label>
-                      <label>
-                        <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
-                        <input
-                          type="text"
-                          value={paymentForm.amount}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                          placeholder="$50"
-                          required
-                        />
-                      </label>
-                      <label>
-                        <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
-                        <select
-                          value={paymentForm.method}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, method: e.target.value })}
-                          required
-                        >
-                          <option value="">Select Method</option>
-                          <option value="Bank Transfer">Bank Transfer</option>
-                          <option value="FPS">FPS</option>
-                          <option value="PayMe">PayMe</option>
-                          <option value="Alipay">Alipay</option>
-                          <option value="Credit Card">Credit Card</option>
-                          <option value="Cash">Cash</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span><i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Reference Number</span>
-                        <input
-                          type="text"
-                          value={paymentForm.reference}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
-                          placeholder="Transaction reference"
-                        />
-                      </label>
-                      <label>
-                        <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date</span>
-                        <input
-                          type="text"
-                          value={paymentForm.date}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
-                          placeholder="01 Jan 2025"
-                        />
-                      </label>
-                      <label>
-                        <span><i className="fas fa-toggle-on" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Status <span style={{ color: "#ef4444" }}>*</span></span>
-                        <select
-                          value={paymentForm.status}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, status: e.target.value })}
-                          required
-                        >
-                          <option value="Pending">Pending</option>
-                          <option value="Completed">Completed</option>
-                          <option value="Rejected">Rejected</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span><i className="fas fa-image" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Screenshot URL {paymentForm.method === "Cash" && <span style={{ color: "#ef4444" }}>*</span>}</span>
-                        <input
-                          type="text"
-                          value={paymentForm.screenshot}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, screenshot: e.target.value })}
-                          placeholder="https://..."
-                          required={paymentForm.method === "Cash"}
-                        />
-                        {paymentForm.method === "Cash" && !paymentForm.screenshot && (
-                          <small style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px", display: "block" }}>
-                            Screenshot is required for Cash payments
-                          </small>
-                        )}
-                      </label>
-                      <label style={{ gridColumn: "1 / -1" }}>
-                        <span><i className="fas fa-sticky-note" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Notes</span>
-                        <textarea
-                          value={paymentForm.notes}
-                          onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                          rows={3}
-                          placeholder="Additional notes..."
-                        />
-                      </label>
-                      <div className="form-actions" style={{ gridColumn: "1 / -1" }}>
-                        <button type="button" className="ghost-btn" onClick={() => {
-                          setShowPaymentForm(false);
-                          setEditingPayment(null);
-                          setPaymentForm({
-                            memberId: "",
-                            member: "",
-                            invoiceId: "",
-                            amount: "",
-                            method: "",
-                            reference: "",
-                            date: new Date().toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric"
-                            }),
-                            status: "Pending",
-                            screenshot: "",
-                            notes: "",
-                          });
-                        }}>
-                          Cancel
-                        </button>
-                        <button type="submit" className="primary-btn">
-                          {editingPayment ? "Update" : "Add"} Payment
-                        </button>
-                      </div>
-                    </form>
+                          }}>
+                            Cancel
+                          </button>
+                          <button type="submit" className="primary-btn">
+                            {editingPayment ? "Update" : "Add"} Payment
+                          </button>
+                        </div>
+                      </form>
                     </div>
                   </div>
                 )}
@@ -9939,26 +9976,26 @@ Subscription Manager HK`;
                           const dateB = b.createdAt ? new Date(b.createdAt) : new Date(b.date || 0);
                           return dateB - dateA;
                         });
-                      
+
                       // Calculate pagination
                       const totalPages = Math.ceil(filteredPayments.length / paymentsPageSize) || 1;
                       const currentPage = Math.min(paymentsPage, totalPages);
                       const startIndex = (currentPage - 1) * paymentsPageSize;
                       const endIndex = startIndex + paymentsPageSize;
                       const paginatedPayments = filteredPayments.slice(startIndex, endIndex);
-                      
+
                       if (filteredPayments.length === 0) {
                         return (
                           <div className="admin-empty-state">
                             <p className="admin-empty-state-message">
-                              {paymentStatusFilter !== "All" 
+                              {paymentStatusFilter !== "All"
                                 ? `No ${paymentStatusFilter.toLowerCase()} payments found.`
                                 : "No payments found."}
                             </p>
                           </div>
                         );
                       }
-                      
+
                       return (
                         <>
                           <Table
@@ -9974,7 +10011,7 @@ Subscription Manager HK`;
                             rows={paginatedPayments.map((payment) => {
                               const paymentId = payment._id || payment.id;
                               const paymentIdString = paymentId?.toString ? paymentId.toString() : paymentId;
-                              
+
                               return {
                                 Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
                                   day: '2-digit',
@@ -9985,16 +10022,16 @@ Subscription Manager HK`;
                                 "Invoice ID": payment.invoiceId || "N/A",
                                 Amount: payment.amount
                                   ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })}`
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}`
                                   : "HK$0.00",
                                 Method: getPaymentMethodDisplay(payment),
                                 Screenshot: {
                                   render: () => payment.screenshot ? (
-                                    <a 
-                                      href={payment.screenshot} 
-                                      target="_blank" 
+                                    <a
+                                      href={payment.screenshot}
+                                      target="_blank"
                                       rel="noopener noreferrer"
                                       style={{ color: "#5a31ea", textDecoration: "none" }}
                                     >
@@ -10006,9 +10043,9 @@ Subscription Manager HK`;
                                   render: () => (
                                     <span className={
                                       payment.status === "Paid" || payment.status === "Completed" ? "badge badge-paid" :
-                                      payment.status === "Pending" ? "badge badge-pending" :
-                                      payment.status === "Rejected" ? "badge badge-overdue" :
-                                      "badge badge-active"
+                                        payment.status === "Pending" ? "badge badge-pending" :
+                                          payment.status === "Rejected" ? "badge badge-overdue" :
+                                            "badge badge-active"
                                     }>
                                       {payment.status}
                                     </span>
@@ -10056,31 +10093,31 @@ Subscription Manager HK`;
 
                 {/* Add Donation Form Modal */}
                 {showDonationForm && (
-                  <div 
+                  <div
                     className="admin-members-form-overlay"
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
-                          setShowDonationForm(false);
-                          setDonationForm({
-                            donorName: "",
-                            isMember: false,
-                            memberId: "",
-                            amount: "",
-                            method: "",
-                            date: "",
-                            notes: "",
-                            reference: "",
-                            screenshot: "",
-                          });
-                          setDonationImageFile(null);
-                          setDonationImagePreview(null);
-                          setDonationMemberSearch("");
-                          setShowDonationMemberDropdown(false);
-                          setShowDonationPaymentMethodDropdown(false);
+                        setShowDonationForm(false);
+                        setDonationForm({
+                          donorName: "",
+                          isMember: false,
+                          memberId: "",
+                          amount: "",
+                          method: "",
+                          date: "",
+                          notes: "",
+                          reference: "",
+                          screenshot: "",
+                        });
+                        setDonationImageFile(null);
+                        setDonationImagePreview(null);
+                        setDonationMemberSearch("");
+                        setShowDonationMemberDropdown(false);
+                        setShowDonationPaymentMethodDropdown(false);
                       }
                     }}
                   >
-                    <div 
+                    <div
                       className="admin-members-form-container"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -10126,414 +10163,632 @@ Subscription Manager HK`;
                         </button>
                       </div>
                       <form
-                      noValidate
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        
-                        // Progressive validation for donation form
-                        const validateDonationForm = () => {
-                          // Define field order for validation
-                          const fieldOrder = ["donorName", "amount", "method", "date", "screenshot"];
-                          
-                          // If we have a current invalid field, check if it's now valid
-                          if (currentInvalidDonationField) {
-                            let isValid = true;
-                            let errorMsg = "";
-                            
-                            if (currentInvalidDonationField === "donorName" && !donationForm.donorName) {
-                              isValid = false;
-                              errorMsg = "Donor name is required";
-                            } else if (currentInvalidDonationField === "amount") {
-                              if (!donationForm.amount) {
-                                isValid = false;
-                                errorMsg = "Amount is required";
-                              } else {
-                                const amountNum = parseFloat(donationForm.amount);
-                                if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
-                                  isValid = false;
-                                  errorMsg = "Amount must be a positive number";
-                                }
-                              }
-                            } else if (currentInvalidDonationField === "method" && !donationForm.method) {
-                              isValid = false;
-                              errorMsg = "Payment method is required";
-                            } else if (currentInvalidDonationField === "date" && !donationForm.date) {
-                              isValid = false;
-                              errorMsg = "Date is required";
-                            } else if (currentInvalidDonationField === "screenshot") {
-                              if (donationForm.method === "Cash Payment" && !donationForm.screenshot && !donationImageFile) {
-                                isValid = false;
-                                errorMsg = "Proof image is required";
-                              } else if (donationForm.method === "Online Payment" && !donationForm.screenshot && !donationImageFile) {
-                                isValid = false;
-                                errorMsg = "Proof image is required";
-                              }
-                            }
-                            
-                            if (isValid) {
-                              setDonationFieldErrors(prev => ({ ...prev, [currentInvalidDonationField]: false }));
-                              setCurrentInvalidDonationField(null);
-                            } else {
-                              setDonationFieldErrors(prev => ({ ...prev, [currentInvalidDonationField]: true }));
-                              showToast(errorMsg, "error");
-                              return false;
-                            }
-                          }
-                          
-                          // Find first invalid field
-                          for (const field of fieldOrder) {
-                            let isValid = true;
-                            let errorMsg = "";
-                            
-                            if (field === "donorName" && !donationForm.donorName) {
-                              isValid = false;
-                              errorMsg = "Donor name is required";
-                            } else if (field === "amount") {
-                              if (!donationForm.amount) {
-                                isValid = false;
-                                errorMsg = "Amount is required";
-                              } else {
-                                const amountNum = parseFloat(donationForm.amount);
-                                if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
-                                  isValid = false;
-                                  errorMsg = "Amount must be a positive number";
-                                }
-                              }
-                            } else if (field === "method" && !donationForm.method) {
-                              isValid = false;
-                              errorMsg = "Payment method is required";
-                            } else if (field === "date" && !donationForm.date) {
-                              isValid = false;
-                              errorMsg = "Date is required";
-                            } else if (field === "screenshot") {
-                              if (donationForm.method === "Cash Payment" && !donationForm.screenshot && !donationImageFile) {
-                                isValid = false;
-                                errorMsg = "Proof image is required";
-                              } else if (donationForm.method === "Online Payment" && !donationForm.screenshot && !donationImageFile) {
-                                isValid = false;
-                                errorMsg = "Proof image is required";
-                              }
-                            }
-                            
-                            if (!isValid) {
-                              // Clear all errors first
-                              setDonationFieldErrors({
-                                donorName: false,
-                                amount: false,
-                                method: false,
-                                date: false,
-                                screenshot: false,
-                              });
-                              // Set only this field as invalid
-                              setDonationFieldErrors(prev => ({ ...prev, [field]: true }));
-                              setCurrentInvalidDonationField(field);
-                              showToast(errorMsg, "error");
-                              
-                              // Focus on the invalid field
-                              setTimeout(() => {
-                                if (field === "donorName") {
-                                  const inputs = document.querySelectorAll('input[type="text"]');
-                                  const donorInput = Array.from(inputs).find(input => 
-                                    input.placeholder?.includes("donor name") || 
-                                    input.placeholder?.includes("Donor name")
-                                  );
-                                  donorInput?.focus();
-                                  donorInput?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                } else if (field === "amount") {
-                                  const input = document.querySelector('input[type="number"][inputmode="numeric"]');
-                                  input?.focus();
-                                  input?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                } else if (field === "method") {
-                                  const selects = document.querySelectorAll('select');
-                                  const methodSelect = Array.from(selects).find(select => 
-                                    select.options[0]?.text === "Select method"
-                                  );
-                                  methodSelect?.focus();
-                                  methodSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                } else if (field === "date") {
-                                  const input = document.querySelector('input[type="date"]');
-                                  input?.focus();
-                                  input?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                } else if (field === "screenshot") {
-                                  const uploadAreas = document.querySelectorAll('[style*="border"]');
-                                  const screenshotArea = Array.from(uploadAreas).find(area => 
-                                    area.style.border.includes("dashed")
-                                  );
-                                  screenshotArea?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                }
-                              }, 100);
-                              
-                              return false;
-                            }
-                          }
-                          
-                          // All fields valid
-                          setDonationFieldErrors({
-                            donorName: false,
-                            amount: false,
-                            method: false,
-                            date: false,
-                            screenshot: false,
-                          });
-                          setCurrentInvalidDonationField(null);
-                          return true;
-                        };
-                        
-                        if (!validateDonationForm()) {
-                          // Validation error already shown via Notie
-                          return;
-                        }
-                        
-                        // Parse amount to number for formatting
-                        const amountNum = parseFloat(donationForm.amount);
-                        if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
-                          showToast("Amount must be a positive number", "error");
-                          return;
-                        }
-                        
-                        try {
-                          // Upload image if file exists
-                          let imageUrl = donationForm.screenshot;
-                          if (donationImageFile) {
-                            const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-                            const formData = new FormData();
-                            formData.append("screenshot", donationImageFile);
-                            formData.append("uploadType", "donation-proof");
+                        noValidate
+                        onSubmit={async (e) => {
+                          e.preventDefault();
 
-                            const uploadResponse = await fetch(`${apiUrl}/api/upload/screenshot`, {
-                              method: "POST",
-                              body: formData,
+                          // Progressive validation for donation form
+                          const validateDonationForm = () => {
+                            // Define field order for validation
+                            const fieldOrder = ["donorName", "amount", "method", "date", "screenshot"];
+
+                            // If we have a current invalid field, check if it's now valid
+                            if (currentInvalidDonationField) {
+                              let isValid = true;
+                              let errorMsg = "";
+
+                              if (currentInvalidDonationField === "donorName" && !donationForm.donorName) {
+                                isValid = false;
+                                errorMsg = "Donor name is required";
+                              } else if (currentInvalidDonationField === "amount") {
+                                if (!donationForm.amount) {
+                                  isValid = false;
+                                  errorMsg = "Amount is required";
+                                } else {
+                                  const amountNum = parseFloat(donationForm.amount);
+                                  if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
+                                    isValid = false;
+                                    errorMsg = "Amount must be a positive number";
+                                  }
+                                }
+                              } else if (currentInvalidDonationField === "method" && !donationForm.method) {
+                                isValid = false;
+                                errorMsg = "Payment method is required";
+                              } else if (currentInvalidDonationField === "date" && !donationForm.date) {
+                                isValid = false;
+                                errorMsg = "Date is required";
+                              } else if (currentInvalidDonationField === "screenshot") {
+                                if (donationForm.method === "Cash Payment" && !donationForm.screenshot && !donationImageFile) {
+                                  isValid = false;
+                                  errorMsg = "Proof image is required";
+                                } else if (donationForm.method === "Online Payment" && !donationForm.screenshot && !donationImageFile) {
+                                  isValid = false;
+                                  errorMsg = "Proof image is required";
+                                }
+                              }
+
+                              if (isValid) {
+                                setDonationFieldErrors(prev => ({ ...prev, [currentInvalidDonationField]: false }));
+                                setCurrentInvalidDonationField(null);
+                              } else {
+                                setDonationFieldErrors(prev => ({ ...prev, [currentInvalidDonationField]: true }));
+                                showToast(errorMsg, "error");
+                                return false;
+                              }
+                            }
+
+                            // Find first invalid field
+                            for (const field of fieldOrder) {
+                              let isValid = true;
+                              let errorMsg = "";
+
+                              if (field === "donorName" && !donationForm.donorName) {
+                                isValid = false;
+                                errorMsg = "Donor name is required";
+                              } else if (field === "amount") {
+                                if (!donationForm.amount) {
+                                  isValid = false;
+                                  errorMsg = "Amount is required";
+                                } else {
+                                  const amountNum = parseFloat(donationForm.amount);
+                                  if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
+                                    isValid = false;
+                                    errorMsg = "Amount must be a positive number";
+                                  }
+                                }
+                              } else if (field === "method" && !donationForm.method) {
+                                isValid = false;
+                                errorMsg = "Payment method is required";
+                              } else if (field === "date" && !donationForm.date) {
+                                isValid = false;
+                                errorMsg = "Date is required";
+                              } else if (field === "screenshot") {
+                                if (donationForm.method === "Cash Payment" && !donationForm.screenshot && !donationImageFile) {
+                                  isValid = false;
+                                  errorMsg = "Proof image is required";
+                                } else if (donationForm.method === "Online Payment" && !donationForm.screenshot && !donationImageFile) {
+                                  isValid = false;
+                                  errorMsg = "Proof image is required";
+                                }
+                              }
+
+                              if (!isValid) {
+                                // Clear all errors first
+                                setDonationFieldErrors({
+                                  donorName: false,
+                                  amount: false,
+                                  method: false,
+                                  date: false,
+                                  screenshot: false,
+                                });
+                                // Set only this field as invalid
+                                setDonationFieldErrors(prev => ({ ...prev, [field]: true }));
+                                setCurrentInvalidDonationField(field);
+                                showToast(errorMsg, "error");
+
+                                // Focus on the invalid field
+                                setTimeout(() => {
+                                  if (field === "donorName") {
+                                    const inputs = document.querySelectorAll('input[type="text"]');
+                                    const donorInput = Array.from(inputs).find(input =>
+                                      input.placeholder?.includes("donor name") ||
+                                      input.placeholder?.includes("Donor name")
+                                    );
+                                    donorInput?.focus();
+                                    donorInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                  } else if (field === "amount") {
+                                    const input = document.querySelector('input[type="number"][inputmode="numeric"]');
+                                    input?.focus();
+                                    input?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                  } else if (field === "method") {
+                                    const selects = document.querySelectorAll('select');
+                                    const methodSelect = Array.from(selects).find(select =>
+                                      select.options[0]?.text === "Select method"
+                                    );
+                                    methodSelect?.focus();
+                                    methodSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                  } else if (field === "date") {
+                                    const input = document.querySelector('input[type="date"]');
+                                    input?.focus();
+                                    input?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                  } else if (field === "screenshot") {
+                                    const uploadAreas = document.querySelectorAll('[style*="border"]');
+                                    const screenshotArea = Array.from(uploadAreas).find(area =>
+                                      area.style.border.includes("dashed")
+                                    );
+                                    screenshotArea?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                  }
+                                }, 100);
+
+                                return false;
+                              }
+                            }
+
+                            // All fields valid
+                            setDonationFieldErrors({
+                              donorName: false,
+                              amount: false,
+                              method: false,
+                              date: false,
+                              screenshot: false,
                             });
+                            setCurrentInvalidDonationField(null);
+                            return true;
+                          };
 
-                            if (!uploadResponse.ok) {
-                              let errorMessage = "Failed to upload image";
-                              try {
-                                const errorData = await uploadResponse.json();
-                                errorMessage = errorData.error || errorMessage;
-                              } catch (parseError) {
-                                errorMessage = `Upload failed with status ${uploadResponse.status}`;
-                              }
-                              throw new Error(errorMessage);
-                            }
-
-                            const uploadData = await uploadResponse.json();
-                            if (!uploadData.url) {
-                              throw new Error("No URL returned from upload. Please try again.");
-                            }
-                            imageUrl = uploadData.url;
+                          if (!validateDonationForm()) {
+                            // Validation error already shown via Notie
+                            return;
                           }
 
-                          await addDonation({
-                            ...donationForm,
-                            amount: amountNum.toFixed(2),
-                            screenshot: imageUrl,
-                          });
-                          showToast("Donation added successfully!");
-                          setShowDonationForm(false);
-                          setDonationForm({
-                            donorName: "",
-                            isMember: false,
-                            memberId: "",
-                            amount: "",
-                            method: "",
-                            date: "",
-                            notes: "",
-                            reference: "",
-                            screenshot: "",
-                          });
-                          setDonationImageFile(null);
-                          setDonationImagePreview(null);
-                          setDonationMemberSearch("");
-                          setShowDonationMemberDropdown(false);
-                          await fetchDonations();
-                        } catch (error) {
-                          showToast(error.message || "Failed to add donation", "error");
-                        }
-                      }}
-                    >
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
-                        <label>
-                          <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donor Name <span style={{ color: "#ef4444" }}>*</span></span>
-                          <input
-                            type="text"
-                            value={donationForm.donorName}
-                            onChange={(e) => {
-                              setDonationForm({ ...donationForm, donorName: e.target.value });
-                              if (donationFieldErrors.donorName) {
-                                setDonationFieldErrors(prev => ({ ...prev, donorName: false }));
-                                if (currentInvalidDonationField === "donorName") {
-                                  setCurrentInvalidDonationField(null);
+                          // Parse amount to number for formatting
+                          const amountNum = parseFloat(donationForm.amount);
+                          if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
+                            showToast("Amount must be a positive number", "error");
+                            return;
+                          }
+
+                          try {
+                            // Upload image if file exists
+                            let imageUrl = donationForm.screenshot;
+                            if (donationImageFile) {
+                              const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                              const formData = new FormData();
+                              formData.append("screenshot", donationImageFile);
+                              formData.append("uploadType", "donation-proof");
+
+                              const uploadResponse = await fetch(`${apiUrl}/api/upload/screenshot`, {
+                                method: "POST",
+                                body: formData,
+                              });
+
+                              if (!uploadResponse.ok) {
+                                let errorMessage = "Failed to upload image";
+                                try {
+                                  const errorData = await uploadResponse.json();
+                                  errorMessage = errorData.error || errorMessage;
+                                } catch (parseError) {
+                                  errorMessage = `Upload failed with status ${uploadResponse.status}`;
                                 }
+                                throw new Error(errorMessage);
                               }
-                            }}
-                            required
-                            placeholder={donationForm.isMember ? "Will be filled automatically when member is selected" : "Enter donor name"}
-                            disabled={donationForm.isMember && donationForm.memberId ? true : false}
-                            style={{
-                              background: donationForm.isMember && donationForm.memberId ? "#f9fafb" : "#fff",
-                              cursor: donationForm.isMember && donationForm.memberId ? "not-allowed" : "text",
-                              border: donationFieldErrors.donorName ? "2px solid #ef4444" : undefined
-                            }}
-                          />
-                          {donationForm.isMember && donationForm.memberId && (
-                            <span style={{ fontSize: "0.75rem", color: "#666", marginTop: "4px", display: "block" }}>
-                              Donor name is automatically set from selected member
-                            </span>
-                          )}
-                        </label>
-                        <label>
-                          <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            value={donationForm.amount}
-                            onChange={(e) => {
-                              const value = e.target.value.replace(/[^0-9.]/g, "");
-                              setDonationForm({ ...donationForm, amount: value });
-                              if (donationFieldErrors.amount) {
-                                setDonationFieldErrors(prev => ({ ...prev, amount: false }));
-                                if (currentInvalidDonationField === "amount") {
-                                  setCurrentInvalidDonationField(null);
-                                }
+
+                              const uploadData = await uploadResponse.json();
+                              if (!uploadData.url) {
+                                throw new Error("No URL returned from upload. Please try again.");
                               }
-                            }}
-                            placeholder="100"
-                            required
-                            style={{
-                              border: donationFieldErrors.amount ? "2px solid #ef4444" : undefined
-                            }}
-                          />
-                        </label>
-                      </div>
-                      <div style={{ marginBottom: "20px" }}>
-                        <label style={{ 
-                          display: "block", 
-                          fontSize: "0.875rem", 
-                          fontWeight: "600", 
-                          color: "#333", 
-                          marginBottom: "12px" 
-                        }}>
-                          Donor Type
-                        </label>
-                        <div style={{ 
-                          display: "flex", 
-                          gap: "12px",
-                          flexWrap: "wrap"
-                        }}>
-                          <button
-                            type="button"
-                            onClick={() => setDonationForm({ ...donationForm, isMember: true, memberId: "", donorName: donationForm.donorName })}
-                            style={{
-                              flex: "1",
-                              minWidth: "150px",
-                              padding: "14px 20px",
-                              borderRadius: "4px",
-                              border: "none",
-                              background: donationForm.isMember ? "#5a31ea" : "#f8f9ff",
-                              color: donationForm.isMember ? "#ffffff" : "#1a1a1a",
-                              boxShadow: donationForm.isMember ? "0 4px 12px rgba(90, 49, 234, 0.3)" : "0 2px 4px rgba(90, 49, 234, 0.08)",
-                              fontWeight: "600",
-                              fontSize: "0.9375rem",
-                              cursor: "pointer",
-                              transition: "all 0.2s ease",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              gap: "8px"
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!donationForm.isMember) {
-                                e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.15)";
-                                e.currentTarget.style.background = "#f8f8f8";
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (!donationForm.isMember) {
-                                e.currentTarget.style.borderColor = "#e0e0e0";
-                                e.currentTarget.style.background = "#fff";
-                              }
-                            }}
-                          >
-                            <span style={{ color: donationForm.isMember ? "#ffffff" : "inherit" }}>👤</span>
-                            <span style={{ color: donationForm.isMember ? "#ffffff" : "inherit" }}>Member</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDonationForm({ ...donationForm, isMember: false, memberId: "", donorName: donationForm.donorName })}
-                            style={{
-                              flex: "1",
-                              minWidth: "150px",
-                              padding: "14px 20px",
-                              borderRadius: "4px",
-                              border: "none",
-                              background: !donationForm.isMember ? "#5a31ea" : "#f8f9ff",
-                              color: !donationForm.isMember ? "#ffffff" : "#1a1a1a",
-                              boxShadow: !donationForm.isMember ? "0 4px 12px rgba(90, 49, 234, 0.3)" : "0 2px 4px rgba(90, 49, 234, 0.08)",
-                              fontWeight: "600",
-                              fontSize: "0.9375rem",
-                              cursor: "pointer",
-                              transition: "all 0.2s ease",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              gap: "8px"
-                            }}
-                            onMouseEnter={(e) => {
-                              if (donationForm.isMember) {
-                                e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.15)";
-                                e.currentTarget.style.background = "#f8f8f8";
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (donationForm.isMember) {
-                                e.currentTarget.style.borderColor = "#e0e0e0";
-                                e.currentTarget.style.background = "#fff";
-                              }
-                            }}
-                          >
-                            <span style={{ color: !donationForm.isMember ? "#ffffff" : "inherit" }}>🌐</span>
-                            <span style={{ color: !donationForm.isMember ? "#ffffff" : "inherit" }}>Non-Member</span>
-                          </button>
-                        </div>
-                      </div>
-                      {donationForm.isMember && (
-                        <div style={{ marginBottom: "16px" }}>
+                              imageUrl = uploadData.url;
+                            }
+
+                            await addDonation({
+                              ...donationForm,
+                              amount: amountNum.toFixed(2),
+                              screenshot: imageUrl,
+                            });
+                            showToast("Donation added successfully!");
+                            setShowDonationForm(false);
+                            setDonationForm({
+                              donorName: "",
+                              isMember: false,
+                              memberId: "",
+                              amount: "",
+                              method: "",
+                              date: "",
+                              notes: "",
+                              reference: "",
+                              screenshot: "",
+                            });
+                            setDonationImageFile(null);
+                            setDonationImagePreview(null);
+                            setDonationMemberSearch("");
+                            setShowDonationMemberDropdown(false);
+                            await fetchDonations();
+                          } catch (error) {
+                            showToast(error.message || "Failed to add donation", "error");
+                          }
+                        }}
+                      >
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
                           <label>
-                            Select Member <span style={{ color: "#ef4444" }}>*</span>
-                            <div style={{ position: "relative" }} data-donation-member-dropdown>
+                            <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donor Name <span style={{ color: "#ef4444" }}>*</span></span>
+                            <input
+                              type="text"
+                              value={donationForm.donorName}
+                              onChange={(e) => {
+                                setDonationForm({ ...donationForm, donorName: e.target.value });
+                                if (donationFieldErrors.donorName) {
+                                  setDonationFieldErrors(prev => ({ ...prev, donorName: false }));
+                                  if (currentInvalidDonationField === "donorName") {
+                                    setCurrentInvalidDonationField(null);
+                                  }
+                                }
+                              }}
+                              required
+                              placeholder={donationForm.isMember ? "Will be filled automatically when member is selected" : "Enter donor name"}
+                              disabled={donationForm.isMember && donationForm.memberId ? true : false}
+                              style={{
+                                background: donationForm.isMember && donationForm.memberId ? "#f9fafb" : "#fff",
+                                cursor: donationForm.isMember && donationForm.memberId ? "not-allowed" : "text",
+                                border: donationFieldErrors.donorName ? "2px solid #ef4444" : undefined
+                              }}
+                            />
+                            {donationForm.isMember && donationForm.memberId && (
+                              <span style={{ fontSize: "0.75rem", color: "#666", marginTop: "4px", display: "block" }}>
+                                Donor name is automatically set from selected member
+                              </span>
+                            )}
+                          </label>
+                          <label>
+                            <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              value={donationForm.amount}
+                              onChange={(e) => {
+                                const value = e.target.value.replace(/[^0-9.]/g, "");
+                                setDonationForm({ ...donationForm, amount: value });
+                                if (donationFieldErrors.amount) {
+                                  setDonationFieldErrors(prev => ({ ...prev, amount: false }));
+                                  if (currentInvalidDonationField === "amount") {
+                                    setCurrentInvalidDonationField(null);
+                                  }
+                                }
+                              }}
+                              placeholder="100"
+                              required
+                              style={{
+                                border: donationFieldErrors.amount ? "2px solid #ef4444" : undefined
+                              }}
+                            />
+                          </label>
+                        </div>
+                        <div style={{ marginBottom: "20px" }}>
+                          <label style={{
+                            display: "block",
+                            fontSize: "0.875rem",
+                            fontWeight: "600",
+                            color: "#333",
+                            marginBottom: "12px"
+                          }}>
+                            Donor Type
+                          </label>
+                          <div style={{
+                            display: "flex",
+                            gap: "12px",
+                            flexWrap: "wrap"
+                          }}>
+                            <button
+                              type="button"
+                              onClick={() => setDonationForm({ ...donationForm, isMember: true, memberId: "", donorName: donationForm.donorName })}
+                              style={{
+                                flex: "1",
+                                minWidth: "150px",
+                                padding: "14px 20px",
+                                borderRadius: "4px",
+                                border: "none",
+                                background: donationForm.isMember ? "#5a31ea" : "#f8f9ff",
+                                color: donationForm.isMember ? "#ffffff" : "#1a1a1a",
+                                boxShadow: donationForm.isMember ? "0 4px 12px rgba(90, 49, 234, 0.3)" : "0 2px 4px rgba(90, 49, 234, 0.08)",
+                                fontWeight: "600",
+                                fontSize: "0.9375rem",
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: "8px"
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!donationForm.isMember) {
+                                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.15)";
+                                  e.currentTarget.style.background = "#f8f8f8";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!donationForm.isMember) {
+                                  e.currentTarget.style.borderColor = "#e0e0e0";
+                                  e.currentTarget.style.background = "#fff";
+                                }
+                              }}
+                            >
+                              <span style={{ color: donationForm.isMember ? "#ffffff" : "inherit" }}>👤</span>
+                              <span style={{ color: donationForm.isMember ? "#ffffff" : "inherit" }}>Member</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDonationForm({ ...donationForm, isMember: false, memberId: "", donorName: donationForm.donorName })}
+                              style={{
+                                flex: "1",
+                                minWidth: "150px",
+                                padding: "14px 20px",
+                                borderRadius: "4px",
+                                border: "none",
+                                background: !donationForm.isMember ? "#5a31ea" : "#f8f9ff",
+                                color: !donationForm.isMember ? "#ffffff" : "#1a1a1a",
+                                boxShadow: !donationForm.isMember ? "0 4px 12px rgba(90, 49, 234, 0.3)" : "0 2px 4px rgba(90, 49, 234, 0.08)",
+                                fontWeight: "600",
+                                fontSize: "0.9375rem",
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: "8px"
+                              }}
+                              onMouseEnter={(e) => {
+                                if (donationForm.isMember) {
+                                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(90, 49, 234, 0.15)";
+                                  e.currentTarget.style.background = "#f8f8f8";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (donationForm.isMember) {
+                                  e.currentTarget.style.borderColor = "#e0e0e0";
+                                  e.currentTarget.style.background = "#fff";
+                                }
+                              }}
+                            >
+                              <span style={{ color: !donationForm.isMember ? "#ffffff" : "inherit" }}>🌐</span>
+                              <span style={{ color: !donationForm.isMember ? "#ffffff" : "inherit" }}>Non-Member</span>
+                            </button>
+                          </div>
+                        </div>
+                        {donationForm.isMember && (
+                          <div style={{ marginBottom: "16px" }}>
+                            <label>
+                              Select Member <span style={{ color: "#ef4444" }}>*</span>
+                              <div style={{ position: "relative" }} data-donation-member-dropdown>
+                                <div
+                                  onClick={() => setShowDonationMemberDropdown(!showDonationMemberDropdown)}
+                                  style={{
+                                    padding: "10px 16px",
+                                    border: "1px solid #e0e0e0",
+                                    borderRadius: "4px",
+                                    background: "#fff",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    color: donationForm.memberId ? "#000" : "#999",
+                                    minHeight: "42px"
+                                  }}
+                                >
+                                  <span>
+                                    {donationForm.memberId
+                                      ? (() => {
+                                        const selected = members.find(m => m.id === donationForm.memberId);
+                                        return selected ? `${selected.name} (${selected.id})` : "Select Member";
+                                      })()
+                                      : "Select Member"}
+                                  </span>
+                                  <span style={{
+                                    fontSize: "0.75rem",
+                                    color: "#5a31ea",
+                                    transition: "transform 0.2s ease",
+                                    transform: showDonationMemberDropdown ? "rotate(180deg)" : "rotate(0deg)",
+                                    display: "inline-block"
+                                  }}>▼</span>
+                                </div>
+
+                                {showDonationMemberDropdown && (
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      top: "100%",
+                                      left: 0,
+                                      right: 0,
+                                      background: "#fff",
+                                      border: "1px solid #e0e0e0",
+                                      borderRadius: "4px",
+                                      marginTop: "4px",
+                                      maxHeight: "300px",
+                                      overflow: "hidden",
+                                      zIndex: 1000,
+                                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
+                                    }}
+                                  >
+                                    {/* Search Input */}
+                                    <div style={{
+                                      padding: "12px",
+                                      borderBottom: "1px solid #e0e0e0",
+                                      background: "#f9fafb"
+                                    }}>
+                                      <div style={{ position: "relative" }}>
+                                        <input
+                                          type="text"
+                                          placeholder="🔍 Search member by name or ID..."
+                                          value={donationMemberSearch}
+                                          onChange={(e) => setDonationMemberSearch(e.target.value)}
+                                          onClick={(e) => e.stopPropagation()}
+                                          onKeyDown={(e) => e.stopPropagation()}
+                                          autoFocus
+                                          style={{
+                                            width: "100%",
+                                            padding: "10px 36px 10px 12px",
+                                            border: "1px solid #e0e0e0",
+                                            borderRadius: "4px",
+                                            fontSize: "0.875rem",
+                                            outline: "none",
+                                            background: "#fff",
+                                            transition: "border-color 0.2s"
+                                          }}
+                                          onFocus={(e) => {
+                                            e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1), 0 4px 12px rgba(90, 49, 234, 0.12)";
+                                            e.target.style.boxShadow = "0 0 0 2px rgba(0,0,0,0.05)";
+                                          }}
+                                          onBlur={(e) => {
+                                            e.target.style.borderColor = "#e0e0e0";
+                                            e.target.style.boxShadow = "none";
+                                          }}
+                                        />
+                                        {donationMemberSearch && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setDonationMemberSearch("");
+                                            }}
+                                            style={{
+                                              position: "absolute",
+                                              right: "8px",
+                                              top: "50%",
+                                              transform: "translateY(-50%)",
+                                              background: "none",
+                                              border: "none",
+                                              cursor: "pointer",
+                                              padding: "4px",
+                                              color: "#666",
+                                              fontSize: "0.875rem",
+                                              display: "flex",
+                                              alignItems: "center",
+                                              justifyContent: "center"
+                                            }}
+                                            title="Clear search"
+                                          >
+                                            ✕
+                                          </button>
+                                        )}
+                                      </div>
+                                      {donationMemberSearch && (
+                                        <div style={{
+                                          marginTop: "8px",
+                                          fontSize: "0.75rem",
+                                          color: "#666"
+                                        }}>
+                                          {members.filter(member =>
+                                            !donationMemberSearch ||
+                                            member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                            member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                          ).length} member{members.filter(member =>
+                                            !donationMemberSearch ||
+                                            member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                            member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                          ).length !== 1 ? 's' : ''} found
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Member List */}
+                                    <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+                                      {members
+                                        .filter(member =>
+                                          !donationMemberSearch ||
+                                          member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                          member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                        )
+                                        .map((member) => (
+                                          <div
+                                            key={member.id}
+                                            onClick={() => {
+                                              setDonationForm({
+                                                ...donationForm,
+                                                memberId: member.id,
+                                                donorName: member.name || ""
+                                              });
+                                              setShowDonationMemberDropdown(false);
+                                              setDonationMemberSearch("");
+                                            }}
+                                            style={{
+                                              padding: "12px 16px",
+                                              cursor: "pointer",
+                                              borderBottom: "1px solid #e5e7eb",
+                                              background: donationForm.memberId === member.id ? "#f9fafb" : "#fff",
+                                              transition: "background 0.2s"
+                                            }}
+                                            onMouseEnter={(e) => {
+                                              if (donationForm.memberId !== member.id) {
+                                                e.target.style.background = "#f9f9f9";
+                                              }
+                                            }}
+                                            onMouseLeave={(e) => {
+                                              if (donationForm.memberId !== member.id) {
+                                                e.target.style.background = "#fff";
+                                              }
+                                            }}
+                                          >
+                                            <div style={{ fontWeight: "500", color: "#000" }}>{member.name}</div>
+                                            <div style={{ fontSize: "0.75rem", color: "#666", marginTop: "2px" }}>
+                                              {member.id} {member.email ? `• ${member.email}` : ""}
+                                            </div>
+                                          </div>
+                                        ))}
+
+                                      {members.filter(member =>
+                                        !donationMemberSearch ||
+                                        member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                        member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                      ).length === 0 && (
+                                          <div style={{ padding: "16px", textAlign: "center", color: "#999", fontSize: "0.875rem" }}>
+                                            No members found
+                                          </div>
+                                        )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                              {!donationForm.memberId && (
+                                <span style={{ fontSize: "0.75rem", color: "#ef4444", marginTop: "4px", display: "none" }}>
+                                  Please select a member
+                                </span>
+                              )}
+                            </label>
+                          </div>
+                        )}
+                        <label>
+                          Payment Method <span style={{ color: "#ef4444" }}>*</span>
+                          <div className="donation-payment-method-select-wrapper">
+                            <select
+                              className="donation-payment-method-select-default"
+                              value={donationForm.method}
+                              onChange={(e) => {
+                                setDonationForm({ ...donationForm, method: e.target.value });
+                                if (donationFieldErrors.method) {
+                                  setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                  if (currentInvalidDonationField === "method") {
+                                    setCurrentInvalidDonationField(null);
+                                  }
+                                }
+                              }}
+                              required
+                              style={{
+                                border: donationFieldErrors.method ? "2px solid #ef4444" : undefined
+                              }}
+                            >
+                              <option value="">Select method</option>
+                              <option value="Online Payment">Online Payment</option>
+                              <option value="Cash Payment">Cash Payment</option>
+                            </select>
+
+                            {/* Custom dropdown UI for mobile */}
+                            <div className="donation-payment-method-select-custom" data-donation-payment-method-dropdown>
                               <div
-                                onClick={() => setShowDonationMemberDropdown(!showDonationMemberDropdown)}
+                                onClick={() => setShowDonationPaymentMethodDropdown(!showDonationPaymentMethodDropdown)}
                                 style={{
                                   padding: "10px 16px",
-                                  border: "1px solid #e0e0e0",
+                                  border: donationFieldErrors.method ? "2px solid #ef4444" : "1px solid #e0e0e0",
                                   borderRadius: "4px",
                                   background: "#fff",
                                   cursor: "pointer",
                                   display: "flex",
                                   justifyContent: "space-between",
                                   alignItems: "center",
-                                  color: donationForm.memberId ? "#000" : "#999",
+                                  color: donationForm.method ? "#000" : "#999",
                                   minHeight: "42px"
                                 }}
                               >
                                 <span>
-                                  {donationForm.memberId
-                                    ? (() => {
-                                        const selected = members.find(m => m.id === donationForm.memberId);
-                                        return selected ? `${selected.name} (${selected.id})` : "Select Member";
-                                      })()
-                                    : "Select Member"}
+                                  {donationForm.method || "Select method"}
                                 </span>
-                                <span style={{ 
+                                <span style={{
                                   fontSize: "0.75rem",
                                   color: "#5a31ea",
                                   transition: "transform 0.2s ease",
-                                  transform: showDonationMemberDropdown ? "rotate(180deg)" : "rotate(0deg)",
+                                  transform: showDonationPaymentMethodDropdown ? "rotate(180deg)" : "rotate(0deg)",
                                   display: "inline-block"
                                 }}>▼</span>
                               </div>
-                              
-                              {showDonationMemberDropdown && (
+
+                              {showDonationPaymentMethodDropdown && (
                                 <div
                                   style={{
                                     position: "absolute",
@@ -10544,631 +10799,413 @@ Subscription Manager HK`;
                                     border: "1px solid #e0e0e0",
                                     borderRadius: "4px",
                                     marginTop: "4px",
-                                    maxHeight: "300px",
-                                    overflow: "hidden",
                                     zIndex: 1000,
                                     boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
                                   }}
+                                  onClick={(e) => e.stopPropagation()}
                                 >
-                                  {/* Search Input */}
-                                  <div style={{ 
-                                    padding: "12px", 
-                                    borderBottom: "1px solid #e0e0e0",
-                                    background: "#f9fafb"
-                                  }}>
-                                    <div style={{ position: "relative" }}>
-                                      <input
-                                        type="text"
-                                        placeholder="🔍 Search member by name or ID..."
-                                        value={donationMemberSearch}
-                                        onChange={(e) => setDonationMemberSearch(e.target.value)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onKeyDown={(e) => e.stopPropagation()}
-                                        autoFocus
-                                        style={{
-                                          width: "100%",
-                                          padding: "10px 36px 10px 12px",
-                                          border: "1px solid #e0e0e0",
-                                          borderRadius: "4px",
-                                          fontSize: "0.875rem",
-                                          outline: "none",
-                                          background: "#fff",
-                                          transition: "border-color 0.2s"
-                                        }}
-                                        onFocus={(e) => {
-                                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1), 0 4px 12px rgba(90, 49, 234, 0.12)";
-                                          e.target.style.boxShadow = "0 0 0 2px rgba(0,0,0,0.05)";
-                                        }}
-                                        onBlur={(e) => {
-                                          e.target.style.borderColor = "#e0e0e0";
-                                          e.target.style.boxShadow = "none";
-                                        }}
-                                      />
-                                      {donationMemberSearch && (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setDonationMemberSearch("");
-                                          }}
-                                          style={{
-                                            position: "absolute",
-                                            right: "8px",
-                                            top: "50%",
-                                            transform: "translateY(-50%)",
-                                            background: "none",
-                                            border: "none",
-                                            cursor: "pointer",
-                                            padding: "4px",
-                                            color: "#666",
-                                            fontSize: "0.875rem",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center"
-                                          }}
-                                          title="Clear search"
-                                        >
-                                          ✕
-                                        </button>
-                                      )}
-                                    </div>
-                                    {donationMemberSearch && (
-                                      <div style={{ 
-                                        marginTop: "8px", 
-                                        fontSize: "0.75rem", 
-                                        color: "#666" 
-                                      }}>
-                                        {members.filter(member =>
-                                          !donationMemberSearch ||
-                                          member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                          member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
-                                        ).length} member{members.filter(member =>
-                                          !donationMemberSearch ||
-                                          member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                          member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
-                                        ).length !== 1 ? 's' : ''} found
-                                      </div>
-                                    )}
+                                  <div
+                                    onClick={() => {
+                                      setDonationForm({ ...donationForm, method: "Online Payment" });
+                                      setShowDonationPaymentMethodDropdown(false);
+                                      if (donationFieldErrors.method) {
+                                        setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                        if (currentInvalidDonationField === "method") {
+                                          setCurrentInvalidDonationField(null);
+                                        }
+                                      }
+                                    }}
+                                    style={{
+                                      padding: "12px 16px",
+                                      cursor: "pointer",
+                                      borderBottom: "1px solid #e5e7eb",
+                                      background: donationForm.method === "Online Payment" ? "#f9fafb" : "#fff",
+                                      transition: "background 0.2s",
+                                      color: "#1a1a1a"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (donationForm.method !== "Online Payment") {
+                                        e.currentTarget.style.background = "#f3f4f6";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (donationForm.method !== "Online Payment") {
+                                        e.currentTarget.style.background = "#fff";
+                                      }
+                                    }}
+                                  >
+                                    Online Payment
                                   </div>
-                                  
-                                  {/* Member List */}
-                                  <div style={{ maxHeight: "250px", overflowY: "auto" }}>
-                                    {members
-                                      .filter(member =>
-                                        !donationMemberSearch ||
-                                        member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                        member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
-                                      )
-                                      .map((member) => (
-                                        <div
-                                          key={member.id}
-                                          onClick={() => {
-                                            setDonationForm({ 
-                                              ...donationForm, 
-                                              memberId: member.id,
-                                              donorName: member.name || ""
-                                            });
-                                            setShowDonationMemberDropdown(false);
-                                            setDonationMemberSearch("");
-                                          }}
-                                          style={{
-                                            padding: "12px 16px",
-                                            cursor: "pointer",
-                                            borderBottom: "1px solid #e5e7eb",
-                                            background: donationForm.memberId === member.id ? "#f9fafb" : "#fff",
-                                            transition: "background 0.2s"
-                                          }}
-                                          onMouseEnter={(e) => {
-                                            if (donationForm.memberId !== member.id) {
-                                              e.target.style.background = "#f9f9f9";
-                                            }
-                                          }}
-                                          onMouseLeave={(e) => {
-                                            if (donationForm.memberId !== member.id) {
-                                              e.target.style.background = "#fff";
-                                            }
-                                          }}
-                                        >
-                                          <div style={{ fontWeight: "500", color: "#000" }}>{member.name}</div>
-                                          <div style={{ fontSize: "0.75rem", color: "#666", marginTop: "2px" }}>
-                                            {member.id} {member.email ? `• ${member.email}` : ""}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    
-                                    {members.filter(member =>
-                                      !donationMemberSearch ||
-                                      member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                      member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
-                                    ).length === 0 && (
-                                      <div style={{ padding: "16px", textAlign: "center", color: "#999", fontSize: "0.875rem" }}>
-                                        No members found
-                                      </div>
-                                    )}
+                                  <div
+                                    onClick={() => {
+                                      setDonationForm({ ...donationForm, method: "Cash Payment" });
+                                      setShowDonationPaymentMethodDropdown(false);
+                                      if (donationFieldErrors.method) {
+                                        setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                        if (currentInvalidDonationField === "method") {
+                                          setCurrentInvalidDonationField(null);
+                                        }
+                                      }
+                                    }}
+                                    style={{
+                                      padding: "12px 16px",
+                                      cursor: "pointer",
+                                      background: donationForm.method === "Cash Payment" ? "#f9fafb" : "#fff",
+                                      transition: "background 0.2s",
+                                      color: "#1a1a1a"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (donationForm.method !== "Cash Payment") {
+                                        e.currentTarget.style.background = "#f3f4f6";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (donationForm.method !== "Cash Payment") {
+                                        e.currentTarget.style.background = "#fff";
+                                      }
+                                    }}
+                                  >
+                                    Cash Payment
                                   </div>
                                 </div>
                               )}
                             </div>
-                            {!donationForm.memberId && (
-                              <span style={{ fontSize: "0.75rem", color: "#ef4444", marginTop: "4px", display: "none" }}>
-                                Please select a member
-                              </span>
-                            )}
+                          </div>
+                        </label>
+
+                        {/* Proof Image - Required for Cash Payment */}
+                        {donationForm.method === "Cash Payment" && (
+                          <label style={{ gridColumn: "1 / -1" }}>
+                            Proof Image <span style={{ color: "#ef4444" }}>*</span>
+                            <div
+                              style={{
+                                border: donationFieldErrors.screenshot ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
+                                borderRadius: "4px",
+                                padding: "24px",
+                                textAlign: "center",
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                                background: donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa",
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!donationFieldErrors.screenshot) {
+                                  e.currentTarget.style.borderColor = "#5a31ea";
+                                }
+                                e.currentTarget.style.background = "#f8f9ff";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = donationFieldErrors.screenshot ? "#ef4444" : "#d0d0d0";
+                                e.currentTarget.style.background = donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa";
+                              }}
+                              onClick={() => {
+                                const input = document.createElement("input");
+                                input.type = "file";
+                                input.accept = "image/*";
+                                input.onchange = async (e) => {
+                                  const file = e.target.files[0];
+                                  if (!file) return;
+
+                                  if (!file.type.startsWith("image/")) {
+                                    showToast("Please upload an image file", "error");
+                                    return;
+                                  }
+
+                                  // Create preview
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setDonationImageFile(file);
+                                    setDonationImagePreview(reader.result);
+                                    if (donationFieldErrors.screenshot) {
+                                      setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
+                                      if (currentInvalidDonationField === "screenshot") {
+                                        setCurrentInvalidDonationField(null);
+                                      }
+                                    }
+                                  };
+                                  reader.readAsDataURL(file);
+                                };
+                                input.click();
+                              }}
+                            >
+                              {donationImagePreview || donationForm.screenshot ? (
+                                <div style={{ position: "relative", display: "inline-block" }}>
+                                  <img
+                                    src={donationImagePreview || donationForm.screenshot}
+                                    alt="Preview"
+                                    style={{
+                                      maxWidth: "100%",
+                                      maxHeight: "200px",
+                                      borderRadius: "4px",
+                                      marginBottom: "8px"
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setDonationImageFile(null);
+                                      setDonationImagePreview(null);
+                                      setDonationForm({ ...donationForm, screenshot: "" });
+                                      if (donationFieldErrors.screenshot) {
+                                        setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
+                                        if (currentInvalidDonationField === "screenshot") {
+                                          setCurrentInvalidDonationField(null);
+                                        }
+                                      }
+                                    }}
+                                    style={{
+                                      position: "absolute",
+                                      top: "8px",
+                                      right: "8px",
+                                      background: "#ef4444",
+                                      color: "#fff",
+                                      border: "none",
+                                      borderRadius: "50%",
+                                      width: "28px",
+                                      height: "28px",
+                                      cursor: "pointer",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: "0.875rem",
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                  <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
+                                    Click to change image
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <i className="fas fa-cloud-upload-alt" style={{
+                                    fontSize: "2rem",
+                                    color: "#5a31ea",
+                                    marginBottom: "8px"
+                                  }}></i>
+                                  <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
+                                    Click to upload image
+                                  </div>
+                                  <div style={{ fontSize: "0.75rem", color: "#999", marginTop: "4px" }}>
+                                    PNG, JPG, GIF up to 10MB
+                                  </div>
+                                </>
+                              )}
+                            </div>
                           </label>
-                        </div>
-                      )}
-                      <label>
-                        Payment Method <span style={{ color: "#ef4444" }}>*</span>
-                        <div className="donation-payment-method-select-wrapper">
-                          <select
-                            className="donation-payment-method-select-default"
-                            value={donationForm.method}
+                        )}
+
+                        {/* Proof Image - Also required for Online Payment */}
+                        {donationForm.method === "Online Payment" && (
+                          <label style={{ gridColumn: "1 / -1" }}>
+                            Proof Image <span style={{ color: "#ef4444" }}>*</span>
+                            <div
+                              style={{
+                                border: donationFieldErrors.screenshot ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
+                                borderRadius: "4px",
+                                padding: "24px",
+                                textAlign: "center",
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                                background: donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa",
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!donationFieldErrors.screenshot) {
+                                  e.currentTarget.style.borderColor = "#5a31ea";
+                                }
+                                e.currentTarget.style.background = "#f8f9ff";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = donationFieldErrors.screenshot ? "#ef4444" : "#d0d0d0";
+                                e.currentTarget.style.background = donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa";
+                              }}
+                              onClick={() => {
+                                const input = document.createElement("input");
+                                input.type = "file";
+                                input.accept = "image/*";
+                                input.onchange = async (e) => {
+                                  const file = e.target.files[0];
+                                  if (!file) return;
+
+                                  if (!file.type.startsWith("image/")) {
+                                    showToast("Please upload an image file", "error");
+                                    return;
+                                  }
+
+                                  // Create preview
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setDonationImageFile(file);
+                                    setDonationImagePreview(reader.result);
+                                    if (donationFieldErrors.screenshot) {
+                                      setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
+                                      if (currentInvalidDonationField === "screenshot") {
+                                        setCurrentInvalidDonationField(null);
+                                      }
+                                    }
+                                  };
+                                  reader.readAsDataURL(file);
+                                };
+                                input.click();
+                              }}
+                            >
+                              {donationImagePreview || donationForm.screenshot ? (
+                                <div style={{ position: "relative", display: "inline-block" }}>
+                                  <img
+                                    src={donationImagePreview || donationForm.screenshot}
+                                    alt="Preview"
+                                    style={{
+                                      maxWidth: "100%",
+                                      maxHeight: "200px",
+                                      borderRadius: "4px",
+                                      marginBottom: "8px"
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setDonationImageFile(null);
+                                      setDonationImagePreview(null);
+                                      setDonationForm({ ...donationForm, screenshot: "" });
+                                      if (donationFieldErrors.screenshot) {
+                                        setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
+                                        if (currentInvalidDonationField === "screenshot") {
+                                          setCurrentInvalidDonationField(null);
+                                        }
+                                      }
+                                    }}
+                                    style={{
+                                      position: "absolute",
+                                      top: "8px",
+                                      right: "8px",
+                                      background: "#ef4444",
+                                      color: "#fff",
+                                      border: "none",
+                                      borderRadius: "50%",
+                                      width: "28px",
+                                      height: "28px",
+                                      cursor: "pointer",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontSize: "0.875rem",
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                  <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
+                                    Click to change image
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <i className="fas fa-cloud-upload-alt" style={{
+                                    fontSize: "2rem",
+                                    color: "#5a31ea",
+                                    marginBottom: "8px"
+                                  }}></i>
+                                  <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
+                                    Click to upload image
+                                  </div>
+                                  <div style={{ fontSize: "0.75rem", color: "#999", marginTop: "4px" }}>
+                                    PNG, JPG, GIF up to 10MB
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </label>
+                        )}
+
+                        <label>
+                          <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date <span style={{ color: "#ef4444" }}>*</span></span>
+                          <input
+                            type="date"
+                            value={donationForm.date}
                             onChange={(e) => {
-                              setDonationForm({ ...donationForm, method: e.target.value });
-                              if (donationFieldErrors.method) {
-                                setDonationFieldErrors(prev => ({ ...prev, method: false }));
-                                if (currentInvalidDonationField === "method") {
+                              const selectedDate = e.target.value;
+                              setDonationForm({ ...donationForm, date: selectedDate });
+                              if (donationFieldErrors.date) {
+                                setDonationFieldErrors(prev => ({ ...prev, date: false }));
+                                if (currentInvalidDonationField === "date") {
                                   setCurrentInvalidDonationField(null);
+                                }
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const dateValue = e.target.value;
+                              if (dateValue) {
+                                const date = new Date(dateValue);
+                                if (isNaN(date.getTime())) {
+                                  showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
+                                  return;
+                                }
+                                // Validate date components
+                                const [year, month, day] = dateValue.split('-').map(Number);
+                                if (month < 1 || month > 12) {
+                                  showToast("Invalid month. Please enter a month between 01 and 12", "error");
+                                  return;
+                                }
+                                if (day < 1 || day > 31) {
+                                  showToast("Invalid day. Please enter a valid day for the selected month", "error");
+                                  return;
+                                }
+                                // Check if day is valid for the month
+                                const daysInMonth = new Date(year, month, 0).getDate();
+                                if (day > daysInMonth) {
+                                  showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
+                                  return;
                                 }
                               }
                             }}
                             required
                             style={{
-                              border: donationFieldErrors.method ? "2px solid #ef4444" : undefined
+                              borderRadius: "4px",
+                              width: "100%",
+                              border: donationFieldErrors.date ? "2px solid #ef4444" : undefined
+                            }}
+                          />
+                        </label>
+
+                        <label>
+                          Notes (Optional)
+                          <textarea
+                            value={donationForm.notes}
+                            onChange={(e) => setDonationForm({ ...donationForm, notes: e.target.value })}
+                            rows={3}
+                            placeholder="Additional notes about this donation..."
+                          />
+                        </label>
+                        <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
+                          <button type="submit" className="primary-btn">
+                            Save Donation
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-btn"
+                            onClick={() => {
+                              setShowDonationForm(false);
+                              setDonationForm({
+                                donorName: "",
+                                isMember: false,
+                                memberId: "",
+                                amount: "",
+                                method: "",
+                                date: "",
+                                notes: "",
+                                reference: "",
+                                screenshot: "",
+                              });
+                              setDonationImageFile(null);
+                              setDonationImagePreview(null);
+                              setDonationMemberSearch("");
+                              setShowDonationMemberDropdown(false);
                             }}
                           >
-                            <option value="">Select method</option>
-                            <option value="Online Payment">Online Payment</option>
-                            <option value="Cash Payment">Cash Payment</option>
-                          </select>
-                          
-                          {/* Custom dropdown UI for mobile */}
-                          <div className="donation-payment-method-select-custom" data-donation-payment-method-dropdown>
-                            <div
-                              onClick={() => setShowDonationPaymentMethodDropdown(!showDonationPaymentMethodDropdown)}
-                              style={{
-                                padding: "10px 16px",
-                                border: donationFieldErrors.method ? "2px solid #ef4444" : "1px solid #e0e0e0",
-                                borderRadius: "4px",
-                                background: "#fff",
-                                cursor: "pointer",
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                color: donationForm.method ? "#000" : "#999",
-                                minHeight: "42px"
-                              }}
-                            >
-                              <span>
-                                {donationForm.method || "Select method"}
-                              </span>
-                              <span style={{ 
-                                fontSize: "0.75rem",
-                                color: "#5a31ea",
-                                transition: "transform 0.2s ease",
-                                transform: showDonationPaymentMethodDropdown ? "rotate(180deg)" : "rotate(0deg)",
-                                display: "inline-block"
-                              }}>▼</span>
-                            </div>
-                            
-                            {showDonationPaymentMethodDropdown && (
-                              <div
-                                style={{
-                                  position: "absolute",
-                                  top: "100%",
-                                  left: 0,
-                                  right: 0,
-                                  background: "#fff",
-                                  border: "1px solid #e0e0e0",
-                                  borderRadius: "4px",
-                                  marginTop: "4px",
-                                  zIndex: 1000,
-                                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <div
-                                  onClick={() => {
-                                    setDonationForm({ ...donationForm, method: "Online Payment" });
-                                    setShowDonationPaymentMethodDropdown(false);
-                                    if (donationFieldErrors.method) {
-                                      setDonationFieldErrors(prev => ({ ...prev, method: false }));
-                                      if (currentInvalidDonationField === "method") {
-                                        setCurrentInvalidDonationField(null);
-                                      }
-                                    }
-                                  }}
-                                  style={{
-                                    padding: "12px 16px",
-                                    cursor: "pointer",
-                                    borderBottom: "1px solid #e5e7eb",
-                                    background: donationForm.method === "Online Payment" ? "#f9fafb" : "#fff",
-                                    transition: "background 0.2s",
-                                    color: "#1a1a1a"
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (donationForm.method !== "Online Payment") {
-                                      e.currentTarget.style.background = "#f3f4f6";
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (donationForm.method !== "Online Payment") {
-                                      e.currentTarget.style.background = "#fff";
-                                    }
-                                  }}
-                                >
-                                  Online Payment
-                                </div>
-                                <div
-                                  onClick={() => {
-                                    setDonationForm({ ...donationForm, method: "Cash Payment" });
-                                    setShowDonationPaymentMethodDropdown(false);
-                                    if (donationFieldErrors.method) {
-                                      setDonationFieldErrors(prev => ({ ...prev, method: false }));
-                                      if (currentInvalidDonationField === "method") {
-                                        setCurrentInvalidDonationField(null);
-                                      }
-                                    }
-                                  }}
-                                  style={{
-                                    padding: "12px 16px",
-                                    cursor: "pointer",
-                                    background: donationForm.method === "Cash Payment" ? "#f9fafb" : "#fff",
-                                    transition: "background 0.2s",
-                                    color: "#1a1a1a"
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (donationForm.method !== "Cash Payment") {
-                                      e.currentTarget.style.background = "#f3f4f6";
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (donationForm.method !== "Cash Payment") {
-                                      e.currentTarget.style.background = "#fff";
-                                    }
-                                  }}
-                                >
-                                  Cash Payment
-                                </div>
-                              </div>
-                            )}
-                          </div>
+                            Cancel
+                          </button>
                         </div>
-                      </label>
-
-                      {/* Proof Image - Required for Cash Payment */}
-                      {donationForm.method === "Cash Payment" && (
-                        <label style={{ gridColumn: "1 / -1" }}>
-                          Proof Image <span style={{ color: "#ef4444" }}>*</span>
-                          <div
-                            style={{
-                              border: donationFieldErrors.screenshot ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
-                              borderRadius: "4px",
-                              padding: "24px",
-                              textAlign: "center",
-                              cursor: "pointer",
-                              transition: "all 0.2s ease",
-                              background: donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa",
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!donationFieldErrors.screenshot) {
-                                e.currentTarget.style.borderColor = "#5a31ea";
-                              }
-                              e.currentTarget.style.background = "#f8f9ff";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = donationFieldErrors.screenshot ? "#ef4444" : "#d0d0d0";
-                              e.currentTarget.style.background = donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa";
-                            }}
-                            onClick={() => {
-                              const input = document.createElement("input");
-                              input.type = "file";
-                              input.accept = "image/*";
-                              input.onchange = async (e) => {
-                                const file = e.target.files[0];
-                                if (!file) return;
-
-                                if (!file.type.startsWith("image/")) {
-                                  showToast("Please upload an image file", "error");
-                                  return;
-                                }
-
-                                // Create preview
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setDonationImageFile(file);
-                                  setDonationImagePreview(reader.result);
-                                  if (donationFieldErrors.screenshot) {
-                                    setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
-                                    if (currentInvalidDonationField === "screenshot") {
-                                      setCurrentInvalidDonationField(null);
-                                    }
-                                  }
-                                };
-                                reader.readAsDataURL(file);
-                              };
-                              input.click();
-                            }}
-                          >
-                            {donationImagePreview || donationForm.screenshot ? (
-                              <div style={{ position: "relative", display: "inline-block" }}>
-                                <img 
-                                  src={donationImagePreview || donationForm.screenshot} 
-                                  alt="Preview" 
-                                  style={{ 
-                                    maxWidth: "100%", 
-                                    maxHeight: "200px", 
-                                    borderRadius: "4px",
-                                    marginBottom: "8px"
-                                  }} 
-                                />
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setDonationImageFile(null);
-                                    setDonationImagePreview(null);
-                                    setDonationForm({ ...donationForm, screenshot: "" });
-                                    if (donationFieldErrors.screenshot) {
-                                      setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
-                                      if (currentInvalidDonationField === "screenshot") {
-                                        setCurrentInvalidDonationField(null);
-                                      }
-                                    }
-                                  }}
-                                  style={{
-                                    position: "absolute",
-                                    top: "8px",
-                                    right: "8px",
-                                    background: "#ef4444",
-                                    color: "#fff",
-                                    border: "none",
-                                    borderRadius: "50%",
-                                    width: "28px",
-                                    height: "28px",
-                                    cursor: "pointer",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontSize: "0.875rem",
-                                  }}
-                                >
-                                  ×
-                                </button>
-                                <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
-                                  Click to change image
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <i className="fas fa-cloud-upload-alt" style={{ 
-                                  fontSize: "2rem", 
-                                  color: "#5a31ea", 
-                                  marginBottom: "8px" 
-                                }}></i>
-                                <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
-                                  Click to upload image
-                                </div>
-                                <div style={{ fontSize: "0.75rem", color: "#999", marginTop: "4px" }}>
-                                  PNG, JPG, GIF up to 10MB
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </label>
-                      )}
-
-                      {/* Proof Image - Also required for Online Payment */}
-                      {donationForm.method === "Online Payment" && (
-                        <label style={{ gridColumn: "1 / -1" }}>
-                          Proof Image <span style={{ color: "#ef4444" }}>*</span>
-                          <div
-                            style={{
-                              border: donationFieldErrors.screenshot ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
-                              borderRadius: "4px",
-                              padding: "24px",
-                              textAlign: "center",
-                              cursor: "pointer",
-                              transition: "all 0.2s ease",
-                              background: donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa",
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!donationFieldErrors.screenshot) {
-                                e.currentTarget.style.borderColor = "#5a31ea";
-                              }
-                              e.currentTarget.style.background = "#f8f9ff";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = donationFieldErrors.screenshot ? "#ef4444" : "#d0d0d0";
-                              e.currentTarget.style.background = donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa";
-                            }}
-                            onClick={() => {
-                              const input = document.createElement("input");
-                              input.type = "file";
-                              input.accept = "image/*";
-                              input.onchange = async (e) => {
-                                const file = e.target.files[0];
-                                if (!file) return;
-
-                                if (!file.type.startsWith("image/")) {
-                                  showToast("Please upload an image file", "error");
-                                  return;
-                                }
-
-                                // Create preview
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setDonationImageFile(file);
-                                  setDonationImagePreview(reader.result);
-                                  if (donationFieldErrors.screenshot) {
-                                    setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
-                                    if (currentInvalidDonationField === "screenshot") {
-                                      setCurrentInvalidDonationField(null);
-                                    }
-                                  }
-                                };
-                                reader.readAsDataURL(file);
-                              };
-                              input.click();
-                            }}
-                          >
-                            {donationImagePreview || donationForm.screenshot ? (
-                              <div style={{ position: "relative", display: "inline-block" }}>
-                                <img 
-                                  src={donationImagePreview || donationForm.screenshot} 
-                                  alt="Preview" 
-                                  style={{ 
-                                    maxWidth: "100%", 
-                                    maxHeight: "200px", 
-                                    borderRadius: "4px",
-                                    marginBottom: "8px"
-                                  }} 
-                                />
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setDonationImageFile(null);
-                                    setDonationImagePreview(null);
-                                    setDonationForm({ ...donationForm, screenshot: "" });
-                                    if (donationFieldErrors.screenshot) {
-                                      setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
-                                      if (currentInvalidDonationField === "screenshot") {
-                                        setCurrentInvalidDonationField(null);
-                                      }
-                                    }
-                                  }}
-                                  style={{
-                                    position: "absolute",
-                                    top: "8px",
-                                    right: "8px",
-                                    background: "#ef4444",
-                                    color: "#fff",
-                                    border: "none",
-                                    borderRadius: "50%",
-                                    width: "28px",
-                                    height: "28px",
-                                    cursor: "pointer",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontSize: "0.875rem",
-                                  }}
-                                >
-                                  ×
-                                </button>
-                                <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
-                                  Click to change image
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <i className="fas fa-cloud-upload-alt" style={{ 
-                                  fontSize: "2rem", 
-                                  color: "#5a31ea", 
-                                  marginBottom: "8px" 
-                                }}></i>
-                                <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
-                                  Click to upload image
-                                </div>
-                                <div style={{ fontSize: "0.75rem", color: "#999", marginTop: "4px" }}>
-                                  PNG, JPG, GIF up to 10MB
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </label>
-                      )}
-
-                      <label>
-                        <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date <span style={{ color: "#ef4444" }}>*</span></span>
-                        <input
-                          type="date"
-                          value={donationForm.date}
-                          onChange={(e) => {
-                            const selectedDate = e.target.value;
-                            setDonationForm({ ...donationForm, date: selectedDate });
-                            if (donationFieldErrors.date) {
-                              setDonationFieldErrors(prev => ({ ...prev, date: false }));
-                              if (currentInvalidDonationField === "date") {
-                                setCurrentInvalidDonationField(null);
-                              }
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const dateValue = e.target.value;
-                            if (dateValue) {
-                              const date = new Date(dateValue);
-                              if (isNaN(date.getTime())) {
-                                showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
-                                return;
-                              }
-                              // Validate date components
-                              const [year, month, day] = dateValue.split('-').map(Number);
-                              if (month < 1 || month > 12) {
-                                showToast("Invalid month. Please enter a month between 01 and 12", "error");
-                                return;
-                              }
-                              if (day < 1 || day > 31) {
-                                showToast("Invalid day. Please enter a valid day for the selected month", "error");
-                                return;
-                              }
-                              // Check if day is valid for the month
-                              const daysInMonth = new Date(year, month, 0).getDate();
-                              if (day > daysInMonth) {
-                                showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
-                                return;
-                              }
-                            }
-                          }}
-                          required
-                          style={{ 
-                            borderRadius: "4px", 
-                            width: "100%",
-                            border: donationFieldErrors.date ? "2px solid #ef4444" : undefined
-                          }}
-                        />
-                      </label>
-
-                      <label>
-                        Notes (Optional)
-                        <textarea
-                          value={donationForm.notes}
-                          onChange={(e) => setDonationForm({ ...donationForm, notes: e.target.value })}
-                          rows={3}
-                          placeholder="Additional notes about this donation..."
-                        />
-                      </label>
-                      <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
-                        <button type="submit" className="primary-btn">
-                          Save Donation
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost-btn"
-                          onClick={() => {
-                          setShowDonationForm(false);
-                          setDonationForm({
-                            donorName: "",
-                            isMember: false,
-                            memberId: "",
-                            amount: "",
-                            method: "",
-                            date: "",
-                            notes: "",
-                            reference: "",
-                            screenshot: "",
-                          });
-                          setDonationImageFile(null);
-                          setDonationImagePreview(null);
-                          setDonationMemberSearch("");
-                          setShowDonationMemberDropdown(false);
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
+                      </form>
                     </div>
                   </div>
                 )}
@@ -11182,7 +11219,7 @@ Subscription Manager HK`;
                       const val = parseFloat(d?.amount || 0);
                       return sum + (isNaN(val) ? 0 : val);
                     }, 0);
-                    
+
                     return (
                       <div className="admin-dashboard-kpi-card" style={{ maxWidth: "400px" }}>
                         <div className="admin-dashboard-kpi-header">
@@ -11192,10 +11229,7 @@ Subscription Manager HK`;
                           <div className="admin-dashboard-kpi-content">
                             <div className="admin-dashboard-kpi-label">Total Donation</div>
                             <div className="admin-dashboard-kpi-value">
-                              HK${formatNumber(totalDonationAmount, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
+                              {formatCurrency(totalDonationAmount)}
                             </div>
                             <div className="admin-dashboard-kpi-description">
                               {filteredDonations.length} donation{filteredDonations.length !== 1 ? 's' : ''} recorded
@@ -11210,8 +11244,8 @@ Subscription Manager HK`;
                 {/* Donations Table */}
                 <div className="card-donations">
                   {!donations || (Array.isArray(donations) && donations.length === 0) ? (
-                    <div style={{ 
-                      textAlign: "center", 
+                    <div style={{
+                      textAlign: "center",
                       padding: "60px 20px",
                       color: "#666"
                     }}>
@@ -11227,14 +11261,14 @@ Subscription Manager HK`;
                         // Filter donations
                         const donationsArray = Array.isArray(donations) ? donations : [];
                         const filteredDonations = donationsArray.filter(donation => donation !== null);
-                        
+
                         // Calculate pagination
                         const totalPages = Math.ceil(filteredDonations.length / donationsPageSize) || 1;
                         const currentPage = Math.min(donationsPage, totalPages);
                         const startIndex = (currentPage - 1) * donationsPageSize;
                         const endIndex = startIndex + donationsPageSize;
                         const paginatedDonations = filteredDonations.slice(startIndex, endIndex);
-                        
+
                         return (
                           <>
                             <div style={{ marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
@@ -11248,10 +11282,10 @@ Subscription Manager HK`;
                                         d.date ||
                                         (d.createdAt
                                           ? new Date(d.createdAt).toLocaleDateString("en-GB", {
-                                              day: "2-digit",
-                                              month: "short",
-                                              year: "numeric",
-                                            })
+                                            day: "2-digit",
+                                            month: "short",
+                                            year: "numeric",
+                                          })
                                           : "N/A"),
                                       DonorName: d.donorName || "",
                                       Type: d.isMember ? "Member" : "Non-Member",
@@ -11305,10 +11339,10 @@ Subscription Manager HK`;
                                   donation.date ||
                                   (donation.createdAt
                                     ? new Date(donation.createdAt).toLocaleDateString("en-GB", {
-                                        day: "2-digit",
-                                        month: "short",
-                                        year: "numeric",
-                                      })
+                                      day: "2-digit",
+                                      month: "short",
+                                      year: "numeric",
+                                    })
                                     : "N/A");
 
                                 return {
@@ -11321,9 +11355,9 @@ Subscription Manager HK`;
                                   ),
                                   Amount: donation.amount
                                     ? `HK$${formatNumber(Number(donation.amount), {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                      })}`
+                                      minimumFractionDigits: 2,
+                                      maximumFractionDigits: 2,
+                                    })}`
                                     : "HK$0.00",
                                   Method: donation.method || "N/A",
                                   Screenshot: {
@@ -11335,13 +11369,13 @@ Subscription Manager HK`;
                                           setSelectedImageUrl(donation.screenshot);
                                           setShowImagePopup(true);
                                         }}
-                                        style={{ 
-                                          background: "none", 
-                                          border: "none", 
-                                          color: "#000", 
-                                          textDecoration: "none", 
-                                          display: "inline-flex", 
-                                          alignItems: "center", 
+                                        style={{
+                                          background: "none",
+                                          border: "none",
+                                          color: "#000",
+                                          textDecoration: "none",
+                                          display: "inline-flex",
+                                          alignItems: "center",
                                           gap: "6px",
                                           cursor: "pointer",
                                           padding: 0,
@@ -11364,23 +11398,23 @@ Subscription Manager HK`;
                                           onClick={async () => {
                                             showConfirmation(
                                               "Are you sure you want to delete this donation?",
-                                            async () => {
-                                              try {
-                                                const donationId = donation._id || donation.id;
-                                                await deleteDonation(donationId);
-                                                showToast("Donation deleted successfully!");
-                                                await fetchDonations();
-                                              } catch (error) {
-                                                showToast(error.message || "Failed to delete donation", "error");
+                                              async () => {
+                                                try {
+                                                  const donationId = donation._id || donation.id;
+                                                  await deleteDonation(donationId);
+                                                  showToast("Donation deleted successfully!");
+                                                  await fetchDonations();
+                                                } catch (error) {
+                                                  showToast(error.message || "Failed to delete donation", "error");
+                                                }
                                               }
-                                            }
-                                          );
-                                        }}
-                                        title="Delete Donation"
-                                        aria-label="Delete Donation"
-                                      >
-                                        <i className="fas fa-trash" aria-hidden="true"></i>
-                                      </button>
+                                            );
+                                          }}
+                                          title="Delete Donation"
+                                          aria-label="Delete Donation"
+                                        >
+                                          <i className="fas fa-trash" aria-hidden="true"></i>
+                                        </button>
                                       </div>
                                     ),
                                   },
@@ -11641,10 +11675,7 @@ Subscription Manager HK`;
                       Total Amount
                     </p>
                     <h4>
-                      HK${formatNumber(reportStats.collected, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatCurrency(reportStats.collected)}
                     </h4>
                     <small>Subscriptions + Donations</small>
                   </div>
@@ -11654,10 +11685,7 @@ Subscription Manager HK`;
                       Total Subscription Amount
                     </p>
                     <h4>
-                      HK${formatNumber(reportStats.paymentsTotal, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatCurrency(reportStats.paymentsTotal)}
                     </h4>
                     <small>{reportStats.paymentsCount} payment{reportStats.paymentsCount !== 1 ? 's' : ''}</small>
                   </div>
@@ -11667,10 +11695,7 @@ Subscription Manager HK`;
                       Total Donation Amount
                     </p>
                     <h4>
-                      HK${formatNumber(reportStats.donationsTotal, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatCurrency(reportStats.donationsTotal)}
                     </h4>
                     <small>{reportStats.donationsCount} donation{reportStats.donationsCount !== 1 ? 's' : ''}</small>
                   </div>
@@ -11680,10 +11705,7 @@ Subscription Manager HK`;
                       Outstanding
                     </p>
                     <h4>
-                      HK${formatNumber(dashboardMetrics.outstanding, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
+                      {formatCurrency(dashboardMetrics.outstanding)}
                     </h4>
                     <small>Pending collection</small>
                   </div>
@@ -11729,7 +11751,7 @@ Subscription Manager HK`;
                       const outstandingHeight = Math.max(60, Math.round((dashboardMetrics.outstanding / total) * 200) || 0);
                       const collectedPercent = Math.round((reportStats.collected / total) * 100);
                       const outstandingPercent = Math.round((dashboardMetrics.outstanding / total) * 100);
-                      
+
                       return (
                         <div className="admin-reports-collected-chart">
                           <div className="admin-reports-collected-bar-wrapper">
@@ -11775,75 +11797,75 @@ Subscription Manager HK`;
                         Payment trends for selected period
                       </p>
                     </div>
-                      <div className="admin-reports-payments-chart">
-                        {(() => {
-                          // Group payments by week (or day if less than 7 days)
-                          const paymentsByPeriod = {};
-                          const fromDate = new Date(dateRange.from);
-                          const toDate = new Date(dateRange.to);
-                          const daysDiff = Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24));
-                          
-                          reportStats.paymentsInRange.forEach(payment => {
-                            const date = payment.date ? new Date(payment.date) : (payment.createdAt ? new Date(payment.createdAt) : new Date());
-                            let period;
-                            
-                            if (daysDiff <= 7) {
-                              // Group by day
-                              period = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                            } else if (daysDiff <= 30) {
-                              // Group by week
-                              const weekStart = new Date(date);
-                              weekStart.setDate(date.getDate() - date.getDay());
-                              period = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                            } else {
-                              // Group by month
-                              period = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                            }
-                            
-                            if (!paymentsByPeriod[period]) {
-                              paymentsByPeriod[period] = 0;
-                            }
-                            const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
-                            paymentsByPeriod[period] += amount;
-                          });
+                    <div className="admin-reports-payments-chart">
+                      {(() => {
+                        // Group payments by week (or day if less than 7 days)
+                        const paymentsByPeriod = {};
+                        const fromDate = new Date(dateRange.from);
+                        const toDate = new Date(dateRange.to);
+                        const daysDiff = Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24));
 
-                          const periods = Object.keys(paymentsByPeriod).sort((a, b) => {
-                            return new Date(a) - new Date(b);
-                          }).slice(-10); // Show last 10 periods
-                          const maxAmount = Math.max(...periods.map(p => paymentsByPeriod[p]), 1);
+                        reportStats.paymentsInRange.forEach(payment => {
+                          const date = payment.date ? new Date(payment.date) : (payment.createdAt ? new Date(payment.createdAt) : new Date());
+                          let period;
 
-                          return (
-                            <div className="admin-reports-payments-chart-bars">
-                              {periods.length > 0 ? periods.map((period, index) => {
-                                const amount = paymentsByPeriod[period];
-                                const height = Math.max(30, (amount / maxAmount) * 180);
-                                return (
-                                  <div key={`${period}-${index}`} className="admin-reports-payments-bar-wrapper">
-                                    <div
-                                      className="admin-reports-payments-bar"
-                                      style={{
-                                        height: `${height}px`
-                                      }}
-                                      title={`${period}: ${formatCurrency(amount)}`}
-                                    >
-                                      {height > 40 && formatCurrency(Math.round(amount))}
-                                    </div>
-                                    <span className="admin-reports-payments-label">
-                                      {period.length > 10 ? period.substring(0, 8) + '...' : period}
-                                    </span>
+                          if (daysDiff <= 7) {
+                            // Group by day
+                            period = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                          } else if (daysDiff <= 30) {
+                            // Group by week
+                            const weekStart = new Date(date);
+                            weekStart.setDate(date.getDate() - date.getDay());
+                            period = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                          } else {
+                            // Group by month
+                            period = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                          }
+
+                          if (!paymentsByPeriod[period]) {
+                            paymentsByPeriod[period] = 0;
+                          }
+                          const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+                          paymentsByPeriod[period] += amount;
+                        });
+
+                        const periods = Object.keys(paymentsByPeriod).sort((a, b) => {
+                          return new Date(a) - new Date(b);
+                        }).slice(-10); // Show last 10 periods
+                        const maxAmount = Math.max(...periods.map(p => paymentsByPeriod[p]), 1);
+
+                        return (
+                          <div className="admin-reports-payments-chart-bars">
+                            {periods.length > 0 ? periods.map((period, index) => {
+                              const amount = paymentsByPeriod[period];
+                              const height = Math.max(30, (amount / maxAmount) * 180);
+                              return (
+                                <div key={`${period}-${index}`} className="admin-reports-payments-bar-wrapper">
+                                  <div
+                                    className="admin-reports-payments-bar"
+                                    style={{
+                                      height: `${height}px`
+                                    }}
+                                    title={`${period}: ${formatCurrency(amount)}`}
+                                  >
+                                    {height > 40 && formatCurrency(Math.round(amount))}
                                   </div>
-                                );
-                              }) : (
-                                <div className="admin-reports-payments-empty">
-                                  No payment data in selected period
+                                  <span className="admin-reports-payments-label">
+                                    {period.length > 10 ? period.substring(0, 8) + '...' : period}
+                                  </span>
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
+                              );
+                            }) : (
+                              <div className="admin-reports-payments-empty">
+                                No payment data in selected period
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
+                </div>
 
                 {/* Payment Method Breakdown - Hidden */}
                 {/* <div className="card card-reports" style={{ 
@@ -11910,7 +11932,7 @@ Subscription Manager HK`;
                 </div> */}
 
                 {/* Filters and Transactions Section */}
-                <div className="card card-reports" style={{ 
+                <div className="card card-reports" style={{
                   padding: "24px",
                   background: "#ffffff",
                   border: "1px solid #e5e7eb"
@@ -11922,11 +11944,11 @@ Subscription Manager HK`;
                         {/* <i className="fas fa-filter" style={{ marginRight: "6px", color: "#5a31ea" }}></i> */}
                         Filter by Type:
                       </label>
-                      <div style={{ 
-                        display: "flex", 
-                        gap: "4px", 
-                        background: "#f3f4f6", 
-                        padding: "4px", 
+                      <div style={{
+                        display: "flex",
+                        gap: "4px",
+                        background: "#f3f4f6",
+                        padding: "4px",
                         borderRadius: "8px",
                         flexWrap: "wrap"
                       }}>
@@ -11978,11 +12000,11 @@ Subscription Manager HK`;
                         <label style={{ fontWeight: "600", color: "#1a1a1a", fontSize: "0.9375rem" }}>
                           Filter by Donor Type:
                         </label>
-                        <div style={{ 
-                          display: "flex", 
-                          gap: "4px", 
-                          background: "#f3f4f6", 
-                          padding: "4px", 
+                        <div style={{
+                          display: "flex",
+                          gap: "4px",
+                          background: "#f3f4f6",
+                          padding: "4px",
                           borderRadius: "8px",
                           flexWrap: "wrap"
                         }}>
@@ -12152,7 +12174,7 @@ Subscription Manager HK`;
 
                             const rows = paginatedTransactions.map((transaction) => {
                               const transactionId = transaction._id || transaction.id;
-                              
+
                               return {
                                 Date: transaction.date || "N/A",
                                 Type: {
@@ -12168,18 +12190,18 @@ Subscription Manager HK`;
                                 "Invoice ID": transaction.invoiceId || (transaction.type === "Donation" ? "N/A" : "N/A"),
                                 Amount: transaction.amount
                                   ? `HK$${formatNumber(parseFloat(transaction.amount.toString().replace(/[^0-9.]/g, '') || 0), {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })}`
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}`
                                   : "HK$0.00",
-                                Method: transaction.type === "Payment" 
+                                Method: transaction.type === "Payment"
                                   ? getPaymentMethodDisplay(transaction)
                                   : (transaction.method || "N/A"),
                                 Screenshot: {
                                   render: () => transaction.screenshot ? (
-                                    <a 
-                                      href={transaction.screenshot} 
-                                      target="_blank" 
+                                    <a
+                                      href={transaction.screenshot}
+                                      target="_blank"
                                       rel="noopener noreferrer"
                                       style={{ color: "#5a31ea", textDecoration: "none" }}
                                       title="View screenshot"
@@ -12219,7 +12241,7 @@ Subscription Manager HK`;
                                                   m.name &&
                                                   invoice.memberName &&
                                                   m.name.toLowerCase() ===
-                                                    invoice.memberName.toLowerCase()
+                                                  invoice.memberName.toLowerCase()
                                               );
                                             if (!member) {
                                               showToast("Member not found for this invoice", "error");
@@ -12355,8 +12377,8 @@ Subscription Manager HK`;
                     </div>
 
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-                      <div className="card card-export-reports" style={{ 
-                        padding: "20px", 
+                      <div className="card card-export-reports" style={{
+                        padding: "20px",
                         background: "#ffffff",
                         display: "flex",
                         flexDirection: "column",
@@ -12384,8 +12406,8 @@ Subscription Manager HK`;
                         </button>
                       </div>
 
-                      <div className="card card-export-reports" style={{ 
-                        padding: "20px", 
+                      <div className="card card-export-reports" style={{
+                        padding: "20px",
                         background: "#ffffff",
                         display: "flex",
                         flexDirection: "column",
@@ -12489,8 +12511,8 @@ Subscription Manager HK`;
                             render: () => (
                               <span className={
                                 admin.status === "Active" ? "badge badge-active" :
-                                admin.status === "Pending" ? "badge badge-pending" :
-                                "badge badge-overdue"
+                                  admin.status === "Pending" ? "badge badge-pending" :
+                                    "badge badge-overdue"
                               }>
                                 {admin.status || "Active"}
                               </span>
@@ -12611,28 +12633,28 @@ Subscription Manager HK`;
                           <i className="fas fa-globe" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Number Format Locale <span style={{ color: "#ef4444" }}>*</span>
                         </label>
                         <select
-                            className="settings-form__input"
-                            value={userLocale}
-                            onChange={(e) => {
-                              updateUserLocale(e.target.value);
-                              showToast("Number format locale updated! Numbers will refresh automatically.", "success");
-                            }}
-                            style={{
-                              padding: "12px",
-                              border: "1px solid #e5e7eb",
-                              borderRadius: "4px",
-                              fontSize: "0.875rem",
-                              color: "#1a1a1a",
-                              backgroundColor: "#ffffff",
-                              cursor: "pointer",
-                            }}
-                          >
-                            {getAvailableLocales().map((locale) => (
-                              <option key={locale.value} value={locale.value}>
-                                {locale.label}
-                              </option>
-                            ))}
-                          </select>
+                          className="settings-form__input"
+                          value={userLocale}
+                          onChange={(e) => {
+                            updateUserLocale(e.target.value);
+                            showToast("Number format locale updated! Numbers will refresh automatically.", "success");
+                          }}
+                          style={{
+                            padding: "12px",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "4px",
+                            fontSize: "0.875rem",
+                            color: "#1a1a1a",
+                            backgroundColor: "#ffffff",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {getAvailableLocales().map((locale) => (
+                            <option key={locale.value} value={locale.value}>
+                              {locale.label}
+                            </option>
+                          ))}
+                        </select>
                         <p style={{ margin: "8px 0 0 0", fontSize: "0.75rem", color: "#666" }}>
                           Choose your preferred number format. Example: {formatNumber(1234567.89, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
@@ -12805,7 +12827,7 @@ Subscription Manager HK`;
                             showToast("Please enter name", "error");
                             return;
                           }
-                          
+
                           // Validate email
                           const emailError = validateAdminEmail(adminForm.email);
                           if (emailError) {
@@ -12814,13 +12836,13 @@ Subscription Manager HK`;
                             return;
                           }
                           setAdminEmailError("");
-                          
+
                           // Validate phone
                           if (!adminForm.phone || !adminForm.phone.trim()) {
                             showToast("Please enter mobile number", "error");
                             return;
                           }
-                          
+
                           if (!adminForm.password || !adminForm.password.trim()) {
                             showToast("Please enter password", "error");
                             return;
@@ -12966,10 +12988,10 @@ Subscription Manager HK`;
           </div>
         </div>
       </main>
-      
+
       {/* Payment Modal */}
       {showPaymentModal && paymentModalInvoice && (
-        <div 
+        <div
           className="admin-members-form-overlay"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
@@ -12987,9 +13009,9 @@ Subscription Manager HK`;
             }
           }}
         >
-          <div 
+          <div
             className="card admin-members-form-container"
-           
+
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
@@ -13018,9 +13040,9 @@ Subscription Manager HK`;
 
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
               {/* Invoice Info */}
-              <div style={{ 
-                padding: "16px", 
-                background: "#f8f9ff", 
+              <div style={{
+                padding: "16px",
+                background: "#f8f9ff",
                 borderRadius: "8px",
                 border: "1px solid #e0e0e0"
               }}>
@@ -13029,32 +13051,54 @@ Subscription Manager HK`;
                   <strong style={{ color: "#1a1a1a", fontSize: "1.125rem" }}>{paymentModalInvoice.amount}</strong>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                  <span style={{ color: "#666", fontSize: "0.875rem" }}>Period:</span>
-                  <span style={{ color: "#1a1a1a" }}>{paymentModalInvoice.period}</span>
+                  <span style={{ color: "#666", fontSize: "0.875rem" }}>Joined Date:</span>
+                  <span style={{ color: "#1a1a1a" }}>
+                    {(() => {
+                      const member = members.find(m => 
+                        m.id === paymentModalInvoice.memberId || 
+                        m.email === paymentModalInvoice.memberEmail || 
+                        m.name === paymentModalInvoice.memberName
+                      );
+                      if (member?.start_date) {
+                        return new Date(member.start_date).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric"
+                        });
+                      } else if (member?.createdAt) {
+                        return new Date(member.createdAt).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric"
+                        });
+                      }
+                      return "-";
+                    })()}
+                  </span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#666", fontSize: "0.875rem" }}>Due Date:</span>
-                  <span style={{ color: "#1a1a1a" }}>{paymentModalInvoice.due}</span>
+                  <span style={{ color: "#666", fontSize: "0.875rem" }}>Status:</span>
+                  <span style={{ color: "#1a1a1a" }}>{paymentModalInvoice.status || "Unpaid"}</span>
                 </div>
               </div>
 
               {/* Payment Method Selection */}
               <div>
-                <label style={{ 
-                  display: "block", 
-                  fontSize: "0.875rem", 
-                  fontWeight: "600", 
-                  color: "#333", 
-                  marginBottom: "12px" 
+                <label style={{
+                  display: "block",
+                  fontSize: "0.875rem",
+                  fontWeight: "600",
+                  color: "#333",
+                  marginBottom: "12px"
                 }}>
                   Payment Method
                 </label>
                 <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                   <button
                     type="button"
-                    onClick={() => setPaymentModalData({ 
-                      ...paymentModalData, 
-                      paymentMethod: "Cash" 
+                    onClick={() => setPaymentModalData({
+                      ...paymentModalData,
+                      paymentMethod: "Cash"
                     })}
                     style={{
                       flex: "1",
@@ -13062,12 +13106,12 @@ Subscription Manager HK`;
                       padding: "12px 20px",
                       borderRadius: "8px",
                       border: "1px solid rgb(224, 224, 224)",
-                      background: paymentModalData.paymentMethod === "Cash" 
-                        ? "#5a31ea" 
+                      background: paymentModalData.paymentMethod === "Cash"
+                        ? "#5a31ea"
                         : "#f8f9ff",
                       color: paymentModalData.paymentMethod === "Cash" ? "#ffffff" : "#1a1a1a",
-                      boxShadow: paymentModalData.paymentMethod === "Cash" 
-                        ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
+                      boxShadow: paymentModalData.paymentMethod === "Cash"
+                        ? "0 4px 12px rgba(90, 49, 234, 0.3)"
                         : "0 2px 4px rgba(90, 49, 234, 0.08)",
                       fontWeight: "600",
                       fontSize: "0.9375rem",
@@ -13084,9 +13128,9 @@ Subscription Manager HK`;
                   </button>
                   <button
                     type="button"
-                    onClick={() => setPaymentModalData({ 
-                      ...paymentModalData, 
-                      paymentMethod: "Online" 
+                    onClick={() => setPaymentModalData({
+                      ...paymentModalData,
+                      paymentMethod: "Online"
                     })}
                     style={{
                       flex: "1",
@@ -13094,12 +13138,12 @@ Subscription Manager HK`;
                       padding: "12px 20px",
                       borderRadius: "8px",
                       border: "1px solid rgb(224, 224, 224)",
-                      background: paymentModalData.paymentMethod === "Online" 
-                        ? "#5a31ea" 
+                      background: paymentModalData.paymentMethod === "Online"
+                        ? "#5a31ea"
                         : "#f8f9ff",
                       color: paymentModalData.paymentMethod === "Online" ? "#ffffff" : "#1a1a1a",
-                      boxShadow: paymentModalData.paymentMethod === "Online" 
-                        ? "0 4px 12px rgba(90, 49, 234, 0.3)" 
+                      boxShadow: paymentModalData.paymentMethod === "Online"
+                        ? "0 4px 12px rgba(90, 49, 234, 0.3)"
                         : "0 2px 4px rgba(90, 49, 234, 0.08)",
                       fontWeight: "600",
                       fontSize: "0.9375rem",
@@ -13121,12 +13165,12 @@ Subscription Manager HK`;
               {(paymentModalData.paymentMethod === "Cash" || paymentModalData.paymentMethod === "Online") && (
                 <div style={{ marginBottom: "2px" }}>
                   <div style={{ marginBottom: "2px" }}>
-                    <label style={{ 
-                      display: "block", 
-                      fontSize: "0.875rem", 
-                      fontWeight: "600", 
-                      color: "#333", 
-                      marginBottom: "8px" 
+                    <label style={{
+                      display: "block",
+                      fontSize: "0.875rem",
+                      fontWeight: "600",
+                      color: "#333",
+                      marginBottom: "8px"
                     }}>
                       Choose Admin <span style={{ color: "#ef4444" }}>*</span>
                     </label>
@@ -13182,135 +13226,135 @@ Subscription Manager HK`;
               {/* Attachment Upload - Required for both payment methods */}
               {(paymentModalData.paymentMethod === "Cash" || paymentModalData.paymentMethod === "Online") && (
                 <div>
-                  <label style={{ 
-                    display: "block", 
-                    fontSize: "0.875rem", 
-                    fontWeight: "600", 
-                    color: "#333", 
-                    marginBottom: "12px" 
+                  <label style={{
+                    display: "block",
+                    fontSize: "0.875rem",
+                    fontWeight: "600",
+                    color: "#333",
+                    marginBottom: "12px"
                   }}>
                     Attachment Image <span style={{ color: "#999", fontSize: "0.75rem" }}>(Optional)</span>
                   </label>
-                <div style={{ 
-                  border: paymentModalErrors.image ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
-                  borderRadius: "8px",
-                  padding: "20px",
-                  textAlign: "center",
-                  background: paymentModalErrors.image ? "#fef2f2" : "#fafafa",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                  boxShadow: paymentModalErrors.image ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
-                }}
-                onMouseEnter={(e) => {
-                  if (!paymentModalErrors.image) {
-                    e.currentTarget.style.borderColor = "#5a31ea";
-                    e.currentTarget.style.background = "#f8f9ff";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!paymentModalErrors.image) {
-                    e.currentTarget.style.borderColor = "#d0d0d0";
-                    e.currentTarget.style.background = "#fafafa";
-                  } else {
-                    e.currentTarget.style.borderColor = "#ef4444";
-                    e.currentTarget.style.background = "#fef2f2";
-                  }
-                }}
-                onClick={() => {
-                  // Clear error when user clicks to upload
-                  if (paymentModalErrors.image) {
-                    setPaymentModalErrors({ ...paymentModalErrors, image: false });
-                  }
-                  const input = document.createElement("input");
-                  input.type = "file";
-                  input.accept = "image/*";
-                  input.onchange = async (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
+                  <div style={{
+                    border: paymentModalErrors.image ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
+                    borderRadius: "8px",
+                    padding: "20px",
+                    textAlign: "center",
+                    background: paymentModalErrors.image ? "#fef2f2" : "#fafafa",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    boxShadow: paymentModalErrors.image ? "0 0 0 3px rgba(239, 68, 68, 0.1)" : "none",
+                  }}
+                    onMouseEnter={(e) => {
+                      if (!paymentModalErrors.image) {
+                        e.currentTarget.style.borderColor = "#5a31ea";
+                        e.currentTarget.style.background = "#f8f9ff";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!paymentModalErrors.image) {
+                        e.currentTarget.style.borderColor = "#d0d0d0";
+                        e.currentTarget.style.background = "#fafafa";
+                      } else {
+                        e.currentTarget.style.borderColor = "#ef4444";
+                        e.currentTarget.style.background = "#fef2f2";
+                      }
+                    }}
+                    onClick={() => {
+                      // Clear error when user clicks to upload
+                      if (paymentModalErrors.image) {
+                        setPaymentModalErrors({ ...paymentModalErrors, image: false });
+                      }
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.accept = "image/*";
+                      input.onchange = async (e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
 
-                    if (!file.type.startsWith("image/")) {
-                      showToast("Please upload an image file", "error");
-                      return;
-                    }
+                        if (!file.type.startsWith("image/")) {
+                          showToast("Please upload an image file", "error");
+                          return;
+                        }
 
-                    // Create preview
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      setPaymentModalData(prev => ({
-                        ...prev,
-                        imageFile: file,
-                        imagePreview: reader.result,
-                      }));
-                      // Clear error when image is uploaded
-                      setPaymentModalErrors(prev => ({ ...prev, image: false }));
-                    };
-                    reader.readAsDataURL(file);
-                  };
-                  input.click();
-                }}
-                >
-                  {paymentModalData.imagePreview || (paymentModalInvoice.screenshot && !paymentModalData.imageFile) ? (
-                    <div style={{ position: "relative" }}>
-                      <img 
-                        src={paymentModalData.imagePreview || paymentModalInvoice.screenshot} 
-                        alt="Preview" 
-                        style={{ 
-                          maxWidth: "100%", 
-                          maxHeight: "200px", 
-                          borderRadius: "4px",
-                          marginBottom: "8px"
-                        }} 
-                      />
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPaymentModalData({
-                            ...paymentModalData,
-                            imageFile: null,
-                            imagePreview: null,
-                            imageUrl: "",
-                          });
-                          // Clear error when image is removed
+                        // Create preview
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setPaymentModalData(prev => ({
+                            ...prev,
+                            imageFile: file,
+                            imagePreview: reader.result,
+                          }));
+                          // Clear error when image is uploaded
                           setPaymentModalErrors(prev => ({ ...prev, image: false }));
-                        }}
-                        style={{
-                          position: "absolute",
-                          top: "8px",
-                          right: "8px",
-                          background: "#ef4444",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius: "50%",
-                          width: "28px",
-                          height: "28px",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: "0.875rem",
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <i className="fas fa-cloud-upload-alt" style={{ 
-                        fontSize: "2rem", 
-                        color: "#5a31ea", 
-                        marginBottom: "8px" 
-                      }}></i>
-                      <p style={{ margin: "0", color: "#666", fontSize: "0.875rem" }}>
-                        Click to upload image
-                      </p>
-                      <p style={{ margin: "4px 0 0 0", color: "#999", fontSize: "0.75rem" }}>
-                        PNG, JPG, GIF up to 5MB
-                      </p>
-                    </>
-                  )}
+                        };
+                        reader.readAsDataURL(file);
+                      };
+                      input.click();
+                    }}
+                  >
+                    {paymentModalData.imagePreview || (paymentModalInvoice.screenshot && !paymentModalData.imageFile) ? (
+                      <div style={{ position: "relative" }}>
+                        <img
+                          src={paymentModalData.imagePreview || paymentModalInvoice.screenshot}
+                          alt="Preview"
+                          style={{
+                            maxWidth: "100%",
+                            maxHeight: "200px",
+                            borderRadius: "4px",
+                            marginBottom: "8px"
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPaymentModalData({
+                              ...paymentModalData,
+                              imageFile: null,
+                              imagePreview: null,
+                              imageUrl: "",
+                            });
+                            // Clear error when image is removed
+                            setPaymentModalErrors(prev => ({ ...prev, image: false }));
+                          }}
+                          style={{
+                            position: "absolute",
+                            top: "8px",
+                            right: "8px",
+                            background: "#ef4444",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "50%",
+                            width: "28px",
+                            height: "28px",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "0.875rem",
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <i className="fas fa-cloud-upload-alt" style={{
+                          fontSize: "2rem",
+                          color: "#5a31ea",
+                          marginBottom: "8px"
+                        }}></i>
+                        <p style={{ margin: "0", color: "#666", fontSize: "0.875rem" }}>
+                          Click to upload image
+                        </p>
+                        <p style={{ margin: "4px 0 0 0", color: "#999", fontSize: "0.75rem" }}>
+                          PNG, JPG, GIF up to 5MB
+                        </p>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
               )}
 
               {/* Action Buttons */}
@@ -13344,166 +13388,166 @@ Subscription Manager HK`;
                     className="primary-btn"
                     disabled={uploadingPaymentModal}
                     onClick={async () => {
-                    // Progressive validation for payment modal
-                    const validatePaymentModal = () => {
-                      // Define field order for validation - only admin is required, image is optional
-                      const fieldOrder = ["selectedAdminId"];
-                      
-                      // If we have a current invalid field, check if it's now valid
-                      if (currentInvalidPaymentModalField) {
-                        let isValid = true;
-                        let errorMsg = "";
-                        
-                        if (currentInvalidPaymentModalField === "selectedAdminId" && !paymentModalData.selectedAdminId) {
-                          isValid = false;
-                          errorMsg = "Please select an admin";
-                        }
-                        
-                        if (isValid) {
-                          setPaymentModalErrors(prev => ({ ...prev, [currentInvalidPaymentModalField]: false }));
-                          setCurrentInvalidPaymentModalField(null);
-                        } else {
-                          setPaymentModalErrors(prev => ({ ...prev, [currentInvalidPaymentModalField]: true }));
-                          showToast(errorMsg, "error");
-                          return false;
-                        }
-                      }
-                      
-                      // Find first invalid field
-                      for (const field of fieldOrder) {
-                        let isValid = true;
-                        let errorMsg = "";
-                        
-                        if (field === "selectedAdminId" && !paymentModalData.selectedAdminId) {
-                          isValid = false;
-                          errorMsg = "Please select an admin";
-                        }
-                        
-                        if (!isValid) {
-                          // Clear all errors first
-                          setPaymentModalErrors({
-                            image: false,
-                            reference: false,
-                            selectedAdminId: false,
-                            adminMobile: false,
-                          });
-                          // Set only this field as invalid
-                          setPaymentModalErrors(prev => ({ ...prev, [field]: true }));
-                          setCurrentInvalidPaymentModalField(field);
-                          showToast(errorMsg, "error");
-                          
-                          // Focus on the invalid field
-                          setTimeout(() => {
-                            if (field === "selectedAdminId") {
-                              const selects = document.querySelectorAll('select');
-                              const adminSelect = Array.from(selects).find(select => 
-                                select.options[0]?.text === "Select an admin"
-                              );
-                              adminSelect?.focus();
-                              adminSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
-                            }
-                          }, 100);
-                          
-                          return false;
-                        }
-                      }
-                      
-                      // All fields valid
-                      setPaymentModalErrors({
-                        image: false,
-                        reference: false,
-                        selectedAdminId: false,
-                        adminMobile: false,
-                      });
-                      setCurrentInvalidPaymentModalField(null);
-                      return true;
-                    };
-                    
-                    if (!validatePaymentModal()) {
-                      return;
-                    }
+                      // Progressive validation for payment modal
+                      const validatePaymentModal = () => {
+                        // Define field order for validation - only admin is required, image is optional
+                        const fieldOrder = ["selectedAdminId"];
 
-                    // Show confirmation dialog
-                    showConfirmation(
-                      `Are you sure you want to mark Invoice #${paymentModalInvoice.id} as paid?`,
-                      async () => {
-                        setUploadingPaymentModal(true);
-                        try {
-                          const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-                          let imageUrl = paymentModalData.imageUrl || paymentModalInvoice.screenshot;
+                        // If we have a current invalid field, check if it's now valid
+                        if (currentInvalidPaymentModalField) {
+                          let isValid = true;
+                          let errorMsg = "";
 
-                          // Upload image if new file exists
-                          if (paymentModalData.imageFile) {
-                            const formData = new FormData();
-                            formData.append("screenshot", paymentModalData.imageFile);
-                            formData.append("uploadType", "invoice-payment-attachment");
+                          if (currentInvalidPaymentModalField === "selectedAdminId" && !paymentModalData.selectedAdminId) {
+                            isValid = false;
+                            errorMsg = "Please select an admin";
+                          }
 
-                            const uploadResponse = await fetch(`${apiUrl}/api/upload/screenshot`, {
-                              method: "POST",
-                              body: formData,
+                          if (isValid) {
+                            setPaymentModalErrors(prev => ({ ...prev, [currentInvalidPaymentModalField]: false }));
+                            setCurrentInvalidPaymentModalField(null);
+                          } else {
+                            setPaymentModalErrors(prev => ({ ...prev, [currentInvalidPaymentModalField]: true }));
+                            showToast(errorMsg, "error");
+                            return false;
+                          }
+                        }
+
+                        // Find first invalid field
+                        for (const field of fieldOrder) {
+                          let isValid = true;
+                          let errorMsg = "";
+
+                          if (field === "selectedAdminId" && !paymentModalData.selectedAdminId) {
+                            isValid = false;
+                            errorMsg = "Please select an admin";
+                          }
+
+                          if (!isValid) {
+                            // Clear all errors first
+                            setPaymentModalErrors({
+                              image: false,
+                              reference: false,
+                              selectedAdminId: false,
+                              adminMobile: false,
                             });
+                            // Set only this field as invalid
+                            setPaymentModalErrors(prev => ({ ...prev, [field]: true }));
+                            setCurrentInvalidPaymentModalField(field);
+                            showToast(errorMsg, "error");
 
-                            if (!uploadResponse.ok) {
-                              // Try to get error message from response
-                              let errorMessage = "Failed to upload image";
-                              try {
-                                const errorData = await uploadResponse.json();
-                                errorMessage = errorData.error || errorMessage;
-                                console.error("Upload error response:", errorData);
-                              } catch (parseError) {
-                                console.error("Failed to parse error response:", parseError);
-                                errorMessage = `Upload failed with status ${uploadResponse.status}`;
+                            // Focus on the invalid field
+                            setTimeout(() => {
+                              if (field === "selectedAdminId") {
+                                const selects = document.querySelectorAll('select');
+                                const adminSelect = Array.from(selects).find(select =>
+                                  select.options[0]?.text === "Select an admin"
+                                );
+                                adminSelect?.focus();
+                                adminSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
                               }
-                              throw new Error(errorMessage);
-                            }
+                            }, 100);
 
-                            const uploadData = await uploadResponse.json();
-                            if (!uploadData.url) {
-                              throw new Error("No URL returned from upload. Please try again.");
-                            }
-                            imageUrl = uploadData.url;
+                            return false;
                           }
-
-                          // Image is optional, so no validation needed here
-
-                          // Update invoice with screenshot if image was uploaded
-                          if (imageUrl && imageUrl !== paymentModalInvoice.screenshot) {
-                            await updateInvoice(paymentModalInvoice.id, {
-                              screenshot: imageUrl,
-                            });
-                          }
-
-                          // Mark invoice as paid
-                          const paymentMethod = paymentModalData.paymentMethod; // Already "Cash" or "Online"
-                          await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl, null);
-
-                          // Close modal and reset
-                          setShowPaymentModal(false);
-                          setPaymentModalInvoice(null);
-                          setPaymentModalData({
-                            paymentMethod: "",
-                            imageFile: null,
-                            imagePreview: null,
-                            imageUrl: "",
-                            reference: "",
-                            selectedAdminId: "",
-                            adminMobile: "",
-                          });
-                          setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
-                    setCurrentInvalidPaymentModalField(null);
-
-                          showToast(`Invoice #${paymentModalInvoice.id} marked as paid!`, "success");
-                        } catch (error) {
-                          console.error("Error processing payment:", error);
-                          showToast(error.message || "Failed to process payment", "error");
-                        } finally {
-                          setUploadingPaymentModal(false);
                         }
-                      },
-                      null,
-                      "Confirm"
-                    );
-                  }}
+
+                        // All fields valid
+                        setPaymentModalErrors({
+                          image: false,
+                          reference: false,
+                          selectedAdminId: false,
+                          adminMobile: false,
+                        });
+                        setCurrentInvalidPaymentModalField(null);
+                        return true;
+                      };
+
+                      if (!validatePaymentModal()) {
+                        return;
+                      }
+
+                      // Show confirmation dialog
+                      showConfirmation(
+                        `Are you sure you want to mark Invoice #${paymentModalInvoice.id} as paid?`,
+                        async () => {
+                          setUploadingPaymentModal(true);
+                          try {
+                            const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                            let imageUrl = paymentModalData.imageUrl || paymentModalInvoice.screenshot;
+
+                            // Upload image if new file exists
+                            if (paymentModalData.imageFile) {
+                              const formData = new FormData();
+                              formData.append("screenshot", paymentModalData.imageFile);
+                              formData.append("uploadType", "invoice-payment-attachment");
+
+                              const uploadResponse = await fetch(`${apiUrl}/api/upload/screenshot`, {
+                                method: "POST",
+                                body: formData,
+                              });
+
+                              if (!uploadResponse.ok) {
+                                // Try to get error message from response
+                                let errorMessage = "Failed to upload image";
+                                try {
+                                  const errorData = await uploadResponse.json();
+                                  errorMessage = errorData.error || errorMessage;
+                                  console.error("Upload error response:", errorData);
+                                } catch (parseError) {
+                                  console.error("Failed to parse error response:", parseError);
+                                  errorMessage = `Upload failed with status ${uploadResponse.status}`;
+                                }
+                                throw new Error(errorMessage);
+                              }
+
+                              const uploadData = await uploadResponse.json();
+                              if (!uploadData.url) {
+                                throw new Error("No URL returned from upload. Please try again.");
+                              }
+                              imageUrl = uploadData.url;
+                            }
+
+                            // Image is optional, so no validation needed here
+
+                            // Update invoice with screenshot if image was uploaded
+                            if (imageUrl && imageUrl !== paymentModalInvoice.screenshot) {
+                              await updateInvoice(paymentModalInvoice.id, {
+                                screenshot: imageUrl,
+                              });
+                            }
+
+                            // Mark invoice as paid
+                            const paymentMethod = paymentModalData.paymentMethod; // Already "Cash" or "Online"
+                            await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl, null);
+
+                            // Close modal and reset
+                            setShowPaymentModal(false);
+                            setPaymentModalInvoice(null);
+                            setPaymentModalData({
+                              paymentMethod: "",
+                              imageFile: null,
+                              imagePreview: null,
+                              imageUrl: "",
+                              reference: "",
+                              selectedAdminId: "",
+                              adminMobile: "",
+                            });
+                            setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                            setCurrentInvalidPaymentModalField(null);
+
+                            showToast(`Invoice #${paymentModalInvoice.id} marked as paid!`, "success");
+                          } catch (error) {
+                            console.error("Error processing payment:", error);
+                            showToast(error.message || "Failed to process payment", "error");
+                          } finally {
+                            setUploadingPaymentModal(false);
+                          }
+                        },
+                        null,
+                        "Confirm"
+                      );
+                    }}
                     style={{
                       opacity: uploadingPaymentModal ? 0.6 : 1,
                       cursor: uploadingPaymentModal ? "not-allowed" : "pointer",
@@ -13520,11 +13564,11 @@ Subscription Manager HK`;
 
       {/* Reminder Log Details Modal */}
       {selectedReminderLogItem && (
-        <div 
+        <div
           className="admin-members-form-overlay"
           onClick={() => setSelectedReminderLogItem(null)}
         >
-          <div 
+          <div
             className="admin-members-form-container reminder-log-modal-card"
             onClick={(e) => e.stopPropagation()}
           >
@@ -13543,7 +13587,7 @@ Subscription Manager HK`;
                 </button>
               </div>
             </div>
-            
+
             <div className="reminder-log-modal-content">
               <div className="reminder-log-modal-row">
                 <div className="reminder-log-modal-field">
@@ -13664,7 +13708,7 @@ Subscription Manager HK`;
 
       {/* Payment Details Modal */}
       {showPaymentDetailsModal && selectedPaymentDetails && (
-        <div 
+        <div
           className="modal-overlay"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
@@ -13673,7 +13717,7 @@ Subscription Manager HK`;
             }
           }}
         >
-          <div 
+          <div
             className="card modal-container"
             onClick={(e) => e.stopPropagation()}
           >
@@ -13696,15 +13740,15 @@ Subscription Manager HK`;
 
             <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
               {/* Payment Info Grid */}
-              <div style={{ 
+              <div style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(2, 1fr)",
                 gap: "16px",
               }}>
                 {selectedPaymentDetails.date && (
-                  <div style={{ 
-                    padding: "16px", 
-                    background: "#f8f9ff", 
+                  <div style={{
+                    padding: "16px",
+                    background: "#f8f9ff",
                     borderRadius: "8px",
                     border: "1px solid #e0e0e0"
                   }}>
@@ -13713,9 +13757,9 @@ Subscription Manager HK`;
                   </div>
                 )}
                 {selectedPaymentDetails.amount && (
-                  <div style={{ 
-                    padding: "16px", 
-                    background: "#f8f9ff", 
+                  <div style={{
+                    padding: "16px",
+                    background: "#f8f9ff",
                     borderRadius: "8px",
                     border: "1px solid #e0e0e0"
                   }}>
@@ -13724,24 +13768,23 @@ Subscription Manager HK`;
                   </div>
                 )}
                 {selectedPaymentDetails.status && (
-                  <div style={{ 
-                    padding: "16px", 
-                    background: "#f8f9ff", 
+                  <div style={{
+                    padding: "16px",
+                    background: "#f8f9ff",
                     borderRadius: "8px",
                     border: "1px solid #e0e0e0"
                   }}>
                     <span style={{ display: "block", color: "#666", fontSize: "0.875rem", marginBottom: "4px" }}>Status</span>
                     <span
-                      className={`badge ${
-                        selectedPaymentDetails.status === "Paid" ||
+                      className={`badge ${selectedPaymentDetails.status === "Paid" ||
                         selectedPaymentDetails.status === "Completed"
-                          ? "badge-paid"
-                          : selectedPaymentDetails.status ===
-                            "Pending Verification" ||
-                            selectedPaymentDetails.status === "Pending"
+                        ? "badge-paid"
+                        : selectedPaymentDetails.status ===
+                          "Pending Verification" ||
+                          selectedPaymentDetails.status === "Pending"
                           ? "badge-pending"
                           : "badge-unpaid"
-                      }`}
+                        }`}
                       style={{
                         fontSize: "0.875rem",
                         padding: "6px 12px",
@@ -13753,9 +13796,9 @@ Subscription Manager HK`;
                     </span>
                   </div>
                 )}
-                <div style={{ 
-                  padding: "16px", 
-                  background: "#f8f9ff", 
+                <div style={{
+                  padding: "16px",
+                  background: "#f8f9ff",
                   borderRadius: "8px",
                   border: "1px solid #e0e0e0"
                 }}>
@@ -13765,9 +13808,9 @@ Subscription Manager HK`;
               </div>
 
               {/* Additional Details */}
-              <div style={{ 
-                padding: "20px", 
-                background: "#fafafa", 
+              <div style={{
+                padding: "20px",
+                background: "#fafafa",
                 borderRadius: "8px",
                 border: "1px solid #e0e0e0"
               }}>
@@ -13847,10 +13890,10 @@ Subscription Manager HK`;
                     overflow: "hidden",
                     background: "#fafafa",
                   }}>
-                    <img 
-                      src={selectedPaymentDetails.screenshot} 
-                      alt="Payment Screenshot" 
-                      style={{ 
+                    <img
+                      src={selectedPaymentDetails.screenshot}
+                      alt="Payment Screenshot"
+                      style={{
                         width: "100%",
                         height: "auto",
                         display: "block",

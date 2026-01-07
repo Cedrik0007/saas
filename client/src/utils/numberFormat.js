@@ -49,11 +49,11 @@ export function formatNumber(value, options = {}) {
 /**
  * Format a currency amount according to user's locale preference
  * @param {number} value - The amount to format
- * @param {string} currency - Currency code (default: 'USD')
+ * @param {string} currency - Currency code (default: 'HKD')
  * @param {object} options - Additional Intl.NumberFormat options
  * @returns {string} Formatted currency string
  */
-export function formatCurrency(value, currency = "USD", options = {}) {
+export function formatCurrency(value, currency = "HKD", options = {}) {
   try {
     const locale = getUserLocale();
     const defaultOptions = {
@@ -66,9 +66,9 @@ export function formatCurrency(value, currency = "USD", options = {}) {
     return new Intl.NumberFormat(locale, defaultOptions).format(value);
   } catch (error) {
     console.error("Error formatting currency:", error);
-    // Fallback formatting
+    // Fallback formatting with HKD
     const formatted = parseFloat(value || 0).toFixed(2);
-    return `$${formatted}`;
+    return `HK$${formatted}`;
   }
 }
 
@@ -97,6 +97,7 @@ export function getAvailableLocales() {
     { value: "en-GB", label: "English (United Kingdom)" },
     { value: "en-AU", label: "English (Australia)" },
     { value: "en-CA", label: "English (Canada)" },
+    { value: "zh-HK", label: "Chinese (Hong Kong)" },
     { value: "fr-FR", label: "French (France)" },
     { value: "de-DE", label: "German (Germany)" },
     { value: "es-ES", label: "Spanish (Spain)" },

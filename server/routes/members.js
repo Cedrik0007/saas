@@ -20,7 +20,7 @@ router.get("/", async (req, res) => {
     res.json(members);
   } catch (error) {
     console.error("Error fetching members:", error);
-    res.status(500).json({ error: error.message});
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -29,10 +29,10 @@ router.get("/count", async (req, res) => {
   try {
     await ensureConnection();
     const count = await UserModel.countDocuments();
-    res.json({ total : count})
+    res.json({ total: count })
   } catch (error) {
     console.error("Error fetching members:", error);
-    res.status(500).json({ error: error.message});
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -60,13 +60,13 @@ router.post("/", async (req, res) => {
     if (!memberId) {
       memberId = `HK${Math.floor(1000 + Math.random() * 9000)}`;
     }
-    
+
     // Check if ID already exists
     const existing = await UserModel.findOne({ id: memberId });
     if (existing) {
       return res.status(400).json({ message: "Member ID already exists" });
     }
-    
+
     // Parse start_date if provided, otherwise use current date
     let startDate = null;
     if (req.body.start_date) {
@@ -79,6 +79,22 @@ router.post("/", async (req, res) => {
       startDate = new Date();
     }
 
+    // Calculate next due date based on subscriptionYear if provided
+    let nextDueDate = null;
+    let nextDueStr = req.body.nextDue || '';
+
+    if (req.body.subscriptionYear) {
+      const year = parseInt(req.body.subscriptionYear);
+      if (!isNaN(year)) {
+        nextDueDate = new Date(year + 1, 0, 1);
+        // Format as YYYY-MM-DD for nextDue display string
+        const nextYear = nextDueDate.getFullYear();
+        const nextMonth = String(nextDueDate.getMonth() + 1).padStart(2, '0');
+        const nextDay = String(nextDueDate.getDate()).padStart(2, '0');
+        nextDueStr = `${nextYear}-${nextMonth}-${nextDay}`;
+      }
+    }
+
     const newMember = new UserModel({
       id: memberId,
       name: req.body.name || '',
@@ -87,7 +103,7 @@ router.post("/", async (req, res) => {
       password: req.body.password || '',
       status: req.body.status || 'Pending',
       balance: req.body.balance || 'HK$0',
-      nextDue: req.body.nextDue || '',
+      nextDue: nextDueStr,
       lastPayment: req.body.lastPayment || '',
       subscriptionType: req.body.subscriptionType || 'Lifetime',
       // Payment management fields - set defaults on creation
@@ -95,40 +111,49 @@ router.post("/", async (req, res) => {
       payment_status: 'unpaid',
       payment_mode: null,
       last_payment_date: null,
-      next_due_date: null, // Do NOT calculate during creation
+      next_due_date: nextDueDate,
       payment_proof: null,
     });
-    
+
     const savedMember = await newMember.save();
 
-    // Check if invoice already exists for this member (prevent duplicates)
-    const existingInvoice = await InvoiceModel.findOne({ 
+    // Determine the invoice period first to check for duplicates accurately
+    const subscriptionType = req.body.subscriptionType || 'Lifetime';
+    let invoicePeriod = 'Lifetime Subscription';
+    if (subscriptionType === 'Yearly + Janaza Fund') {
+      invoicePeriod = 'Yearly Subscription + Janaza Fund';
+    }
+    // If subscriptionYear is provided, use it as the period
+    if (req.body.subscriptionYear) {
+      invoicePeriod = req.body.subscriptionYear;
+    }
+
+    // Check if invoice already exists for this member and period (prevent duplicates)
+    const existingInvoice = await InvoiceModel.findOne({
       memberId: savedMember.id,
-      status: { $in: ["Unpaid", "Pending Verification"] }
+      period: invoicePeriod,
+      status: { $ne: "Rejected" }
     });
-    
+
     // Only create invoice if one doesn't already exist
     if (!existingInvoice) {
-      // Create initial invoice based on subscription type
-      const subscriptionType = req.body.subscriptionType || 'Lifetime';
+      // Create initial invoice
       let invoiceAmount = 'HK$250';
-      let invoicePeriod = 'Lifetime Subscription';
       let dueDate = new Date();
-      
+
       if (subscriptionType === 'Yearly + Janaza Fund') {
         invoiceAmount = 'HK$500';
-        invoicePeriod = 'Yearly Subscription + Janaza Fund';
       }
       // Both types are yearly, set due date to 1 year from now
       dueDate.setFullYear(dueDate.getFullYear() + 1);
-      
+
       // Format due date as "DD MMM YYYY"
       const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
         day: '2-digit',
         month: 'short',
         year: 'numeric'
       }).replace(',', '');
-      
+
       // Create invoice
       const invoiceData = {
         id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
@@ -142,20 +167,20 @@ router.post("/", async (req, res) => {
         method: "",
         reference: "",
       };
-      
+
       const newInvoice = new InvoiceModel(invoiceData);
       await newInvoice.save();
       console.log(`✓ Invoice created for new member ${savedMember.name} (${savedMember.id}): ${invoiceData.id}`);
     } else {
       console.log(`⚠ Invoice already exists for member ${savedMember.name} (${savedMember.id}), skipping duplicate creation`);
     }
-    
+
     // Update member balance (this will also format it like "$250.00 Outstanding")
     await calculateAndUpdateMemberBalance(savedMember.id);
 
     // Fetch the updated member with the computed balance so frontend sees correct outstanding
     const updatedMember = await UserModel.findOne({ id: savedMember.id });
-    
+
     res.status(201).json(updatedMember);
   } catch (error) {
     console.error("Error creating member:", error);
@@ -170,7 +195,7 @@ router.post("/", async (req, res) => {
 router.put("/:id/approve", async (req, res) => {
   try {
     await ensureConnection();
-    
+
     const member = await UserModel.findOne({ id: req.params.id });
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
@@ -204,11 +229,11 @@ router.put("/:id", async (req, res) => {
       { $set: updateData },
       { new: true, runValidators: true }
     );
-    
+
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
     }
-    
+
     res.json(member);
   } catch (error) {
     console.error("Error updating member:", error);
@@ -224,11 +249,11 @@ router.delete("/:id", async (req, res) => {
   try {
     await ensureConnection();
     const member = await UserModel.findOneAndDelete({ id: req.params.id });
-    
+
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
     }
-    
+
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting member:", error);
@@ -240,7 +265,7 @@ router.delete("/:id", async (req, res) => {
 router.post("/import", upload.single("file"), async (req, res) => {
   try {
     await ensureConnection();
-    
+
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
     }
@@ -260,14 +285,14 @@ router.post("/import", upload.single("file"), async (req, res) => {
       // Parse CSV
       const text = req.file.buffer.toString('utf-8');
       const lines = text.split('\n').filter(line => line.trim());
-      
+
       if (lines.length < 2) {
         return res.status(400).json({ error: "CSV file must have at least a header row and one data row" });
       }
 
       // Parse header row
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
-      
+
       // Find column indices
       const nameIndex = headers.findIndex(h => h.includes('name'));
       const emailIndex = headers.findIndex(h => h.includes('email'));
@@ -292,7 +317,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
         const values = [];
         let current = '';
         let inQuotes = false;
-        
+
         for (let j = 0; j < line.length; j++) {
           const char = line[j];
           if (char === '"') {
@@ -308,14 +333,14 @@ router.post("/import", upload.single("file"), async (req, res) => {
 
         const name = values[nameIndex]?.trim();
         const email = values[emailIndex]?.trim();
-        
+
         // Validate required fields
         if (!name) {
           errors.push("Name is required");
         } else if (name.length < 2) {
           errors.push("Name must be at least 2 characters");
         }
-        
+
         if (!email) {
           errors.push("Email is required");
         } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -366,7 +391,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(req.file.buffer);
       const worksheet = workbook.worksheets[0];
-      
+
       // Find maximum column count by checking all rows
       let maxColumnCount = 0;
       worksheet.eachRow((row) => {
@@ -374,12 +399,12 @@ router.post("/import", upload.single("file"), async (req, res) => {
           maxColumnCount = row.cellCount;
         }
       });
-      
+
       // Convert worksheet to array of arrays
       const data = [];
       worksheet.eachRow((row, rowNumber) => {
         const rowData = new Array(maxColumnCount).fill(''); // Initialize with empty strings
-        
+
         row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
           // Get cell value, handling different types
           let value = cell.value;
@@ -404,7 +429,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
 
       // Get headers from first row
       const headers = data[0].map(h => String(h || '').trim().toLowerCase());
-      
+
       // Find column indices
       const nameIndex = headers.findIndex(h => h.includes('name'));
       const emailIndex = headers.findIndex(h => h.includes('email'));
@@ -427,14 +452,14 @@ router.post("/import", upload.single("file"), async (req, res) => {
 
         const name = String(row[nameIndex] || '').trim();
         const email = String(row[emailIndex] || '').trim();
-        
+
         // Validate required fields
         if (!name) {
           errors.push("Name is required");
         } else if (name.length < 2) {
           errors.push("Name must be at least 2 characters");
         }
-        
+
         if (!email) {
           errors.push("Email is required");
         } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -446,7 +471,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
         if (startDateIndex !== -1 && row[startDateIndex] !== undefined && row[startDateIndex] !== null) {
           const dateValue = row[startDateIndex];
           let parsedDate;
-          
+
           // Excel dates are numbers (serial date), regular dates are strings
           if (typeof dateValue === 'number') {
             // Excel date serial number - convert to JavaScript date
@@ -458,7 +483,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
           } else if (dateValue instanceof Date) {
             parsedDate = dateValue;
           }
-          
+
           if (parsedDate && !isNaN(parsedDate.getTime())) {
             startDate = parsedDate;
           } else if (startDateIndex !== -1 && row[startDateIndex] !== undefined && row[startDateIndex] !== null) {
@@ -498,15 +523,15 @@ router.post("/import", upload.single("file"), async (req, res) => {
     // Check for duplicate emails within the file and against database
     const emailMap = new Map(); // Track emails within file: email -> {row, memberIndex}
     const emailsToCheck = []; // Collect all valid emails to check against DB
-    
+
     // First pass: Check for duplicates within the file
     const membersToRemove = new Set(); // Track indices to remove
-    
+
     for (let i = 0; i < membersData.length; i++) {
       const member = membersData[i];
       const emailLower = member.email.toLowerCase();
       const rowNumber = member._rowNumber || (i + 2);
-      
+
       if (emailMap.has(emailLower)) {
         // This email was seen before in the file
         const firstOccurrence = emailMap.get(emailLower);
@@ -551,7 +576,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
       for (let i = 0; i < membersData.length; i++) {
         const member = membersData[i];
         const emailLower = member.email.toLowerCase();
-        
+
         if (existingEmails.has(emailLower)) {
           // Email exists in database
           const rowNumber = member._rowNumber || (i + 2);
@@ -583,8 +608,8 @@ router.post("/import", upload.single("file"), async (req, res) => {
       return res.status(400).json({ error: "No valid member data found in file" });
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       count: membersData.length,
       members: membersData,
       errors: rowErrors // Include errors in response

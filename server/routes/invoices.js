@@ -3,6 +3,7 @@ import { ensureConnection } from "../config/database.js";
 import InvoiceModel from "../models/Invoice.js";
 import UserModel from "../models/User.js";
 import PaymentModel from "../models/Payment.js";
+import ReminderLogModel from "../models/ReminderLog.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { generateSubscriptionInvoices } from "../services/invoiceService.js";
 import EmailSettingsModel from "../models/EmailSettings.js";
@@ -29,8 +30,8 @@ router.get("/", async (req, res) => {
 router.get("/member/:memberId", async (req, res) => {
   try {
     await ensureConnection();
-    const memberInvoices = await InvoiceModel.find({ 
-      memberId: req.params.memberId 
+    const memberInvoices = await InvoiceModel.find({
+      memberId: req.params.memberId
     }).sort({ createdAt: -1 });
     res.json(memberInvoices);
   } catch (error) {
@@ -43,21 +44,34 @@ router.get("/member/:memberId", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     await ensureConnection();
-    
+
+    // Check for existing invoice for the same member and period (prevent duplicates)
+    const existingInvoice = await InvoiceModel.findOne({
+      memberId: req.body.memberId,
+      period: req.body.period,
+      status: { $ne: "Rejected" } // Allow re-creating only if previous one was rejected
+    });
+
+    if (existingInvoice) {
+      return res.status(400).json({
+        error: `An invoice for period "${req.body.period}" already exists for this member.`
+      });
+    }
+
     const invoiceData = {
       id: `INV-2025-${Math.floor(100 + Math.random() * 900)}`,
       ...req.body,
       status: req.body.status || "Unpaid",
     };
-    
+
     const newInvoice = new InvoiceModel(invoiceData);
     await newInvoice.save();
-    
+
     // Update member balance if invoice is unpaid
     if (invoiceData.memberId && (invoiceData.status === "Unpaid" || invoiceData.status === "Overdue")) {
       await calculateAndUpdateMemberBalance(invoiceData.memberId);
     }
-    
+
     res.status(201).json(newInvoice);
   } catch (error) {
     console.error("Error creating invoice:", error);
@@ -70,10 +84,10 @@ router.post("/generate", async (req, res) => {
   try {
     await ensureConnection();
     const result = await generateSubscriptionInvoices();
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: `Invoice generation completed: ${result.created} created, ${result.skipped} skipped`,
-      result 
+      result
     });
   } catch (error) {
     console.error("Error in manual invoice generation:", error);
@@ -85,23 +99,23 @@ router.post("/generate", async (req, res) => {
 router.post("/send-reminder", async (req, res) => {
   try {
     await ensureConnection();
-    
-    const { 
-      toEmail, 
-      toName, 
-      memberId, 
-      totalDue, 
-      invoiceCount, 
-      invoiceListText, 
+
+    const {
+      toEmail,
+      toName,
+      memberId,
+      totalDue,
+      invoiceCount,
+      invoiceListText,
       invoiceListHTML,
       paymentMethods,
-      portalLink 
+      portalLink
     } = req.body;
-    
+
     if (!toEmail || !toName) {
       return res.status(400).json({ error: "Email and name are required" });
     }
-    
+
     // Check if email is configured
     const emailSettings = await EmailSettingsModel.findOne({});
     if (!emailSettings || !emailSettings.emailUser || !emailSettings.emailPassword) {
@@ -146,7 +160,7 @@ router.post("/send-reminder", async (req, res) => {
     // Convert $ to HK$ in invoice lists if needed (safety check)
     let finalInvoiceListHTML = invoiceListHTML || invoiceListText || '';
     let finalInvoiceListText = invoiceListText || '';
-    
+
     // Replace $ with HK$ in invoice lists (handle both HTML and text)
     if (finalInvoiceListHTML.includes('$') && !finalInvoiceListHTML.includes('HK$')) {
       finalInvoiceListHTML = finalInvoiceListHTML.replace(/\$/g, 'HK$');
@@ -178,31 +192,70 @@ router.post("/send-reminder", async (req, res) => {
     // Prepare unique subject with date to prevent threading
     const finalSubject = emailSubject.replace(/\{\{total_due\}\}/g, totalDue);
     const uniqueSubject = `${finalSubject} - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
-    
+
     // Send email
-    await invoiceTransporter.sendMail({
-      from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
-      to: toEmail,
-      subject: uniqueSubject,
-      html: emailHTML,
-      text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
-      // Add unique headers to prevent email threading
-      messageId: generateUniqueMessageId(),
-      headers: {
-        'X-Entity-Ref-ID': `${memberId || 'invoice'}-${Date.now()}`,
-        'In-Reply-To': undefined,
-        'References': undefined,
-        'Thread-Topic': undefined,
-        'Thread-Index': undefined,
-      },
-    });
+    let emailSent = false;
+    try {
+      await invoiceTransporter.sendMail({
+        from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
+        to: toEmail,
+        subject: uniqueSubject,
+        html: emailHTML,
+        text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+        // Add unique headers to prevent email threading
+        messageId: generateUniqueMessageId(),
+        headers: {
+          'X-Entity-Ref-ID': `${memberId || 'invoice'}-${Date.now()}`,
+          'In-Reply-To': undefined,
+          'References': undefined,
+          'Thread-Topic': undefined,
+          'Thread-Index': undefined,
+        },
+      });
+      emailSent = true;
+      console.log(`✓ Invoice reminder email sent to ${toEmail}`);
+    } catch (emailError) {
+      console.error(`✗ Failed to send email to ${toEmail}:`, emailError);
+      emailSent = false;
+    }
 
-    console.log(`✓ Invoice reminder email sent to ${toEmail}`);
+    // Save to ReminderLog database
+    try {
+      // Get member's unpaid invoices to determine reminder type
+      const unpaidInvoices = memberId ? await InvoiceModel.find({
+        memberId: memberId,
+        status: { $in: ['Unpaid', 'Overdue'] }
+      }) : [];
 
-    res.json({ 
-      success: true, 
-      message: `Email sent successfully to ${toEmail}` 
-    });
+      const reminderType = unpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming';
+
+      await ReminderLogModel.create({
+        memberId: memberId || '',
+        memberEmail: toEmail,
+        sentAt: new Date(),
+        reminderType: reminderType,
+        amount: totalDue,
+        invoiceCount: invoiceCount || 0,
+        status: emailSent ? "Delivered" : "Failed",
+      });
+
+      console.log(`✓ Reminder log saved to database for ${toEmail}`);
+    } catch (logError) {
+      console.error("Error saving reminder log:", logError);
+      // Don't fail the request if logging fails, but log the error
+    }
+
+    if (emailSent) {
+      res.json({
+        success: true,
+        message: `Email sent successfully to ${toEmail}`
+      });
+    } else {
+      res.status(500).json({
+        error: "Failed to send email",
+        message: "Email could not be sent. Please check email configuration."
+      });
+    }
   } catch (error) {
     console.error("Error sending invoice reminder email:", error);
     res.status(500).json({ error: error.message });
@@ -213,53 +266,53 @@ router.post("/send-reminder", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     await ensureConnection();
-    
+
     const oldInvoice = await InvoiceModel.findOne({ id: req.params.id });
     if (!oldInvoice) {
       return res.status(404).json({ message: "Invoice not found" });
     }
-    
+
     const updatedInvoice = await InvoiceModel.findOneAndUpdate(
       { id: req.params.id },
       { $set: req.body },
       { new: true, runValidators: true }
     );
-    
+
     // Update member balance if status, amount, or memberId changed
     const statusChanged = oldInvoice.status !== updatedInvoice.status;
     const amountChanged = oldInvoice.amount !== updatedInvoice.amount;
     const memberChanged = oldInvoice.memberId !== updatedInvoice.memberId;
-    
+
     // Check if invoice was marked as paid (status changed from Unpaid/Overdue to Paid)
     const wasUnpaid = oldInvoice.status === "Unpaid" || oldInvoice.status === "Overdue";
     const isNowPaid = updatedInvoice.status === "Paid";
     const markedAsPaid = statusChanged && wasUnpaid && isNowPaid;
-    
+
     if (statusChanged || amountChanged || memberChanged) {
       // Always recalculate balance for the old member if:
       // - Member changed, OR
       // - Invoice was unpaid/overdue (needs recalculation when paid), OR
       // - Invoice is now unpaid/overdue (needs recalculation)
       if (oldInvoice.memberId) {
-        if (memberChanged || wasUnpaid || markedAsPaid || 
-            updatedInvoice.status === "Unpaid" || updatedInvoice.status === "Overdue") {
+        if (memberChanged || wasUnpaid || markedAsPaid ||
+          updatedInvoice.status === "Unpaid" || updatedInvoice.status === "Overdue") {
           await calculateAndUpdateMemberBalance(oldInvoice.memberId);
         }
       }
-      
+
       // Recalculate balance for new member if member changed and invoice is unpaid
       if (updatedInvoice.memberId && memberChanged) {
         if (updatedInvoice.status === "Unpaid" || updatedInvoice.status === "Overdue") {
           await calculateAndUpdateMemberBalance(updatedInvoice.memberId);
         }
       }
-      
+
       // If invoice was marked as paid, also recalculate for the member (in case member didn't change)
       if (markedAsPaid && updatedInvoice.memberId) {
         await calculateAndUpdateMemberBalance(updatedInvoice.memberId);
       }
     }
-    
+
     res.json(updatedInvoice);
   } catch (error) {
     console.error("Error updating invoice:", error);
@@ -271,18 +324,18 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     await ensureConnection();
-    
+
     const deletedInvoice = await InvoiceModel.findOneAndDelete({ id: req.params.id });
     if (!deletedInvoice) {
       return res.status(404).json({ message: "Invoice not found" });
     }
-    
+
     // Update member balance after deletion if invoice was unpaid
-    if (deletedInvoice.memberId && 
-        (deletedInvoice.status === "Unpaid" || deletedInvoice.status === "Overdue")) {
+    if (deletedInvoice.memberId &&
+      (deletedInvoice.status === "Unpaid" || deletedInvoice.status === "Overdue")) {
       await calculateAndUpdateMemberBalance(deletedInvoice.memberId);
     }
-    
+
     res.status(204).send();
   } catch (error) {
     console.error("Error deleting invoice:", error);
@@ -294,7 +347,7 @@ router.delete("/:id", async (req, res) => {
 router.post("/:id/send-payment-confirmation", async (req, res) => {
   try {
     await ensureConnection();
-    
+
     const invoice = await InvoiceModel.findOne({ id: req.params.id });
     if (!invoice) {
       return res.status(404).json({ message: "Invoice not found" });
@@ -310,8 +363,8 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
     }
 
     // Find the most recent payment for this invoice
-    const payment = await PaymentModel.findOne({ 
-      invoiceId: invoice.id 
+    const payment = await PaymentModel.findOne({
+      invoiceId: invoice.id
     }).sort({ createdAt: -1 });
 
     // Prepare payment object with screenshot from payment or invoice
@@ -330,20 +383,20 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
     // Send email with PDF receipt
     console.log(`📧 Attempting to send payment confirmation email for invoice ${invoice.id} to member ${member.email}...`);
     const emailSent = await sendPaymentApprovalEmail(
-      member, 
-      paymentData, 
+      member,
+      paymentData,
       invoice
     );
 
     if (emailSent) {
       console.log(`✅ Payment confirmation email sent successfully to ${member.email}`);
-      res.json({ 
-        success: true, 
-        message: `Payment confirmation email with PDF receipt sent to ${member.email}` 
+      res.json({
+        success: true,
+        message: `Payment confirmation email with PDF receipt sent to ${member.email}`
       });
     } else {
       console.error(`❌ Failed to send payment confirmation email to ${member.email}`);
-      res.status(500).json({ 
+      res.status(500).json({
         error: "Failed to send payment confirmation email. Please check email configuration in settings.",
         details: "Email may not be configured. Please check server logs for details."
       });
