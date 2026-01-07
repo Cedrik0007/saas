@@ -55,6 +55,12 @@ export function formatNumber(value, options = {}) {
  */
 export function formatCurrency(value, currency = "HKD", options = {}) {
   try {
+    // Ensure value is a valid number
+    const numValue = typeof value === 'number' ? value : parseFloat(value || 0);
+    if (isNaN(numValue) || !isFinite(numValue)) {
+      return `HK$0.00`;
+    }
+    
     const locale = getUserLocale();
     const defaultOptions = {
       style: "currency",
@@ -63,11 +69,13 @@ export function formatCurrency(value, currency = "HKD", options = {}) {
       maximumFractionDigits: 2,
       ...options,
     };
-    return new Intl.NumberFormat(locale, defaultOptions).format(value);
+    return new Intl.NumberFormat(locale, defaultOptions).format(numValue);
   } catch (error) {
     console.error("Error formatting currency:", error);
     // Fallback formatting with HKD
-    const formatted = parseFloat(value || 0).toFixed(2);
+    const numValue = typeof value === 'number' ? value : parseFloat(value || 0);
+    const safeValue = (isNaN(numValue) || !isFinite(numValue)) ? 0 : numValue;
+    const formatted = safeValue.toFixed(2);
     return `HK$${formatted}`;
   }
 }

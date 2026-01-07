@@ -210,6 +210,7 @@ function AdminPage() {
     name: "",
     email: "",
     phone: "",
+    native: "",
     status: "Active",
     balance: "250", // default for Lifetime (numeric string)
     nextDue: getTodayDate(), // Default to today's date
@@ -606,6 +607,7 @@ function AdminPage() {
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
   const [paymentSearchTerm, setPaymentSearchTerm] = useState(""); // Search filter for payments
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("All"); // All, Paid, Unpaid, Overdue, Pending
+  const [invoiceSearchTerm, setInvoiceSearchTerm] = useState(""); // Search filter for invoices
   const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
   const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
   const [transactionsSearch, setTransactionsSearch] = useState("");
@@ -964,7 +966,7 @@ function AdminPage() {
     }
 
     // Return method as-is if it doesn't match above
-    return payment.method || "N/A";
+    return payment.method || "-";
   };
 
   const getRecentPayments = () => {
@@ -978,13 +980,13 @@ function AdminPage() {
       .slice(0, 5)
       .map(payment => ({
         Member: payment.member || "Unknown",
-        Period: payment.period || "N/A",
+        Period: payment.period || "-",
         Amount: payment.amount
           ? formatCurrency(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0))
           : formatCurrency(0),
         Method: getPaymentMethodDisplay(payment),
         Status: payment.status || "Pending",
-        Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString() : "N/A"),
+        Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString() : "-"),
       }));
   };
 
@@ -1032,6 +1034,44 @@ function AdminPage() {
     }
   }, [activeSection]);
 
+  // Helper function to check if a member exists in the members list
+  const isMemberInList = (memberIdentifier) => {
+    if (!memberIdentifier) return false;
+    const identifier = String(memberIdentifier).toLowerCase().trim();
+    return members.some(m => 
+      m.id?.toLowerCase() === identifier ||
+      m.email?.toLowerCase() === identifier ||
+      m.name?.toLowerCase() === identifier ||
+      String(m.id || "").toLowerCase() === identifier ||
+      String(m.email || "").toLowerCase() === identifier ||
+      String(m.name || "").toLowerCase() === identifier
+    );
+  };
+
+  // Helper function to check if an invoice belongs to a member in the list
+  const isInvoiceMemberInList = (invoice) => {
+    if (!invoice) return false;
+    return members.some(m => 
+      m.id === invoice.memberId || 
+      m.email === invoice.memberEmail || 
+      m.name === invoice.memberName ||
+      String(m.id || "") === String(invoice.memberId || "") ||
+      String(m.email || "").toLowerCase() === String(invoice.memberEmail || "").toLowerCase() ||
+      String(m.name || "").toLowerCase() === String(invoice.memberName || "").toLowerCase()
+    );
+  };
+
+  // Helper function to check if a payment belongs to a member in the list
+  const isPaymentMemberInList = (payment) => {
+    if (!payment || !payment.member) return false;
+    const paymentMember = String(payment.member).toLowerCase().trim();
+    return members.some(m => 
+      String(m.id || "").toLowerCase() === paymentMember ||
+      String(m.email || "").toLowerCase() === paymentMember ||
+      String(m.name || "").toLowerCase() === paymentMember
+    );
+  };
+
   // Calculate report stats based on date range from real database data
   const calculateReportStats = () => {
     const fromDate = new Date(dateRange.from);
@@ -1039,7 +1079,10 @@ function AdminPage() {
     toDate.setHours(23, 59, 59, 999); // Include entire end date
 
     // Filter payments within date range (only completed/paid payments count)
+    // Also filter to only show payments from members in the members list
     const paymentsInRange = paymentHistory.filter(payment => {
+      // First check if payment belongs to a member in the list
+      if (!isPaymentMemberInList(payment)) return false;
       if (!payment.date) return false;
       const paymentDate = new Date(payment.date);
       // Only count completed/paid payments in financial reports
@@ -1048,6 +1091,7 @@ function AdminPage() {
     });
 
     // Filter donations within date range
+    // Show all donations (both member and non-member donations)
     const donationsInRange = (Array.isArray(donations) ? donations : []).filter(donation => {
       if (!donation) return false;
 
@@ -2155,7 +2199,11 @@ function AdminPage() {
 
         // Calculate total due
         const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
-          return sum + parseFloat(inv.amount.replace("$", ""));
+          if (!inv.amount) return sum;
+          // Remove all currency symbols (HK$, $) and commas, then parse
+          const amountStr = String(inv.amount).replace(/HK\$|\$|,/g, '').trim();
+          const amount = parseFloat(amountStr) || 0;
+          return sum + amount;
         }, 0);
 
         // Create invoice list for WhatsApp
@@ -2629,9 +2677,11 @@ Subscription Manager HK`;
         name: "",
         email: "",
         phone: "",
+        native: "",
         status: "Active",
         balance: "250",
         nextDue: getTodayDate(), // Reset to today's date
+        subscriptionYear: new Date().getFullYear().toString(),
         lastPayment: "",
         subscriptionType: "Lifetime",
       });
@@ -2645,7 +2695,7 @@ Subscription Manager HK`;
       });
       setCurrentInvalidField(null);
       setShowMemberForm(false);
-      showToast("Member added successfully! Data refreshed.", "success");
+      showToast("Member added successfully!", "success");
     } catch (error) {
       console.error("Failed to add member:", error);
       showToast("Failed to add member. Please try again.", "error");
@@ -2671,6 +2721,7 @@ Subscription Manager HK`;
       name: member.name || "",
       email: member.email || "",
       phone: member.phone || "",
+      native: member.native || "",
       status: member.status || "Active",
       // Do not set subscriptionType, balance, nextDue, or lastPayment for editing - these are subscription details
     });
@@ -2705,6 +2756,9 @@ Subscription Manager HK`;
       if (memberForm.phone !== (originalMember.phone || "")) {
         updateData.phone = memberForm.phone;
       }
+      if (memberForm.native !== (originalMember.native || "")) {
+        updateData.native = memberForm.native;
+      }
       if (memberForm.status !== (originalMember.status || "Active")) {
         updateData.status = memberForm.status;
       }
@@ -2727,6 +2781,7 @@ Subscription Manager HK`;
         name: "",
         email: "",
         phone: "",
+        native: "",
         password: "",
         status: "Active",
         balance: "HK$0",
@@ -3040,14 +3095,14 @@ Subscription Manager HK`;
               month: '2-digit',
               year: 'numeric'
             })
-            : 'N/A';
+            : '-';
           const nextDueDateStr = updatedMember.next_due_date
             ? new Date(updatedMember.next_due_date).toLocaleDateString('en-GB', {
               day: '2-digit',
               month: '2-digit',
               year: 'numeric'
             })
-            : 'N/A';
+            : '-';
           showToast(`Invoice marked as paid (${paymentMethod})! Last payment: ${lastPaymentDateStr}, Next due: ${nextDueDateStr}`, "success");
         } else {
           showToast(`Invoice marked as paid (${paymentMethod})!`, "success");
@@ -3297,7 +3352,11 @@ Subscription Manager HK`;
 
     // Calculate total due
     const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
-      return sum + parseFloat(inv.amount.replace("$", "").replace(",", "") || 0);
+      if (!inv.amount) return sum;
+      // Remove all currency symbols (HK$, $) and commas, then parse
+      const amountStr = String(inv.amount).replace(/HK\$|\$|,/g, '').trim();
+      const amount = parseFloat(amountStr) || 0;
+      return sum + amount;
     }, 0);
 
     // Create invoice list for email
@@ -3385,7 +3444,7 @@ Subscription Manager HK`;
       addCommunication(comm);
 
       showToast(
-        `✓ Reminder email sent to ${memberData.name} for ${formatCurrency(totalDue)} outstanding!`
+        `Reminder email sent to ${memberData.name} for ${formatCurrency(totalDue)} outstanding!`
       );
     } catch (error) {
       console.error("✗ Email send error:", error);
@@ -4098,6 +4157,7 @@ Subscription Manager HK`;
                             name: "",
                             email: "",
                             phone: "",
+                            native: "",
                             status: "Active",
                             balance: "250", // default based on Lifetime subscription
                             nextDue: getTodayDate(), // Default to today's date
@@ -4278,6 +4338,26 @@ Subscription Manager HK`;
                             />
                           </div>
 
+                          <label>
+                            <span>
+                              <i className="fas fa-globe" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                              Native
+                            </span>
+                            <input
+                              type="text"
+                              value={memberForm.native}
+                              onChange={(e) => {
+                                // Only allow alphabets and spaces
+                                const value = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                                handleMemberFieldChange("native", value);
+                              }}
+                              placeholder="Enter Your native "
+                              style={{
+                                textTransform: "capitalize"
+                              }}
+                            />
+                          </label>
+
                           {/* Password removed from Add Member form as requested */}
                           <label>
                             <span>
@@ -4290,7 +4370,7 @@ Subscription Manager HK`;
                             >
                               <option>Active</option>
                               <option>Inactive</option>
-                              <option>Pending</option>
+                              {/* <option>Pending</option> */}
                             </select>
                           </label>
 
@@ -4576,12 +4656,65 @@ Subscription Manager HK`;
                 <div className="admin-members-table-card">
                   <div className="table-wrapper">
                     {(() => {
+                      // Helper function to extract subscription year from member
+                      const getMemberSubscriptionYear = (member) => {
+                        // First try to get from member's invoices
+                        const memberInvoices = invoices.filter(inv => 
+                          inv.memberId === member.id || 
+                          inv.memberEmail === member.email || 
+                          inv.memberName === member.name
+                        ).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)); // Sort by most recent
+                        
+                        if (memberInvoices.length > 0) {
+                          const latestInvoice = memberInvoices[0];
+                          if (latestInvoice.period) {
+                            const periodStr = String(latestInvoice.period).trim();
+                            const yearMatch = periodStr.match(/\d{4}/);
+                            if (yearMatch) {
+                              return yearMatch[0];
+                            }
+                          }
+                        }
+                        
+                        // Fallback to next_due_date or nextDue
+                        if (member.next_due_date) {
+                          return new Date(member.next_due_date).getFullYear().toString();
+                        } else if (member.nextDue) {
+                          const nextDueStr = String(member.nextDue).trim();
+                          const yearMatch = nextDueStr.match(/\d{4}/);
+                          return yearMatch ? yearMatch[0] : (nextDueStr.split('-')[0] || null);
+                        }
+                        
+                        return null;
+                      };
+
                       // Filter members based on search term and status (using derived status)
                       const filteredMembers = members
-                        .filter((member) =>
-                          !memberSearchTerm ||
-                          member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
-                        )
+                        .filter((member) => {
+                          if (!memberSearchTerm) return true;
+                          
+                          const searchLower = memberSearchTerm.toLowerCase();
+                          const memberName = member.name?.toLowerCase() || "";
+                          const memberEmail = member.email?.toLowerCase() || "";
+                          const memberId = member.id?.toLowerCase() || "";
+                          const memberPhone = member.phone?.toLowerCase() || "";
+                          
+                          // Check if search matches name, email, id, or phone
+                          if (memberName.includes(searchLower) || 
+                              memberEmail.includes(searchLower) || 
+                              memberId.includes(searchLower) ||
+                              memberPhone.includes(searchLower)) {
+                            return true;
+                          }
+                          
+                          // Check if search matches subscription year
+                          const subscriptionYear = getMemberSubscriptionYear(member);
+                          if (subscriptionYear && subscriptionYear.includes(searchLower)) {
+                            return true;
+                          }
+                          
+                          return false;
+                        })
                         .filter((member) => {
                           if (memberStatusFilter === "All") return true;
 
@@ -4714,7 +4847,7 @@ Subscription Manager HK`;
                               </label>
                               <input
                                 type="text"
-                                placeholder="Search by member name..."
+                                placeholder="Search by name, email, ID, phone, or subscription year..."
                                 value={memberSearchTerm}
                                 onChange={(e) => {
                                   setMemberSearchTerm(e.target.value);
@@ -4739,7 +4872,7 @@ Subscription Manager HK`;
                                   e.target.style.boxShadow = "none";
                                 }}
                               />
-                              {memberSearchTerm && (
+                              {/* {memberSearchTerm && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -4759,7 +4892,7 @@ Subscription Manager HK`;
                                 >
                                   ✕
                                 </button>
-                              )}
+                              )} */}
                             </div>
                           </div>
 
@@ -4777,6 +4910,7 @@ Subscription Manager HK`;
                               <Table
                                 columns={[
                                   "Name",
+                                  "Native",
                                   "Year",
                                   "Subscription Type",
                                   "Joined Year",
@@ -4880,6 +5014,7 @@ Subscription Manager HK`;
 
                                   return {
                                     "Name": member.name,
+                                    "Native": member.native || "-",
                                     "Year": subYear,
                                     "Subscription Type": member.subscriptionType || "-",
                                     "Joined Year": joinedYear,
@@ -4919,18 +5054,20 @@ Subscription Manager HK`;
                                           <button
                                             className="ghost-btn icon-btn icon-btn--view"
                                             onClick={() => handleViewMemberDetail(member)}
-                                            title="View member"
                                             aria-label="View member"
                                           >
-                                            <i className="fas fa-eye" aria-hidden="true"></i>
+                                            <Tooltip text="View member" position="top">
+                                              <i className="fas fa-eye" aria-hidden="true"></i>
+                                            </Tooltip>
                                           </button>
                                           <button
                                             className="secondary-btn icon-btn icon-btn--edit"
                                             onClick={() => handleEditMember(member)}
-                                            title="Edit member"
                                             aria-label="Edit member"
                                           >
-                                            <i className="fas fa-pen" aria-hidden="true"></i>
+                                            <Tooltip text="Edit member" position="top">
+                                              <i className="fas fa-pen" aria-hidden="true"></i>
+                                            </Tooltip>
                                           </button>
                                           {isOwner && (
                                             <button
@@ -5409,8 +5546,11 @@ Subscription Manager HK`;
                                     e.target.style.background = "#5a31ea";
                                     e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.3)";
                                   }}
+                                  aria-label="View screenshot"
                                 >
-                                  <i className="fas fa-image" aria-hidden="true"></i>
+                                  <Tooltip text="View screenshot" position="top">
+                                    <i className="fas fa-image" aria-hidden="true"></i>
+                                  </Tooltip>
                                 </button>
                               )
                             } : "-",
@@ -5468,10 +5608,11 @@ Subscription Manager HK`;
                                           () => handleDeleteInvoice(invoice.id)
                                         );
                                       }}
-                                      title="Delete Invoice"
                                       aria-label="Delete Invoice"
                                     >
-                                      <i className="fas fa-trash" aria-hidden="true"></i>
+                                      <Tooltip text="Delete Invoice" position="top">
+                                        <i className="fas fa-trash" aria-hidden="true"></i>
+                                      </Tooltip>
                                     </button>
                                   )}
                                 </div>
@@ -5572,7 +5713,7 @@ Subscription Manager HK`;
                                           color: "#000",
                                         }}
                                       >
-                                        {item.member || item.memberName || item.memberId || "N/A"}
+                                        {item.member || item.memberName || item.memberId || "-"}
                                       </div>
                                     </div>
                                     <div
@@ -5769,16 +5910,16 @@ Subscription Manager HK`;
                               {memberCommunications.map((item, idx) => (
                                 <li key={idx}>
                                   <p>
-                                    <strong>{item.channel || "N/A"}</strong>
+                                    <strong>{item.channel || "-"}</strong>
                                     {item.type ? ` · ${item.type}` : ""}
                                     {" · "}
-                                    {item.message || "N/A"}
+                                    {item.message || "-"}
                                     {" · "}
                                     {item.date
                                       ? new Date(item.date).toLocaleString()
                                       : item.timestamp
                                         ? new Date(item.timestamp).toLocaleString()
-                                        : "N/A"}
+                                        : "-"}
                                   </p>
                                   {item.status && (
                                     <span className={statusClass[item.status] || "badge"}>
@@ -5807,7 +5948,7 @@ Subscription Manager HK`;
                             date: date ? new Date(date) : null,
                             label: `Invoice ${inv.id || ""} · ${inv.period || ""} · ${
                               inv.amount || ""
-                            } · ${status || "N/A"}`,
+                            } · ${status || "-"}`,
                           };
                         });
 
@@ -6381,7 +6522,7 @@ Subscription Manager HK`;
                         : "Not selected"}
                     </p>
                     <p style={{ margin: "4px 0" }}>
-                      <strong>Subscription Year:</strong> {invoiceForm.subscriptionYear || "N/A"}
+                      <strong>Subscription Year:</strong> {invoiceForm.subscriptionYear || "-"}
                     </p>
                     <p style={{ margin: "4px 0" }}>
                       <strong>Amount:</strong>{" "}
@@ -7260,9 +7401,9 @@ Subscription Manager HK`;
                           }}
                         >
                           <option value="gmail">Gmail</option>
-                          <option value="outlook">Outlook</option>
+                          {/* <option value="outlook">Outlook</option>
                           <option value="yahoo">Yahoo</option>
-                          <option value="custom">Custom SMTP</option>
+                          <option value="custom">Custom SMTP</option> */}
                         </select>
                       </div>
                       <div>
@@ -7670,7 +7811,7 @@ Subscription Manager HK`;
                           { value: "All", label: "All" },
                           { value: "Delivered", label: "Delivered" },
                           { value: "Failed", label: "Failed" },
-                          { value: "Pending", label: "Pending" }
+                          // { value: "Pending", label: "Pending" }
                         ].map((option) => (
                           <button
                             key={option.value}
@@ -7775,52 +7916,68 @@ Subscription Manager HK`;
                     // Build combined list:
                     // - Email reminders from backend reminderLogs (automatic + manual)
                     // - WhatsApp reminders from local communicationLog
-                    const emailItems = (reminderLogs || []).map((log) => {
-                      const member =
-                        members.find((m) => m.id === log.memberId) ||
-                        members.find(
-                          (m) =>
-                            m.email &&
-                            log.memberEmail &&
-                            m.email.toLowerCase() === log.memberEmail.toLowerCase()
-                        );
-                      return {
-                        memberName: member?.name || log.memberEmail || "N/A",
-                        memberId: log.memberId,
-                        channel: "Email",
-                        type:
-                          log.reminderType === "overdue"
-                            ? "Overdue (auto/manual)"
-                            : "Upcoming (auto/manual)",
-                        message: `Email reminder - ${log.amount} · ${log.invoiceCount} invoice(s)`,
-                        date: log.sentAt
-                          ? new Date(log.sentAt).toLocaleDateString("en-GB", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                          })
-                          : "N/A",
-                        status: (() => {
-                          // Normalize status - handle case variations and ensure consistent format
-                          const logStatus = log.status ? String(log.status).trim() : "";
-                          const lowerStatus = logStatus.toLowerCase();
-                          if (lowerStatus === "failed") return "Failed";
-                          if (lowerStatus === "pending") return "Pending";
-                          return logStatus || "Delivered";
-                        })(),
-                        rawDate: log.sentAt || null,
-                        raw: log,
-                      };
-                    });
+                    // Only show reminders for members in the members list
+                    const emailItems = (reminderLogs || [])
+                      .map((log) => {
+                        const member =
+                          members.find((m) => m.id === log.memberId) ||
+                          members.find(
+                            (m) =>
+                              m.email &&
+                              log.memberEmail &&
+                              m.email.toLowerCase() === log.memberEmail.toLowerCase()
+                          );
+                        return {
+                          member,
+                          memberName: member?.name || log.memberEmail || "-",
+                          memberId: log.memberId,
+                          memberEmail: log.memberEmail,
+                          channel: "Email",
+                          type:
+                            log.reminderType === "overdue"
+                              ? "Overdue (auto/manual)"
+                              : "Upcoming (auto/manual)",
+                          message: `Email reminder - ${log.amount} · ${log.invoiceCount} invoice(s)`,
+                          date: log.sentAt
+                            ? new Date(log.sentAt).toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })
+                            : "-",
+                          status: (() => {
+                            // Normalize status - handle case variations and ensure consistent format
+                            const logStatus = log.status ? String(log.status).trim() : "";
+                            const lowerStatus = logStatus.toLowerCase();
+                            if (lowerStatus === "failed") return "Failed";
+                            if (lowerStatus === "pending") return "Pending";
+                            return logStatus || "Delivered";
+                          })(),
+                          rawDate: log.sentAt || null,
+                          raw: log,
+                        };
+                      })
+                      .filter((item) => {
+                        // Only include if member is in the members list
+                        return item.member !== undefined;
+                      });
 
                     const whatsappItems = (communicationLog || [])
                       .filter((c) => c.channel === "WhatsApp")
                       .map((c) => {
+                        // Find member for WhatsApp reminder
+                        const member = members.find(
+                          (m) =>
+                            m.id === c.memberId ||
+                            (m.email && c.memberEmail && m.email.toLowerCase() === c.memberEmail?.toLowerCase()) ||
+                            (m.name && c.memberName && m.name.toLowerCase() === c.memberName?.toLowerCase())
+                        );
                         // Normalize status - preserve original status values
                         const cStatus = c.status ? String(c.status).trim() : "";
                         const normalizedStatus = cStatus || "Delivered";
                         return {
-                          memberName: c.memberName || c.member || "N/A",
+                          member,
+                          memberName: c.memberName || c.member || "-",
                           memberId: c.memberId,
                           channel: "WhatsApp",
                           type: c.type || "Manual Outstanding Reminder",
@@ -7830,6 +7987,10 @@ Subscription Manager HK`;
                           rawDate: c.timestamp || null,
                           raw: c,
                         };
+                      })
+                      .filter((item) => {
+                        // Only include if member is in the members list
+                        return item.member !== undefined;
                       });
 
                     let allItems = [...emailItems, ...whatsappItems];
@@ -7936,18 +8097,18 @@ Subscription Manager HK`;
                                         key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
                                       >
                                         <td>
-                                          {item.memberName || item.member || "N/A"}
+                                          {item.memberName || item.member || "-"}
                                           {item.memberId ? ` (${item.memberId})` : ""}
                                         </td>
-                                        <td>{item.channel || "N/A"}</td>
+                                        <td>{item.channel || "-"}</td>
                                         <td>{item.type || "-"}</td>
                                         <td style={{ maxWidth: "320px", whiteSpace: "normal" }}>
-                                          {item.message || "N/A"}
+                                          {item.message || "-"}
                                         </td>
-                                        <td>{item.date || "N/A"}</td>
+                                        <td>{item.date || "-"}</td>
                                         <td>
                                           <span className={statusClass[item.status] || "badge"}>
-                                            {item.status || "N/A"}
+                                            {item.status || "-"}
                                           </span>
                                         </td>
                                         <td>
@@ -7956,20 +8117,20 @@ Subscription Manager HK`;
                                             <button
                                               type="button"
                                               className="icon-btn icon-btn--view"
-                                              title="View full message"
                                               aria-label="View full message"
                                               onClick={() => {
                                                 setSelectedReminderLogItem(item);
                                               }}
                                             >
-                                              <i className="fas fa-eye" aria-hidden="true"></i>
+                                              <Tooltip text="View full message" position="top">
+                                                <i className="fas fa-eye" aria-hidden="true"></i>
+                                              </Tooltip>
                                             </button>
                                             {/* Retry failed email reminders */}
                                             {item.channel === "Email" && item.status === "Failed" && !isViewer && (
                                               <button
                                                 type="button"
                                                 className="icon-btn icon-btn--edit"
-                                                title="Retry sending"
                                                 aria-label="Retry sending reminder"
                                                 onClick={async () => {
                                                   try {
@@ -8006,7 +8167,9 @@ Subscription Manager HK`;
                                                   }
                                                 }}
                                               >
-                                                <i className="fas fa-redo" aria-hidden="true"></i>
+                                                <Tooltip text="Retry sending" position="top">
+                                                  <i className="fas fa-redo" aria-hidden="true"></i>
+                                                </Tooltip>
                                               </button>
                                             )}
                                           </div>
@@ -8029,18 +8192,18 @@ Subscription Manager HK`;
                                       <div className="mobile-table-card-header-content">
                                         <div className="mobile-table-card-title-section">
                                           <div className="mobile-table-card-title">
-                                            {item.memberName || item.member || "N/A"}
+                                            {item.memberName || item.member || "-"}
                                             {item.memberId ? ` (${item.memberId})` : ""}
                                           </div>
                                           <div className="mobile-table-card-metric">
                                             <i className={`fas ${item.channel === "Email" ? "fa-envelope" : "fa-whatsapp"}`} style={{ fontSize: "0.75rem", marginRight: "4px" }}></i>
-                                            <span>{item.channel || "N/A"}</span>
+                                            <span>{item.channel || "-"}</span>
                                           </div>
                                         </div>
                                         <div className="mobile-table-card-header-right">
                                           <div className="mobile-table-card-status">
                                             <span className={statusClass[item.status] || "badge"}>
-                                              {item.status || "N/A"}
+                                              {item.status || "-"}
                                             </span>
                                           </div>
                                           <i className="fas fa-chevron-right mobile-table-card-arrow"></i>
@@ -8081,18 +8244,18 @@ Subscription Manager HK`;
                               {allItems.map((item, idx) => (
                                 <tr key={idx}>
                                   <td>
-                                    {item.memberName || item.member || "N/A"}
+                                    {item.memberName || item.member || "-"}
                                     {item.memberId ? ` (${item.memberId})` : ""}
                                   </td>
-                                  <td>{item.channel || "N/A"}</td>
+                                  <td>{item.channel || "-"}</td>
                                   <td>{item.type || "-"}</td>
                                   <td style={{ maxWidth: "320px", whiteSpace: "normal" }}>
-                                    {item.message || "N/A"}
+                                    {item.message || "-"}
                                   </td>
-                                  <td>{item.date || "N/A"}</td>
+                                  <td>{item.date || "-"}</td>
                                   <td>
                                     <span className={statusClass[item.status] || "badge"}>
-                                      {item.status || "N/A"}
+                                      {item.status || "-"}
                                     </span>
                                   </td>
                                 </tr>
@@ -8137,7 +8300,7 @@ Subscription Manager HK`;
                               .map((request) => (
                                 <tr key={request._id}>
                                   <td>{request.userEmail}</td>
-                                  <td>{request.userName || "N/A"}</td>
+                                  <td>{request.userName || "-"}</td>
                                   <td>
                                     {request.requestedAt
                                       ? new Date(request.requestedAt).toLocaleString("en-GB", {
@@ -8147,7 +8310,7 @@ Subscription Manager HK`;
                                         hour: "2-digit",
                                         minute: "2-digit",
                                       })
-                                      : "N/A"}
+                                      : "-"}
                                   </td>
                                   <td>
                                     <span
@@ -9178,9 +9341,9 @@ Subscription Manager HK`;
                                   day: '2-digit',
                                   month: 'short',
                                   year: 'numeric'
-                                }) : "N/A"),
+                                }) : "-"),
                                 Member: payment.member || "Unknown",
-                                "Invoice ID": payment.invoiceId || "N/A",
+                                "Invoice ID": payment.invoiceId || "-",
                                 Amount: payment.amount
                                   ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
                                     minimumFractionDigits: 2,
@@ -9195,12 +9358,13 @@ Subscription Manager HK`;
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       style={{ color: "#000", textDecoration: "none" }}
-                                      title="View screenshot"
                                       aria-label="View screenshot"
                                     >
-                                      <i className="fas fa-image" aria-hidden="true"></i>
+                                      <Tooltip text="View screenshot" position="top">
+                                        <i className="fas fa-image" aria-hidden="true"></i>
+                                      </Tooltip>
                                     </a>
-                                  ) : "N/A"
+                                  ) : "-"
                                 },
                                 Status: {
                                   render: () => (
@@ -9219,20 +9383,22 @@ Subscription Manager HK`;
                                             onClick={() => {
                                               if (paymentIdString) handleApprovePayment(paymentIdString);
                                             }}
-                                            title="Approve payment (By Admin)"
                                             aria-label="Approve payment (By Admin)"
                                           >
-                                            <i className="fas fa-check" aria-hidden="true"></i>
+                                            <Tooltip text="Approve payment (By Admin)" position="top">
+                                              <i className="fas fa-check" aria-hidden="true"></i>
+                                            </Tooltip>
                                           </button>
                                           <button
                                             className="icon-btn icon-btn--delete"
                                             onClick={() => {
                                               if (paymentIdString) handleRejectPayment(paymentIdString);
                                             }}
-                                            title="Reject payment (By Admin)"
                                             aria-label="Reject payment (By Admin)"
                                           >
-                                            <i className="fas fa-times" aria-hidden="true"></i>
+                                            <Tooltip text="Reject payment (By Admin)" position="top">
+                                              <i className="fas fa-times" aria-hidden="true"></i>
+                                            </Tooltip>
                                           </button>
                                         </>
                                       )}
@@ -9434,8 +9600,12 @@ Subscription Manager HK`;
                 <div className="card-invoices">
                   <div className="table-wrapper">
                     {(() => {
+                      // Filter invoices to only show those belonging to members in the members list
+                      let filteredInvoices = (invoices || []).filter(invoice => 
+                        isInvoiceMemberInList(invoice)
+                      );
+                      
                       // Filter invoices by status
-                      let filteredInvoices = invoices || [];
                       if (invoiceStatusFilter !== "All") {
                         filteredInvoices = filteredInvoices.filter((invoice) => {
                           const status = invoice.status || "Unpaid";
@@ -9449,6 +9619,35 @@ Subscription Manager HK`;
                         });
                       }
 
+                      // Filter invoices by search term (name, year, native)
+                      if (invoiceSearchTerm.trim()) {
+                        const searchLower = invoiceSearchTerm.toLowerCase();
+                        filteredInvoices = filteredInvoices.filter((invoice) => {
+                          // Get member for this invoice
+                          const member = members.find(m => 
+                            m.id === invoice.memberId || 
+                            m.email === invoice.memberEmail || 
+                            m.name === invoice.memberName
+                          );
+
+                          // Search by name
+                          const memberName = (invoice.memberName || invoice.member || member?.name || "Unknown").toLowerCase();
+                          if (memberName.includes(searchLower)) return true;
+
+                          // Search by year (extract from period)
+                          const periodStr = String(invoice.period || "").trim();
+                          const yearMatch = periodStr.match(/\d{4}/);
+                          const invoiceYear = yearMatch ? yearMatch[0] : "";
+                          if (invoiceYear.includes(searchLower)) return true;
+
+                          // Search by native
+                          const memberNative = (member?.native || "").toLowerCase();
+                          if (memberNative.includes(searchLower)) return true;
+
+                          return false;
+                        });
+                      }
+
                       // Calculate pagination
                       const startIndex = (invoicesPage - 1) * invoicesPageSize;
                       const endIndex = startIndex + invoicesPageSize;
@@ -9456,10 +9655,12 @@ Subscription Manager HK`;
                       const totalPages = Math.ceil(filteredInvoices.length / invoicesPageSize);
 
                       return (
-                        <>
-                          {/* Invoice Status Filter - Segmented Buttons */}
-                          <div style={{ marginBottom: "20px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                            <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
+                        <div>
+                          {/* Invoice Filters - Status on Left, Search on Right */}
+                          <div style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                            {/* Invoice Status Filter - Segmented Buttons (Left) */}
+                            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                              <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
                             <div style={{
                               display: "flex",
                               gap: "4px",
@@ -9512,6 +9713,62 @@ Subscription Manager HK`;
                                 </button>
                               ))}
                             </div>
+                            </div>
+
+                            {/* Invoice Search Filter (Right) */}
+                            <div style={{ display: "inline-flex", gap: "8px", flexWrap: "nowrap", alignItems: "center" }}>
+                              <label style={{ fontWeight: "600", color: "#1a1a1a" ,whiteSpace: "nowrap" }}>🔍 Search:</label>
+                              <input
+                                type="text"
+                                placeholder="Search by name, year, or native..."
+                                value={invoiceSearchTerm}
+                                onChange={(e) => {
+                                  setInvoiceSearchTerm(e.target.value);
+                                  setInvoicesPage(1); // Reset to first page when searching
+                                }}
+                                style={{
+                                  padding: "8px 12px",
+                                  borderRadius: "4px",
+                                  border: "1px solid #e5e7eb",
+                                  background: "#ffffff",
+                                  fontSize: "0.875rem",
+                                  minWidth: "250px",
+                                  outline: "none",
+                                  transition: "border-color 0.2s"
+                                }}
+                                onFocus={(e) => {
+                                  e.target.style.borderColor = "#5a31ea";
+                                  e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                }}
+                                onBlur={(e) => {
+                                  e.target.style.borderColor = "#e5e7eb";
+                                  e.target.style.boxShadow = "none";
+                                }}
+                              />
+                              {/* {invoiceSearchTerm && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setInvoiceSearchTerm("");
+                                    setInvoicesPage(1);
+                                  }}
+                                  style={{
+                                    padding: "8px 12px",
+                                    background: "transparent",
+                                    border: "none",
+                                    color: "#6b7280",
+                                    cursor: "pointer",
+                                    fontSize: "0.875rem",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "4px"
+                                  }}
+                                  title="Clear search"
+                                >
+                                  <i className="fas fa-times"></i> Clear
+                                </button>
+                              )} */}
+                            </div>
                           </div>
 
                           {/* Empty State */}
@@ -9526,9 +9783,9 @@ Subscription Manager HK`;
                           ) : (
                             <>
                               {/* Invoice Table */}
-                              <div className="table-wrapper">
+                              <div style={{ marginBottom: "20px" }}>
                                 <Table
-                                  columns={["Name", "Year", "Subscription Type", "Joined Year", "Status", "Outstanding", "Actions"]}
+                                  columns={["Name", "Native", "Year", "Subscription Type", "Joined Year", "Status", "Outstanding", "Actions"]}
                                   rows={paginatedInvoices.map((invoice) => {
                                     const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
                                     const isOverdue = invoice.status === "Overdue";
@@ -9537,7 +9794,34 @@ Subscription Manager HK`;
                                     const joinedYear = member?.start_date
                                       ? new Date(member.start_date).getFullYear()
                                       : (member?.createdAt ? new Date(member.createdAt).getFullYear() : "-");
-                                    const numericOutstanding = member ? parseFloat(member.balance?.toString().replace(/[^0-9.]/g, "") || 0) : 0;
+                                    
+                                    // Find payments for this specific invoice
+                                    const invoiceId = invoice.id || invoice._id;
+                                    const invoicePayments = (paymentHistory || []).filter(p => {
+                                      const paymentInvoiceId = p.invoiceId?.toString() || "";
+                                      return paymentInvoiceId === invoiceId?.toString() || 
+                                             paymentInvoiceId === invoice.id?.toString() ||
+                                             paymentInvoiceId === invoice._id?.toString();
+                                    });
+                                    
+                                    // Calculate outstanding amount for this invoice
+                                    // If invoice is paid, show the amount that was paid
+                                    // If invoice is unpaid, show the invoice amount
+                                    let outstandingAmount = 0;
+                                    if (isPaid && invoicePayments.length > 0) {
+                                      // If paid, show the total amount paid for this invoice
+                                      outstandingAmount = invoicePayments.reduce((sum, p) => {
+                                        if (p.status === "Completed" || p.status === "Paid") {
+                                          const paidAmount = parseFloat(p.amount?.replace(/[^0-9.]/g, "") || 0);
+                                          return sum + paidAmount;
+                                        }
+                                        return sum;
+                                      }, 0);
+                                    } else if (!isPaid) {
+                                      // If unpaid, show the invoice amount
+                                      outstandingAmount = parseFloat(invoice.amount?.replace(/[^0-9.]/g, "") || 0);
+                                    }
+                                    // If paid but no payment record found, outstandingAmount remains 0
                                     
                                     // Extract year from invoice period
                                     const periodStr = String(invoice.period || "").trim();
@@ -9546,6 +9830,7 @@ Subscription Manager HK`;
 
                                     return {
                                       "Name": invoice.memberName || invoice.member || "Unknown",
+                                      "Native": member?.native || "-",
                                       "Year": subYear,
                                       "Subscription Type": member?.subscriptionType || invoice.subscriptionType || "-",
                                       "Joined Year": joinedYear,
@@ -9562,22 +9847,25 @@ Subscription Manager HK`;
                                         ),
                                       },
                                       "Outstanding": {
-                                        render: () => (
-                                          <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                                            <span
-                                              style={{
-                                                color: numericOutstanding > 0 ? "#ef4444" : "#111827",
-                                                fontWeight: numericOutstanding > 0 ? 600 : 500,
-                                              }}
-                                            >
-                                              HK$
-                                              {formatNumber(numericOutstanding, {
-                                                minimumFractionDigits: 2,
-                                                maximumFractionDigits: 2,
-                                              })}
-                                            </span>
-                                          </div>
-                                        ),
+                                        render: () => {
+                                          // Color based on invoice status: red for unpaid, black for paid
+                                          const isUnpaid = invoice.status === "Unpaid" || invoice.status === "Overdue" || invoice.status === "Pending" || !invoice.status;
+                                          const textColor = isUnpaid ? "#ef4444" : "#111827";
+                                          const fontWeight = isUnpaid ? 600 : 500;
+                                          
+                                          return (
+                                            <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                              <span
+                                                style={{
+                                                  color: textColor,
+                                                  fontWeight: fontWeight,
+                                                }}
+                                              >
+                                                {formatCurrency(outstandingAmount)}
+                                              </span>
+                                            </div>
+                                          );
+                                        },
                                       },
                                       "Actions": {
                                         render: () => (
@@ -9601,10 +9889,11 @@ Subscription Manager HK`;
                                                   showToast("Member not found for this invoice", "error");
                                                 }
                                               }}
-                                              title="View Invoice Details"
                                               aria-label="View Invoice Details"
                                             >
-                                              <i className="fas fa-eye" aria-hidden="true"></i>
+                                              <Tooltip text="View Invoice Details" position="top">
+                                                <i className="fas fa-eye" aria-hidden="true"></i>
+                                              </Tooltip>
                                             </button>
                                             {!isPaid && (
                                               <button
@@ -9614,10 +9903,11 @@ Subscription Manager HK`;
                                                     handleDeleteInvoice(invoice.id || invoice._id);
                                                   }
                                                 }}
-                                                title="Delete Invoice"
                                                 aria-label="Delete Invoice"
                                               >
-                                                <i className="fas fa-trash" aria-hidden="true"></i>
+                                                <Tooltip text="Delete Invoice" position="top">
+                                                  <i className="fas fa-trash" aria-hidden="true"></i>
+                                                </Tooltip>
                                               </button>
                                             )}
                                           </div>
@@ -9639,7 +9929,7 @@ Subscription Manager HK`;
                               )}
                             </>
                           )}
-                        </>
+                        </div>
                       );
                     })()}
                   </div>
@@ -9951,7 +10241,13 @@ Subscription Manager HK`;
                     </div>
 
                     {(() => {
-                      const filteredPayments = (payments || [])
+                      // First filter to only show payments from members in the members list
+                      let filteredPayments = (payments || []).filter(payment => 
+                        isPaymentMemberInList(payment)
+                      );
+                      
+                      // Then apply search filter
+                      filteredPayments = filteredPayments
                         .filter(payment => {
                           const term = paymentSearchTerm.trim().toLowerCase();
                           if (!term) return true;
@@ -10017,9 +10313,9 @@ Subscription Manager HK`;
                                   day: '2-digit',
                                   month: 'short',
                                   year: 'numeric'
-                                }) : "N/A"),
+                                }) : "-"),
                                 Member: payment.member || "Unknown",
-                                "Invoice ID": payment.invoiceId || "N/A",
+                                "Invoice ID": payment.invoiceId || "-",
                                 Amount: payment.amount
                                   ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
                                     minimumFractionDigits: 2,
@@ -10037,7 +10333,7 @@ Subscription Manager HK`;
                                     >
                                       <i className="fas fa-image" style={{ marginRight: "4px" }}></i>View
                                     </a>
-                                  ) : "N/A"
+                                  ) : "-"
                                 },
                                 Status: {
                                   render: () => (
@@ -11286,7 +11582,7 @@ Subscription Manager HK`;
                                             month: "short",
                                             year: "numeric",
                                           })
-                                          : "N/A"),
+                                          : "-"),
                                       DonorName: d.donorName || "",
                                       Type: d.isMember ? "Member" : "Non-Member",
                                       Amount: d.amount || "0",
@@ -11343,7 +11639,7 @@ Subscription Manager HK`;
                                       month: "short",
                                       year: "numeric",
                                     })
-                                    : "N/A");
+                                    : "-");
 
                                 return {
                                   Date: donationDate,
@@ -11359,7 +11655,7 @@ Subscription Manager HK`;
                                       maximumFractionDigits: 2,
                                     })}`
                                     : "HK$0.00",
-                                  Method: donation.method || "N/A",
+                                  Method: donation.method || "-",
                                   Screenshot: {
                                     render: () => donation.screenshot ? (
                                       <button
@@ -11381,13 +11677,14 @@ Subscription Manager HK`;
                                           padding: 0,
                                           fontSize: "inherit"
                                         }}
-                                        title="View screenshot"
                                         aria-label="View screenshot"
                                       >
-                                        <i className="fas fa-image" aria-hidden="true"></i>
+                                        <Tooltip text="View screenshot" position="top">
+                                          <i className="fas fa-image" aria-hidden="true"></i>
+                                        </Tooltip>
                                         <span>View</span>
                                       </button>
-                                    ) : "N/A"
+                                    ) : "-"
                                   },
                                   Notes: donation.notes || "-",
                                   Actions: {
@@ -11410,10 +11707,11 @@ Subscription Manager HK`;
                                               }
                                             );
                                           }}
-                                          title="Delete Donation"
                                           aria-label="Delete Donation"
                                         >
-                                          <i className="fas fa-trash" aria-hidden="true"></i>
+                                          <Tooltip text="Delete Donation" position="top">
+                                            <i className="fas fa-trash" aria-hidden="true"></i>
+                                          </Tooltip>
                                         </button>
                                       </div>
                                     ),
@@ -12096,9 +12394,17 @@ Subscription Manager HK`;
                             "Actions",
                           ]}
                           rows={(() => {
+                            // Filter payments to only show those from members in the members list
+                            const paymentsFromMembers = (reportStats.paymentsInRange || []).filter(p => 
+                              isPaymentMemberInList(p)
+                            );
+                            
+                            // Show all donations (both member and non-member donations)
+                            const donationsFromMembers = reportStats.donationsInRange || [];
+                            
                             // Combine payments and donations
                             const allTransactions = [
-                              ...(reportStats.paymentsInRange || []).map(p => ({
+                              ...paymentsFromMembers.map(p => ({
                                 ...p,
                                 type: 'Payment',
                                 source: p.member || 'Unknown',
@@ -12112,15 +12418,15 @@ Subscription Manager HK`;
                                   day: '2-digit',
                                   month: 'short',
                                   year: 'numeric'
-                                }) : "N/A"),
+                                }) : "-"),
                                 createdAt: p.createdAt || new Date(p.date || 0),
                               })),
-                              ...(reportStats.donationsInRange || []).map(d => ({
+                              ...donationsFromMembers.map(d => ({
                                 ...d,
                                 type: 'Donation',
                                 source: d.donorName,
                                 amount: d.amount,
-                                method: d.method || 'N/A',
+                                method: d.method || '-',
                                 screenshot: d.screenshot || null,
                                 status: 'Completed',
                                 invoiceId: null,
@@ -12129,7 +12435,7 @@ Subscription Manager HK`;
                                   day: '2-digit',
                                   month: 'short',
                                   year: 'numeric'
-                                }) : "N/A"),
+                                }) : "-"),
                                 createdAt: d.createdAt || new Date(d.date || 0),
                                 isMember: d.isMember,
                               }))
@@ -12176,7 +12482,7 @@ Subscription Manager HK`;
                               const transactionId = transaction._id || transaction.id;
 
                               return {
-                                Date: transaction.date || "N/A",
+                                Date: transaction.date || "-",
                                 Type: {
                                   render: () => (
                                     transaction.type === "Payment" ? (
@@ -12187,7 +12493,7 @@ Subscription Manager HK`;
                                   ),
                                 },
                                 "Member / Donor": transaction.source || "Unknown",
-                                "Invoice ID": transaction.invoiceId || (transaction.type === "Donation" ? "N/A" : "N/A"),
+                                "Invoice ID": transaction.invoiceId || (transaction.type === "Donation" ? "-" : "-"),
                                 Amount: transaction.amount
                                   ? `HK$${formatNumber(parseFloat(transaction.amount.toString().replace(/[^0-9.]/g, '') || 0), {
                                     minimumFractionDigits: 2,
@@ -12196,20 +12502,37 @@ Subscription Manager HK`;
                                   : "HK$0.00",
                                 Method: transaction.type === "Payment"
                                   ? getPaymentMethodDisplay(transaction)
-                                  : (transaction.method || "N/A"),
+                                  : (transaction.method || "-"),
                                 Screenshot: {
                                   render: () => transaction.screenshot ? (
-                                    <a
-                                      href={transaction.screenshot}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      style={{ color: "#5a31ea", textDecoration: "none" }}
-                                      title="View screenshot"
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setSelectedImageUrl(transaction.screenshot);
+                                        setShowImagePopup(true);
+                                      }}
+                                      style={{
+                                        background: "none",
+                                        border: "none",
+                                        color: "#5a31ea",
+                                        textDecoration: "none",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "6px",
+                                        cursor: "pointer",
+                                        padding: 0,
+                                        fontSize: "inherit"
+                                      }}
                                       aria-label="View screenshot"
                                     >
-                                      <i className="fas fa-image" aria-hidden="true"></i>
-                                    </a>
-                                  ) : "N/A"
+                                      <Tooltip text="View screenshot" position="top">
+                                        <i className="fas fa-image" aria-hidden="true"></i>
+                                      </Tooltip>
+                                      <span>View</span>
+                                    </button>
+                                  ) : "-"
                                 },
                                 Status: {
                                   render: () => (
@@ -12251,9 +12574,11 @@ Subscription Manager HK`;
                                             setActiveSection("member-detail");
                                             setActiveTab("Invoices");
                                           }}
-                                          title="View Invoice"
+                                          aria-label="View Invoice"
                                         >
-                                          <i className="fas fa-eye" aria-hidden="true"></i>
+                                          <Tooltip text="View Invoice" position="top">
+                                            <i className="fas fa-eye" aria-hidden="true"></i>
+                                          </Tooltip>
                                         </button>
                                       )}
                                     </div>
@@ -12267,8 +12592,16 @@ Subscription Manager HK`;
                         />
                       </div>
                       {(() => {
+                        // Filter payments to only show those from members in the members list
+                        const paymentsFromMembers = (reportStats.paymentsInRange || []).filter(p => 
+                          isPaymentMemberInList(p)
+                        );
+                        
+                        // Show all donations (both member and non-member donations)
+                        const donationsFromMembers = reportStats.donationsInRange || [];
+                        
                         const allTransactions = [
-                          ...(reportStats.paymentsInRange || []).map(p => ({
+                          ...paymentsFromMembers.map(p => ({
                             ...p,
                             type: 'Payment',
                             source: p.member || 'Unknown',
@@ -12282,15 +12615,15 @@ Subscription Manager HK`;
                               day: '2-digit',
                               month: 'short',
                               year: 'numeric'
-                            }) : "N/A"),
+                            }) : "-"),
                             createdAt: p.createdAt || new Date(p.date || 0),
                           })),
-                          ...(reportStats.donationsInRange || []).map(d => ({
+                          ...donationsFromMembers.map(d => ({
                             ...d,
                             type: 'Donation',
                             source: d.donorName,
                             amount: d.amount,
-                            method: d.method || 'N/A',
+                            method: d.method || '-',
                             screenshot: d.screenshot || null,
                             status: 'Completed',
                             invoiceId: null,
@@ -12299,7 +12632,7 @@ Subscription Manager HK`;
                               day: '2-digit',
                               month: 'short',
                               year: 'numeric'
-                            }) : "N/A"),
+                            }) : "-"),
                             createdAt: d.createdAt || new Date(d.date || 0),
                             isMember: d.isMember,
                           }))
@@ -12498,8 +12831,8 @@ Subscription Manager HK`;
                       <Table
                         columns={["Name", "Email", "Role", "Status"]}
                         rows={admins.map((admin) => ({
-                          Name: admin.name || "N/A",
-                          Email: admin.email || "N/A",
+                          Name: admin.name || "-",
+                          Email: admin.email || "-",
                           Role: {
                             render: () => (
                               <span className="badge badge-active">
@@ -12689,7 +13022,7 @@ Subscription Manager HK`;
                           <p className="settings-card__subtitle">Manage admin users and their permissions</p>
                         </div>
                         <button
-                          className="settings-card__add-btn secondary-btn"
+                          className="settings-card__add-btn primary-btn"
                           onClick={() => {
                             if (!isAdmin) {
                               showToast("Only Owner and Finance Admin can add new admin users", "error");
@@ -13215,7 +13548,7 @@ Subscription Manager HK`;
                       <option value="">Select an admin</option>
                       {admins.filter(admin => admin.status === "Active").map((admin) => (
                         <option key={admin.id} value={admin.id}>
-                          {admin.name} ({admin.phone || 'N/A'})
+                          {admin.name} ({admin.phone || '-'})
                         </option>
                       ))}
                     </select>
@@ -13596,7 +13929,7 @@ Subscription Manager HK`;
                     Member
                   </label>
                   <div className="reminder-log-modal-value">
-                    {selectedReminderLogItem.memberName || selectedReminderLogItem.member || "N/A"}
+                    {selectedReminderLogItem.memberName || selectedReminderLogItem.member || "-"}
                     {selectedReminderLogItem.memberId ? ` (${selectedReminderLogItem.memberId})` : ""}
                   </div>
                 </div>
@@ -13606,7 +13939,7 @@ Subscription Manager HK`;
                     <i className="fas fa-envelope" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                     Channel
                   </label>
-                  <div className="reminder-log-modal-value">{selectedReminderLogItem.channel || "N/A"}</div>
+                  <div className="reminder-log-modal-value">{selectedReminderLogItem.channel || "-"}</div>
                 </div>
               </div>
 
@@ -13624,7 +13957,7 @@ Subscription Manager HK`;
                     <i className="fas fa-calendar" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                     Date
                   </label>
-                  <div className="reminder-log-modal-value">{selectedReminderLogItem.date || "N/A"}</div>
+                  <div className="reminder-log-modal-value">{selectedReminderLogItem.date || "-"}</div>
                 </div>
               </div>
 
@@ -13636,7 +13969,7 @@ Subscription Manager HK`;
                   </label>
                   <div className="reminder-log-modal-value">
                     <span className={statusClass[selectedReminderLogItem.status] || "badge"}>
-                      {selectedReminderLogItem.status || "N/A"}
+                      {selectedReminderLogItem.status || "-"}
                     </span>
                   </div>
                 </div>
@@ -13648,7 +13981,7 @@ Subscription Manager HK`;
                     <i className="fas fa-file-alt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                     Message
                   </label>
-                  <div className="reminder-log-modal-value">{selectedReminderLogItem.message || "N/A"}</div>
+                  <div className="reminder-log-modal-value">{selectedReminderLogItem.message || "-"}</div>
                 </div>
               </div>
 
@@ -14135,6 +14468,7 @@ Subscription Manager HK`;
                       <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Email</th>
                       <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Phone</th>
                       <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Subscription Type</th>
+                      <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Subscription Year</th>
                       <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333" }}>Start Date</th>
                     </tr>
                   </thead>
@@ -14143,16 +14477,19 @@ Subscription Manager HK`;
                       <tr key={index} style={{ borderBottom: "1px solid #e0e0e0" }}>
                         <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#666" }}>{index + 1}</td>
                         <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333", fontWeight: "500" }}>
-                          {member.name || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                          {member.name || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                         </td>
                         <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
-                          {member.email || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                          {member.email || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                         </td>
                         <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
-                          {member.phone || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                          {member.phone || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                         </td>
                         <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
                           {member.subscriptionType || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}
+                        </td>
+                        <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
+                          {member.subscriptionYear || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                         </td>
                         <td style={{ padding: "12px", color: "#333" }}>
                           {member.start_date ? new Date(member.start_date).toLocaleDateString('en-GB', {
@@ -14193,13 +14530,13 @@ Subscription Manager HK`;
                           <tr key={index} style={{ borderBottom: "1px solid #ffcdd2", background: index % 2 === 0 ? "#fff" : "#fff5f5" }}>
                             <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#666", fontWeight: "600" }}>{errorRow.row}</td>
                             <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
-                              {errorRow.data.name || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                              {errorRow.data.name || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                             </td>
                             <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
-                              {errorRow.data.email || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                              {errorRow.data.email || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                             </td>
                             <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
-                              {errorRow.data.phone || <span style={{ color: "#999", fontStyle: "italic" }}>N/A</span>}
+                              {errorRow.data.phone || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                             </td>
                             <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
                               {errorRow.data.subscriptionType || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}
@@ -14336,7 +14673,7 @@ Subscription Manager HK`;
                 e.target.style.background = "#ffffff";
                 e.target.style.transform = "translateX(-50%) scale(1)";
               }}
-              title="Close"
+              
               aria-label="Close"
             >
               ×
@@ -14351,3 +14688,4 @@ Subscription Manager HK`;
 }
 
 export default AdminPage;
+export { AdminPage };

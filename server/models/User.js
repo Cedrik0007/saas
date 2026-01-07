@@ -5,6 +5,7 @@ const UserSchema = new mongoose.Schema({
   name: String,
   email: String,
   phone: String,
+  native: String,
   password: String,  // Add password field for member login
   status: String,
   balance: String,

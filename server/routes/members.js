@@ -100,6 +100,7 @@ router.post("/", async (req, res) => {
       name: req.body.name || '',
       email: (req.body.email || '').trim().toLowerCase(),
       phone: req.body.phone || '',
+      native: req.body.native || '',
       password: req.body.password || '',
       status: req.body.status || 'Pending',
       balance: req.body.balance || 'HK$0',
@@ -297,8 +298,10 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const nameIndex = headers.findIndex(h => h.includes('name'));
       const emailIndex = headers.findIndex(h => h.includes('email'));
       const phoneIndex = headers.findIndex(h => h.includes('phone') || h.includes('whatsapp') || h.includes('mobile'));
+      const nativeIndex = headers.findIndex(h => h.includes('native'));
       const statusIndex = headers.findIndex(h => h.includes('status'));
       const subscriptionTypeIndex = headers.findIndex(h => h.includes('subscription') || h.includes('type'));
+      const subscriptionYearIndex = headers.findIndex(h => (h.includes('subscription') && h.includes('year')) || h.includes('subyear') || (h.includes('year') && !h.includes('start') && !h.includes('date')));
       const startDateIndex = headers.findIndex(h => h.includes('start') || h.includes('date'));
 
       if (nameIndex === -1 || emailIndex === -1) {
@@ -347,6 +350,20 @@ router.post("/import", upload.single("file"), async (req, res) => {
           errors.push("Invalid email format");
         }
 
+        // Parse subscription year
+        let subscriptionYear = null;
+        if (subscriptionYearIndex !== -1 && values[subscriptionYearIndex]?.trim()) {
+          const yearStr = values[subscriptionYearIndex].trim();
+          const year = parseInt(yearStr, 10);
+          if (isNaN(year)) {
+            errors.push("Subscription Year must be a valid number");
+          } else if (year < 1900 || year > 2100) {
+            errors.push("Subscription Year must be between 1900 and 2100");
+          } else {
+            subscriptionYear = year.toString();
+          }
+        }
+
         // Parse start date
         let startDate = new Date();
         if (startDateIndex !== -1 && values[startDateIndex]?.trim()) {
@@ -368,7 +385,9 @@ router.post("/import", upload.single("file"), async (req, res) => {
               name: name || '',
               email: email || '',
               phone: phoneIndex !== -1 ? (values[phoneIndex]?.trim() || '') : '',
+              native: nativeIndex !== -1 ? (values[nativeIndex]?.trim().replace(/[^a-zA-Z\s]/g, '') || '') : '',
               subscriptionType: subscriptionTypeIndex !== -1 ? (values[subscriptionTypeIndex]?.trim() || 'Lifetime') : 'Lifetime',
+              subscriptionYear: subscriptionYear || '',
               start_date: startDate.toISOString().split('T')[0],
             }
           });
@@ -377,8 +396,10 @@ router.post("/import", upload.single("file"), async (req, res) => {
             name: name,
             email: email.toLowerCase(),
             phone: phoneIndex !== -1 ? (values[phoneIndex]?.trim() || '') : '',
+            native: nativeIndex !== -1 ? (values[nativeIndex]?.trim().replace(/[^a-zA-Z\s]/g, '') || '') : '',
             status: statusIndex !== -1 ? (values[statusIndex]?.trim() || 'Active') : 'Active',
             subscriptionType: subscriptionTypeIndex !== -1 ? (values[subscriptionTypeIndex]?.trim() || 'Lifetime') : 'Lifetime',
+            subscriptionYear: subscriptionYear || null,
             start_date: startDate.toISOString().split('T')[0], // Format as YYYY-MM-DD
             payment_status: 'unpaid',
             next_due_date: null,
@@ -434,8 +455,10 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const nameIndex = headers.findIndex(h => h.includes('name'));
       const emailIndex = headers.findIndex(h => h.includes('email'));
       const phoneIndex = headers.findIndex(h => h.includes('phone') || h.includes('whatsapp') || h.includes('mobile'));
+      const nativeIndex = headers.findIndex(h => h.includes('native'));
       const statusIndex = headers.findIndex(h => h.includes('status'));
       const subscriptionTypeIndex = headers.findIndex(h => h.includes('subscription') || h.includes('type'));
+      const subscriptionYearIndex = headers.findIndex(h => (h.includes('subscription') && h.includes('year')) || h.includes('subyear') || (h.includes('year') && !h.includes('start') && !h.includes('date')));
       const startDateIndex = headers.findIndex(h => h.includes('start') || h.includes('date'));
 
       if (nameIndex === -1 || emailIndex === -1) {
@@ -464,6 +487,32 @@ router.post("/import", upload.single("file"), async (req, res) => {
           errors.push("Email is required");
         } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
           errors.push("Invalid email format");
+        }
+
+        // Parse subscription year
+        let subscriptionYear = null;
+        if (subscriptionYearIndex !== -1 && row[subscriptionYearIndex] !== undefined && row[subscriptionYearIndex] !== null) {
+          const yearValue = row[subscriptionYearIndex];
+          let year;
+          
+          // Handle different Excel cell types (number, string, date)
+          if (typeof yearValue === 'number') {
+            year = Math.floor(yearValue);
+          } else if (typeof yearValue === 'string' && yearValue.trim()) {
+            year = parseInt(yearValue.trim(), 10);
+          } else if (yearValue instanceof Date) {
+            year = yearValue.getFullYear();
+          } else {
+            year = NaN;
+          }
+          
+          if (isNaN(year)) {
+            errors.push("Subscription Year must be a valid number");
+          } else if (year < 1900 || year > 2100) {
+            errors.push("Subscription Year must be between 1900 and 2100");
+          } else {
+            subscriptionYear = year.toString();
+          }
         }
 
         // Parse start date
@@ -500,7 +549,9 @@ router.post("/import", upload.single("file"), async (req, res) => {
               name: name || '',
               email: email || '',
               phone: phoneIndex !== -1 ? String(row[phoneIndex] || '').trim() : '',
+              native: nativeIndex !== -1 ? String(row[nativeIndex] || '').trim().replace(/[^a-zA-Z\s]/g, '') : '',
               subscriptionType: subscriptionTypeIndex !== -1 ? String(row[subscriptionTypeIndex] || 'Lifetime').trim() : 'Lifetime',
+              subscriptionYear: subscriptionYear || '',
               start_date: startDate.toISOString().split('T')[0],
             }
           });
@@ -509,8 +560,10 @@ router.post("/import", upload.single("file"), async (req, res) => {
             name: name,
             email: email.toLowerCase(),
             phone: phoneIndex !== -1 ? String(row[phoneIndex] || '').trim() : '',
+            native: nativeIndex !== -1 ? String(row[nativeIndex] || '').trim().replace(/[^a-zA-Z\s]/g, '') : '',
             status: statusIndex !== -1 ? String(row[statusIndex] || 'Active').trim() : 'Active',
             subscriptionType: subscriptionTypeIndex !== -1 ? String(row[subscriptionTypeIndex] || 'Lifetime').trim() : 'Lifetime',
+            subscriptionYear: subscriptionYear || null,
             start_date: startDate.toISOString().split('T')[0], // Format as YYYY-MM-DD
             payment_status: 'unpaid',
             next_due_date: null,
@@ -536,17 +589,18 @@ router.post("/import", upload.single("file"), async (req, res) => {
         // This email was seen before in the file
         const firstOccurrence = emailMap.get(emailLower);
         // Add error to current row
-        rowErrors.push({
-          row: rowNumber,
-          errors: [`Email "${member.email}" already exists in row ${firstOccurrence.row}`],
-          data: {
-            name: member.name || '',
-            email: member.email || '',
-            phone: member.phone || '',
-            subscriptionType: member.subscriptionType || 'Lifetime',
-            start_date: member.start_date || '',
-          }
-        });
+          rowErrors.push({
+            row: rowNumber,
+            errors: [`Email "${member.email}" already exists in row ${firstOccurrence.row}`],
+            data: {
+              name: member.name || '',
+              email: member.email || '',
+              phone: member.phone || '',
+              subscriptionType: member.subscriptionType || 'Lifetime',
+              subscriptionYear: member.subscriptionYear || '',
+              start_date: member.start_date || '',
+            }
+          });
         membersToRemove.add(i);
       } else {
         emailMap.set(emailLower, { row: rowNumber, memberIndex: i });
@@ -588,6 +642,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
               email: member.email || '',
               phone: member.phone || '',
               subscriptionType: member.subscriptionType || 'Lifetime',
+              subscriptionYear: member.subscriptionYear || '',
               start_date: member.start_date || '',
             }
           });
