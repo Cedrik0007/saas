@@ -767,6 +767,44 @@ function AdminPage() {
     }));
   };
 
+  // Helper function to check if a member exists in the members list
+  const isMemberInList = (memberIdentifier) => {
+    if (!memberIdentifier) return false;
+    const identifier = String(memberIdentifier).toLowerCase().trim();
+    return members.some(m => 
+      m.id?.toLowerCase() === identifier ||
+      m.email?.toLowerCase() === identifier ||
+      m.name?.toLowerCase() === identifier ||
+      String(m.id || "").toLowerCase() === identifier ||
+      String(m.email || "").toLowerCase() === identifier ||
+      String(m.name || "").toLowerCase() === identifier
+    );
+  };
+
+  // Helper function to check if an invoice belongs to a member in the list
+  const isInvoiceMemberInList = (invoice) => {
+    if (!invoice) return false;
+    return members.some(m => 
+      m.id === invoice.memberId || 
+      m.email === invoice.memberEmail || 
+      m.name === invoice.memberName ||
+      String(m.id || "") === String(invoice.memberId || "") ||
+      String(m.email || "").toLowerCase() === String(invoice.memberEmail || "").toLowerCase() ||
+      String(m.name || "").toLowerCase() === String(invoice.memberName || "").toLowerCase()
+    );
+  };
+
+  // Helper function to check if a payment belongs to a member in the list
+  const isPaymentMemberInList = (payment) => {
+    if (!payment || !payment.member) return false;
+    const paymentMember = String(payment.member).toLowerCase().trim();
+    return members.some(m => 
+      String(m.id || "").toLowerCase() === paymentMember ||
+      String(m.email || "").toLowerCase() === paymentMember ||
+      String(m.name || "").toLowerCase() === paymentMember
+    );
+  };
+
   // Calculate dashboard metrics from actual data
   const calculateDashboardMetrics = () => {
     const now = new Date();
@@ -779,7 +817,10 @@ function AdminPage() {
     const memberNames = new Set(members.map(m => m.name?.toLowerCase()).filter(Boolean));
 
     // Calculate Total Collected - from paymentHistory (only completed/paid)
-    const allPayments = paymentHistory || [];
+    // Only count payments from members in the members list
+    const allPayments = (paymentHistory || []).filter(payment => 
+      isPaymentMemberInList(payment)
+    );
     const totalCollectedAllTime = allPayments.reduce((sum, payment) => {
       // Only count completed or paid payments
       if (payment.status === "Completed" || payment.status === "Paid") {
@@ -1033,44 +1074,6 @@ function AdminPage() {
       });
     }
   }, [activeSection]);
-
-  // Helper function to check if a member exists in the members list
-  const isMemberInList = (memberIdentifier) => {
-    if (!memberIdentifier) return false;
-    const identifier = String(memberIdentifier).toLowerCase().trim();
-    return members.some(m => 
-      m.id?.toLowerCase() === identifier ||
-      m.email?.toLowerCase() === identifier ||
-      m.name?.toLowerCase() === identifier ||
-      String(m.id || "").toLowerCase() === identifier ||
-      String(m.email || "").toLowerCase() === identifier ||
-      String(m.name || "").toLowerCase() === identifier
-    );
-  };
-
-  // Helper function to check if an invoice belongs to a member in the list
-  const isInvoiceMemberInList = (invoice) => {
-    if (!invoice) return false;
-    return members.some(m => 
-      m.id === invoice.memberId || 
-      m.email === invoice.memberEmail || 
-      m.name === invoice.memberName ||
-      String(m.id || "") === String(invoice.memberId || "") ||
-      String(m.email || "").toLowerCase() === String(invoice.memberEmail || "").toLowerCase() ||
-      String(m.name || "").toLowerCase() === String(invoice.memberName || "").toLowerCase()
-    );
-  };
-
-  // Helper function to check if a payment belongs to a member in the list
-  const isPaymentMemberInList = (payment) => {
-    if (!payment || !payment.member) return false;
-    const paymentMember = String(payment.member).toLowerCase().trim();
-    return members.some(m => 
-      String(m.id || "").toLowerCase() === paymentMember ||
-      String(m.email || "").toLowerCase() === paymentMember ||
-      String(m.name || "").toLowerCase() === paymentMember
-    );
-  };
 
   // Calculate report stats based on date range from real database data
   const calculateReportStats = () => {
@@ -9525,7 +9528,10 @@ Subscription Manager HK`;
 
                 {/* Summary Cards - 2 Mini Cards */}
                 {(() => {
-                  const invoicesList = invoices || [];
+                  // Filter invoices to only show those belonging to members in the members list
+                  const invoicesList = (invoices || []).filter(inv => 
+                    isInvoiceMemberInList(inv)
+                  );
                   const totalInvoices = invoicesList.length;
                   const unpaidInvoices = invoicesList.filter(inv => {
                     const status = inv?.status || "Unpaid";
