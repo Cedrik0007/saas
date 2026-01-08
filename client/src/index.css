@@ -503,7 +503,7 @@ main {
 }
 
 .mono-input {
-  border: 1px solid transparent;
+  border: 1px solid #e5e7eb;
   border-radius: 4px;
   background: #f8f9ff;
   color: #1a1a1a;
@@ -2774,7 +2774,7 @@ textarea {
   max-width: 100%;
   padding: 10px 12px;
   border-radius: 4px;
-  border: none;
+  border: 1px solid #e5e7eb;
   font-size: 1rem;
   font-family: inherit;
   color: #1a1a1a;
@@ -3610,6 +3610,12 @@ button[disabled] {
   border-color: var(--primary);
 }
 
+@media screen and (max-width: 1440px) {
+  .search-input{
+    min-width: 260px !important;
+  }   
+}
+
 .settings-card__header {
   margin-bottom: 24px;
   padding-bottom: 16px;
@@ -3665,6 +3671,18 @@ button[disabled] {
   gap: 8px;
 }
 
+.mobile-text{
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--primary);
+}
+
+.whatsapp-text{
+  font-size: 0.875rem;
+  font-weight: 300;
+  /* color: var(--primary); */
+}
+
 .settings-form__input,
 .settings-form__select {
   width: 100%;
@@ -3672,7 +3690,7 @@ button[disabled] {
   border: 2px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 0.9375rem;
-  color: var(--primary);
+  color:#5b576c !important;
   background: var(--surface);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   font-family: inherit;
@@ -8012,7 +8030,7 @@ textarea {
   max-width: 100%;
   padding: 10px 12px;
   border-radius: 4px;
-  border: none;
+  border: 1px solid #e5e7eb;
   font-size: 1rem;
   font-family: inherit;
   color: #1a1a1a;

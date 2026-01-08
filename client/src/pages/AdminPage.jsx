@@ -4456,7 +4456,7 @@ Subscription Manager HK`;
                               label={
                                 <span className="admin-phone-input-label">
                                   <i className="fas fa-phone admin-phone-input-label-icon" aria-hidden="true"></i>
-                                  WhatsApp Number <span className="admin-phone-input-required">*</span>
+                                  <span className="whatsapp-text">WhatsApp Number</span> <span className="admin-phone-input-required">*</span>
                                 </span>
                               }
                               value={memberForm.phone}
@@ -5168,7 +5168,7 @@ Subscription Manager HK`;
                               </div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                              <label className="text-sm text-muted" style={{ whiteSpace: "nowrap" }}>
+                              <label className="text-l font-semibold" style={{ whiteSpace: "nowrap" }}>
                                  Search:&nbsp;
                               </label>
                               <input
@@ -5179,6 +5179,7 @@ Subscription Manager HK`;
                                   setMemberSearchTerm(e.target.value);
                                   setMembersPage(1); // Reset to first page when searching
                                 }}
+                                className="search-input"
                                 style={{
                                   padding: "8px 12px",
                                   borderRadius: "4px",
@@ -5190,11 +5191,11 @@ Subscription Manager HK`;
                                   transition: "border-color 0.2s"
                                 }}
                                 onFocus={(e) => {
-                                  e.target.style.borderColor = "#5a31ea";
+                                  // e.target.style.borderColor = "#5a31ea";
                                   e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
                                 }}
                                 onBlur={(e) => {
-                                  e.target.style.borderColor = "#e5e7eb";
+                                  // e.target.style.borderColor = "#e5e7eb";
                                   e.target.style.boxShadow = "none";
                                 }}
                               />
@@ -6555,7 +6556,7 @@ Subscription Manager HK`;
                         onClick={() => setShowMemberDropdown(!showMemberDropdown)}
                         style={{
                           padding: "14px 16px",
-                          border: "none",
+                          border: "1px solid #e5e7eb",
                           borderRadius: "10px",
                           background: "#f8f9ff",
                           cursor: "pointer",
@@ -6627,7 +6628,7 @@ Subscription Manager HK`;
                                 style={{
                                   width: "100%",
                                   padding: "12px 36px 12px 16px",
-                                  border: "none",
+                                  border: "1px solid #e5e7eb",
                                   borderRadius: "4px",
                                   fontSize: "0.875rem",
                                   outline: "none",
@@ -7232,7 +7233,7 @@ Subscription Manager HK`;
                         fontWeight: "700",
                         color: "#000"
                       }}>
-                        Outstanding Members
+                        Members
                       </h4>
                       <p style={{
                         margin: 0,
@@ -7243,131 +7244,150 @@ Subscription Manager HK`;
                         Send manual reminder emails or WhatsApp messages to members with outstanding invoices
                       </p>
                     </div>
-                    <div style={{
-                      display: "flex",
-                      gap: "12px",
-                      flexWrap: "wrap",
-                      alignItems: "center"
-                    }}>
-                      {/* Email Channel Button - Icon Only */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (selectedChannels.includes('Email')) {
-                            setSelectedChannels(prev => prev.filter(c => c !== 'Email'));
-                          } else {
-                            setSelectedChannels(prev => [...prev, 'Email']);
-                          }
-                        }}
-                        disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
-                        title="Email"
-                        style={{
-                          padding: "12px",
-                          borderRadius: "8px",
-                          fontWeight: "600",
-                          fontSize: "1.25rem",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
-                          transition: "all 0.2s ease",
-                          background: selectedChannels.includes('Email')
-                            ? "#5a31ea"
-                            : "#ffffff",
-                          color: selectedChannels.includes('Email') ? "#ffffff" : "#6b7280",
-                          border: selectedChannels.includes('Email') ? "2px solid #5a31ea" : "2px solid #e5e7eb",
-                          boxShadow: selectedChannels.includes('Email')
-                            ? "0 2px 8px rgba(90, 49, 234, 0.3)"
-                            : "none",
-                          opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
-                          width: "48px",
-                          height: "48px",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
-                            e.target.style.background = "#f3f4f6";
-                            e.target.style.color = "#374151";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
-                            e.target.style.background = "#ffffff";
-                            e.target.style.color = "#6b7280";
-                          }
-                        }}
-                      >
-                        <i className="fas fa-envelope"></i>
-                      </button>
+                    {(() => {
+                      // Calculate outstanding members count
+                      const outstandingMembersCount = members.filter((member) => {
+                        const memberInvoices = invoices.filter(
+                          (inv) =>
+                            inv.memberId === member.id &&
+                            (inv.status === "Unpaid" || inv.status === "Overdue")
+                        );
+                        return memberInvoices.length > 0;
+                      }).length;
 
-                      {/* WhatsApp Channel Button - Icon Only with Green Background */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (selectedChannels.includes('WhatsApp')) {
-                            setSelectedChannels(prev => prev.filter(c => c !== 'WhatsApp'));
-                          } else {
-                            setSelectedChannels(prev => [...prev, 'WhatsApp']);
-                          }
-                        }}
-                        disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
-                        title="WhatsApp"
-                        style={{
-                          padding: "12px",
-                          borderRadius: "8px",
-                          fontWeight: "600",
-                          fontSize: "1.25rem",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
-                          transition: "all 0.2s ease",
-                          background: selectedChannels.includes('WhatsApp')
-                            ? "#25D366"
-                            : "#ffffff",
-                          color: selectedChannels.includes('WhatsApp') ? "#ffffff" : "#25D366",
-                          border: selectedChannels.includes('WhatsApp') ? "2px solid #25D366" : "2px solid #25D366",
-                          boxShadow: selectedChannels.includes('WhatsApp')
-                            ? "0 2px 8px rgba(37, 211, 102, 0.3)"
-                            : "none",
-                          opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
-                          width: "48px",
-                          height: "48px",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
-                            e.target.style.background = "#dcfce7";
-                            e.target.style.color = "#16a34a";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
-                            e.target.style.background = "#ffffff";
-                            e.target.style.color = "#25D366";
-                          }
-                        }}
-                      >
-                        <i className="fab fa-whatsapp"></i>
-                      </button>
+                      // Hide buttons if no outstanding members
+                      if (outstandingMembersCount === 0) {
+                        return null;
+                      }
 
-                      {/* Send All Button - shown when at least one channel is selected */}
-                      {selectedChannels.length > 0 && (
-                        <button
-                          className="primary-btn"
-                          onClick={handleSendAllWithSelectedChannels}
-                          disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
-                          style={{
-                            padding: "12px 20px",
-                            borderRadius: "4px",
-                            fontWeight: "600",
-                            fontSize: "0.875rem",
-                            opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
-                            cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer"
-                          }}
-                        >
-                          {sendingToAll || sendingWhatsAppToAll ? "Sending..." : "Send All"}
-                        </button>
-                      )}
-                    </div>
+                      return (
+                        <div style={{
+                          display: "flex",
+                          gap: "12px",
+                          flexWrap: "wrap",
+                          alignItems: "center"
+                        }}>
+                          {/* Email Channel Button - Icon Only */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (selectedChannels.includes('Email')) {
+                                setSelectedChannels(prev => prev.filter(c => c !== 'Email'));
+                              } else {
+                                setSelectedChannels(prev => [...prev, 'Email']);
+                              }
+                            }}
+                            disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                            title="Email"
+                            style={{
+                              padding: "12px",
+                              borderRadius: "8px",
+                              fontWeight: "600",
+                              fontSize: "1.25rem",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
+                              transition: "all 0.2s ease",
+                              background: selectedChannels.includes('Email')
+                                ? "#5a31ea"
+                                : "#ffffff",
+                              color: selectedChannels.includes('Email') ? "#ffffff" : "#6b7280",
+                              border: selectedChannels.includes('Email') ? "2px solid #5a31ea" : "2px solid #e5e7eb",
+                              boxShadow: selectedChannels.includes('Email')
+                                ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                : "none",
+                              opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                              width: "48px",
+                              height: "48px",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
+                                e.target.style.background = "#f3f4f6";
+                                e.target.style.color = "#374151";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
+                                e.target.style.background = "#ffffff";
+                                e.target.style.color = "#6b7280";
+                              }
+                            }}
+                          >
+                            <i className="fas fa-envelope"></i>
+                          </button>
+
+                          {/* WhatsApp Channel Button - Icon Only with Green Background */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (selectedChannels.includes('WhatsApp')) {
+                                setSelectedChannels(prev => prev.filter(c => c !== 'WhatsApp'));
+                              } else {
+                                setSelectedChannels(prev => [...prev, 'WhatsApp']);
+                              }
+                            }}
+                            disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                            title="WhatsApp"
+                            style={{
+                              padding: "12px",
+                              borderRadius: "8px",
+                              fontWeight: "600",
+                              fontSize: "1.25rem",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
+                              transition: "all 0.2s ease",
+                              background: selectedChannels.includes('WhatsApp')
+                                ? "#25D366"
+                                : "#ffffff",
+                              color: selectedChannels.includes('WhatsApp') ? "#ffffff" : "#25D366",
+                              border: selectedChannels.includes('WhatsApp') ? "2px solid #25D366" : "2px solid #25D366",
+                              boxShadow: selectedChannels.includes('WhatsApp')
+                                ? "0 2px 8px rgba(37, 211, 102, 0.3)"
+                                : "none",
+                              opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                              width: "48px",
+                              height: "48px",
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
+                                e.target.style.background = "#dcfce7";
+                                e.target.style.color = "#16a34a";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
+                                e.target.style.background = "#ffffff";
+                                e.target.style.color = "#25D366";
+                              }
+                            }}
+                          >
+                            <i className="fab fa-whatsapp"></i>
+                          </button>
+
+                          {/* Send All Button - shown when at least one channel is selected */}
+                          {selectedChannels.length > 0 && (
+                            <button
+                              className="primary-btn"
+                              onClick={handleSendAllWithSelectedChannels}
+                              disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                              style={{
+                                padding: "12px 20px",
+                                borderRadius: "4px",
+                                fontWeight: "600",
+                                fontSize: "0.875rem",
+                                opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                                cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer"
+                              }}
+                            >
+                              {sendingToAll || sendingWhatsAppToAll ? "Sending..." : "Send All"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Members List with pagination */}
@@ -13972,8 +13992,8 @@ Subscription Manager HK`;
                           <PhoneInput
                             label={
                               <span className="admin-phone-input-label">
-                                <i className="fas fa-phone admin-phone-input-label-icon" aria-hidden="true"></i>
-                                Mobile Number <span className="admin-phone-input-required">*</span>
+                                {/* <i className="fas fa-phone admin-phone-input-label-icon" aria-hidden="true"></i> */}
+                                <span className="mobile-text">Mobile Number</span> <span className="admin-phone-input-required">*</span>
                               </span>
                             }
                             value={adminForm.phone}

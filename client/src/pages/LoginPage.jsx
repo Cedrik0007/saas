@@ -16,17 +16,17 @@ export function LoginPage() {
   const [notieType, setNotieType] = useState("error");
   const navigate = useNavigate();
 
-  // Check for logout reason (inactivity) and show message - HIDDEN
-  // useEffect(() => {
-  //   const logoutReason = sessionStorage.getItem('logoutReason');
-  //   if (logoutReason === 'inactivity') {
-  //     sessionStorage.removeItem('logoutReason');
-  //     setAuthMessage({
-  //       type: "error",
-  //       text: "Session expired due to inactivity. Please login again.",
-  //     });
-  //   }
-  // }, []);
+  // Check for logout reason (inactivity) and show message
+  useEffect(() => {
+    const logoutReason = sessionStorage.getItem('logoutReason');
+    if (logoutReason === 'inactivity') {
+      sessionStorage.removeItem('logoutReason');
+      setAuthMessage({
+        type: "error",
+        text: "Session expired due to inactivity. Please login again.",
+      });
+    }
+  }, []);
 
   // Disable body scroll on login page (100vh, overflow hidden)
   useEffect(() => {
