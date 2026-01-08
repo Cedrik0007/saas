@@ -10393,7 +10393,7 @@ Subscription Manager HK`;
                                                   handleViewMemberDetail(member);
                                                   setActiveSection("member-detail");
                                                   setActiveTab("Invoices");
-                                                  showToast(`Viewing invoice ${invoice.id || invoice.invoiceId || 'details'}`, "success");
+                                                  // showToast(`Viewing invoice ${invoice.id || invoice.invoiceId || 'details'}`, "success");
                                                 } else {
                                                   showToast("Member not found for this invoice", "error");
                                                 }
