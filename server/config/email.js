@@ -18,10 +18,11 @@ export function createEmailTransporter(emailUser, emailPassword, emailService = 
   try {
     // For Gmail, use explicit SMTP configuration for better production support
     if (emailService === 'gmail' || emailService === 'Gmail' || !emailService) {
+      // Use port 465 with SSL (more reliable on cloud platforms like Render)
       return nodemailer.createTransport({
         host: 'smtp.gmail.com',
-        port: 587,
-        secure: false, // true for 465, false for other ports
+        port: 465,
+        secure: true, // true for 465, false for other ports
         auth: {
           user: emailUser,
           pass: emailPassword,
@@ -30,10 +31,14 @@ export function createEmailTransporter(emailUser, emailPassword, emailService = 
           // Do not fail on invalid certs
           rejectUnauthorized: false
         },
-        // Connection timeout
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000,
+        // Significantly increased timeouts for cloud platforms
+        connectionTimeout: 60000, // 60 seconds (increased from 10 seconds)
+        greetingTimeout: 30000, // 30 seconds (increased from 10 seconds)
+        socketTimeout: 60000, // 60 seconds (increased from 10 seconds)
+        // Connection pooling for better reliability
+        pool: true,
+        maxConnections: 1,
+        maxMessages: 3,
       });
     }
     
@@ -47,6 +52,10 @@ export function createEmailTransporter(emailUser, emailPassword, emailService = 
       tls: {
         rejectUnauthorized: false
       },
+      // Increased timeouts for cloud platforms
+      connectionTimeout: 60000,
+      greetingTimeout: 30000,
+      socketTimeout: 60000,
     });
   } catch (error) {
     console.error("❌ Error creating email transporter:", error);
@@ -57,7 +66,13 @@ export function createEmailTransporter(emailUser, emailPassword, emailService = 
 // Helper function to verify email transporter connection
 export async function verifyEmailTransporter(transporter) {
   try {
-    await transporter.verify();
+    // Use a timeout wrapper to prevent hanging
+    const verifyPromise = transporter.verify();
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Verification timeout after 30 seconds')), 30000)
+    );
+    
+    await Promise.race([verifyPromise, timeoutPromise]);
     console.log("✓ Email transporter verified successfully");
     return true;
   } catch (error) {
@@ -69,6 +84,16 @@ export async function verifyEmailTransporter(transporter) {
       response: error.response,
       responseCode: error.responseCode,
     });
+    
+    // Provide helpful troubleshooting info
+    if (error.code === 'ETIMEDOUT' || error.message.includes('timeout')) {
+      console.error("   ⚠️ Connection timeout. This may be due to:");
+      console.error("      - Render blocking SMTP connections");
+      console.error("      - Network firewall restrictions");
+      console.error("      - Try using port 465 with SSL (already configured)");
+      console.error("      - Consider using SendGrid or Mailgun for better cloud support");
+    }
+    
     return false;
   }
 }
@@ -81,11 +106,13 @@ export function initializeEmailTransporter() {
         process.env.EMAIL_PASSWORD,
         process.env.EMAIL_SERVICE || 'gmail'
       );
-      console.log("✓ Email transporter initialized from environment variables");
+      console.log("✓ Email transporter initialized from environment variables (port 465 with SSL)");
       
-      // Verify connection in background (don't block)
-      verifyEmailTransporter(transporter).catch(() => {
+      // Verify connection in background (don't block) with increased timeout
+      verifyEmailTransporter(transporter).catch((error) => {
         console.warn("⚠️ Email transporter verification failed, but will attempt to send emails");
+        console.warn("   Error:", error.message);
+        console.warn("   This is normal on first startup. Emails will be sent when needed.");
       });
     } catch (error) {
       console.error("❌ Failed to initialize email transporter:", error);

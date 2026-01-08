@@ -179,19 +179,31 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
       ] : []
     };
 
-    // Verify transporter before sending
+    // Verify transporter before sending (non-blocking - try to send even if verification fails)
     try {
-      await transporter.verify();
+      // Use a timeout for verification to prevent hanging on cloud platforms
+      const verifyPromise = transporter.verify();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Verification timeout')), 15000)
+      );
+      
+      await Promise.race([verifyPromise, timeoutPromise]);
+      console.log("✓ Email transporter verified before sending");
     } catch (verifyError) {
-      console.error(`❌ Email transporter verification failed before sending:`, verifyError);
-      console.error(`   This usually means:`, {
-        'Invalid credentials': 'Check if email/password are correct',
-        'App password required': 'For Gmail, use App-Specific Password, not regular password',
-        '2FA not enabled': 'Enable 2-Step Verification in Google Account',
-        'Connection timeout': 'Check network/firewall settings',
-        'Authentication failed': 'Verify email credentials are correct'
-      });
-      return false;
+      console.warn(`⚠️ Email transporter verification failed (will still attempt to send):`, verifyError.message);
+      if (verifyError.code === 'EAUTH') {
+        console.error(`   ⚠️ Authentication failed. Common causes:`);
+        console.error(`      - Using regular Gmail password instead of App-Specific Password`);
+        console.error(`      - 2-Step Verification not enabled`);
+        console.error(`      - Incorrect email or password`);
+        // Don't return false for auth errors - let the actual send attempt handle it
+      } else if (verifyError.code === 'ETIMEDOUT' || verifyError.message.includes('timeout')) {
+        console.warn(`   ⚠️ Verification timeout (common on cloud platforms like Render). Will attempt to send email anyway.`);
+        // Don't return false - sending might still work even if verification times out
+      } else {
+        console.warn(`   ⚠️ Verification failed but will attempt to send email.`);
+      }
+      // Continue to attempt sending - verification is just a check
     }
 
     const emailResult = await transporter.sendMail(mailOptions);

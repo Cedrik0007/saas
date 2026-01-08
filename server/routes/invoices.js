@@ -203,63 +203,64 @@ router.post("/send-reminder", async (req, res) => {
     const finalSubject = emailSubject.replace(/\{\{total_due\}\}/g, totalDue);
     const uniqueSubject = `${finalSubject} - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
 
-    // Verify transporter before sending
+    // Verify transporter before sending (non-blocking - try to send even if verification fails)
     let transporterVerified = false;
     try {
-      await invoiceTransporter.verify();
+      // Use a timeout for verification to prevent hanging
+      const verifyPromise = invoiceTransporter.verify();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Verification timeout')), 15000)
+      );
+      
+      await Promise.race([verifyPromise, timeoutPromise]);
       transporterVerified = true;
       console.log("✓ Invoice reminder email transporter verified");
     } catch (verifyError) {
-      console.error(`❌ Invoice reminder email transporter verification failed:`, verifyError);
-      console.error(`   Error details:`, {
-        message: verifyError.message,
-        code: verifyError.code,
-      });
+      console.warn(`⚠️ Invoice reminder email transporter verification failed (will still attempt to send):`, verifyError.message);
       if (verifyError.code === 'EAUTH') {
         console.error(`   ⚠️ Authentication failed. Make sure you're using App-Specific Password for Gmail.`);
+      } else if (verifyError.code === 'ETIMEDOUT' || verifyError.message.includes('timeout')) {
+        console.warn(`   ⚠️ Verification timeout (common on cloud platforms). Will attempt to send email anyway.`);
       }
+      // Don't block sending - verification can fail on cloud platforms but sending might still work
     }
 
-    // Send email
+    // Send email (attempt even if verification failed - verification is just a check)
     let emailSent = false;
-    if (transporterVerified) {
-      try {
-        await invoiceTransporter.sendMail({
-          from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
-          to: toEmail,
-          subject: uniqueSubject,
-          html: emailHTML,
-          text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
-          // Add unique headers to prevent email threading
-          messageId: generateUniqueMessageId(),
-          headers: {
-            'X-Entity-Ref-ID': `${memberId || 'invoice'}-${Date.now()}`,
-            'In-Reply-To': undefined,
-            'References': undefined,
-            'Thread-Topic': undefined,
-            'Thread-Index': undefined,
-          },
-        });
-        emailSent = true;
-        console.log(`✓ Invoice reminder email sent to ${toEmail}`);
-      } catch (emailError) {
-        console.error(`❌ Failed to send email to ${toEmail}:`, emailError);
-        console.error(`   Error details:`, {
-          message: emailError.message,
-          code: emailError.code,
-          command: emailError.command,
-          response: emailError.response,
-          responseCode: emailError.responseCode,
-        });
-        if (emailError.code === 'EAUTH') {
-          console.error(`   ⚠️ Authentication failed. Check email credentials.`);
-        } else if (emailError.code === 'ECONNECTION' || emailError.code === 'ETIMEDOUT') {
-          console.error(`   ⚠️ Connection failed. Check network/firewall settings.`);
-        }
-        emailSent = false;
+    try {
+      await invoiceTransporter.sendMail({
+        from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
+        to: toEmail,
+        subject: uniqueSubject,
+        html: emailHTML,
+        text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+        // Add unique headers to prevent email threading
+        messageId: generateUniqueMessageId(),
+        headers: {
+          'X-Entity-Ref-ID': `${memberId || 'invoice'}-${Date.now()}`,
+          'In-Reply-To': undefined,
+          'References': undefined,
+          'Thread-Topic': undefined,
+          'Thread-Index': undefined,
+        },
+      });
+      emailSent = true;
+      console.log(`✓ Invoice reminder email sent to ${toEmail}`);
+    } catch (emailError) {
+      console.error(`❌ Failed to send email to ${toEmail}:`, emailError);
+      console.error(`   Error details:`, {
+        message: emailError.message,
+        code: emailError.code,
+        command: emailError.command,
+        response: emailError.response,
+        responseCode: emailError.responseCode,
+      });
+      if (emailError.code === 'EAUTH') {
+        console.error(`   ⚠️ Authentication failed. Check email credentials.`);
+      } else if (emailError.code === 'ECONNECTION' || emailError.code === 'ETIMEDOUT') {
+        console.error(`   ⚠️ Connection failed. This may be due to Render blocking SMTP connections.`);
+        console.error(`   ⚠️ Consider using SendGrid or Mailgun for better cloud platform support.`);
       }
-    } else {
-      console.error(`❌ Cannot send email - transporter verification failed`);
       emailSent = false;
     }
 
