@@ -2587,7 +2587,7 @@ Subscription Manager HK`;
   const showToast = (message, type = "success") => {
     setNotieMessage(message);
     setNotieType(type);
-    setTimeout(() => setNotieMessage(null), 3000);
+    setTimeout(() => setNotieMessage(null), 1000);
   };
 
   // Show confirmation dialog
@@ -3887,7 +3887,7 @@ Subscription Manager HK`;
         message={notieMessage}
         type={notieType}
         onClose={() => setNotieMessage(null)}
-        duration={3000}
+        duration={1000}
       />
 
       <main className="admin-main admin-main--sticky-header">
@@ -14576,11 +14576,11 @@ Subscription Manager HK`;
                               });
                             }
 
-                            // Mark invoice as paid
+                            // Mark invoice as paid - wait for it to complete before closing modal
                             const paymentMethod = paymentModalData.paymentMethod; // Already "Cash" or "Online"
                             await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl, null);
 
-                            // Close modal and reset - do this before showing toast
+                            // Close modal and reset AFTER payment is successfully processed
                             setShowPaymentModal(false);
                             setPaymentModalInvoice(null);
                             setPaymentModalData({
@@ -14596,27 +14596,33 @@ Subscription Manager HK`;
                             setCurrentInvalidPaymentModalField(null);
                             setUploadingPaymentModal(false);
 
-                            // Toast is already shown in handleMarkAsPaid, so we don't need to show it again
+                            // Toast is already shown in handleMarkAsPaid
                           } catch (error) {
                             console.error("Error processing payment:", error);
                             showToast(error.message || "Failed to process payment", "error");
-                            // Close modal and reset even on error
-                            setShowPaymentModal(false);
-                            setPaymentModalInvoice(null);
-                            setPaymentModalData({
-                              paymentMethod: "",
-                              imageFile: null,
-                              imagePreview: null,
-                              imageUrl: "",
-                              reference: "",
-                              selectedAdminId: "",
-                              adminMobile: "",
-                            });
-                            setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
-                            setCurrentInvalidPaymentModalField(null);
+                            
+                            // Close modal and reset even on error - use setTimeout to ensure it happens
+                            setTimeout(() => {
+                              setShowPaymentModal(false);
+                              setPaymentModalInvoice(null);
+                              setPaymentModalData({
+                                paymentMethod: "",
+                                imageFile: null,
+                                imagePreview: null,
+                                imageUrl: "",
+                                reference: "",
+                                selectedAdminId: "",
+                                adminMobile: "",
+                              });
+                              setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                              setCurrentInvalidPaymentModalField(null);
+                              setUploadingPaymentModal(false);
+                            }, 100);
                           } finally {
                             // Ensure uploading state is always reset
-                            setUploadingPaymentModal(false);
+                            setTimeout(() => {
+                              setUploadingPaymentModal(false);
+                            }, 200);
                           }
                         },
                         null,
