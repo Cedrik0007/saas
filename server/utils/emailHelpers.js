@@ -1,4 +1,4 @@
-import { getTransporter, setTransporter, generateUniqueMessageId } from "../config/email.js";
+import { getTransporter, setTransporter, generateUniqueMessageId, createEmailTransporter, verifyEmailTransporter } from "../config/email.js";
 import { ensureConnection } from "../config/database.js";
 import EmailTemplateModel from "../models/EmailTemplate.js";
 import EmailSettingsModel from "../models/EmailSettings.js";
@@ -61,36 +61,69 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
     let transporter = getTransporter();
     if (!transporter && emailSettings && emailSettings.emailUser && emailSettings.emailPassword) {
       console.log("📧 Initializing email transporter from database settings...");
-      const newTransporter = nodemailer.createTransport({
-        service: emailSettings.emailService || 'gmail',
-        auth: {
-          user: emailSettings.emailUser,
-          pass: emailSettings.emailPassword,
-        },
-      });
-      setTransporter(newTransporter);
-      transporter = newTransporter;
-      console.log("✓ Email transporter initialized from database settings");
+      try {
+        const newTransporter = createEmailTransporter(
+          emailSettings.emailUser,
+          emailSettings.emailPassword,
+          emailSettings.emailService || 'gmail'
+        );
+        
+        // Verify connection
+        const verified = await verifyEmailTransporter(newTransporter);
+        if (verified) {
+          setTransporter(newTransporter);
+          transporter = newTransporter;
+          console.log("✓ Email transporter initialized and verified from database settings");
+        } else {
+          console.error("❌ Email transporter verification failed. Email may not send correctly.");
+          // Still set it, but log the warning
+          setTransporter(newTransporter);
+          transporter = newTransporter;
+        }
+      } catch (transporterError) {
+        console.error("❌ Error creating email transporter from database settings:", transporterError);
+        console.error("   Error details:", {
+          message: transporterError.message,
+          code: transporterError.code,
+        });
+      }
     }
     
     // Fallback to environment variables if database settings not available
     if (!transporter && process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
       console.log("📧 Initializing email transporter from environment variables...");
-      const newTransporter = nodemailer.createTransport({
-        service: process.env.EMAIL_SERVICE || 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASSWORD,
-        },
-      });
-      setTransporter(newTransporter);
-      transporter = newTransporter;
-      console.log("✓ Email transporter initialized from environment variables");
+      try {
+        const newTransporter = createEmailTransporter(
+          process.env.EMAIL_USER,
+          process.env.EMAIL_PASSWORD,
+          process.env.EMAIL_SERVICE || 'gmail'
+        );
+        
+        // Verify connection
+        const verified = await verifyEmailTransporter(newTransporter);
+        if (verified) {
+          setTransporter(newTransporter);
+          transporter = newTransporter;
+          console.log("✓ Email transporter initialized and verified from environment variables");
+        } else {
+          console.error("❌ Email transporter verification failed. Email may not send correctly.");
+          // Still set it, but log the warning
+          setTransporter(newTransporter);
+          transporter = newTransporter;
+        }
+      } catch (transporterError) {
+        console.error("❌ Error creating email transporter from environment variables:", transporterError);
+        console.error("   Error details:", {
+          message: transporterError.message,
+          code: transporterError.code,
+        });
+      }
     }
     
     if (!transporter) {
       console.error(`❌ Email not configured. Cannot send payment approval email to ${member?.email || member?.memberEmail || 'N/A'}`);
       console.error("   Please configure email settings in the admin panel or set EMAIL_USER and EMAIL_PASSWORD environment variables.");
+      console.error("   For Gmail, make sure you're using an App-Specific Password, not your regular password.");
       return false;
     }
 
@@ -146,6 +179,21 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
       ] : []
     };
 
+    // Verify transporter before sending
+    try {
+      await transporter.verify();
+    } catch (verifyError) {
+      console.error(`❌ Email transporter verification failed before sending:`, verifyError);
+      console.error(`   This usually means:`, {
+        'Invalid credentials': 'Check if email/password are correct',
+        'App password required': 'For Gmail, use App-Specific Password, not regular password',
+        '2FA not enabled': 'Enable 2-Step Verification in Google Account',
+        'Connection timeout': 'Check network/firewall settings',
+        'Authentication failed': 'Verify email credentials are correct'
+      });
+      return false;
+    }
+
     const emailResult = await transporter.sendMail(mailOptions);
     console.log(`✓ Payment confirmation email with PDF receipt sent successfully to ${toEmail}`);
     console.log(`   Message ID: ${emailResult.messageId}`);
@@ -158,7 +206,23 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
       command: error.command,
       response: error.response,
       responseCode: error.responseCode,
+      stack: error.stack,
     });
+    
+    // Provide helpful error messages based on error code
+    if (error.code === 'EAUTH') {
+      console.error(`   ⚠️ Authentication failed. Common causes:`);
+      console.error(`      - Using regular Gmail password instead of App-Specific Password`);
+      console.error(`      - 2-Step Verification not enabled`);
+      console.error(`      - Incorrect email or password`);
+    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+      console.error(`   ⚠️ Connection failed. Common causes:`);
+      console.error(`      - Network/firewall blocking SMTP port 587`);
+      console.error(`      - Server cannot reach Gmail SMTP servers`);
+    } else if (error.code === 'EENVELOPE') {
+      console.error(`   ⚠️ Invalid email address. Check recipient email: ${member?.email || member?.memberEmail}`);
+    }
+    
     return false;
   }
 }

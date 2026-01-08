@@ -180,42 +180,86 @@ router.post("/send-reminder", async (req, res) => {
       .replace(/\{\{payment_methods\}\}/g, paymentMethods || 'Available in member portal')
       .replace(/\{\{portal_link\}\}/g, portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`);
 
-    // Update transporter with saved settings
-    const invoiceTransporter = nodemailer.createTransport({
-      service: emailSettings.emailService || 'gmail',
-      auth: {
-        user: emailSettings.emailUser,
-        pass: emailSettings.emailPassword,
-      },
-    });
+    // Update transporter with saved settings using improved configuration
+    let invoiceTransporter;
+    try {
+      // Import the helper function
+      const { createEmailTransporter } = await import("../config/email.js");
+      invoiceTransporter = createEmailTransporter(
+        emailSettings.emailUser,
+        emailSettings.emailPassword,
+        emailSettings.emailService || 'gmail'
+      );
+      console.log("✓ Invoice reminder email transporter created");
+    } catch (transporterError) {
+      console.error("❌ Error creating invoice reminder transporter:", transporterError);
+      return res.status(500).json({ 
+        error: "Failed to initialize email transporter",
+        details: transporterError.message 
+      });
+    }
 
     // Prepare unique subject with date to prevent threading
     const finalSubject = emailSubject.replace(/\{\{total_due\}\}/g, totalDue);
     const uniqueSubject = `${finalSubject} - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
 
+    // Verify transporter before sending
+    let transporterVerified = false;
+    try {
+      await invoiceTransporter.verify();
+      transporterVerified = true;
+      console.log("✓ Invoice reminder email transporter verified");
+    } catch (verifyError) {
+      console.error(`❌ Invoice reminder email transporter verification failed:`, verifyError);
+      console.error(`   Error details:`, {
+        message: verifyError.message,
+        code: verifyError.code,
+      });
+      if (verifyError.code === 'EAUTH') {
+        console.error(`   ⚠️ Authentication failed. Make sure you're using App-Specific Password for Gmail.`);
+      }
+    }
+
     // Send email
     let emailSent = false;
-    try {
-    await invoiceTransporter.sendMail({
-      from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
-      to: toEmail,
-      subject: uniqueSubject,
-      html: emailHTML,
-      text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
-      // Add unique headers to prevent email threading
-      messageId: generateUniqueMessageId(),
-      headers: {
-        'X-Entity-Ref-ID': `${memberId || 'invoice'}-${Date.now()}`,
-        'In-Reply-To': undefined,
-        'References': undefined,
-        'Thread-Topic': undefined,
-        'Thread-Index': undefined,
-      },
-    });
-      emailSent = true;
-    console.log(`✓ Invoice reminder email sent to ${toEmail}`);
-    } catch (emailError) {
-      console.error(`✗ Failed to send email to ${toEmail}:`, emailError);
+    if (transporterVerified) {
+      try {
+        await invoiceTransporter.sendMail({
+          from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
+          to: toEmail,
+          subject: uniqueSubject,
+          html: emailHTML,
+          text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+          // Add unique headers to prevent email threading
+          messageId: generateUniqueMessageId(),
+          headers: {
+            'X-Entity-Ref-ID': `${memberId || 'invoice'}-${Date.now()}`,
+            'In-Reply-To': undefined,
+            'References': undefined,
+            'Thread-Topic': undefined,
+            'Thread-Index': undefined,
+          },
+        });
+        emailSent = true;
+        console.log(`✓ Invoice reminder email sent to ${toEmail}`);
+      } catch (emailError) {
+        console.error(`❌ Failed to send email to ${toEmail}:`, emailError);
+        console.error(`   Error details:`, {
+          message: emailError.message,
+          code: emailError.code,
+          command: emailError.command,
+          response: emailError.response,
+          responseCode: emailError.responseCode,
+        });
+        if (emailError.code === 'EAUTH') {
+          console.error(`   ⚠️ Authentication failed. Check email credentials.`);
+        } else if (emailError.code === 'ECONNECTION' || emailError.code === 'ETIMEDOUT') {
+          console.error(`   ⚠️ Connection failed. Check network/firewall settings.`);
+        }
+        emailSent = false;
+      }
+    } else {
+      console.error(`❌ Cannot send email - transporter verification failed`);
       emailSent = false;
     }
 
@@ -380,25 +424,39 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
       screenshot: invoice.screenshot || invoice.payment_proof || null,
     };
 
-    // Send email with PDF receipt
+    // Send email with PDF receipt (optional - don't fail if email sending fails)
     console.log(`📧 Attempting to send payment confirmation email for invoice ${invoice.id} to member ${member.email}...`);
-    const emailSent = await sendPaymentApprovalEmail(
-      member,
-      paymentData,
-      invoice
-    );
+    try {
+      const emailSent = await sendPaymentApprovalEmail(
+        member,
+        paymentData,
+        invoice
+      );
 
-    if (emailSent) {
-      console.log(`✅ Payment confirmation email sent successfully to ${member.email}`);
+      if (emailSent) {
+        console.log(`✅ Payment confirmation email sent successfully to ${member.email}`);
+        res.json({
+          success: true,
+          message: `Payment confirmation email with PDF receipt sent to ${member.email}`
+        });
+      } else {
+        console.warn(`⚠️ Failed to send payment confirmation email to ${member.email} - email may not be configured`);
+        // Return success with warning instead of error - payment is still processed
+        res.json({
+          success: false,
+          warning: true,
+          message: "Payment processed successfully, but email confirmation could not be sent.",
+          details: "Email may not be configured. Please check email settings in the admin panel."
+        });
+      }
+    } catch (emailError) {
+      console.error(`❌ Error attempting to send payment confirmation email:`, emailError);
+      // Return success with warning - payment is still processed even if email fails
       res.json({
-        success: true,
-        message: `Payment confirmation email with PDF receipt sent to ${member.email}`
-      });
-    } else {
-      console.error(`❌ Failed to send payment confirmation email to ${member.email}`);
-      res.status(500).json({
-        error: "Failed to send payment confirmation email. Please check email configuration in settings.",
-        details: "Email may not be configured. Please check server logs for details."
+        success: false,
+        warning: true,
+        message: "Payment processed successfully, but email confirmation could not be sent.",
+        details: emailError.message || "Email sending failed. Please check email configuration in settings."
       });
     }
   } catch (error) {

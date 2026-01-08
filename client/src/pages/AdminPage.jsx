@@ -3091,7 +3091,7 @@ Subscription Manager HK`;
         }
       }
 
-      // Step 4: Send payment confirmation email with PDF receipt
+      // Step 4: Send payment confirmation email with PDF receipt (optional - don't fail if email fails)
       try {
         const emailResponse = await fetch(`${apiUrl}/api/invoices/${invoiceId}/send-payment-confirmation`, {
           method: 'POST',
@@ -3100,20 +3100,22 @@ Subscription Manager HK`;
 
         if (emailResponse.ok) {
           const emailData = await emailResponse.json();
-          console.log('✅ Payment confirmation email sent:', emailData.message);
-          showToast(`Payment confirmation email sent to ${invoice.memberEmail || 'member'}`, "success");
+          if (emailData.success) {
+            console.log('✅ Payment confirmation email sent:', emailData.message);
+            showToast(`Payment confirmation email sent to ${invoice.memberEmail || 'member'}`, "success");
+          } else if (emailData.warning) {
+            // Email failed but payment was processed - show warning, not error
+            console.warn('⚠️ Payment confirmation email not sent:', emailData.message);
+            // Don't show toast for email warnings - payment was successful
+          }
         } else {
+          // Only log error, don't show to user - payment was successful
           const errorText = await emailResponse.text();
           console.error('❌ Failed to send payment confirmation email:', errorText);
-          try {
-            const errorData = JSON.parse(errorText);
-            showToast(`Email not sent: ${errorData.error || 'Email configuration issue'}`, "error");
-          } catch {
-            showToast(`Email not sent: ${errorText}`, "error");
-          }
-          // Don't fail the payment process if email fails
+          // Don't show error toast - payment process was successful
         }
       } catch (emailError) {
+        // Only log error, don't show to user - payment was successful
         console.error('Error sending payment confirmation email:', emailError);
         // Don't fail the payment process if email fails
       }
