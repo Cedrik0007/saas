@@ -196,24 +196,24 @@ router.post("/send-reminder", async (req, res) => {
     // Send email
     let emailSent = false;
     try {
-      await invoiceTransporter.sendMail({
-        from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
-        to: toEmail,
-        subject: uniqueSubject,
-        html: emailHTML,
-        text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
-        // Add unique headers to prevent email threading
-        messageId: generateUniqueMessageId(),
-        headers: {
-          'X-Entity-Ref-ID': `${memberId || 'invoice'}-${Date.now()}`,
-          'In-Reply-To': undefined,
-          'References': undefined,
-          'Thread-Topic': undefined,
-          'Thread-Index': undefined,
-        },
-      });
+    await invoiceTransporter.sendMail({
+      from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
+      to: toEmail,
+      subject: uniqueSubject,
+      html: emailHTML,
+      text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+      // Add unique headers to prevent email threading
+      messageId: generateUniqueMessageId(),
+      headers: {
+        'X-Entity-Ref-ID': `${memberId || 'invoice'}-${Date.now()}`,
+        'In-Reply-To': undefined,
+        'References': undefined,
+        'Thread-Topic': undefined,
+        'Thread-Index': undefined,
+      },
+    });
       emailSent = true;
-      console.log(`✓ Invoice reminder email sent to ${toEmail}`);
+    console.log(`✓ Invoice reminder email sent to ${toEmail}`);
     } catch (emailError) {
       console.error(`✗ Failed to send email to ${toEmail}:`, emailError);
       emailSent = false;
@@ -246,10 +246,10 @@ router.post("/send-reminder", async (req, res) => {
     }
 
     if (emailSent) {
-      res.json({
-        success: true,
-        message: `Email sent successfully to ${toEmail}`
-      });
+    res.json({
+      success: true,
+      message: `Email sent successfully to ${toEmail}`
+    });
     } else {
       res.status(500).json({
         error: "Failed to send email",

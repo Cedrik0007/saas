@@ -606,8 +606,10 @@ function AdminPage() {
   const [selectedChannels, setSelectedChannels] = useState([]); // Track selected channels for bulk send (can be multiple)
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
   const [paymentSearchTerm, setPaymentSearchTerm] = useState(""); // Search filter for payments
+  const [paymentYearFilter, setPaymentYearFilter] = useState("All"); // Year filter for payments
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("All"); // All, Paid, Unpaid, Overdue, Pending
   const [invoiceSearchTerm, setInvoiceSearchTerm] = useState(""); // Search filter for invoices
+  const [invoiceYearFilter, setInvoiceYearFilter] = useState("All"); // Year filter for invoices
   const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
   const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
   const [transactionsSearch, setTransactionsSearch] = useState("");
@@ -615,6 +617,7 @@ function AdminPage() {
   const [transactionsPageSize, setTransactionsPageSize] = useState(10);
   const [memberSearchTerm, setMemberSearchTerm] = useState(""); // Search filter for members
   const [memberStatusFilter, setMemberStatusFilter] = useState("All"); // Status filter for members
+  const [memberYearFilter, setMemberYearFilter] = useState("All"); // Year filter for members
   const [memberSortByOutstanding, setMemberSortByOutstanding] = useState("none"); // Sort by outstanding amount
   const [memberNotes, setMemberNotes] = useState(() => {
     try {
@@ -720,53 +723,6 @@ function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection]); // Only depend on activeSection to prevent infinite loops
 
-  // Calculate monthly collections from paymentHistory
-  const calculateMonthlyCollections = () => {
-    const now = new Date();
-    const months = [];
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-    // Get last 12 months
-    for (let i = 11; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthKey = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-      const monthLabel = monthNames[date.getMonth()];
-
-      // Filter payments for this month (only completed/paid)
-      const monthPayments = paymentHistory.filter((payment) => {
-        // Only count completed or paid payments
-        const isCompleted = payment.status === "Completed" || payment.status === "Paid";
-        if (!isCompleted) return false;
-        if (!payment.date) return false;
-        const paymentDate = new Date(payment.date);
-        return paymentDate.getMonth() === date.getMonth() &&
-          paymentDate.getFullYear() === date.getFullYear();
-      });
-
-      // Calculate total for this month
-      const total = monthPayments.reduce((sum, payment) => {
-        const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
-        return sum + amount;
-      }, 0);
-
-      months.push({
-        month: monthLabel,
-        monthKey: monthKey,
-        value: total,
-        count: monthPayments.length
-      });
-    }
-
-    // Calculate max value for percentage calculation
-    const maxValue = Math.max(...months.map(m => m.value), 1);
-
-    // Convert to percentage for chart display
-    return months.map(m => ({
-      ...m,
-      percentage: maxValue > 0 ? (m.value / maxValue) * 100 : 0
-    }));
-  };
-
   // Helper function to check if a member exists in the members list
   const isMemberInList = (memberIdentifier) => {
     if (!memberIdentifier) return false;
@@ -803,6 +759,57 @@ function AdminPage() {
       String(m.email || "").toLowerCase() === paymentMember ||
       String(m.name || "").toLowerCase() === paymentMember
     );
+  };
+
+  // Calculate monthly collections from paymentHistory
+  const calculateMonthlyCollections = () => {
+    const now = new Date();
+    const months = [];
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    // Get last 12 months
+    for (let i = 11; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthKey = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+      const monthLabel = monthNames[date.getMonth()];
+
+      // Filter payments for this month (only completed/paid and from members in the list)
+      const monthPayments = paymentHistory.filter((payment) => {
+        // Only count completed or paid payments
+        const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+        if (!isCompleted) return false;
+        if (!payment.date) return false;
+        const paymentDate = new Date(payment.date);
+        const isInMonth = paymentDate.getMonth() === date.getMonth() &&
+          paymentDate.getFullYear() === date.getFullYear();
+        if (!isInMonth) return false;
+        // Only include payments from members in the members list
+        return isPaymentMemberInList(payment);
+      });
+
+      // Calculate total for this month
+      const total = monthPayments.reduce((sum, payment) => {
+        const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+        return sum + amount;
+      }, 0);
+
+      months.push({
+        month: monthLabel,
+        monthKey: monthKey,
+        value: total,
+        count: monthPayments.length,
+        payments: monthPayments // Store payment details for tooltip
+      });
+    }
+
+    // Calculate max value for percentage calculation
+    const maxValue = Math.max(...months.map(m => m.value), 1);
+
+    // Convert to percentage for chart display
+    return months.map(m => ({
+      ...m,
+      percentage: maxValue > 0 ? (m.value / maxValue) * 100 : 0
+    }));
   };
 
   // Calculate dashboard metrics from actual data
@@ -1031,7 +1038,10 @@ function AdminPage() {
       }));
   };
 
-  const monthlyCollectionsData = calculateMonthlyCollections();
+  // Make monthly collections data reactive to changes in paymentHistory and members
+  const monthlyCollectionsData = useMemo(() => {
+    return calculateMonthlyCollections();
+  }, [paymentHistory, members]);
   const recentPaymentsData = getRecentPayments();
   // Make dashboard metrics reactive to changes in invoices, payments, and members
   const dashboardMetrics = useMemo(() => {
@@ -4002,9 +4012,18 @@ Subscription Manager HK`;
                         </div>
                       ))}
                       {hoveredMonth && chartContainerRef.current && (() => {
-                        // Position tooltip on the left side
+                        // Calculate tooltip dimensions based on payment count
+                        const paymentCount = hoveredMonth.payments?.length || 0;
+                        const maxTooltipHeight = 400; // Maximum height for tooltip
+                        const headerHeight = 40;
+                        const summaryHeight = 60;
+                        const paymentItemHeight = 70; // Height per payment item
+                        const maxVisiblePayments = Math.floor((maxTooltipHeight - headerHeight - summaryHeight) / paymentItemHeight);
                         const tooltipWidth = 220;
-                        const tooltipHeight = 80;
+                        const tooltipHeight = Math.min(
+                          headerHeight + summaryHeight + (paymentCount * paymentItemHeight),
+                          maxTooltipHeight
+                        );
                         const chartRect = chartContainerRef.current.getBoundingClientRect();
                         const viewportHeight = window.innerHeight;
 
@@ -4034,12 +4053,18 @@ Subscription Manager HK`;
                           }
                         }
 
+                        const displayPayments = hoveredMonth.payments || [];
+                        const hasMorePayments = paymentCount > maxVisiblePayments;
+
                         return (
                           <div
                             className="admin-dashboard-chart-tooltip"
                             style={{
                               left: `${left}px`,
-                              top: `${top}px`
+                              top: `${top}px`,
+                              width: `${tooltipWidth}px`,
+                              maxHeight: `${maxTooltipHeight}px`,
+                              overflowY: hasMorePayments ? 'auto' : 'visible'
                             }}
                           >
                             <div className="admin-dashboard-chart-tooltip-header">
@@ -4047,15 +4072,75 @@ Subscription Manager HK`;
                             </div>
                             <div className="admin-dashboard-chart-tooltip-content">
                               <div className="admin-dashboard-chart-tooltip-row">
-                                <span>Amount:</span>
+                                <span>Total Amount:</span>
                                 <strong>{formatCurrency(hoveredMonth.value)}</strong>
                               </div>
                               {hoveredMonth.count > 0 && (
                                 <div className="admin-dashboard-chart-tooltip-row">
-                                  <span>Payments:</span>
+                                  <span>Total Payments:</span>
                                   <strong>{hoveredMonth.count} payment{hoveredMonth.count > 1 ? 's' : ''}</strong>
                                 </div>
                               )}
+                              {/*{displayPayments.length > 0 && (
+                                <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
+                                  <div style={{ marginBottom: '8px', fontSize: '0.75rem', fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>
+                                    Payment Details:
+                                  </div>
+                                  <div style={{ maxHeight: hasMorePayments ? '280px' : 'none', overflowY: hasMorePayments ? 'auto' : 'visible' }}>
+                                    {displayPayments.slice(0, hasMorePayments ? maxVisiblePayments : displayPayments.length).map((payment, index) => {
+                                      const paymentDate = payment.date 
+                                        ? new Date(payment.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                        : (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-');
+                                      const paymentAmount = payment.amount 
+                                        ? formatCurrency(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0))
+                                        : formatCurrency(0);
+                                      const paymentMethod = getPaymentMethodDisplay(payment);
+                                      const memberName = payment.member || 'Unknown';
+                                      
+                                      return (
+                                        <div 
+                                          key={index} 
+                                          style={{ 
+                                            marginBottom: '10px', 
+                                            padding: '8px', 
+                                            backgroundColor: 'rgba(255,255,255,0.05)', 
+                                            borderRadius: '4px',
+                                            fontSize: '0.7rem'
+                                          }}
+                                        >
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Member:</span>
+                                            <strong style={{ color: '#fff' }}>{memberName}</strong>
+                                          </div>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Amount:</span>
+                                            <strong style={{ color: '#4CAF50' }}>{paymentAmount}</strong>
+                                          </div>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Method:</span>
+                                            <span style={{ color: 'rgba(255,255,255,0.9)' }}>{paymentMethod}</span>
+                                          </div>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Date:</span>
+                                            <span style={{ color: 'rgba(255,255,255,0.9)' }}>{paymentDate}</span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                    {hasMorePayments && (
+                                      <div style={{ 
+                                        textAlign: 'center', 
+                                        padding: '8px', 
+                                        fontSize: '0.7rem', 
+                                        color: 'rgba(255,255,255,0.7)',
+                                        fontStyle: 'italic'
+                                      }}>
+                                        ... and {paymentCount - maxVisiblePayments} more payment{paymentCount - maxVisiblePayments > 1 ? 's' : ''}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}*/}
                             </div>
                           </div>
                         );
@@ -4770,6 +4855,14 @@ Subscription Manager HK`;
                           }
 
                           return derivedStatus === memberStatusFilter;
+                        })
+                        .filter((member) => {
+                          if (memberYearFilter === "All") return true;
+                          
+                          const subscriptionYear = getMemberSubscriptionYear(member);
+                          if (!subscriptionYear) return false;
+                          
+                          return subscriptionYear === memberYearFilter;
                         });
 
                       // No sorting - use filtered members as-is
@@ -4843,10 +4936,185 @@ Subscription Manager HK`;
                                   </button>
                                 ))}
                               </div>
+                              <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "16px" }}>
+                                <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Year:</label>
+                                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setMemberYearFilter("All");
+                                      setMembersPage(1);
+                                    }}
+                                    style={{
+                                      padding: "8px 12px",
+                                      borderRadius: "4px 0 0 4px",
+                                      border: "1px solid #e5e7eb",
+                                      borderRight: "none",
+                                      background: memberYearFilter === "All" ? "#5a31ea" : "#ffffff",
+                                      color: memberYearFilter === "All" ? "#ffffff" : "#6b7280",
+                                      fontSize: "0.875rem",
+                                      fontWeight: "500",
+                                      cursor: "pointer",
+                                      outline: "none",
+                                      transition: "all 0.2s ease",
+                                      whiteSpace: "nowrap"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (memberYearFilter !== "All") {
+                                        e.target.style.background = "#f3f4f6";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (memberYearFilter !== "All") {
+                                        e.target.style.background = "#ffffff";
+                                      }
+                                    }}
+                                  >
+                                    All
+                                  </button>
+                                  <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                                    <input
+                                      type="text"
+                                      value={memberYearFilter === "All" ? "" : memberYearFilter}
+                                      placeholder="Year"
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        // Allow empty, "All", or valid year (4 digits)
+                                        if (value === "" || value === "All" || /^\d{0,4}$/.test(value)) {
+                                          setMemberYearFilter(value === "" ? "All" : value);
+                                          setMembersPage(1);
+                                        }
+                                      }}
+                                      onKeyDown={(e) => {
+                                        // Allow arrow keys to increment/decrement
+                                        if (e.key === "ArrowUp") {
+                                          e.preventDefault();
+                                          const currentYear = memberYearFilter === "All" || memberYearFilter === "" ? new Date().getFullYear() : parseInt(memberYearFilter);
+                                          if (!isNaN(currentYear)) {
+                                            setMemberYearFilter(String(currentYear + 1));
+                                            setMembersPage(1);
+                                          }
+                                        } else if (e.key === "ArrowDown") {
+                                          e.preventDefault();
+                                          const currentYear = memberYearFilter === "All" || memberYearFilter === "" ? new Date().getFullYear() : parseInt(memberYearFilter);
+                                          if (!isNaN(currentYear) && currentYear > 1900) {
+                                            setMemberYearFilter(String(currentYear - 1));
+                                            setMembersPage(1);
+                                          }
+                                        }
+                                      }}
+                                      style={{
+                                        padding: "8px 32px 8px 12px",
+                                        borderRadius: "0",
+                                        border: "1px solid #e5e7eb",
+                                        borderLeft: "none",
+                                        borderRadius: "0 4px 4px 0",
+                                        borderRight: "1px sol",
+                                        background: "#ffffff",
+                                        fontSize: "0.875rem",
+                                        fontWeight: "500",
+                                        outline: "none",
+                                        transition: "border-color 0.2s",
+                                        width: "100px",
+                                        textAlign: "center"
+                                      }}
+                                      onFocus={(e) => {
+                                        e.target.style.borderColor = "#5a31ea";
+                                        e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                      }}
+                                      onBlur={(e) => {
+                                        e.target.style.borderColor = "#e5e7eb";
+                                        e.target.style.boxShadow = "none";
+                                        // Validate year on blur
+                                        if (e.target.value && e.target.value !== "All") {
+                                          const year = parseInt(e.target.value);
+                                          if (isNaN(year) || year < 1900 || year > 2100) {
+                                            setMemberYearFilter("All");
+                                          }
+                                        }
+                                      }}
+                                    />
+                                    <div style={{ 
+                                      position: "absolute", 
+                                      right: "4px", 
+                                      display: "flex", 
+                                      flexDirection: "column",
+                                      gap: "2px"
+                                    }}>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          const currentYear = memberYearFilter === "All" || memberYearFilter === "" ? new Date().getFullYear() : parseInt(memberYearFilter);
+                                          if (!isNaN(currentYear)) {
+                                            setMemberYearFilter(String(currentYear + 1));
+                                            setMembersPage(1);
+                                          }
+                                        }}
+                                        style={{
+                                          padding: "2px 4px",
+                                          border: "none",
+                                          background: "transparent",
+                                          cursor: "pointer",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          fontSize: "10px",
+                                          color: "#6b7280",
+                                          lineHeight: "1",
+                                          transition: "color 0.2s"
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.target.style.color = "#5a31ea";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.target.style.color = "#6b7280";
+                                        }}
+                                        title="Increase year"
+                                      >
+                                        ▲
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          const currentYear = memberYearFilter === "All" || memberYearFilter === "" ? new Date().getFullYear() : parseInt(memberYearFilter);
+                                          if (!isNaN(currentYear) && currentYear > 1900) {
+                                            setMemberYearFilter(String(currentYear - 1));
+                                            setMembersPage(1);
+                                          }
+                                        }}
+                                        style={{
+                                          padding: "2px 4px",
+                                          border: "none",
+                                          background: "transparent",
+                                          cursor: "pointer",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          fontSize: "10px",
+                                          color: "#6b7280",
+                                          lineHeight: "1",
+                                          transition: "color 0.2s"
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.target.style.color = "#5a31ea";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.target.style.color = "#6b7280";
+                                        }}
+                                        title="Decrease year"
+                                      >
+                                        ▼
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                               <label className="text-sm text-muted" style={{ whiteSpace: "nowrap" }}>
-                                🔍 Search:&nbsp;
+                                 Search:&nbsp;
                               </label>
                               <input
                                 type="text"
@@ -5060,7 +5328,7 @@ Subscription Manager HK`;
                                             aria-label="View member"
                                           >
                                             <Tooltip text="View member" position="top">
-                                              <i className="fas fa-eye" aria-hidden="true"></i>
+                                            <i className="fas fa-eye" aria-hidden="true"></i>
                                             </Tooltip>
                                           </button>
                                           <button
@@ -5069,7 +5337,7 @@ Subscription Manager HK`;
                                             aria-label="Edit member"
                                           >
                                             <Tooltip text="Edit member" position="top">
-                                              <i className="fas fa-pen" aria-hidden="true"></i>
+                                            <i className="fas fa-pen" aria-hidden="true"></i>
                                             </Tooltip>
                                           </button>
                                           {isOwner && (
@@ -5552,7 +5820,7 @@ Subscription Manager HK`;
                                   aria-label="View screenshot"
                                 >
                                   <Tooltip text="View screenshot" position="top">
-                                    <i className="fas fa-image" aria-hidden="true"></i>
+                                  <i className="fas fa-image" aria-hidden="true"></i>
                                   </Tooltip>
                                 </button>
                               )
@@ -5614,7 +5882,7 @@ Subscription Manager HK`;
                                       aria-label="Delete Invoice"
                                     >
                                       <Tooltip text="Delete Invoice" position="top">
-                                        <i className="fas fa-trash" aria-hidden="true"></i>
+                                      <i className="fas fa-trash" aria-hidden="true"></i>
                                       </Tooltip>
                                     </button>
                                   )}
@@ -6295,7 +6563,7 @@ Subscription Manager HK`;
                             <div style={{ position: "relative" }}>
                               <input
                                 type="text"
-                                placeholder="🔍 Search member by name or ID..."
+                                placeholder=" Search member by name or ID..."
                                 value={invoiceMemberSearch}
                                 onChange={(e) => setInvoiceMemberSearch(e.target.value)}
                                 onClick={(e) => e.stopPropagation()}
@@ -7922,48 +8190,48 @@ Subscription Manager HK`;
                     // Only show reminders for members in the members list
                     const emailItems = (reminderLogs || [])
                       .map((log) => {
-                        const member =
-                          members.find((m) => m.id === log.memberId) ||
-                          members.find(
-                            (m) =>
-                              m.email &&
-                              log.memberEmail &&
-                              m.email.toLowerCase() === log.memberEmail.toLowerCase()
-                          );
-                        return {
+                      const member =
+                        members.find((m) => m.id === log.memberId) ||
+                        members.find(
+                          (m) =>
+                            m.email &&
+                            log.memberEmail &&
+                            m.email.toLowerCase() === log.memberEmail.toLowerCase()
+                        );
+                      return {
                           member,
                           memberName: member?.name || log.memberEmail || "-",
-                          memberId: log.memberId,
+                        memberId: log.memberId,
                           memberEmail: log.memberEmail,
-                          channel: "Email",
-                          type:
-                            log.reminderType === "overdue"
-                              ? "Overdue (auto/manual)"
-                              : "Upcoming (auto/manual)",
-                          message: `Email reminder - ${log.amount} · ${log.invoiceCount} invoice(s)`,
-                          date: log.sentAt
-                            ? new Date(log.sentAt).toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })
+                        channel: "Email",
+                        type:
+                          log.reminderType === "overdue"
+                            ? "Overdue (auto/manual)"
+                            : "Upcoming (auto/manual)",
+                        message: `Email reminder - ${log.amount} · ${log.invoiceCount} invoice(s)`,
+                        date: log.sentAt
+                          ? new Date(log.sentAt).toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })
                             : "-",
-                          status: (() => {
-                            // Normalize status - handle case variations and ensure consistent format
-                            const logStatus = log.status ? String(log.status).trim() : "";
-                            const lowerStatus = logStatus.toLowerCase();
-                            if (lowerStatus === "failed") return "Failed";
-                            if (lowerStatus === "pending") return "Pending";
-                            return logStatus || "Delivered";
-                          })(),
-                          rawDate: log.sentAt || null,
-                          raw: log,
-                        };
+                        status: (() => {
+                          // Normalize status - handle case variations and ensure consistent format
+                          const logStatus = log.status ? String(log.status).trim() : "";
+                          const lowerStatus = logStatus.toLowerCase();
+                          if (lowerStatus === "failed") return "Failed";
+                          if (lowerStatus === "pending") return "Pending";
+                          return logStatus || "Delivered";
+                        })(),
+                        rawDate: log.sentAt || null,
+                        raw: log,
+                      };
                       })
                       .filter((item) => {
                         // Only include if member is in the members list
                         return item.member !== undefined;
-                      });
+                    });
 
                     const whatsappItems = (communicationLog || [])
                       .filter((c) => c.channel === "WhatsApp")
@@ -8126,7 +8394,7 @@ Subscription Manager HK`;
                                               }}
                                             >
                                               <Tooltip text="View full message" position="top">
-                                                <i className="fas fa-eye" aria-hidden="true"></i>
+                                              <i className="fas fa-eye" aria-hidden="true"></i>
                                               </Tooltip>
                                             </button>
                                             {/* Retry failed email reminders */}
@@ -8171,7 +8439,7 @@ Subscription Manager HK`;
                                                 }}
                                               >
                                                 <Tooltip text="Retry sending" position="top">
-                                                  <i className="fas fa-redo" aria-hidden="true"></i>
+                                                <i className="fas fa-redo" aria-hidden="true"></i>
                                                 </Tooltip>
                                               </button>
                                             )}
@@ -9364,7 +9632,7 @@ Subscription Manager HK`;
                                       aria-label="View screenshot"
                                     >
                                       <Tooltip text="View screenshot" position="top">
-                                        <i className="fas fa-image" aria-hidden="true"></i>
+                                      <i className="fas fa-image" aria-hidden="true"></i>
                                       </Tooltip>
                                     </a>
                                   ) : "-"
@@ -9389,7 +9657,7 @@ Subscription Manager HK`;
                                             aria-label="Approve payment (By Admin)"
                                           >
                                             <Tooltip text="Approve payment (By Admin)" position="top">
-                                              <i className="fas fa-check" aria-hidden="true"></i>
+                                            <i className="fas fa-check" aria-hidden="true"></i>
                                             </Tooltip>
                                           </button>
                                           <button
@@ -9400,7 +9668,7 @@ Subscription Manager HK`;
                                             aria-label="Reject payment (By Admin)"
                                           >
                                             <Tooltip text="Reject payment (By Admin)" position="top">
-                                              <i className="fas fa-times" aria-hidden="true"></i>
+                                            <i className="fas fa-times" aria-hidden="true"></i>
                                             </Tooltip>
                                           </button>
                                         </>
@@ -9625,6 +9893,16 @@ Subscription Manager HK`;
                         });
                       }
 
+                      // Filter invoices by year
+                      if (invoiceYearFilter !== "All") {
+                        filteredInvoices = filteredInvoices.filter((invoice) => {
+                          const periodStr = String(invoice.period || "").trim();
+                          const yearMatch = periodStr.match(/\d{4}/);
+                          const invoiceYear = yearMatch ? yearMatch[0] : "";
+                          return invoiceYear === invoiceYearFilter;
+                        });
+                      }
+
                       // Filter invoices by search term (name, year, native)
                       if (invoiceSearchTerm.trim()) {
                         const searchLower = invoiceSearchTerm.toLowerCase();
@@ -9666,7 +9944,7 @@ Subscription Manager HK`;
                           <div style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                             {/* Invoice Status Filter - Segmented Buttons (Left) */}
                             <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                              <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
+                            <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
                             <div style={{
                               display: "flex",
                               gap: "4px",
@@ -9719,11 +9997,183 @@ Subscription Manager HK`;
                                 </button>
                               ))}
                             </div>
+                            <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "16px" }}>
+                              <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Year:</label>
+                              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setInvoiceYearFilter("All");
+                                    setInvoicesPage(1);
+                                  }}
+                                  style={{
+                                    padding: "8px 12px",
+                                    borderRadius: "4px 0 0 4px",
+                                    border: "1px solid #e5e7eb",
+                                    borderRight: "none",
+                                    background: invoiceYearFilter === "All" ? "#5a31ea" : "#ffffff",
+                                    color: invoiceYearFilter === "All" ? "#ffffff" : "#6b7280",
+                                    fontSize: "0.875rem",
+                                    fontWeight: "500",
+                                    cursor: "pointer",
+                                    outline: "none",
+                                    transition: "all 0.2s ease",
+                                    whiteSpace: "nowrap"
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (invoiceYearFilter !== "All") {
+                                      e.target.style.background = "#f3f4f6";
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (invoiceYearFilter !== "All") {
+                                      e.target.style.background = "#ffffff";
+                                    }
+                                  }}
+                                >
+                                  All
+                                </button>
+                                <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                                  <input
+                                    type="text"
+                                    value={invoiceYearFilter === "All" ? "" : invoiceYearFilter}
+                                    placeholder="Year"
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      if (value === "" || value === "All" || /^\d{0,4}$/.test(value)) {
+                                        setInvoiceYearFilter(value === "" ? "All" : value);
+                                        setInvoicesPage(1);
+                                      }
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "ArrowUp") {
+                                        e.preventDefault();
+                                        const currentYear = invoiceYearFilter === "All" || invoiceYearFilter === "" ? new Date().getFullYear() : parseInt(invoiceYearFilter);
+                                        if (!isNaN(currentYear)) {
+                                          setInvoiceYearFilter(String(currentYear + 1));
+                                          setInvoicesPage(1);
+                                        }
+                                      } else if (e.key === "ArrowDown") {
+                                        e.preventDefault();
+                                        const currentYear = invoiceYearFilter === "All" || invoiceYearFilter === "" ? new Date().getFullYear() : parseInt(invoiceYearFilter);
+                                        if (!isNaN(currentYear) && currentYear > 1900) {
+                                          setInvoiceYearFilter(String(currentYear - 1));
+                                          setInvoicesPage(1);
+                                        }
+                                      }
+                                    }}
+                                    style={{
+                                      padding: "8px 32px 8px 12px",
+                                      borderRadius: "0",
+                                      border: "1px solid #e5e7eb",
+                                      borderLeft: "none",
+                                      borderRadius: "0 4px 4px 0",
+                                      borderRight: "1px solid #e5e7eb",
+                                      background: "#ffffff",
+                                      fontSize: "0.875rem",
+                                      fontWeight: "500",
+                                      outline: "none",
+                                      transition: "border-color 0.2s",
+                                      width: "100px",
+                                      textAlign: "center"
+                                    }}
+                                    onFocus={(e) => {
+                                      e.target.style.borderColor = "#5a31ea";
+                                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                    }}
+                                    onBlur={(e) => {
+                                      e.target.style.borderColor = "#e5e7eb";
+                                      e.target.style.boxShadow = "none";
+                                      if (e.target.value && e.target.value !== "All") {
+                                        const year = parseInt(e.target.value);
+                                        if (isNaN(year) || year < 1900 || year > 2100) {
+                                          setInvoiceYearFilter("All");
+                                        }
+                                      }
+                                    }}
+                                  />
+                                  <div style={{ 
+                                    position: "absolute", 
+                                    right: "4px", 
+                                    display: "flex", 
+                                    flexDirection: "column",
+                                    gap: "2px"
+                                  }}>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        const currentYear = invoiceYearFilter === "All" || invoiceYearFilter === "" ? new Date().getFullYear() : parseInt(invoiceYearFilter);
+                                        if (!isNaN(currentYear)) {
+                                          setInvoiceYearFilter(String(currentYear + 1));
+                                          setInvoicesPage(1);
+                                        }
+                                      }}
+                                      style={{
+                                        padding: "2px 4px",
+                                        border: "none",
+                                        background: "transparent",
+                                        cursor: "pointer",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        fontSize: "10px",
+                                        color: "#6b7280",
+                                        lineHeight: "1",
+                                        transition: "color 0.2s"
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.target.style.color = "#5a31ea";
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.target.style.color = "#6b7280";
+                                      }}
+                                      title="Increase year"
+                                    >
+                                      ▲
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        const currentYear = invoiceYearFilter === "All" || invoiceYearFilter === "" ? new Date().getFullYear() : parseInt(invoiceYearFilter);
+                                        if (!isNaN(currentYear) && currentYear > 1900) {
+                                          setInvoiceYearFilter(String(currentYear - 1));
+                                          setInvoicesPage(1);
+                                        }
+                                      }}
+                                      style={{
+                                        padding: "2px 4px",
+                                        border: "none",
+                                        background: "transparent",
+                                        cursor: "pointer",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        fontSize: "10px",
+                                        color: "#6b7280",
+                                        lineHeight: "1",
+                                        transition: "color 0.2s"
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.target.style.color = "#5a31ea";
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.target.style.color = "#6b7280";
+                                      }}
+                                      title="Decrease year"
+                                    >
+                                      ▼
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                             </div>
 
                             {/* Invoice Search Filter (Right) */}
                             <div style={{ display: "inline-flex", gap: "8px", flexWrap: "nowrap", alignItems: "center" }}>
-                              <label style={{ fontWeight: "600", color: "#1a1a1a" ,whiteSpace: "nowrap" }}>🔍 Search:</label>
+                              <label style={{ fontWeight: "600", color: "#1a1a1a" ,whiteSpace: "nowrap" }}> Search:</label>
                               <input
                                 type="text"
                                 placeholder="Search by name, year, or native..."
@@ -9860,16 +10310,16 @@ Subscription Manager HK`;
                                           const fontWeight = isUnpaid ? 600 : 500;
                                           
                                           return (
-                                            <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                                              <span
-                                                style={{
+                                          <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                            <span
+                                              style={{
                                                   color: textColor,
                                                   fontWeight: fontWeight,
-                                                }}
-                                              >
+                                              }}
+                                            >
                                                 {formatCurrency(outstandingAmount)}
-                                              </span>
-                                            </div>
+                                            </span>
+                                          </div>
                                           );
                                         },
                                       },
@@ -9898,7 +10348,7 @@ Subscription Manager HK`;
                                               aria-label="View Invoice Details"
                                             >
                                               <Tooltip text="View Invoice Details" position="top">
-                                                <i className="fas fa-eye" aria-hidden="true"></i>
+                                              <i className="fas fa-eye" aria-hidden="true"></i>
                                               </Tooltip>
                                             </button>
                                             {!isPaid && (
@@ -9912,7 +10362,7 @@ Subscription Manager HK`;
                                                 aria-label="Delete Invoice"
                                               >
                                                 <Tooltip text="Delete Invoice" position="top">
-                                                  <i className="fas fa-trash" aria-hidden="true"></i>
+                                                <i className="fas fa-trash" aria-hidden="true"></i>
                                                 </Tooltip>
                                               </button>
                                             )}
@@ -10191,10 +10641,184 @@ Subscription Manager HK`;
 
                 <div className=" card-payments">
                   <div style={{ padding: "2px" }}>
-                    {/* Payment Search Filter */}
-                    <div style={{ marginBottom: "20px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                      <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Search Payments:</label>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    {/* Payment Filters */}
+                    <div style={{ marginBottom: "20px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                        <div className="flex gap-md flex-nowrap items-center">
+                          <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Year:</label>
+                          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPaymentYearFilter("All");
+                                setPaymentsPage(1);
+                              }}
+                              style={{
+                                padding: "8px 12px",
+                                borderRadius: "4px 0 0 4px",
+                                border: "1px solid #e5e7eb",
+                                borderRight: "none",
+                                background: paymentYearFilter === "All" ? "#5a31ea" : "#ffffff",
+                                color: paymentYearFilter === "All" ? "#ffffff" : "#6b7280",
+                                fontSize: "0.875rem",
+                                fontWeight: "500",
+                                cursor: "pointer",
+                                outline: "none",
+                                transition: "all 0.2s ease",
+                                whiteSpace: "nowrap"
+                              }}
+                              onMouseEnter={(e) => {
+                                if (paymentYearFilter !== "All") {
+                                  e.target.style.background = "#f3f4f6";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (paymentYearFilter !== "All") {
+                                  e.target.style.background = "#ffffff";
+                                }
+                              }}
+                            >
+                              All
+                            </button>
+                            <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                              <input
+                                type="text"
+                                value={paymentYearFilter === "All" ? "" : paymentYearFilter}
+                                placeholder="Year"
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  if (value === "" || value === "All" || /^\d{0,4}$/.test(value)) {
+                                    setPaymentYearFilter(value === "" ? "All" : value);
+                                    setPaymentsPage(1);
+                                  }
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "ArrowUp") {
+                                    e.preventDefault();
+                                    const currentYear = paymentYearFilter === "All" || paymentYearFilter === "" ? new Date().getFullYear() : parseInt(paymentYearFilter);
+                                    if (!isNaN(currentYear)) {
+                                      setPaymentYearFilter(String(currentYear + 1));
+                                      setPaymentsPage(1);
+                                    }
+                                  } else if (e.key === "ArrowDown") {
+                                    e.preventDefault();
+                                    const currentYear = paymentYearFilter === "All" || paymentYearFilter === "" ? new Date().getFullYear() : parseInt(paymentYearFilter);
+                                    if (!isNaN(currentYear) && currentYear > 1900) {
+                                      setPaymentYearFilter(String(currentYear - 1));
+                                      setPaymentsPage(1);
+                                    }
+                                  }
+                                }}
+                                style={{
+                                  padding: "8px 32px 8px 12px",
+                                  borderRadius: "0",
+                                  border: "1px solid #e5e7eb",
+                                  borderLeft: "none",
+                                  borderRadius: "0 4px 4px 0",
+                                  borderRight: "1px solid #e5e7eb",
+                                  background: "#ffffff",
+                                  fontSize: "0.875rem",
+                                  fontWeight: "500",
+                                  outline: "none",
+                                  transition: "border-color 0.2s",
+                                  width: "100px",
+                                  textAlign: "center"
+                                }}
+                                onFocus={(e) => {
+                                  e.target.style.borderColor = "#5a31ea";
+                                  e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                }}
+                                onBlur={(e) => {
+                                  e.target.style.borderColor = "#e5e7eb";
+                                  e.target.style.boxShadow = "none";
+                                  if (e.target.value && e.target.value !== "All") {
+                                    const year = parseInt(e.target.value);
+                                    if (isNaN(year) || year < 1900 || year > 2100) {
+                                      setPaymentYearFilter("All");
+                                    }
+                                  }
+                                }}
+                              />
+                              <div style={{ 
+                                position: "absolute", 
+                                right: "4px", 
+                                display: "flex", 
+                                flexDirection: "column",
+                                gap: "2px"
+                              }}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    const currentYear = paymentYearFilter === "All" || paymentYearFilter === "" ? new Date().getFullYear() : parseInt(paymentYearFilter);
+                                    if (!isNaN(currentYear)) {
+                                      setPaymentYearFilter(String(currentYear + 1));
+                                      setPaymentsPage(1);
+                                    }
+                                  }}
+                                  style={{
+                                    padding: "2px 4px",
+                                    border: "none",
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "10px",
+                                    color: "#6b7280",
+                                    lineHeight: "1",
+                                    transition: "color 0.2s"
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.target.style.color = "#5a31ea";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.target.style.color = "#6b7280";
+                                  }}
+                                  title="Increase year"
+                                >
+                                  ▲
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    const currentYear = paymentYearFilter === "All" || paymentYearFilter === "" ? new Date().getFullYear() : parseInt(paymentYearFilter);
+                                    if (!isNaN(currentYear) && currentYear > 1900) {
+                                      setPaymentYearFilter(String(currentYear - 1));
+                                      setPaymentsPage(1);
+                                    }
+                                  }}
+                                  style={{
+                                    padding: "2px 4px",
+                                    border: "none",
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: "10px",
+                                    color: "#6b7280",
+                                    lineHeight: "1",
+                                    transition: "color 0.2s"
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.target.style.color = "#5a31ea";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.target.style.color = "#6b7280";
+                                  }}
+                                  title="Decrease year"
+                                >
+                                  ▼
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "nowrap" }}>
+                        <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Search:</label>
                         <input
                           type="text"
                           value={paymentSearchTerm}
@@ -10252,6 +10876,21 @@ Subscription Manager HK`;
                         isPaymentMemberInList(payment)
                       );
                       
+                      // Filter payments by year
+                      if (paymentYearFilter !== "All") {
+                        filteredPayments = filteredPayments.filter((payment) => {
+                          const paymentDate = payment.date || payment.createdAt;
+                          if (!paymentDate) return false;
+                          try {
+                            const date = new Date(paymentDate);
+                            const year = date.getFullYear().toString();
+                            return year === paymentYearFilter;
+                          } catch (e) {
+                            return false;
+                          }
+                        });
+                      }
+                      
                       // Then apply search filter
                       filteredPayments = filteredPayments
                         .filter(payment => {
@@ -10304,6 +10943,8 @@ Subscription Manager HK`;
                             columns={[
                               "Date",
                               "Member",
+                              "Year",
+                              "Native",
                               "Invoice ID",
                               "Amount",
                               "Method",
@@ -10314,6 +10955,29 @@ Subscription Manager HK`;
                               const paymentId = payment._id || payment.id;
                               const paymentIdString = paymentId?.toString ? paymentId.toString() : paymentId;
 
+                              // Extract year from payment date
+                              const paymentDate = payment.date || payment.createdAt;
+                              let paymentYear = "-";
+                              if (paymentDate) {
+                                try {
+                                  const date = new Date(paymentDate);
+                                  paymentYear = date.getFullYear().toString();
+                                } catch (e) {
+                                  paymentYear = "-";
+                                }
+                              }
+
+                              // Find member to get native
+                              const member = members.find(m => 
+                                m.id === payment.memberId || 
+                                m.email === payment.memberEmail ||
+                                m.name === payment.member ||
+                                String(m.id || "").toLowerCase() === String(payment.member || "").toLowerCase() ||
+                                String(m.email || "").toLowerCase() === String(payment.member || "").toLowerCase() ||
+                                String(m.name || "").toLowerCase() === String(payment.member || "").toLowerCase()
+                              );
+                              const memberNative = member?.native || "-";
+
                               return {
                                 Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
                                   day: '2-digit',
@@ -10321,6 +10985,8 @@ Subscription Manager HK`;
                                   year: 'numeric'
                                 }) : "-"),
                                 Member: payment.member || "Unknown",
+                                Year: paymentYear,
+                                Native: memberNative,
                                 "Invoice ID": payment.invoiceId || "-",
                                 Amount: payment.amount
                                   ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
@@ -10898,7 +11564,7 @@ Subscription Manager HK`;
                                       <div style={{ position: "relative" }}>
                                         <input
                                           type="text"
-                                          placeholder="🔍 Search member by name or ID..."
+                                          placeholder=" Search member by name or ID..."
                                           value={donationMemberSearch}
                                           onChange={(e) => setDonationMemberSearch(e.target.value)}
                                           onClick={(e) => e.stopPropagation()}
@@ -11686,7 +12352,7 @@ Subscription Manager HK`;
                                         aria-label="View screenshot"
                                       >
                                         <Tooltip text="View screenshot" position="top">
-                                          <i className="fas fa-image" aria-hidden="true"></i>
+                                        <i className="fas fa-image" aria-hidden="true"></i>
                                         </Tooltip>
                                         <span>View</span>
                                       </button>
@@ -11716,7 +12382,7 @@ Subscription Manager HK`;
                                           aria-label="Delete Donation"
                                         >
                                           <Tooltip text="Delete Donation" position="top">
-                                            <i className="fas fa-trash" aria-hidden="true"></i>
+                                          <i className="fas fa-trash" aria-hidden="true"></i>
                                           </Tooltip>
                                         </button>
                                       </div>
@@ -12534,7 +13200,7 @@ Subscription Manager HK`;
                                       aria-label="View screenshot"
                                     >
                                       <Tooltip text="View screenshot" position="top">
-                                        <i className="fas fa-image" aria-hidden="true"></i>
+                                      <i className="fas fa-image" aria-hidden="true"></i>
                                       </Tooltip>
                                       <span>View</span>
                                     </button>
@@ -12583,7 +13249,7 @@ Subscription Manager HK`;
                                           aria-label="View Invoice"
                                         >
                                           <Tooltip text="View Invoice" position="top">
-                                            <i className="fas fa-eye" aria-hidden="true"></i>
+                                          <i className="fas fa-eye" aria-hidden="true"></i>
                                           </Tooltip>
                                         </button>
                                       )}

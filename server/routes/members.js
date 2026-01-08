@@ -589,18 +589,18 @@ router.post("/import", upload.single("file"), async (req, res) => {
         // This email was seen before in the file
         const firstOccurrence = emailMap.get(emailLower);
         // Add error to current row
-          rowErrors.push({
-            row: rowNumber,
-            errors: [`Email "${member.email}" already exists in row ${firstOccurrence.row}`],
-            data: {
-              name: member.name || '',
-              email: member.email || '',
-              phone: member.phone || '',
-              subscriptionType: member.subscriptionType || 'Lifetime',
+        rowErrors.push({
+          row: rowNumber,
+          errors: [`Email "${member.email}" already exists in row ${firstOccurrence.row}`],
+          data: {
+            name: member.name || '',
+            email: member.email || '',
+            phone: member.phone || '',
+            subscriptionType: member.subscriptionType || 'Lifetime',
               subscriptionYear: member.subscriptionYear || '',
-              start_date: member.start_date || '',
-            }
-          });
+            start_date: member.start_date || '',
+          }
+        });
         membersToRemove.add(i);
       } else {
         emailMap.set(emailLower, { row: rowNumber, memberIndex: i });

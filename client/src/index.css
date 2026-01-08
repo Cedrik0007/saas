@@ -9254,7 +9254,7 @@ button[disabled] {
 
   .admin-dashboard-chart-tooltip {
     font-size: 0.65rem;
-    min-width: 120px;
+    min-width: 220px;
     padding: 0;
   }
 
@@ -9676,7 +9676,7 @@ button[disabled] {
   z-index: 10001;
   pointer-events: none;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  min-width: 180px;
+  min-width: 120px;
   overflow: hidden;
   animation: tooltipFadeIn 0.2s ease;
 }
