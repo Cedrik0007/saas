@@ -14580,7 +14580,7 @@ Subscription Manager HK`;
                             const paymentMethod = paymentModalData.paymentMethod; // Already "Cash" or "Online"
                             await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl, null);
 
-                            // Close modal and reset
+                            // Close modal and reset - do this before showing toast
                             setShowPaymentModal(false);
                             setPaymentModalInvoice(null);
                             setPaymentModalData({
@@ -14594,12 +14594,28 @@ Subscription Manager HK`;
                             });
                             setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
                             setCurrentInvalidPaymentModalField(null);
+                            setUploadingPaymentModal(false);
 
-                            showToast(`Invoice #${paymentModalInvoice.id} marked as paid!`, "success");
+                            // Toast is already shown in handleMarkAsPaid, so we don't need to show it again
                           } catch (error) {
                             console.error("Error processing payment:", error);
                             showToast(error.message || "Failed to process payment", "error");
+                            // Close modal and reset even on error
+                            setShowPaymentModal(false);
+                            setPaymentModalInvoice(null);
+                            setPaymentModalData({
+                              paymentMethod: "",
+                              imageFile: null,
+                              imagePreview: null,
+                              imageUrl: "",
+                              reference: "",
+                              selectedAdminId: "",
+                              adminMobile: "",
+                            });
+                            setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                            setCurrentInvalidPaymentModalField(null);
                           } finally {
+                            // Ensure uploading state is always reset
                             setUploadingPaymentModal(false);
                           }
                         },
