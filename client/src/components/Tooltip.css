@@ -3,7 +3,7 @@
 .tooltip-trigger {
   display: inline-block;
   position: relative;
-  cursor: help;
+  cursor: default;
 }
 
 .tooltip {

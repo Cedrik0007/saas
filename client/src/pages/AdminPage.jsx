@@ -1018,31 +1018,82 @@ function AdminPage() {
   };
 
   const getRecentPayments = () => {
-    return paymentHistory
+    // Use payments from finance section, filter to only show payments from members in the members list
+    return (payments || [])
+      .filter(payment => 
+        // Only include payments from members in the members list
+        isPaymentMemberInList(payment)
+      )
       .filter(payment => payment.status === "Paid" || payment.status === "Completed" || payment.status === "Pending Verification" || payment.status === "Pending")
       .sort((a, b) => {
         const dateA = new Date(a.date || a.createdAt || 0);
         const dateB = new Date(b.date || b.createdAt || 0);
         return dateB - dateA;
       })
-      .slice(0, 5)
-      .map(payment => ({
-        Member: payment.member || "Unknown",
-        Period: payment.period || "-",
-        Amount: payment.amount
-          ? formatCurrency(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0))
-          : formatCurrency(0),
-        Method: getPaymentMethodDisplay(payment),
-        Status: payment.status || "Pending",
-        Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString() : "-"),
-      }));
+      .slice(0, 3) // Show only 3 recent payments
+      .map(payment => {
+        // Find member for this payment
+        const member = members.find(m => 
+          m.id === payment.memberId || 
+          m.email === payment.memberEmail ||
+          m.name === payment.member ||
+          String(m.id || "").toLowerCase() === String(payment.member || "").toLowerCase() ||
+          String(m.email || "").toLowerCase() === String(payment.member || "").toLowerCase() ||
+          String(m.name || "").toLowerCase() === String(payment.member || "").toLowerCase()
+        );
+
+        // Get Subscription Year from member's invoices
+        let subscriptionYear = "-";
+        if (member) {
+          const memberInvoices = invoices.filter(inv => 
+            inv.memberId === member.id || 
+            inv.memberEmail === member.email || 
+            inv.memberName === member.name
+          ).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+          
+          if (memberInvoices.length > 0) {
+            const latestInvoice = memberInvoices[0];
+            if (latestInvoice.period) {
+              const periodStr = String(latestInvoice.period).trim();
+              const yearMatch = periodStr.match(/\d{4}/);
+              if (yearMatch) {
+                subscriptionYear = yearMatch[0];
+              }
+            }
+          }
+        }
+
+        // Get Native from member
+        const native = member?.native || "-";
+
+        // Get Joined Year from member
+        const joinedYear = member?.start_date
+          ? new Date(member.start_date).getFullYear()
+          : (member?.createdAt ? new Date(member.createdAt).getFullYear() : "-");
+
+        return {
+          Member: payment.member || "Unknown",
+          Period: payment.period || "-",
+          Amount: payment.amount
+            ? formatCurrency(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0))
+            : formatCurrency(0),
+          Method: getPaymentMethodDisplay(payment),
+          Status: payment.status || "Pending",
+          "Subscription Year": subscriptionYear,
+          Native: native,
+          "Joined Year": joinedYear,
+        };
+      });
   };
 
   // Make monthly collections data reactive to changes in paymentHistory and members
   const monthlyCollectionsData = useMemo(() => {
     return calculateMonthlyCollections();
   }, [paymentHistory, members]);
-  const recentPaymentsData = getRecentPayments();
+  // Make recent payments data reactive to changes in payments, members, and invoices
+  const recentPaymentsData = useMemo(() => {
+    return getRecentPayments();
+  }, [payments, members, invoices]);
   // Make dashboard metrics reactive to changes in invoices, payments, and members
   const dashboardMetrics = useMemo(() => {
     return calculateDashboardMetrics();
@@ -2433,7 +2484,7 @@ Subscription Manager HK`;
                 ) : index === 0 ? (
                   <span
                     onClick={() => handleNavClick(item.id)}
-                    className="admin-breadcrumb-link--inline"
+                    className="admin-breadcrumb-link--inline admin-breadcrumb-link--no-click"
                   >
                     {item.label}
                   </span>
@@ -4156,7 +4207,7 @@ Subscription Manager HK`;
                       </button>
                     </div>
                     <Table
-                      columns={["Member", "Period", "Amount", "Method", "Status", "Date"]}
+                      columns={["Member", "Amount", "Method", "Status", "Subscription Year", "Native", "Joined Year"]}
                       rows={recentPaymentsData.length > 0 ? recentPaymentsData : [
                         {
                           Member: "No payments yet",
@@ -4164,7 +4215,9 @@ Subscription Manager HK`;
                           Amount: "-",
                           Method: "-",
                           Status: "-",
-                          Date: "-",
+                          "Subscription Year": "-",
+                          Native: "-",
+                          "Joined Year": "-",
                         }
                       ]}
                     />
@@ -6753,12 +6806,12 @@ Subscription Manager HK`;
                     <input
                       type="number"
                       inputMode="numeric"
-                      required
+                      readOnly
                       value={invoiceForm.amount}
-                      onChange={(e) => {
-                        const value = e.target.value.replace(/\\D/g, "");
-                        setInvoiceForm({ ...invoiceForm, amount: value });
-                      }}
+                      // onChange={(e) => {
+                      //   const value = e.target.value.replace(/\\D/g, "");
+                      //   setInvoiceForm({ ...invoiceForm, amount: value });
+                      // }}
                       className="mono-input"
                       style={{ color: "#1a1a1a" }}
                     />
@@ -12191,11 +12244,12 @@ Subscription Manager HK`;
                     return (
                       <div className="admin-dashboard-kpi-card" style={{ maxWidth: "400px" }}>
                         <div className="admin-dashboard-kpi-header">
-                          <div className="admin-dashboard-kpi-icon admin-dashboard-kpi-icon--green">
-                            <i className="fas fa-heart"></i>
-                          </div>
+                         
                           <div className="admin-dashboard-kpi-content">
-                            <div className="admin-dashboard-kpi-label">Total Donation</div>
+                          
+                            <div className="admin-dashboard-kpi-label"><div className="admin-dashboard-kpi-icon admin-dashboard-kpi-icon--green">
+                            <i className="fas fa-heart"></i>
+                          </div>Total Donation</div>
                             <div className="admin-dashboard-kpi-value">
                               {formatCurrency(totalDonationAmount)}
                             </div>
