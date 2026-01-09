@@ -65,7 +65,7 @@ html {
 body {
   margin: 0;
   padding: 0;
-  background: #ffffff;
+  background: #f5f7fb;
   color: #1a1a1a;
   line-height: 1.5;
   font-family: "Poppins", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -137,7 +137,7 @@ h5, h6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px clamp(24px, 6vw, 64px);
+  padding: 0px clamp(24px, 6vw, 64px);
   border: none;
   border-bottom: none;
   background: #ffffff;
@@ -146,6 +146,7 @@ h5, h6 {
   /* box-shadow: 0 2px 8px rgba(90, 49, 234, 0.1); */
   gap: 12px;
   flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
 }
 
 .site-header--sticky {
@@ -1622,9 +1623,9 @@ button {
 /* Admin Dashboard - KPI Cards */
 .admin-dashboard-kpi-card {
   background: #ffffff;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 2px 8px rgba(90, 49, 234, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1);
   border: none;
   cursor: pointer;
   text-align: left;
@@ -1636,7 +1637,7 @@ button {
 
 .admin-dashboard-kpi-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(90, 49, 234, 0.15);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.06);
 }
 
 .admin-dashboard-kpi-button {
@@ -1646,63 +1647,368 @@ button {
 
 .admin-dashboard-kpi-label {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  color: #666;
+  color: #6B7280;
   display: flex;
   align-items: center;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
 }
 
 .admin-dashboard-kpi-value {
   margin: 0;
-  font-size: 1.75rem;
-  margin: 10px 0px;
-  font-weight: 700;
-  color: #1a1a1a;
+  font-size: 2rem;
+  margin: 8px 0px;
+  font-weight: 800;
+  color: #111827;
   line-height: 1.2;
 }
 
 
 
 .admin-dashboard-kpi-value--default {
-  color: #1a1a1a;
+  color: #111827;
 }
 
 .admin-dashboard-kpi-description {
   margin: 0;
-  font-size: 0.875rem;
-  color: #666;
+  font-size: 0.8125rem;
+  color: #9CA3AF;
   line-height: 1.4;
+  font-weight: 400;
 }
 
 .admin-dashboard-kpi-icon {
-  margin-right: 8px;
-  color: #5a31ea;
+  margin-right: 6px;
+  color: #9CA3AF;
+  font-size: 0.875rem;
 }
 
 .admin-dashboard-kpi-icon--green {
-  margin-right: 8px;
-  color: #10b981;
+  margin-right: 6px;
+  color: #6EE7B7;
+  font-size: 0.875rem;
 }
 
 .admin-dashboard-kpi-icon--blue {
-  margin-right: 8px;
-  color: #3b82f6;
+  margin-right: 6px;
+  color: #93C5FD;
+  font-size: 0.875rem;
 }
 
 .admin-dashboard-kpi-icon--orange {
-  margin-right: 8px;
-  color: #f59e0b;
+  margin-right: 6px;
+  color: #FCD34D;
+  font-size: 0.875rem;
 }
 
 .admin-dashboard-kpi-icon--red {
-  margin-right: 8px;
-  color: #ef4444;
+  margin-right: 6px;
+  color: #FCA5A5;
+  font-size: 0.875rem;
 }
 
 .admin-dashboard-kpi-icon--gray {
-  margin-right: 8px;
-  color: #666;
+  margin-right: 6px;
+  color: #9CA3AF;
+  font-size: 0.875rem;
+}
+
+/* New Dashboard KPI Container Structure */
+.admin-dashboard-kpi-container {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 20px 24px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.admin-dashboard-kpi-segment {
+  flex: 1;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  transition: opacity 0.2s ease;
+}
+
+.admin-dashboard-kpi-segment:hover {
+  opacity: 0.8;
+}
+
+.admin-dashboard-kpi-segment-icon {
+  font-size: 1.25rem;
+  margin: 0;
+  flex-shrink: 0;
+  line-height: 1.25rem;
+  align-self: flex-start;
+  margin-top: 0;
+}
+
+.admin-dashboard-kpi-segment-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 1;
+}
+
+.admin-dashboard-kpi-segment .admin-dashboard-kpi-icon {
+  color: #9CA3AF;
+}
+
+.admin-dashboard-kpi-segment .admin-dashboard-kpi-icon--green {
+  color: #10B981;
+}
+
+.admin-dashboard-kpi-segment .admin-dashboard-kpi-icon--red {
+  color: #EF4444;
+}
+
+.admin-dashboard-kpi-segment .admin-dashboard-kpi-icon--blue {
+  color: #3B82F6;
+}
+
+.admin-dashboard-kpi-segment .admin-dashboard-kpi-icon--orange {
+  color: #F59E0B;
+}
+
+.admin-dashboard-kpi-segment-label {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #9CA3AF;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-align: left;
+  line-height: 1.25rem;
+}
+
+.admin-dashboard-kpi-segment-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.admin-dashboard-kpi-segment-value {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.admin-dashboard-kpi-segment-value.admin-dashboard-kpi-value--red {
+  color: #EF4444;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.admin-dashboard-kpi-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.admin-dashboard-kpi-badge--green {
+  background: #D1FAE5;
+  color: #059669;
+}
+
+.admin-dashboard-kpi-badge--red {
+  background: #FEE2E2;
+  color: #DC2626;
+}
+
+.admin-dashboard-kpi-divider {
+  width: 1px;
+  background: #e9edf3;
+  align-self: stretch;
+  margin: 0 24px;
+  flex-shrink: 0;
+}
+
+/* Dashboard Content Grid - Two Column Layout */
+.admin-dashboard-content-grid {
+  display: grid;
+  grid-template-columns: 40% 60%;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+/* Dashboard Chart Card */
+.admin-dashboard-chart-card {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.admin-dashboard-chart-card .admin-dashboard-chart-container {
+  width: 100%;
+  overflow: visible;
+  max-width: 100%;
+}
+
+.admin-dashboard-card-header {
+  margin-bottom: 20px;
+}
+
+.admin-dashboard-card-header h4 {
+  margin: 0 0 8px 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.admin-dashboard-card-header p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #6B7280;
+}
+
+.admin-dashboard-card-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.admin-dashboard-card-header-flex h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+/* Dashboard Payments Card */
+.admin-dashboard-payments-card {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 24px 48px 24px 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+
+.admin-dashboard-table-wrapper {
+  overflow: visible;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Table Styling for Dashboard */
+.admin-dashboard-table-wrapper table {
+  width: 100%;
+  max-width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.admin-dashboard-table-wrapper table thead {
+  background: transparent;
+}
+
+.admin-dashboard-table-wrapper table thead th {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #eef1f6;
+  padding: 12px 8px;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6B7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Column width distribution for dashboard table */
+.admin-dashboard-table-wrapper table thead th:nth-child(1) { width: 20%; } /* Member */
+.admin-dashboard-table-wrapper table thead th:nth-child(2) { width: 15%; } /* Amount */
+.admin-dashboard-table-wrapper table thead th:nth-child(3) { width: 15%; } /* Method */
+.admin-dashboard-table-wrapper table thead th:nth-child(4) { width: 12%; } /* Status */
+.admin-dashboard-table-wrapper table thead th:nth-child(5) { width: 13%; } /* Subscription Year */
+.admin-dashboard-table-wrapper table thead th:nth-child(6) { width: 12%; } /* Native */
+.admin-dashboard-table-wrapper table thead th:nth-child(7) { width: 13%; } /* Joined Year */
+
+.admin-dashboard-table-wrapper table tbody tr {
+  border-bottom: 1px solid #eef1f6;
+}
+
+.admin-dashboard-table-wrapper table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.admin-dashboard-table-wrapper table tbody td {
+  padding: 12px 8px;
+  border: none;
+  font-size: 0.875rem;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-dashboard-table-wrapper table tbody tr:hover {
+  background: #f9fafb;
+}
+
+/* Responsive: Stack columns on tablet and mobile */
+@media (max-width: 1024px) {
+  .admin-dashboard-content-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  
+  /* Hide low-priority columns on tablet */
+  .admin-dashboard-table-wrapper table thead th:nth-child(5),
+  .admin-dashboard-table-wrapper table thead th:nth-child(6),
+  .admin-dashboard-table-wrapper table thead th:nth-child(7),
+  .admin-dashboard-table-wrapper table tbody td:nth-child(5),
+  .admin-dashboard-table-wrapper table tbody td:nth-child(6),
+  .admin-dashboard-table-wrapper table tbody td:nth-child(7) {
+    display: none;
+  }
+  
+  /* Adjust column widths for remaining columns */
+  .admin-dashboard-table-wrapper table thead th:nth-child(1) { width: 30%; } /* Member */
+  .admin-dashboard-table-wrapper table thead th:nth-child(2) { width: 25%; } /* Amount */
+  .admin-dashboard-table-wrapper table thead th:nth-child(3) { width: 25%; } /* Method */
+  .admin-dashboard-table-wrapper table thead th:nth-child(4) { width: 20%; } /* Status */
+}
+
+/* Mobile: Further optimize column widths */
+@media (max-width: 768px) {
+  .admin-dashboard-table-wrapper table thead th {
+    padding: 10px 6px;
+    font-size: 0.7rem;
+  }
+  
+  .admin-dashboard-table-wrapper table tbody td {
+    padding: 10px 6px;
+    font-size: 0.8125rem;
+  }
+  
+  /* Adjust column widths for mobile */
+  .admin-dashboard-table-wrapper table thead th:nth-child(1) { width: 35%; } /* Member */
+  .admin-dashboard-table-wrapper table thead th:nth-child(2) { width: 25%; } /* Amount */
+  .admin-dashboard-table-wrapper table thead th:nth-child(3) { width: 20%; } /* Method */
+  .admin-dashboard-table-wrapper table thead th:nth-child(4) { width: 20%; } /* Status */
 }
 
 /* Member Detail Header */
@@ -1784,7 +2090,7 @@ button {
 .admin-breadcrumb-container {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 14px;
   margin-bottom: 16px;
   flex-wrap: wrap;
 }
@@ -4492,11 +4798,24 @@ button[disabled] {
 }
 
 .site-footer {
-  padding: 24px;
-  text-align: center;
+  padding: 24px clamp(16px, 4vw, 48px);
+  padding-top: 10px;
+  padding-bottom: 48px;
+  text-align: left;
   color: var(--muted);
-  border-top: 1px solid var(--border);
-  background: var(--surface);
+  border-top: 0px solid var(--border);
+  /*background: var(--surface);*/
+  width: calc(100% - 15% - 30px);
+  margin-left: calc(15% + 30px);
+  box-sizing: border-box;
+}
+
+/* Tablet sizes - match admin-body alignment */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .site-footer {
+    width: calc(100% - 18% - 30px);
+    margin-left: calc(18% + 30px);
+  }
 }
 
 
@@ -4507,8 +4826,11 @@ button[disabled] {
     min-height: 100vh;
   }
   .site-footer {
-    padding: 24px;
-    margin-left: 200px;
+    padding: 24px clamp(16px, 4vw, 48px);
+    padding-top: 10px;
+    padding-bottom: 48px;
+    width: calc(100% - 18% - 30px);
+    margin-left: calc(18% + 30px);
   }
 
   .login-main {
@@ -4747,25 +5069,14 @@ button[disabled] {
   .site-footer {
     padding: 20px 16px;
     font-size: 0.875rem;
-  }
-  
-  /* Only apply margin-left between 769px and 1024px, matching admin-body */
-  @media (min-width: 769px) {
-  
-  
+    width: 100% !important;
+    margin-left: 0 !important;
   }
   
   .site-footer p {
     font-size: 0.875rem;
     margin: 4px 0;
     line-height: 1.5;
-  }
-  
-  /* Apply padding-left only between 769px and 1024px */
-  @media (min-width: 769px) and (max-width: 1024px) {
-    .site-footer p {
-      padding-left: 60px !important;
-    }
   }
 }
 
@@ -6161,17 +6472,18 @@ button[disabled] {
   }
 
   .admin-dashboard-chart-container {
-    min-width: 100%;
+    width: 100%;
+    max-width: 100%;
     padding-bottom: 32px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
   }
 
   .chart {
     height: 180px;
     gap: 8px;
     margin-top: 12px;
-    min-width: 600px;
+    width: 100%;
+    max-width: 100%;
     padding-bottom: 28px;
   }
 

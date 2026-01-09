@@ -801,19 +801,25 @@ function AdminPage() {
     }
   };
 
-  // Helper component for Dashboard KPI Card
-  const DashboardKPICard = ({ icon, iconClass, label, value, description, onClick, valueClass = "" }) => (
+  // Helper component for Dashboard KPI Segment
+  const DashboardKPISegment = ({ icon, iconClass, label, value, badge, badgeType = "green", onClick, valueClass = "" }) => (
     <button
       type="button"
-      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
+      className="admin-dashboard-kpi-segment"
       onClick={onClick}
     >
-      <p className="admin-dashboard-kpi-label">
-        <i className={`${icon} ${iconClass || "admin-dashboard-kpi-icon"}`}></i>
-        {label}
-      </p>
-      <h4 className={`admin-dashboard-kpi-value ${valueClass}`}>{value}</h4>
-      {description && <small className="admin-dashboard-kpi-description">{description}</small>}
+      <i className={`${icon} ${iconClass || "admin-dashboard-kpi-icon"} admin-dashboard-kpi-segment-icon`}></i>
+      <div className="admin-dashboard-kpi-segment-text">
+        <p className="admin-dashboard-kpi-segment-label">{label}</p>
+        <div className="admin-dashboard-kpi-segment-value-row">
+          <h4 className={`admin-dashboard-kpi-segment-value ${valueClass}`}>{value}</h4>
+          {badge && (
+            <span className={`admin-dashboard-kpi-badge admin-dashboard-kpi-badge--${badgeType}`}>
+              {badge}
+            </span>
+          )}
+        </div>
+      </div>
     </button>
   );
   const [sendingEmails, setSendingEmails] = useState({}); // Track which member is sending
@@ -984,6 +990,8 @@ function AdminPage() {
 
   // Calculate monthly collections from paymentHistory
   const calculateMonthlyCollections = () => {
+    // Ensure paymentHistory is an array
+    const safePaymentHistory = Array.isArray(paymentHistory) ? paymentHistory : [];
     const now = new Date();
     const months = [];
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -995,12 +1003,25 @@ function AdminPage() {
       const monthLabel = monthNames[date.getMonth()];
 
       // Filter payments for this month (only completed/paid and from members in the list)
-      const monthPayments = paymentHistory.filter((payment) => {
+      const monthPayments = safePaymentHistory.filter((payment) => {
+        if (!payment) return false;
         // Only count completed or paid payments
         const isCompleted = payment.status === "Completed" || payment.status === "Paid";
         if (!isCompleted) return false;
         if (!payment.date) return false;
-        const paymentDate = new Date(payment.date);
+        
+        // Parse date with error handling
+        let paymentDate;
+        try {
+          paymentDate = new Date(payment.date);
+          // Check if date is valid
+          if (isNaN(paymentDate.getTime())) {
+            return false;
+          }
+        } catch (e) {
+          return false;
+        }
+        
         const isInMonth = paymentDate.getMonth() === date.getMonth() &&
           paymentDate.getFullYear() === date.getFullYear();
         if (!isInMonth) return false;
@@ -1011,7 +1032,7 @@ function AdminPage() {
       // Calculate total for this month
       const total = monthPayments.reduce((sum, payment) => {
         const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
-        return sum + amount;
+        return sum + (isNaN(amount) ? 0 : amount);
       }, 0);
 
       months.push({
@@ -1286,42 +1307,87 @@ function AdminPage() {
   };
 
   const getRecentPayments = () => {
+    // Ensure payments is an array
+    const safePayments = Array.isArray(payments) ? payments : [];
+    const safeMembers = Array.isArray(members) ? members : [];
+    const safeInvoices = Array.isArray(invoices) ? invoices : [];
+
     // Use payments from finance section, filter to only show payments from members in the members list
-    return (payments || [])
-      .filter(payment => 
+    return safePayments
+      .filter(payment => {
+        if (!payment) return false;
         // Only include payments from members in the members list
-        isPaymentMemberInList(payment)
-      )
-      .filter(payment => payment.status === "Paid" || payment.status === "Completed" || payment.status === "Pending Verification" || payment.status === "Pending")
+        return isPaymentMemberInList(payment);
+      })
+      .filter(payment => {
+        if (!payment || !payment.status) return false;
+        return payment.status === "Paid" || payment.status === "Completed" || payment.status === "Pending Verification" || payment.status === "Pending";
+      })
       .sort((a, b) => {
-        const dateA = new Date(a.date || a.createdAt || 0);
-        const dateB = new Date(b.date || b.createdAt || 0);
+        // Safe date parsing with error handling
+        let dateA, dateB;
+        try {
+          dateA = new Date(a.date || a.createdAt || 0);
+          if (isNaN(dateA.getTime())) dateA = new Date(0);
+        } catch (e) {
+          dateA = new Date(0);
+        }
+        try {
+          dateB = new Date(b.date || b.createdAt || 0);
+          if (isNaN(dateB.getTime())) dateB = new Date(0);
+        } catch (e) {
+          dateB = new Date(0);
+        }
         return dateB - dateA;
       })
       .slice(0, 3) // Show only 3 recent payments
       .map(payment => {
+        if (!payment) {
+          return {
+            Member: "Unknown",
+            Period: "-",
+            Amount: formatCurrency(0),
+            Method: "-",
+            Status: "-",
+            "Subscription Year": "-",
+            Native: "-",
+            "Joined Year": "-",
+          };
+        }
+
         // Find member for this payment
-        const member = members.find(m => 
-          m.id === payment.memberId || 
+        const member = safeMembers.find(m => {
+          if (!m) return false;
+          return m.id === payment.memberId || 
           m.email === payment.memberEmail ||
           m.name === payment.member ||
           String(m.id || "").toLowerCase() === String(payment.member || "").toLowerCase() ||
           String(m.email || "").toLowerCase() === String(payment.member || "").toLowerCase() ||
-          String(m.name || "").toLowerCase() === String(payment.member || "").toLowerCase()
-        );
+            String(m.name || "").toLowerCase() === String(payment.member || "").toLowerCase();
+        });
 
         // Get Subscription Year from member's invoices
         let subscriptionYear = "-";
         if (member) {
-          const memberInvoices = invoices.filter(inv => 
-            inv.memberId === member.id || 
+          const memberInvoices = safeInvoices.filter(inv => {
+            if (!inv) return false;
+            return inv.memberId === member.id || 
             inv.memberEmail === member.email || 
-            inv.memberName === member.name
-          ).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+              inv.memberName === member.name;
+          }).sort((a, b) => {
+            try {
+              const dateA = new Date(a.createdAt || 0);
+              const dateB = new Date(b.createdAt || 0);
+              if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
+              return dateB - dateA;
+            } catch (e) {
+              return 0;
+            }
+          });
           
           if (memberInvoices.length > 0) {
             const latestInvoice = memberInvoices[0];
-            if (latestInvoice.period) {
+            if (latestInvoice && latestInvoice.period) {
               const periodStr = String(latestInvoice.period).trim();
               const yearMatch = periodStr.match(/\d{4}/);
               if (yearMatch) {
@@ -1334,17 +1400,37 @@ function AdminPage() {
         // Get Native from member
         const native = member?.native || "-";
 
-        // Get Joined Year from member
-        const joinedYear = member?.start_date
-          ? new Date(member.start_date).getFullYear()
-          : (member?.createdAt ? new Date(member.createdAt).getFullYear() : "-");
+        // Get Joined Year from member with error handling
+        let joinedYear = "-";
+        if (member) {
+          try {
+            if (member.start_date) {
+              const startDate = new Date(member.start_date);
+              if (!isNaN(startDate.getTime())) {
+                joinedYear = startDate.getFullYear();
+              }
+            } else if (member.createdAt) {
+              const createdDate = new Date(member.createdAt);
+              if (!isNaN(createdDate.getTime())) {
+                joinedYear = createdDate.getFullYear();
+              }
+            }
+          } catch (e) {
+            // Keep joinedYear as "-"
+          }
+        }
+
+        // Parse amount safely
+        let amount = 0;
+        if (payment.amount) {
+          const parsedAmount = parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0);
+          amount = isNaN(parsedAmount) ? 0 : parsedAmount;
+        }
 
         return {
           Member: payment.member || "Unknown",
           Period: payment.period || "-",
-          Amount: payment.amount
-            ? formatCurrency(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0))
-            : formatCurrency(0),
+          Amount: formatCurrency(amount),
           Method: getPaymentMethodDisplay(payment),
           Status: payment.status || "Pending",
           "Subscription Year": subscriptionYear,
@@ -4256,37 +4342,40 @@ Subscription Manager HK`;
                   </div>
                 </header>
                 <div className="admin-dashboard-main-card">
-                  <div className="kpi-grid">
-                    <DashboardKPICard
+                  <div className="admin-dashboard-kpi-container">
+                    <DashboardKPISegment
                       icon="fas fa-users"
                       label="Total Members"
                       value={formatNumber(members.length)}
-                      description="Active members"
+                      badge={null}
                       onClick={() => handleNavClick("members")}
                     />
-                    <DashboardKPICard
+                    <div className="admin-dashboard-kpi-divider"></div>
+                    <DashboardKPISegment
                       icon="fas fa-dollar-sign"
                       iconClass="admin-dashboard-kpi-icon--green"
                       label="Total Collected"
                       value={formatCurrency(dashboardMetrics.collectedMonth)}
-                      description={`${formatCurrency(dashboardMetrics.collectedYear)} YTD`}
+                      badge={null}
                       onClick={() => handleNavClick("payments")}
                     />
-                    <DashboardKPICard
+                    <div className="admin-dashboard-kpi-divider"></div>
+                    <DashboardKPISegment
                       icon="fas fa-exclamation-triangle"
                       iconClass="admin-dashboard-kpi-icon--red"
                       label="Unpaid Members"
                       value={formatNumber(dashboardMetrics.unpaidMembers || 0)}
-                      description="Members with unpaid invoices"
+                      badge={null}
                       onClick={() => handleNavClick("members")}
                       valueClass={(dashboardMetrics.unpaidMembers || 0) > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}
                     />
-                    <DashboardKPICard
+                    <div className="admin-dashboard-kpi-divider"></div>
+                    <DashboardKPISegment
                       icon="fas fa-dollar-sign"
                       iconClass="admin-dashboard-kpi-icon--red"
                       label="Unpaid Total Amount"
                       value={formatCurrency(dashboardMetrics.outstanding)}
-                      description={`Expected ${formatCurrency(dashboardMetrics.expectedAnnual)}`}
+                      badge={null}
                       onClick={() => handleNavClick("members")}
                       valueClass={dashboardMetrics.outstanding > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}
                     />
@@ -4297,10 +4386,13 @@ Subscription Manager HK`;
                     Last updated: {dashboardLastUpdated}
                   </div>
 
+                  {/* Two-column layout for chart and payments */}
+                  <div className="admin-dashboard-content-grid">
+                    {/* Left Column: Monthly Collections Chart */}
                   <div className="admin-dashboard-chart-card">
-                    <div className="card-header">
+                      <div className="admin-dashboard-card-header">
                       <div>
-                        <h4><i className="fas fa-chart-bar admin-dashboard-chart-header-icon"></i>Monthly Collections · Last 12 Months</h4>
+                          <h4>Monthly Collections · Last 12 Months</h4>
                         <p>Expected contribution is HK$800 per member per year</p>
                       </div>
                     </div>
@@ -4402,66 +4494,6 @@ Subscription Manager HK`;
                                   <strong>{hoveredMonth.count} payment{hoveredMonth.count > 1 ? 's' : ''}</strong>
                                 </div>
                               )}
-                              {/*{displayPayments.length > 0 && (
-                                <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
-                                  <div style={{ marginBottom: '8px', fontSize: '0.75rem', fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>
-                                    Payment Details:
-                                  </div>
-                                  <div style={{ maxHeight: hasMorePayments ? '280px' : 'none', overflowY: hasMorePayments ? 'auto' : 'visible' }}>
-                                    {displayPayments.slice(0, hasMorePayments ? maxVisiblePayments : displayPayments.length).map((payment, index) => {
-                                      const paymentDate = payment.date 
-                                        ? new Date(payment.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                        : (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-');
-                                      const paymentAmount = payment.amount 
-                                        ? formatCurrency(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0))
-                                        : formatCurrency(0);
-                                      const paymentMethod = getPaymentMethodDisplay(payment);
-                                      const memberName = payment.member || 'Unknown';
-                                      
-                                      return (
-                                        <div 
-                                          key={index} 
-                                          style={{ 
-                                            marginBottom: '10px', 
-                                            padding: '8px', 
-                                            backgroundColor: 'rgba(255,255,255,0.05)', 
-                                            borderRadius: '4px',
-                                            fontSize: '0.7rem'
-                                          }}
-                                        >
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Member:</span>
-                                            <strong style={{ color: '#fff' }}>{memberName}</strong>
-                                          </div>
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Amount:</span>
-                                            <strong style={{ color: '#4CAF50' }}>{paymentAmount}</strong>
-                                          </div>
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Method:</span>
-                                            <span style={{ color: 'rgba(255,255,255,0.9)' }}>{paymentMethod}</span>
-                                          </div>
-                                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Date:</span>
-                                            <span style={{ color: 'rgba(255,255,255,0.9)' }}>{paymentDate}</span>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                    {hasMorePayments && (
-                                      <div style={{ 
-                                        textAlign: 'center', 
-                                        padding: '8px', 
-                                        fontSize: '0.7rem', 
-                                        color: 'rgba(255,255,255,0.7)',
-                                        fontStyle: 'italic'
-                                      }}>
-                                        ... and {paymentCount - maxVisiblePayments} more payment{paymentCount - maxVisiblePayments > 1 ? 's' : ''}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}*/}
                             </div>
                           </div>
                         );
@@ -4469,13 +4501,15 @@ Subscription Manager HK`;
                     </div>
                   </div>
 
+                    {/* Right Column: Recent Payments */}
                   <div className="admin-dashboard-payments-card">
-                    <div className="card-header">
-                      <h4><i className="fas fa-clock admin-icon" style={{ marginRight: "10px" }}></i>Recent Payments</h4>
+                      <div className="admin-dashboard-card-header admin-dashboard-card-header-flex">
+                        <h4>Recent Payments</h4>
                       <button className="text-btn" onClick={() => handleNavClick("members")}>
                         View all
                       </button>
                     </div>
+                      <div className="admin-dashboard-table-wrapper">
                     <Table
                       columns={["Member", "Amount", "Method", "Status", "Subscription Year", "Native", "Joined Year"]}
                       rows={recentPaymentsData.length > 0 ? recentPaymentsData : [
@@ -4491,6 +4525,8 @@ Subscription Manager HK`;
                         }
                       ]}
                     />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </article>
