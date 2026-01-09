@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import connectDB from "./config/database.js";
 import { initializeCloudinary } from "./config/cloudinary.js";
 import { initializeEmailTransporter } from "./config/email.js";
-import { scheduleReminderCron, scheduleInvoiceGenerationCron, reminderCronJob } from "./utils/cron.js";
+import { scheduleReminderCron, scheduleInvoiceGenerationCron, scheduleNextYearInvoiceCron, reminderCronJob } from "./utils/cron.js";
 import { calculateAndUpdateMemberBalance } from "./utils/balance.js";
 import UserModel from "./models/User.js";
 
@@ -144,6 +144,9 @@ if (!process.env.VERCEL) {
     
     // Schedule invoice generation cron
     scheduleInvoiceGenerationCron();
+    
+    // Schedule next year invoice creation cron
+    scheduleNextYearInvoiceCron();
     
     // Verify cron job was scheduled (need to re-import to get updated value)
     const cronModule = await import("./utils/cron.js");

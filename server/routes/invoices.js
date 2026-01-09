@@ -107,6 +107,27 @@ router.post("/", async (req, res) => {
   }
 });
 
+// POST endpoint to manually trigger next year invoice creation
+router.post("/create-next-year", async (req, res) => {
+  try {
+    await ensureConnection();
+    const { checkAndCreateNextYearInvoices } = await import("../services/nextYearInvoiceService.js");
+    const result = await checkAndCreateNextYearInvoices();
+    res.json({
+      success: result.success,
+      message: result.message,
+      result: {
+        created: result.created,
+        skipped: result.skipped,
+        errors: result.errors
+      }
+    });
+  } catch (error) {
+    console.error("Error in manual next year invoice creation:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST endpoint to manually trigger invoice generation
 router.post("/generate", async (req, res) => {
   try {

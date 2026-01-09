@@ -6,6 +6,7 @@ import EmailSettingsModel from "../models/EmailSettings.js";
 // Global variable to store the cron job so it can be rescheduled
 export let reminderCronJob = null;
 export let invoiceCronJob = null;
+export let nextYearInvoiceCronJob = null;
 
 // Function to convert time string (HH:MM) to cron expression
 export function timeToCronExpression(timeString) {
@@ -131,6 +132,40 @@ export function scheduleInvoiceGenerationCron() {
     console.log('✓ Invoice generation scheduled (daily at 2:00 AM)');
   } catch (error) {
     console.error('Error scheduling invoice generation cron:', error);
+  }
+}
+
+// Function to schedule the next year invoice creation cron job
+// This runs daily and checks if today is January 1st, then creates invoices for the next year
+export function scheduleNextYearInvoiceCron() {
+  try {
+    // Stop existing cron job if it exists
+    if (nextYearInvoiceCronJob) {
+      nextYearInvoiceCronJob.stop();
+      nextYearInvoiceCronJob = null;
+    }
+    
+    // Schedule to run daily at 3:00 AM (after invoice generation)
+    // The function itself checks if today is January 1st
+    nextYearInvoiceCronJob = cron.schedule('0 3 * * *', async () => {
+      try {
+        console.log(`\n🔄 ===== Running scheduled next year invoice check (daily at 3:00 AM) =====`);
+        const now = new Date();
+        console.log(`⏰ Server time: ${now.toLocaleString()}`);
+        const { checkAndCreateNextYearInvoices } = await import("../services/nextYearInvoiceService.js");
+        await checkAndCreateNextYearInvoices();
+        console.log(`✅ Scheduled next year invoice check completed\n`);
+      } catch (error) {
+        console.error('❌ Error in scheduled next year invoice check:', error);
+      }
+    }, {
+      scheduled: true,
+      timezone: "Asia/Kolkata"
+    });
+    
+    console.log('✓ Next year invoice creation scheduled (daily at 3:00 AM, creates on Jan 1st)');
+  } catch (error) {
+    console.error('Error scheduling next year invoice cron:', error);
   }
 }
 
