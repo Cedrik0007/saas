@@ -8,7 +8,7 @@ import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { generateSubscriptionInvoices } from "../services/invoiceService.js";
 import EmailSettingsModel from "../models/EmailSettings.js";
 import EmailTemplateModel from "../models/EmailTemplate.js";
-import { generateUniqueMessageId } from "../config/email.js";
+import { generateUniqueMessageId, createEmailTransporter } from "../config/email.js";
 import { sendPaymentApprovalEmail } from "../utils/emailHelpers.js";
 import nodemailer from "nodemailer";
 
@@ -58,9 +58,37 @@ router.post("/", async (req, res) => {
       });
     }
 
+    // Ensure 'due' field is always set at invoice creation
+    // If not provided, calculate it based on period or default to 1 year from now
+    let dueDate = req.body.due;
+    if (!dueDate) {
+      // Try to extract year from period if available
+      const periodStr = String(req.body.period || "").trim();
+      const yearMatch = periodStr.match(/\d{4}/);
+      if (yearMatch) {
+        const dueYear = parseInt(yearMatch[0]) + 1;
+        const dueDateObj = new Date(dueYear, 0, 1); // Jan 1st of next year
+        dueDate = dueDateObj.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        }).replace(',', '');
+      } else {
+        // Default to 1 year from now
+        const defaultDueDate = new Date();
+        defaultDueDate.setFullYear(defaultDueDate.getFullYear() + 1);
+        dueDate = defaultDueDate.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        }).replace(',', '');
+      }
+    }
+
     const invoiceData = {
       id: `INV-2025-${Math.floor(100 + Math.random() * 900)}`,
       ...req.body,
+      due: dueDate, // Always set due date at creation
       status: req.body.status || "Unpaid",
     };
 
@@ -183,14 +211,12 @@ router.post("/send-reminder", async (req, res) => {
     // Update transporter with saved settings using improved configuration
     let invoiceTransporter;
     try {
-      // Import the helper function
-      const { createEmailTransporter } = await import("../config/email.js");
       invoiceTransporter = createEmailTransporter(
         emailSettings.emailUser,
         emailSettings.emailPassword,
         emailSettings.emailService || 'gmail'
       );
-      console.log("✓ Invoice reminder email transporter created");
+      console.log("✓ Invoice reminder email transporter created (SMTP)");
     } catch (transporterError) {
       console.error("❌ Error creating invoice reminder transporter:", transporterError);
       return res.status(500).json({ 
@@ -227,6 +253,7 @@ router.post("/send-reminder", async (req, res) => {
 
     // Send email (attempt even if verification failed - verification is just a check)
     let emailSent = false;
+    let emailError = null;
     try {
       await invoiceTransporter.sendMail({
         from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
@@ -246,22 +273,42 @@ router.post("/send-reminder", async (req, res) => {
       });
       emailSent = true;
       console.log(`✓ Invoice reminder email sent to ${toEmail}`);
-    } catch (emailError) {
-      console.error(`❌ Failed to send email to ${toEmail}:`, emailError);
+    } catch (err) {
+      console.error(`❌ Failed to send email to ${toEmail}:`, err);
       console.error(`   Error details:`, {
-        message: emailError.message,
-        code: emailError.code,
-        command: emailError.command,
-        response: emailError.response,
-        responseCode: emailError.responseCode,
+        message: err.message,
+        code: err.code,
+        command: err.command,
+        response: err.response,
+        responseCode: err.responseCode,
       });
-      if (emailError.code === 'EAUTH') {
-        console.error(`   ⚠️ Authentication failed. Check email credentials.`);
-      } else if (emailError.code === 'ECONNECTION' || emailError.code === 'ETIMEDOUT') {
-        console.error(`   ⚠️ Connection failed. This may be due to Render blocking SMTP connections.`);
-        console.error(`   ⚠️ Consider using SendGrid or Mailgun for better cloud platform support.`);
+      
+      let errorMessage = "Email could not be sent. Please check email configuration.";
+      let errorDetails = "Unknown error occurred.";
+      
+      if (err.code === 'EAUTH') {
+        console.error(`   ⚠️ Authentication failed. Common causes:`);
+        console.error(`      - Using regular Gmail password instead of App-Specific Password`);
+        console.error(`      - 2-Step Verification not enabled on Gmail account`);
+        console.error(`      - Incorrect email or password in settings`);
+        errorMessage = "Gmail authentication failed. Please use an App-Specific Password.";
+        errorDetails = "For Gmail, you must:\n1. Enable 2-Step Verification\n2. Generate an App-Specific Password\n3. Use that password (not your regular password) in email settings.\n\nVisit: https://myaccount.google.com/apppasswords";
+      } else if (err.code === 'ECONNECTION' || err.code === 'ETIMEDOUT') {
+        console.error(`   ⚠️ Connection failed. This may be due to:`);
+        console.error(`      - Network firewall blocking SMTP port 465`);
+        console.error(`      - Cloud platform (like Render) blocking SMTP connections`);
+        errorMessage = "Email connection failed. SMTP may be blocked.";
+        errorDetails = "Connection to Gmail SMTP server failed. This may be due to network restrictions or cloud platform limitations.";
       }
+      
       emailSent = false;
+      // Store error with user-friendly messages
+      emailError = {
+        code: err.code,
+        message: err.message,
+        userMessage: errorMessage,
+        userDetails: errorDetails
+      };
     }
 
     // Save to ReminderLog database
@@ -291,14 +338,20 @@ router.post("/send-reminder", async (req, res) => {
     }
 
     if (emailSent) {
-    res.json({
-      success: true,
-      message: `Email sent successfully to ${toEmail}`
-    });
+      res.json({
+        success: true,
+        message: `Email sent successfully to ${toEmail}`
+      });
     } else {
-      res.status(500).json({
-        error: "Failed to send email",
-        message: "Email could not be sent. Please check email configuration."
+      // Get the last error details if available
+      const lastError = emailError || {};
+      // Return 200 with warning instead of 500, so frontend can handle it gracefully
+      res.status(200).json({
+        success: false,
+        warning: true,
+        message: lastError.userMessage || "Reminder email could not be sent.",
+        details: lastError.userDetails || "Email may not be configured or connection failed. Please check email settings in the admin panel or server logs.",
+        errorCode: lastError.code || 'UNKNOWN'
       });
     }
   } catch (error) {
@@ -317,9 +370,14 @@ router.put("/:id", async (req, res) => {
       return res.status(404).json({ message: "Invoice not found" });
     }
 
+    // Protect the 'due' field - never allow it to be updated once invoice is created
+    // The due date is set at invoice creation and must remain immutable
+    const updateData = { ...req.body };
+    delete updateData.due; // Remove 'due' from update data to prevent changes
+
     const updatedInvoice = await InvoiceModel.findOneAndUpdate(
       { id: req.params.id },
-      { $set: req.body },
+      { $set: updateData },
       { new: true, runValidators: true }
     );
 

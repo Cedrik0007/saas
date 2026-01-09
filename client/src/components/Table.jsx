@@ -425,13 +425,17 @@ export function Table({ columns, rows }) {
             }
           }
           
+          // Merge row style with status-based background, avoiding conflict between background and backgroundColor
+          const rowBackgroundColor = hasRedStatus ? "#fef2f2" : (row._rowStyle?.backgroundColor || undefined);
+          const rowStyle = {
+            ...(row._rowStyle || {}),
+            ...(rowBackgroundColor ? { backgroundColor: rowBackgroundColor } : {})
+          };
+          
           return (
             <tr 
               key={`${row.id ?? rowIndex}-${rowIndex}`}
-              style={{
-                ...(row._rowStyle || {}),
-                background: hasRedStatus ? "#fef2f2" : undefined
-              }}
+              style={rowStyle}
             >
               {columns.map((col) => {
                 const value = row[col];

@@ -55,6 +55,99 @@ router.get("/:id", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     await ensureConnection();
+    
+    // Validate required fields
+    const errors = [];
+    
+    // Validate name
+    if (!req.body.name || !req.body.name.trim()) {
+      errors.push("Name is required.");
+    } else if (req.body.name.trim().length < 2) {
+      errors.push("Name must be at least 2 characters.");
+    }
+    
+    // Validate email
+    if (!req.body.email || !req.body.email.trim()) {
+      errors.push("Email is required.");
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(req.body.email.trim())) {
+        errors.push("Please enter a valid email address.");
+      }
+    }
+    
+    // Validate phone
+    if (!req.body.phone || !req.body.phone.trim()) {
+      errors.push("WhatsApp number is required.");
+    } else {
+      const phoneStr = req.body.phone.trim();
+      const cleaned = phoneStr.replace(/[^\d+]/g, "");
+      
+      if (!cleaned.startsWith("+")) {
+        errors.push("Phone number must include country code (e.g., +91 for India).");
+      } else {
+        const digitsOnly = cleaned.substring(1);
+        
+        // Common country codes and their min/max lengths
+        const countryRules = [
+          { dialCode: "+852", minLength: 8, maxLength: 8, name: "Hong Kong" },
+          { dialCode: "+86", minLength: 11, maxLength: 11, name: "China" },
+          { dialCode: "+1", minLength: 10, maxLength: 10, name: "US/Canada" },
+          { dialCode: "+44", minLength: 10, maxLength: 10, name: "UK" },
+          { dialCode: "+91", minLength: 10, maxLength: 10, name: "India" },
+          { dialCode: "+65", minLength: 8, maxLength: 8, name: "Singapore" },
+          { dialCode: "+60", minLength: 9, maxLength: 10, name: "Malaysia" },
+          { dialCode: "+66", minLength: 9, maxLength: 9, name: "Thailand" },
+          { dialCode: "+63", minLength: 10, maxLength: 10, name: "Philippines" },
+          { dialCode: "+62", minLength: 9, maxLength: 12, name: "Indonesia" },
+        ];
+        
+        let matchedCountry = null;
+        for (const country of countryRules) {
+          if (cleaned.startsWith(country.dialCode)) {
+            matchedCountry = country;
+            break;
+          }
+        }
+        
+        if (matchedCountry) {
+          const numberPart = digitsOnly.substring(matchedCountry.dialCode.length - 1);
+          if (numberPart.length < matchedCountry.minLength) {
+            errors.push(`Phone number must be at least ${matchedCountry.minLength} digits for ${matchedCountry.name}.`);
+          } else if (numberPart.length > matchedCountry.maxLength) {
+            errors.push(`Phone number must be at most ${matchedCountry.maxLength} digits for ${matchedCountry.name}.`);
+          }
+        } else {
+          // Generic validation - at least 8 digits after country code
+          const numberPart = digitsOnly.length > 3 ? digitsOnly.substring(3) : digitsOnly;
+          if (numberPart.length < 8) {
+            errors.push("Phone number must be at least 8 digits.");
+          } else if (numberPart.length > 15) {
+            errors.push("Phone number is too long (maximum 15 digits).");
+          }
+        }
+      }
+    }
+    
+    // Validate nextDue (start date) for new members
+    if (req.body.nextDue) {
+      const date = new Date(req.body.nextDue);
+      if (isNaN(date.getTime())) {
+        errors.push("Please select a valid start date.");
+      }
+    } else if (!req.body.start_date) {
+      // nextDue is required for new members
+      errors.push("Start date is required.");
+    }
+    
+    // Return validation errors if any
+    if (errors.length > 0) {
+      return res.status(400).json({ 
+        message: "Validation failed",
+        errors: errors 
+      });
+    }
+    
     // Generate ID if not provided
     let memberId = req.body.id;
     if (!memberId) {
@@ -65,6 +158,12 @@ router.post("/", async (req, res) => {
     const existing = await UserModel.findOne({ id: memberId });
     if (existing) {
       return res.status(400).json({ message: "Member ID already exists" });
+    }
+    
+    // Check if email already exists
+    const existingEmail = await UserModel.findOne({ email: (req.body.email || '').trim().toLowerCase() });
+    if (existingEmail) {
+      return res.status(400).json({ message: "Email already exists" });
     }
 
     // Parse start_date if provided, otherwise use current date
@@ -145,8 +244,21 @@ router.post("/", async (req, res) => {
       if (subscriptionType === 'Yearly + Janaza Fund') {
         invoiceAmount = 'HK$500';
       }
-      // Both types are yearly, set due date to 1 year from now
-      dueDate.setFullYear(dueDate.getFullYear() + 1);
+      
+      // Calculate due date based on subscriptionYear if provided, otherwise 1 year from now
+      if (req.body.subscriptionYear) {
+        const subscriptionYear = parseInt(req.body.subscriptionYear);
+        if (!isNaN(subscriptionYear)) {
+          // Due date is Jan 1st of the year after subscription year
+          dueDate = new Date(subscriptionYear + 1, 0, 1);
+        } else {
+          // Invalid subscription year, fall back to 1 year from now
+          dueDate.setFullYear(dueDate.getFullYear() + 1);
+        }
+      } else {
+        // No subscription year provided, set due date to 1 year from now
+        dueDate.setFullYear(dueDate.getFullYear() + 1);
+      }
 
       // Format due date as "DD MMM YYYY"
       const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {

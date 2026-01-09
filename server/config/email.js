@@ -63,6 +63,15 @@ export function createEmailTransporter(emailUser, emailPassword, emailService = 
   }
 }
 
+// Helper function to send email (SMTP only)
+export async function sendEmail(emailTransporter, emailOptions) {
+  // Use nodemailer (SMTP)
+  if (!emailTransporter || typeof emailTransporter.sendMail !== 'function') {
+    throw new Error("Invalid email transporter. Please check email configuration.");
+  }
+  return await emailTransporter.sendMail(emailOptions);
+}
+
 // Helper function to verify email transporter connection
 export async function verifyEmailTransporter(transporter) {
   try {

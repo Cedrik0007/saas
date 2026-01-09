@@ -248,10 +248,62 @@ function AdminPage() {
         break;
 
       case "phone":
-        // Phone validation is handled by PhoneInput component
-        // Required validation
+        // Phone validation - check required and format
         if (!value || value.trim() === "") {
           error = "WhatsApp number is required.";
+        } else {
+          // Extract country code and number from phone value (format: +919876543210)
+          const phoneStr = value.trim();
+          // Remove all non-digit characters except +
+          const cleaned = phoneStr.replace(/[^\d+]/g, "");
+          
+          // Check if it starts with + and has country code
+          if (!cleaned.startsWith("+")) {
+            error = "Phone number must include country code (e.g., +91 for India).";
+          } else {
+            // Extract digits after +
+            const digitsOnly = cleaned.substring(1);
+            
+            // Find matching country by dial code
+            const countries = [
+              { dialCode: "+852", minLength: 8, maxLength: 8, name: "Hong Kong" },
+              { dialCode: "+86", minLength: 11, maxLength: 11, name: "China" },
+              { dialCode: "+1", minLength: 10, maxLength: 10, name: "US/Canada" },
+              { dialCode: "+44", minLength: 10, maxLength: 10, name: "UK" },
+              { dialCode: "+91", minLength: 10, maxLength: 10, name: "India" },
+              { dialCode: "+65", minLength: 8, maxLength: 8, name: "Singapore" },
+              { dialCode: "+60", minLength: 9, maxLength: 10, name: "Malaysia" },
+              { dialCode: "+66", minLength: 9, maxLength: 9, name: "Thailand" },
+              { dialCode: "+63", minLength: 10, maxLength: 10, name: "Philippines" },
+              { dialCode: "+62", minLength: 9, maxLength: 12, name: "Indonesia" },
+            ];
+            
+            let matchedCountry = null;
+            for (const country of countries) {
+              if (cleaned.startsWith(country.dialCode)) {
+                matchedCountry = country;
+                break;
+              }
+            }
+            
+            if (matchedCountry) {
+              // Extract number part (after country code)
+              const numberPart = digitsOnly.substring(matchedCountry.dialCode.length - 1);
+              if (numberPart.length < matchedCountry.minLength) {
+                error = `Phone number must be at least ${matchedCountry.minLength} digits for ${matchedCountry.name}.`;
+              } else if (numberPart.length > matchedCountry.maxLength) {
+                error = `Phone number must be at most ${matchedCountry.maxLength} digits for ${matchedCountry.name}.`;
+              }
+            } else {
+              // Generic validation - at least 8 digits after country code
+              const numberPart = digitsOnly.length > 3 ? digitsOnly.substring(3) : digitsOnly;
+              if (numberPart.length < 8) {
+                error = "Phone number must be at least 8 digits.";
+              } else if (numberPart.length > 15) {
+                error = "Phone number is too long (maximum 15 digits).";
+              }
+            }
+          }
         }
         break;
 
@@ -276,6 +328,21 @@ function AdminPage() {
     }
 
     return error;
+  };
+
+  // Check if form is valid (for disabling submit button)
+  const isMemberFormValid = () => {
+    const fieldOrder = editingMember
+      ? ["name", "email", "phone"] // Edit Member: no date fields
+      : ["name", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields
+
+    for (const field of fieldOrder) {
+      const error = validateMemberField(field, memberForm[field]);
+      if (error) {
+        return false;
+      }
+    }
+    return true;
   };
 
   // Progressive validation - validate one field at a time, starting from name
@@ -393,10 +460,6 @@ function AdminPage() {
     // Errors are now shown via Notie, no need to store in state
   };
 
-  const isMemberFormValid =
-    memberForm.name.trim() &&
-    memberForm.email.trim();
-
   const [adminsForm, setAdminsForm] = useState({
     name: "",
     email: "",
@@ -472,6 +535,13 @@ function AdminPage() {
   const [adminForm, setAdminForm] = useState({ name: "", email: "", phone: "", password: "", role: "Viewer", status: "Active" });
   const [showAddAdminPassword, setShowAddAdminPassword] = useState(false);
   const [adminEmailError, setAdminEmailError] = useState("");
+  const [adminFieldErrors, setAdminFieldErrors] = useState({
+    name: false,
+    email: false,
+    phone: false,
+    password: false,
+  });
+  const [currentInvalidAdminField, setCurrentInvalidAdminField] = useState(null);
 
   // Email validation function
   const validateAdminEmail = (email) => {
@@ -483,6 +553,157 @@ function AdminPage() {
       return "Please enter a valid email address";
     }
     return "";
+  };
+
+  // Validate admin field
+  const validateAdminField = (field, value) => {
+    let error = "";
+
+    switch (field) {
+      case "name":
+        if (!value.trim()) error = "Name is required.";
+        else if (value.trim().length < 2) error = "Name must be at least 2 characters.";
+        break;
+
+      case "email":
+        error = validateAdminEmail(value);
+        break;
+
+      case "phone":
+        // Phone validation - check required and format
+        if (!value || value.trim() === "") {
+          error = "Mobile number is required.";
+        } else {
+          // Extract country code and number from phone value (format: +919876543210)
+          const phoneStr = value.trim();
+          // Remove all non-digit characters except +
+          const cleaned = phoneStr.replace(/[^\d+]/g, "");
+          
+          // Check if it starts with + and has country code
+          if (!cleaned.startsWith("+")) {
+            error = "Phone number must include country code (e.g., +91 for India).";
+          } else {
+            // Extract digits after +
+            const digitsOnly = cleaned.substring(1);
+            
+            // Common country codes and their min/max lengths
+            const countries = [
+              { dialCode: "+852", minLength: 8, maxLength: 8, name: "Hong Kong" },
+              { dialCode: "+86", minLength: 11, maxLength: 11, name: "China" },
+              { dialCode: "+1", minLength: 10, maxLength: 10, name: "US/Canada" },
+              { dialCode: "+44", minLength: 10, maxLength: 10, name: "UK" },
+              { dialCode: "+91", minLength: 10, maxLength: 10, name: "India" },
+              { dialCode: "+65", minLength: 8, maxLength: 8, name: "Singapore" },
+              { dialCode: "+60", minLength: 9, maxLength: 10, name: "Malaysia" },
+              { dialCode: "+66", minLength: 9, maxLength: 9, name: "Thailand" },
+              { dialCode: "+63", minLength: 10, maxLength: 10, name: "Philippines" },
+              { dialCode: "+62", minLength: 9, maxLength: 12, name: "Indonesia" },
+            ];
+            
+            let matchedCountry = null;
+            for (const country of countries) {
+              if (cleaned.startsWith(country.dialCode)) {
+                matchedCountry = country;
+                break;
+              }
+            }
+            
+            if (matchedCountry) {
+              // Extract number part (after country code)
+              const numberPart = digitsOnly.substring(matchedCountry.dialCode.length - 1);
+              if (numberPart.length < matchedCountry.minLength) {
+                error = `Phone number must be at least ${matchedCountry.minLength} digits for ${matchedCountry.name}.`;
+              } else if (numberPart.length > matchedCountry.maxLength) {
+                error = `Phone number must be at most ${matchedCountry.maxLength} digits for ${matchedCountry.name}.`;
+              }
+            } else {
+              // Generic validation - at least 8 digits after country code
+              const numberPart = digitsOnly.length > 3 ? digitsOnly.substring(3) : digitsOnly;
+              if (numberPart.length < 8) {
+                error = "Phone number must be at least 8 digits.";
+              } else if (numberPart.length > 15) {
+                error = "Phone number is too long (maximum 15 digits).";
+              }
+            }
+          }
+        }
+        break;
+
+      case "password":
+        if (!value || value.trim() === "") {
+          error = "Password is required.";
+        } else if (value.trim().length < 6) {
+          error = "Password must be at least 6 characters.";
+        }
+        break;
+
+      default:
+        break;
+    }
+
+    return error;
+  };
+
+  // Progressive validation for admin form
+  const validateAdminForm = () => {
+    const fieldOrder = ["name", "email", "phone", "password"];
+
+    // Clear all errors first
+    setAdminFieldErrors({
+      name: false,
+      email: false,
+      phone: false,
+      password: false,
+    });
+
+    // Find first invalid field starting from the beginning
+    for (const field of fieldOrder) {
+      const error = validateAdminField(field, adminForm[field]);
+      if (error) {
+        // Set only this field as invalid
+        setAdminFieldErrors(prev => ({ ...prev, [field]: true }));
+        setCurrentInvalidAdminField(field);
+        showToast(error, "error");
+        // Focus on invalid field
+        setTimeout(() => {
+          const formElement = document.querySelector('form.settings-form');
+          if (!formElement) return;
+
+          const fieldIndex = fieldOrder.indexOf(field);
+          let targetInput = null;
+
+          if (fieldIndex === 0) {
+            // Name field
+            targetInput = formElement.querySelector('input[type="text"]');
+          } else if (fieldIndex === 1) {
+            // Email field
+            targetInput = formElement.querySelector('input[type="email"]');
+          } else if (fieldIndex === 2) {
+            // Phone field
+            targetInput = formElement.querySelector('input[type="tel"]');
+          } else if (fieldIndex === 3) {
+            // Password field
+            targetInput = formElement.querySelector('input[type="password"], input[type="text"][placeholder*="password" i]');
+          }
+
+          if (targetInput) {
+            targetInput.focus();
+            targetInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+        return false;
+      }
+    }
+
+    // All fields valid
+    setAdminFieldErrors({
+      name: false,
+      email: false,
+      phone: false,
+      password: false,
+    });
+    setCurrentInvalidAdminField(null);
+    return true;
   };
 
   // Email template state
@@ -979,6 +1200,52 @@ function AdminPage() {
 
     const overdueMembersCount = overdueMemberSet.size;
 
+    // Calculate Unpaid Members - members with unpaid or overdue invoices
+    const unpaidMemberSet = new Set();
+    members.forEach(member => {
+      // Get all invoices for this member
+      const memberInvoices = invoices.filter(inv => 
+        (inv.memberId && inv.memberId === member.id) ||
+        (inv.memberEmail && member.email && inv.memberEmail.toLowerCase() === member.email.toLowerCase()) ||
+        (inv.memberName && member.name && inv.memberName.toLowerCase() === member.name.toLowerCase())
+      );
+
+      // Check if member has any unpaid or overdue invoices
+      // Use effective status (considering completed payments)
+      const hasUnpaidInvoice = memberInvoices.some(inv => {
+        // Check if there's a completed payment for this invoice
+        const relatedPayment = paymentHistory.find(
+          (p) => p.invoiceId === inv.id && (p.status === "Completed" || p.status === "Paid")
+        );
+        const effectiveStatus = relatedPayment ? "Paid" : inv.status;
+        return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
+      });
+
+      // Also check if member has outstanding balance
+      if (member.balance) {
+        const balanceStr = member.balance.toString();
+        const numericValue = parseFloat(balanceStr.replace(/[^0-9.]/g, '') || 0);
+        if (numericValue > 0 || hasUnpaidInvoice) {
+          if (member.id) {
+            unpaidMemberSet.add(member.id);
+          } else if (member.email) {
+            unpaidMemberSet.add(`email:${member.email.toLowerCase()}`);
+          } else if (member.name) {
+            unpaidMemberSet.add(`name:${member.name.toLowerCase()}`);
+          }
+        }
+      } else if (hasUnpaidInvoice) {
+        if (member.id) {
+          unpaidMemberSet.add(member.id);
+        } else if (member.email) {
+          unpaidMemberSet.add(`email:${member.email.toLowerCase()}`);
+        } else if (member.name) {
+          unpaidMemberSet.add(`name:${member.name.toLowerCase()}`);
+        }
+      }
+    });
+    const unpaidMembersCount = unpaidMemberSet.size;
+
     // Calculate expected annual (all members * expected per member)
     // Assuming $800 per member per year as mentioned in the UI
     const expectedAnnual = members.length * 800;
@@ -989,6 +1256,7 @@ function AdminPage() {
       collectedYear: collectedThisYear,
       outstanding: totalOutstanding,
       overdueMembers: overdueMembersCount,
+      unpaidMembers: unpaidMembersCount,
       expectedAnnual: expectedAnnual
     };
   };
@@ -2489,7 +2757,7 @@ Subscription Manager HK`;
                     {item.label}
                   </span>
                 ) : (
-                  <span className="admin-breadcrumb-link--inline admin-breadcrumb-link--no-click">
+                  <span className="admin-breadcrumb-current">
                     {item.label}
                   </span>
                 )}
@@ -4007,20 +4275,20 @@ Subscription Manager HK`;
                     <DashboardKPICard
                       icon="fas fa-exclamation-triangle"
                       iconClass="admin-dashboard-kpi-icon--red"
-                      label="Total Outstanding"
+                      label="Unpaid Members"
+                      value={formatNumber(dashboardMetrics.unpaidMembers || 0)}
+                      description="Members with unpaid invoices"
+                      onClick={() => handleNavClick("members")}
+                      valueClass={(dashboardMetrics.unpaidMembers || 0) > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}
+                    />
+                    <DashboardKPICard
+                      icon="fas fa-dollar-sign"
+                      iconClass="admin-dashboard-kpi-icon--red"
+                      label="Unpaid Total Amount"
                       value={formatCurrency(dashboardMetrics.outstanding)}
                       description={`Expected ${formatCurrency(dashboardMetrics.expectedAnnual)}`}
                       onClick={() => handleNavClick("members")}
                       valueClass={dashboardMetrics.outstanding > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}
-                    />
-                    <DashboardKPICard
-                      icon="fas fa-exclamation-circle"
-                      iconClass={dashboardMetrics.overdueMembers > 0 ? "admin-dashboard-kpi-icon--red" : "admin-dashboard-kpi-icon--gray"}
-                      label="Overdue Members"
-                      value={formatNumber(dashboardMetrics.overdueMembers)}
-                      description="Requires attention"
-                      onClick={() => handleNavClick("members")}
-                      valueClass={dashboardMetrics.overdueMembers > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}
                     />
                   </div>
 
@@ -4383,7 +4651,14 @@ Subscription Manager HK`;
                               required
                               value={memberForm.name}
                               onChange={(e) => {
-                                handleMemberFieldChange("name", e.target.value);
+                                const newValue = e.target.value;
+                                handleMemberFieldChange("name", newValue);
+                                // Clear error styles immediately when user types
+                                if (newValue.trim()) {
+                                  e.target.style.setProperty("border-color", "", "important");
+                                  e.target.style.setProperty("outline", "", "important");
+                                  e.target.style.setProperty("box-shadow", "", "important");
+                                }
                                 // Clear error when user starts typing
                                 if (memberFieldErrors.name || currentInvalidField === "name") {
                                   setMemberFieldErrors(prev => ({ ...prev, name: false }));
@@ -4392,23 +4667,31 @@ Subscription Manager HK`;
                                   }
                                 }
                               }}
-                              className={(memberFieldErrors.name && currentInvalidField === "name") ? "admin-members-form-input-error" : ""}
-                              aria-invalid={memberFieldErrors.name}
+                              className={(memberFieldErrors.name && currentInvalidField === "name" && !memberForm.name.trim()) ? "admin-members-form-input-error" : ""}
+                              aria-invalid={memberFieldErrors.name && !memberForm.name.trim()}
                               onFocus={(e) => {
-                                if (memberFieldErrors.name && currentInvalidField === "name") {
-                                  e.target.style.borderColor = "#ef4444";
-                                  e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                                if (memberFieldErrors.name && currentInvalidField === "name" && !memberForm.name.trim()) {
+                                  e.target.style.setProperty("border-color", "#ef4444", "important");
+                                  e.target.style.setProperty("outline", "none", "important");
+                                  e.target.style.setProperty("box-shadow", "0 0 0 3px rgba(239, 68, 68, 0.1)", "important");
+                                } else if (memberForm.name.trim()) {
+                                  // Remove error styles if field has value
+                                  e.target.style.setProperty("border-color", "", "important");
+                                  e.target.style.setProperty("outline", "", "important");
+                                  e.target.style.setProperty("box-shadow", "", "important");
                                 }
                               }}
                               onBlur={(e) => {
-                                if (memberFieldErrors.name && currentInvalidField === "name") {
+                                if (memberFieldErrors.name && currentInvalidField === "name" && !memberForm.name.trim()) {
                                   e.target.style.borderColor = "#ef4444";
+                                } else {
+                                  e.target.style.borderColor = undefined;
                                 }
                               }}
                             />
                           </label>
 
-                          <label>
+                          {/* <label>
                             <span>
                               <i className="fas fa-envelope" aria-hidden="true" style={{ marginRight: 6 }}></i>
                               Email <span style={{ color: "#ef4444" }}>*</span>
@@ -4449,6 +4732,89 @@ Subscription Manager HK`;
                                 }
                               }}
                             />
+                            {memberFieldErrors.name && currentInvalidField === "name" && (
+                              <span style={{ color: "#ef4444", fontSize: "0.875rem", marginTop: "4px", display: "block" }}>
+                                {validateMemberField("name", memberForm.name)}
+                              </span>
+                            )}
+                          </label> */}
+
+                          <label>
+                            <span>
+                              <i className="fas fa-envelope" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                              Email <span style={{ color: "#ef4444" }}>*</span>
+                            </span>
+                            <input
+                              type="email"
+                              required
+                              value={memberForm.email}
+                              onChange={(e) => {
+                                const newValue = e.target.value;
+                                handleMemberFieldChange("email", newValue);
+                                
+                                // Validate email format
+                                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                                const isValidEmail = newValue.trim() && emailRegex.test(newValue.trim());
+                                
+                                // Clear error styles only if email is valid
+                                if (isValidEmail) {
+                                  e.target.style.setProperty("border-color", "", "important");
+                                  e.target.style.setProperty("outline", "", "important");
+                                  e.target.style.setProperty("box-shadow", "", "important");
+                                  // Clear error state if email is valid
+                                  if (memberFieldErrors.email || currentInvalidField === "email") {
+                                    setMemberFieldErrors(prev => ({ ...prev, email: false }));
+                                    if (currentInvalidField === "email") {
+                                      setCurrentInvalidField(null);
+                                    }
+                                  }
+                                } else if (newValue.trim()) {
+                                  // If email has value but is invalid, show error border
+                                  e.target.style.setProperty("border-color", "#ef4444", "important");
+                                  e.target.style.setProperty("outline", "none", "important");
+                                  e.target.style.setProperty("box-shadow", "0 0 0 3px rgba(239, 68, 68, 0.1)", "important");
+                                }
+                              }}
+                              style={{
+                                borderColor: (memberFieldErrors.email && currentInvalidField === "email") ? "#ef4444" : undefined,
+                                borderWidth: (memberFieldErrors.email && currentInvalidField === "email") ? "1px" : undefined,
+                                borderStyle: (memberFieldErrors.email && currentInvalidField === "email") ? "solid" : undefined,
+                                outline: (memberFieldErrors.email && currentInvalidField === "email") ? "none" : undefined,
+                                boxShadow: (memberFieldErrors.email && currentInvalidField === "email") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
+                              }}
+                              aria-invalid={memberFieldErrors.email && currentInvalidField === "email"}
+                              onFocus={(e) => {
+                                // Validate email format
+                                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                                const isValidEmail = memberForm.email.trim() && emailRegex.test(memberForm.email.trim());
+                                
+                                if (memberFieldErrors.email && currentInvalidField === "email" && !isValidEmail) {
+                                  e.target.style.setProperty("border-color", "#ef4444", "important");
+                                  e.target.style.setProperty("outline", "none", "important");
+                                  e.target.style.setProperty("box-shadow", "0 0 0 3px rgba(239, 68, 68, 0.1)", "important");
+                                } else if (isValidEmail) {
+                                  // Remove error styles if email is valid
+                                  e.target.style.setProperty("border-color", "", "important");
+                                  e.target.style.setProperty("outline", "", "important");
+                                  e.target.style.setProperty("box-shadow", "", "important");
+                                }
+                              }}
+                              onBlur={(e) => {
+                                // Validate email format on blur
+                                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                                const isValidEmail = memberForm.email.trim() && emailRegex.test(memberForm.email.trim());
+                                
+                                if (memberFieldErrors.email && currentInvalidField === "email" && !isValidEmail) {
+                                  e.target.style.setProperty("border-color", "#ef4444", "important");
+                                  e.target.style.setProperty("outline", "none", "important");
+                                } else if (isValidEmail) {
+                                  // Remove error styles if email is valid
+                                  e.target.style.setProperty("border-color", "", "important");
+                                  e.target.style.setProperty("outline", "", "important");
+                                  e.target.style.setProperty("box-shadow", "", "important");
+                                }
+                              }}
+                            />
                           </label>
 
                           <div>
@@ -4476,7 +4842,7 @@ Subscription Manager HK`;
                                 setCurrentInvalidField("phone");
                               }}
                               required={true}
-                              className={memberFieldErrors.phone && currentInvalidField === "phone" ? "admin-phone-input-error" : ""}
+                              className={memberFieldErrors.phone && currentInvalidField === "phone" && !memberForm.phone.trim() ? "admin-phone-input-error" : ""}
                               placeholder="Enter phone number"
                             />
                           </div>
@@ -4582,6 +4948,12 @@ Subscription Manager HK`;
                                 onChange={(e) => {
                                   const selectedDate = e.target.value;
                                   handleMemberFieldChange("nextDue", selectedDate);
+                                  // Clear error styles immediately when user selects a date
+                                  if (selectedDate) {
+                                    e.target.style.setProperty("border-color", "", "important");
+                                    e.target.style.setProperty("outline", "", "important");
+                                    e.target.style.setProperty("box-shadow", "", "important");
+                                  }
                                   // Clear error when user starts typing
                                   if (memberFieldErrors.nextDue || currentInvalidField === "nextDue") {
                                     setMemberFieldErrors(prev => ({ ...prev, nextDue: false }));
@@ -4619,18 +4991,23 @@ Subscription Manager HK`;
                                 style={{
                                   borderRadius: "4px",
                                   width: "100%",
-                                  borderColor: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "#ef4444" : undefined,
-                                  borderWidth: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "2px" : undefined,
-                                  borderStyle: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "solid" : undefined,
-                                  outline: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "none" : undefined,
-                                  boxShadow: (memberFieldErrors.nextDue && currentInvalidField === "nextDue") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
+                                  borderColor: (memberFieldErrors.nextDue && currentInvalidField === "nextDue" && !memberForm.nextDue) ? "#ef4444" : undefined,
+                                  borderWidth: (memberFieldErrors.nextDue && currentInvalidField === "nextDue" && !memberForm.nextDue) ? "2px" : undefined,
+                                  borderStyle: (memberFieldErrors.nextDue && currentInvalidField === "nextDue" && !memberForm.nextDue) ? "solid" : undefined,
+                                  outline: (memberFieldErrors.nextDue && currentInvalidField === "nextDue" && !memberForm.nextDue) ? "none" : undefined,
+                                  boxShadow: (memberFieldErrors.nextDue && currentInvalidField === "nextDue" && !memberForm.nextDue) ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
                                 }}
-                                aria-invalid={memberFieldErrors.nextDue}
+                                aria-invalid={memberFieldErrors.nextDue && !memberForm.nextDue}
                                 onFocus={(e) => {
-                                  if (memberFieldErrors.nextDue && currentInvalidField === "nextDue") {
-                                    e.target.style.borderColor = "#ef4444";
-                                    e.target.style.outline = "none";
-                                    e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                                  if (memberFieldErrors.nextDue && currentInvalidField === "nextDue" && !memberForm.nextDue) {
+                                    e.target.style.setProperty("border-color", "#ef4444", "important");
+                                    e.target.style.setProperty("outline", "none", "important");
+                                    e.target.style.setProperty("box-shadow", "0 0 0 3px rgba(239, 68, 68, 0.1)", "important");
+                                  } else if (memberForm.nextDue) {
+                                    // Remove error styles if field has value
+                                    e.target.style.setProperty("border-color", "", "important");
+                                    e.target.style.setProperty("outline", "", "important");
+                                    e.target.style.setProperty("box-shadow", "", "important");
                                   }
                                 }}
                               />
@@ -5255,14 +5632,19 @@ Subscription Manager HK`;
                                     ? new Date(member.start_date).getFullYear()
                                     : (member.createdAt ? new Date(member.createdAt).getFullYear() : "-");
 
+                                  // Get all invoices for this member (used for multiple purposes)
+                                  // Ensure invoices is an array before filtering
+                                  const invoicesArray = Array.isArray(invoices) ? invoices : [];
+                                  const memberInvoices = invoicesArray.filter(inv => 
+                                    inv && (
+                                      inv.memberId === member.id || 
+                                      inv.memberEmail === member.email || 
+                                      inv.memberName === member.name
+                                    )
+                                  );
+
                                   // Subscription Year - extract from latest invoice period, or fallback to next_due_date/nextDue
                                   let subYear = "-";
-                                  // First, try to get year from member's latest invoice period
-                                  const memberInvoices = invoices.filter(inv => 
-                                    inv.memberId === member.id || 
-                                    inv.memberEmail === member.email || 
-                                    inv.memberName === member.name
-                                  );
                                   if (memberInvoices.length > 0) {
                                     // Get the most recent invoice (by date or use the first one)
                                     const latestInvoice = memberInvoices[0];
@@ -5339,7 +5721,26 @@ Subscription Manager HK`;
                                             ? "badge badge-inactive"
                                             : "badge badge-pending";
 
-                                  return {
+                                  // Count unpaid invoices for this member (using effective status)
+                                  // Ensure memberInvoices is defined and is an array
+                                  const validMemberInvoices = Array.isArray(memberInvoices) ? memberInvoices : [];
+                                  const unpaidInvoices = validMemberInvoices.filter(inv => {
+                                    if (!inv) return false;
+                                    try {
+                                      const effectiveStatus = getEffectiveInvoiceStatus(inv);
+                                      return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
+                                    } catch (error) {
+                                      // Fallback to invoice status if getEffectiveInvoiceStatus fails
+                                      console.warn("Error getting effective invoice status:", error);
+                                      return inv.status === "Unpaid" || inv.status === "Overdue";
+                                    }
+                                  });
+                                  const unpaidInvoiceCount = unpaidInvoices.length;
+                                  
+                                  // Check if member has 1 or more unpaid invoices
+                                  const hasUnpaidInvoices = unpaidInvoiceCount >= 1;
+
+                                  const rowData = {
                                     "Name": member.name,
                                     "Native": member.native || "-",
                                     "Year": subYear,
@@ -5417,6 +5818,19 @@ Subscription Manager HK`;
                                       ),
                                     },
                                   };
+
+                                  // Apply row background color if member has 1 or more unpaid invoices
+                                  // Always set _rowStyle property (even if empty) to ensure it's recalculated on re-render
+                                  if (hasUnpaidInvoices) {
+                                    rowData._rowStyle = {
+                                      backgroundColor: "rgb(254, 242, 242)"
+                                    };
+                                  } else {
+                                    // Explicitly set to undefined to clear any previous styling
+                                    rowData._rowStyle = undefined;
+                                  }
+
+                                  return rowData;
                                 })}
                               />
                               {sortedMembers.length > 0 && (
@@ -5799,25 +6213,43 @@ Subscription Manager HK`;
                             effectiveStatus === "Paid" ||
                             effectiveStatus === "Completed";
 
-                          // Calculate Due Date: Show member's next_due_date if paid, otherwise N/A
+                          // Display invoice's own stored due date (never auto-updated)
+                          // Each invoice has its own due_date set at creation time and never changes
                           const getDueDateDisplay = () => {
-                            // If member is unpaid or has no next_due_date, show '-'
-                            if (selectedMember.payment_status === 'unpaid' || !selectedMember.next_due_date) {
+                            // Always use the invoice's own 'due' field - it's stored per invoice and never changes
+                            // Never calculate or use today's date - always use the stored invoice.due value
+                            if (!invoice.due) {
                               return '-';
                             }
-
-                            // Format next_due_date for display
-                            try {
-                              const date = new Date(selectedMember.next_due_date);
-                              return date.toLocaleDateString('en-GB', {
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: 'numeric'
-                              });
-                            } catch (e) {
-                              // Fallback to nextDue field or invoice.due
-                              return selectedMember.nextDue || invoice.due || '-';
+                            
+                            // Backend stores due date as "DD MMM YYYY" format (e.g., "01 Jan 2026")
+                            // If it's already a formatted string, return it as-is
+                            if (typeof invoice.due === 'string') {
+                              // Check if it's already in a readable format (contains month name or date separators)
+                              if (invoice.due.includes('/') || invoice.due.includes('-') || 
+                                  /[A-Za-z]{3}/.test(invoice.due)) {
+                                // It's already formatted (e.g., "01 Jan 2026" or "01/01/2026" or "2026-01-01")
+                                return invoice.due;
+                              }
+                              
+                              // Try to parse and format if it's a date string
+                              try {
+                                const date = new Date(invoice.due);
+                                if (!isNaN(date.getTime())) {
+                                  // Format as DD/MM/YYYY for consistency
+                                  return date.toLocaleDateString('en-GB', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric'
+                                  });
+                                }
+                              } catch (e) {
+                                // If parsing fails, return the original value
+                              }
                             }
+                            
+                            // Fallback: return the original value
+                            return invoice.due || '-';
                           };
 
                           return {
@@ -12319,8 +12751,12 @@ Subscription Manager HK`;
                               <button
                                 type="button"
                                 className="ghost-btn"
-                                onClick={() => {
+                                onClick={async () => {
                                   try {
+                                    // Dynamically import xlsx to avoid module resolution issues
+                                    const XLSX = await import("xlsx");
+                                    
+                                    // Prepare data for Excel export
                                     const rows = filteredDonations.map((d) => ({
                                       Date:
                                         d.date ||
@@ -12331,52 +12767,51 @@ Subscription Manager HK`;
                                             year: "numeric",
                                           })
                                           : "-"),
-                                      DonorName: d.donorName || "",
+                                      "Donor Name": d.donorName || "",
                                       Type: d.isMember ? "Member" : "Non-Member",
-                                      Amount: d.amount || "0",
+                                      Amount: d.amount ? `HK$${formatNumber(Number(d.amount), {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}` : "HK$0.00",
                                       Method: d.method || "",
                                       Notes: (d.notes || "").replace(/\r?\n/g, " "),
                                     }));
 
-                                    const header = ["Date", "DonorName", "Type", "Amount", "Method", "Notes"];
-                                    const csvRows = [
-                                      header.join(","),
-                                      ...rows.map((r) =>
-                                        header
-                                          .map((key) => {
-                                            const val = r[key] ?? "";
-                                            const safe = String(val).replace(/"/g, '""');
-                                            return `"${safe}"`;
-                                          })
-                                          .join(",")
-                                      ),
-                                    ];
+                                    // Create workbook and worksheet
+                                    const wb = XLSX.utils.book_new();
+                                    const ws = XLSX.utils.json_to_sheet(rows);
 
-                                    const blob = new Blob([csvRows.join("\n")], {
-                                      type: "text/csv;charset=utf-8;",
-                                    });
-                                    const url = URL.createObjectURL(blob);
-                                    const link = document.createElement("a");
-                                    link.href = url;
+                                    // Set column widths
+                                    const colWidths = [
+                                      { wch: 12 }, // Date
+                                      { wch: 25 }, // Donor Name
+                                      { wch: 12 }, // Type
+                                      { wch: 15 }, // Amount
+                                      { wch: 15 }, // Method
+                                      { wch: 40 }, // Notes
+                                    ];
+                                    ws['!cols'] = colWidths;
+
+                                    // Add worksheet to workbook
+                                    XLSX.utils.book_append_sheet(wb, ws, "Donations");
+
+                                    // Generate Excel file
                                     const ts = new Date().toISOString().slice(0, 10);
-                                    link.download = `donations-report-${ts}.csv`;
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                    URL.revokeObjectURL(url);
-                                    showToast("Donations report exported as CSV");
+                                    XLSX.writeFile(wb, `donations-report-${ts}.xlsx`);
+                                    
+                                    showToast("Donations report exported as Excel");
                                   } catch (error) {
-                                    console.error("Export donations CSV failed", error);
+                                    console.error("Export donations Excel failed", error);
                                     showToast("Failed to export donations report", "error");
                                   }
                                 }}
                               >
-                                📥 Export Donations CSV
+                                📥 Export as Excel
                               </button>
                             </div>
 
                             <Table
-                              columns={["Date", "Donor Name", "Type", "Amount", "Method", "Screenshot", "Notes", "Actions"]}
+                              columns={["Date", "Donor Name", "Type", "Amount", "Method", "Screenshot", "Notes"]}
                               rows={paginatedDonations.map((donation) => {
                                 if (!donation) return null;
                                 const donationDate =
@@ -12435,35 +12870,6 @@ Subscription Manager HK`;
                                     ) : "-"
                                   },
                                   Notes: donation.notes || "-",
-                                  Actions: {
-                                    render: () => (
-                                      <div style={{ display: "flex", justifyContent: "center" }}>
-                                        <button
-                                          className="ghost-btn icon-btn icon-btn--delete"
-                                          onClick={async () => {
-                                            showConfirmation(
-                                              "Are you sure you want to delete this donation?",
-                                              async () => {
-                                                try {
-                                                  const donationId = donation._id || donation.id;
-                                                  await deleteDonation(donationId);
-                                                  showToast("Donation deleted successfully!");
-                                                  await fetchDonations();
-                                                } catch (error) {
-                                                  showToast(error.message || "Failed to delete donation", "error");
-                                                }
-                                              }
-                                            );
-                                          }}
-                                          aria-label="Delete Donation"
-                                        >
-                                          <Tooltip text="Delete Donation" position="top">
-                                          <i className="fas fa-trash" aria-hidden="true"></i>
-                                          </Tooltip>
-                                        </button>
-                                      </div>
-                                    ),
-                                  },
                                 };
                               }).filter((row) => row !== null)}
                             />
@@ -12748,12 +13154,12 @@ Subscription Manager HK`;
                   <div className="card kpi">
                     <p>
                       <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px", color: "#ef4444" }}></i>
-                      Outstanding
+                      Unpaid Members
                     </p>
                     <h4>
-                      {formatCurrency(dashboardMetrics.outstanding)}
+                      {formatNumber(dashboardMetrics.unpaidMembers || 0)}
                     </h4>
-                    <small>Pending collection</small>
+                    <small>{formatCurrency(dashboardMetrics.outstanding)} outstanding</small>
                   </div>
                   {/* Avg per Member card hidden */}
                   {/* <div className="card kpi">
@@ -13711,7 +14117,9 @@ Subscription Manager HK`;
                       </div>
                       <div className="settings-form__group">
                         <label className="settings-form__label">
-                          <i className="fas fa-globe" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Number Format Locale <span style={{ color: "#ef4444" }}>*</span>
+                          {/* <i className="fas fa-globe" style={{ marginRight: "8px", color: "#5a31ea" }}></i> */}
+                          Number Format Locale 
+                          {/* <span style={{ color: "#ef4444" }}>*</span> */}
                         </label>
                         <select
                           className="settings-form__input"
@@ -13780,6 +14188,13 @@ Subscription Manager HK`;
                             setAdminForm({ name: "", email: "", phone: "", password: "", role: "Viewer", status: "Active" });
                             setShowAddAdminPassword(false);
                             setAdminEmailError("");
+                            setAdminFieldErrors({
+                              name: false,
+                              email: false,
+                              phone: false,
+                              password: false,
+                            });
+                            setCurrentInvalidAdminField(null);
                           }}
                           disabled={!isAdmin}
                           title={isAdmin ? "Add a new admin user" : "Only Owner and Finance Admin can add admins"}
@@ -13874,6 +14289,13 @@ Subscription Manager HK`;
                         setShowAdminForm(false);
                         setShowAddAdminPassword(false);
                         setAdminEmailError("");
+                        setAdminFieldErrors({
+                          name: false,
+                          email: false,
+                          phone: false,
+                          password: false,
+                        });
+                        setCurrentInvalidAdminField(null);
                       }
                     }}
                   >
@@ -13893,6 +14315,13 @@ Subscription Manager HK`;
                             setShowAdminForm(false);
                             setShowAddAdminPassword(false);
                             setAdminEmailError("");
+                            setAdminFieldErrors({
+                              name: false,
+                              email: false,
+                              phone: false,
+                              password: false,
+                            });
+                            setCurrentInvalidAdminField(null);
                           }}
                           aria-label="Close add admin form"
                         >
@@ -13904,36 +14333,26 @@ Subscription Manager HK`;
                         noValidate
                         onSubmit={async (e) => {
                           e.preventDefault();
-                          if (!adminForm.name || !adminForm.name.trim()) {
-                            showToast("Please enter name", "error");
+                          
+                          // Validate all fields progressively
+                          if (!validateAdminForm()) {
+                            // Validation error already shown via Notie in validateAdminForm
                             return;
                           }
 
-                          // Validate email
-                          const emailError = validateAdminEmail(adminForm.email);
-                          if (emailError) {
-                            setAdminEmailError(emailError);
-                            showToast(emailError, "error");
-                            return;
-                          }
-                          setAdminEmailError("");
-
-                          // Validate phone
-                          if (!adminForm.phone || !adminForm.phone.trim()) {
-                            showToast("Please enter mobile number", "error");
-                            return;
-                          }
-
-                          if (!adminForm.password || !adminForm.password.trim()) {
-                            showToast("Please enter password", "error");
-                            return;
-                          }
                           try {
                             await addAdminUser(adminForm);
                             setShowAdminForm(false);
                             setAdminForm({ name: "", email: "", phone: "", password: "", role: "Viewer", status: "Active" });
                             setShowAddAdminPassword(false);
                             setAdminEmailError("");
+                            setAdminFieldErrors({
+                              name: false,
+                              email: false,
+                              phone: false,
+                              password: false,
+                            });
+                            setCurrentInvalidAdminField(null);
                             showToast("Admin user added!");
                           } catch (error) {
                             showToast(error.message || "Failed to add admin user", "error");
@@ -13949,8 +14368,40 @@ Subscription Manager HK`;
                               className="settings-form__input"
                               required
                               value={adminForm.name}
-                              onChange={(e) => setAdminForm({ ...adminForm, name: e.target.value })}
+                              onChange={(e) => {
+                                const newValue = e.target.value;
+                                setAdminForm({ ...adminForm, name: newValue });
+                                // Clear error when user starts typing
+                                if (adminFieldErrors.name || currentInvalidAdminField === "name") {
+                                  setAdminFieldErrors(prev => ({ ...prev, name: false }));
+                                  if (currentInvalidAdminField === "name") {
+                                    setCurrentInvalidAdminField(null);
+                                  }
+                                }
+                                // Clear error styles if field has value
+                                if (newValue.trim()) {
+                                  e.target.style.setProperty("border-color", "", "important");
+                                  e.target.style.setProperty("outline", "", "important");
+                                  e.target.style.setProperty("box-shadow", "", "important");
+                                }
+                              }}
                               placeholder="Enter admin name"
+                              style={{
+                                borderColor: (adminFieldErrors.name && currentInvalidAdminField === "name" && !adminForm.name.trim()) ? "#ef4444" : undefined,
+                                borderWidth: (adminFieldErrors.name && currentInvalidAdminField === "name" && !adminForm.name.trim()) ? "2px" : undefined,
+                              }}
+                              aria-invalid={adminFieldErrors.name && currentInvalidAdminField === "name" && !adminForm.name.trim()}
+                              onFocus={(e) => {
+                                if (adminFieldErrors.name && currentInvalidAdminField === "name" && !adminForm.name.trim()) {
+                                  e.target.style.setProperty("border-color", "#ef4444", "important");
+                                  e.target.style.setProperty("outline", "none", "important");
+                                  e.target.style.setProperty("box-shadow", "0 0 0 3px rgba(239, 68, 68, 0.1)", "important");
+                                } else if (adminForm.name.trim()) {
+                                  e.target.style.setProperty("border-color", "", "important");
+                                  e.target.style.setProperty("outline", "", "important");
+                                  e.target.style.setProperty("box-shadow", "", "important");
+                                }
+                              }}
                             />
                           </label>
                         </div>
@@ -13963,29 +14414,66 @@ Subscription Manager HK`;
                               required
                               value={adminForm.email}
                               onChange={(e) => {
-                                setAdminForm({ ...adminForm, email: e.target.value });
-                                // Clear error when user starts typing
-                                if (adminEmailError) {
+                                const newValue = e.target.value;
+                                setAdminForm({ ...adminForm, email: newValue });
+                                
+                                // Validate email format
+                                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                                const isValidEmail = newValue.trim() && emailRegex.test(newValue.trim());
+                                
+                                // Clear error styles only if email is valid
+                                if (isValidEmail) {
+                                  e.target.style.setProperty("border-color", "", "important");
+                                  e.target.style.setProperty("outline", "", "important");
+                                  e.target.style.setProperty("box-shadow", "", "important");
                                   setAdminEmailError("");
+                                  if (adminFieldErrors.email || currentInvalidAdminField === "email") {
+                                    setAdminFieldErrors(prev => ({ ...prev, email: false }));
+                                    if (currentInvalidAdminField === "email") {
+                                      setCurrentInvalidAdminField(null);
+                                    }
+                                  }
+                                } else if (newValue.trim()) {
+                                  // If email has value but is invalid, show error border
+                                  e.target.style.setProperty("border-color", "#ef4444", "important");
+                                  e.target.style.setProperty("outline", "none", "important");
+                                  e.target.style.setProperty("box-shadow", "0 0 0 3px rgba(239, 68, 68, 0.1)", "important");
                                 }
                               }}
                               onBlur={(e) => {
                                 // Validate on blur
                                 const error = validateAdminEmail(e.target.value);
                                 setAdminEmailError(error);
+                                if (error) {
+                                  e.target.style.setProperty("border-color", "#ef4444", "important");
+                                  e.target.style.setProperty("outline", "none", "important");
+                                } else if (e.target.value.trim()) {
+                                  e.target.style.setProperty("border-color", "", "important");
+                                  e.target.style.setProperty("outline", "", "important");
+                                  e.target.style.setProperty("box-shadow", "", "important");
+                                }
                               }}
                               placeholder="Enter admin email"
                               style={{
-                                borderColor: adminEmailError ? "#ef4444" : undefined,
-                                borderWidth: adminEmailError ? "2px" : undefined,
+                                borderColor: (adminFieldErrors.email && currentInvalidAdminField === "email") ? "#ef4444" : (adminEmailError ? "#ef4444" : undefined),
+                                borderWidth: (adminFieldErrors.email && currentInvalidAdminField === "email") || adminEmailError ? "2px" : undefined,
                               }}
-                              aria-invalid={!!adminEmailError}
+                              aria-invalid={(adminFieldErrors.email && currentInvalidAdminField === "email") || !!adminEmailError}
+                              onFocus={(e) => {
+                                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                                const isValidEmail = adminForm.email.trim() && emailRegex.test(adminForm.email.trim());
+                                
+                                if ((adminFieldErrors.email && currentInvalidAdminField === "email" && !isValidEmail) || (adminEmailError && !isValidEmail)) {
+                                  e.target.style.setProperty("border-color", "#ef4444", "important");
+                                  e.target.style.setProperty("outline", "none", "important");
+                                  e.target.style.setProperty("box-shadow", "0 0 0 3px rgba(239, 68, 68, 0.1)", "important");
+                                } else if (isValidEmail) {
+                                  e.target.style.setProperty("border-color", "", "important");
+                                  e.target.style.setProperty("outline", "", "important");
+                                  e.target.style.setProperty("box-shadow", "", "important");
+                                }
+                              }}
                             />
-                            {adminEmailError && (
-                              <span style={{ color: "#ef4444", fontSize: "0.875rem", marginTop: "4px", display: "block" }}>
-                                {adminEmailError}
-                              </span>
-                            )}
                           </label>
                         </div>
                         <div className="settings-form__group">
@@ -13998,9 +14486,23 @@ Subscription Manager HK`;
                             }
                             value={adminForm.phone}
                             onChange={(e) => {
-                              setAdminForm({ ...adminForm, phone: e.target.value });
+                              const newValue = e.target.value;
+                              setAdminForm({ ...adminForm, phone: newValue });
+                              // Clear error when user starts typing
+                              if (adminFieldErrors.phone || currentInvalidAdminField === "phone") {
+                                setAdminFieldErrors(prev => ({ ...prev, phone: false }));
+                                if (currentInvalidAdminField === "phone") {
+                                  setCurrentInvalidAdminField(null);
+                                }
+                              }
+                            }}
+                            onError={(error) => {
+                              showToast(error, "error");
+                              setAdminFieldErrors(prev => ({ ...prev, phone: true }));
+                              setCurrentInvalidAdminField("phone");
                             }}
                             required={true}
+                            className={adminFieldErrors.phone && currentInvalidAdminField === "phone" ? "admin-phone-input-error" : ""}
                             placeholder="Enter mobile number"
                           />
                         </div>
@@ -14013,9 +14515,41 @@ Subscription Manager HK`;
                                 className="settings-form__input"
                                 required
                                 value={adminForm.password}
-                                onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
+                                onChange={(e) => {
+                                  const newValue = e.target.value;
+                                  setAdminForm({ ...adminForm, password: newValue });
+                                  // Clear error when user starts typing
+                                  if (adminFieldErrors.password || currentInvalidAdminField === "password") {
+                                    setAdminFieldErrors(prev => ({ ...prev, password: false }));
+                                    if (currentInvalidAdminField === "password") {
+                                      setCurrentInvalidAdminField(null);
+                                    }
+                                  }
+                                  // Clear error styles if field has value
+                                  if (newValue.trim()) {
+                                    e.target.style.setProperty("border-color", "", "important");
+                                    e.target.style.setProperty("outline", "", "important");
+                                    e.target.style.setProperty("box-shadow", "", "important");
+                                  }
+                                }}
                                 placeholder="Set a password"
-                                style={{ paddingRight: "40px" }}
+                                style={{
+                                  paddingRight: "40px",
+                                  borderColor: (adminFieldErrors.password && currentInvalidAdminField === "password" && !adminForm.password.trim()) ? "#ef4444" : undefined,
+                                  borderWidth: (adminFieldErrors.password && currentInvalidAdminField === "password" && !adminForm.password.trim()) ? "2px" : undefined,
+                                }}
+                                aria-invalid={adminFieldErrors.password && currentInvalidAdminField === "password" && !adminForm.password.trim()}
+                                onFocus={(e) => {
+                                  if (adminFieldErrors.password && currentInvalidAdminField === "password" && !adminForm.password.trim()) {
+                                    e.target.style.setProperty("border-color", "#ef4444", "important");
+                                    e.target.style.setProperty("outline", "none", "important");
+                                    e.target.style.setProperty("box-shadow", "0 0 0 3px rgba(239, 68, 68, 0.1)", "important");
+                                  } else if (adminForm.password.trim()) {
+                                    e.target.style.setProperty("border-color", "", "important");
+                                    e.target.style.setProperty("outline", "", "important");
+                                    e.target.style.setProperty("box-shadow", "", "important");
+                                  }
+                                }}
                               />
                               <button
                                 type="button"
@@ -14052,6 +14586,13 @@ Subscription Manager HK`;
                               setShowAdminForm(false);
                               setShowAddAdminPassword(false);
                               setAdminEmailError("");
+                              setAdminFieldErrors({
+                                name: false,
+                                email: false,
+                                phone: false,
+                                password: false,
+                              });
+                              setCurrentInvalidAdminField(null);
                             }}
                           >
                             Cancel

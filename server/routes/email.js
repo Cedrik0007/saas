@@ -2,8 +2,7 @@ import express from "express";
 import { ensureConnection } from "../config/database.js";
 import EmailSettingsModel from "../models/EmailSettings.js";
 import EmailTemplateModel from "../models/EmailTemplate.js";
-import { generateUniqueMessageId } from "../config/email.js";
-import { setTransporter } from "../config/email.js";
+import { generateUniqueMessageId, setTransporter, createEmailTransporter } from "../config/email.js";
 import { scheduleReminderCron } from "../utils/cron.js";
 import nodemailer from "nodemailer";
 
@@ -56,13 +55,11 @@ router.post("/", async (req, res) => {
 
       // Update transporter with new settings
       if (settings.emailUser && settings.emailPassword) {
-        const transporter = nodemailer.createTransport({
-          service: settings.emailService || 'gmail',
-          auth: {
-            user: settings.emailUser,
-            pass: settings.emailPassword,
-          },
-        });
+        const transporter = createEmailTransporter(
+          settings.emailUser,
+          settings.emailPassword,
+          settings.emailService || 'gmail'
+        );
         setTransporter(transporter);
         console.log("✓ Email transporter updated with new settings");
       }
@@ -97,13 +94,11 @@ router.post("/", async (req, res) => {
       
       // Update transporter with new settings
       if (settings.emailUser && settings.emailPassword) {
-        const transporter = nodemailer.createTransport({
-          service: settings.emailService || 'gmail',
-          auth: {
-            user: settings.emailUser,
-            pass: settings.emailPassword,
-          },
-        });
+        const transporter = createEmailTransporter(
+          settings.emailUser,
+          settings.emailPassword,
+          settings.emailService || 'gmail'
+        );
         setTransporter(transporter);
         console.log("✓ Email transporter updated with new settings");
       }
@@ -132,14 +127,13 @@ router.post("/test", async (req, res) => {
       return res.status(400).json({ error: "Email credentials required" });
     }
 
-    // Create temporary transporter for testing
-    const testTransporter = nodemailer.createTransport({
-      service: emailService || 'gmail',
-      auth: {
-        user: emailUser,
-        pass: emailPassword,
-      },
-    });
+    // Create temporary transporter for testing (use same config as production)
+    const { createEmailTransporter } = await import("../config/email.js");
+    const testTransporter = createEmailTransporter(
+      emailUser,
+      emailPassword,
+      emailService || 'gmail'
+    );
 
     // Add date to test email subject to make it unique
     const testSubject = `Test Email - Email Configuration - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
@@ -171,7 +165,23 @@ router.post("/test", async (req, res) => {
     res.json({ success: true, message: "Test email sent successfully" });
   } catch (error) {
     console.error("Error sending test email:", error);
-    res.status(500).json({ error: error.message || "Failed to send test email" });
+    
+    let errorMessage = error.message || "Failed to send test email";
+    let errorDetails = "Please check your email configuration.";
+    
+    if (error.code === 'EAUTH') {
+      errorMessage = "Gmail authentication failed. Please use an App-Specific Password.";
+      errorDetails = "For Gmail, you must:\n1. Enable 2-Step Verification in your Google Account\n2. Generate an App-Specific Password at https://myaccount.google.com/apppasswords\n3. Use that 16-character password (not your regular password) in the email settings.";
+    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+      errorMessage = "Email connection failed. SMTP may be blocked.";
+      errorDetails = "Connection to email server failed. This may be due to network restrictions or cloud platform limitations.";
+    }
+    
+    res.status(500).json({ 
+      error: errorMessage,
+      details: errorDetails,
+      code: error.code || 'UNKNOWN'
+    });
   }
 });
 

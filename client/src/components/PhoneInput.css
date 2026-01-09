@@ -177,7 +177,7 @@
   border: 1px solid #ddd;
   border-top-right-radius: 8px;
   border-bottom-right-radius: 8px;
-  border-left: none;
+  /* border-left: none; */
   font-size: 0.775rem;
   transition: border-color 0.2s;
   width: 100%;
@@ -214,17 +214,19 @@
 }
 
 .admin-phone-input-error .phone-input-country-button {
-  border-color: #ddd;
+  border-color: #ef4444 !important;
+  border-width: 2px !important;
 }
 
 .admin-phone-input-error .phone-input-field {
-  border-color: #ddd;
+  border-color: #ef4444 !important;
+  border-width: 2px !important;
 }
 
 .admin-phone-input-error .phone-input-field:focus {
-  border-color: #5a31ea;
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(90, 49, 234, 0.1);
+  border-color: #ef4444 !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important;
 }
 
 /* Responsive Styles */
