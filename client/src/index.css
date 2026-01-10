@@ -1632,7 +1632,8 @@ button {
   transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  min-height: 140px;
+  justify-content: space-between;
 }
 
 .admin-dashboard-kpi-card:hover {
@@ -1643,6 +1644,10 @@ button {
 .admin-dashboard-kpi-button {
   text-align: left;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  justify-content: space-between;
 }
 
 .admin-dashboard-kpi-label {
@@ -1654,15 +1659,19 @@ button {
   align-items: center;
   text-transform: uppercase;
   letter-spacing: 0.025em;
+  flex-shrink: 0;
 }
 
 .admin-dashboard-kpi-value {
-  margin: 0;
+  margin: 12px 0px;
   font-size: 1.6rem;
-  margin: 8px 0px;
   font-weight: 800;
   color: #111827;
   line-height: 1.2;
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 
@@ -1677,6 +1686,8 @@ button {
   color: #9CA3AF;
   line-height: 1.4;
   font-weight: 400;
+  flex-shrink: 0;
+  margin-top: auto;
 }
 
 .admin-dashboard-kpi-icon {
@@ -1713,6 +1724,22 @@ button {
   margin-right: 6px;
   color: #9CA3AF;
   font-size: 0.875rem;
+}
+
+.admin-dashboard-kpi-header {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.admin-dashboard-kpi-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  justify-content: space-between;
+  width: 100%;
 }
 
 /* New Dashboard KPI Container Structure */
