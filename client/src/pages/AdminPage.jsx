@@ -1495,7 +1495,7 @@
         return paymentDate >= fromDate && paymentDate <= toDate && isCompleted;
       });
 
-      // Filter donations within date range
+      // Filter donations within date range (for date-filtered reports)
       // Show all donations (both member and non-member donations) within the date range
       const donationsInRange = (Array.isArray(donations) ? donations : []).filter(donation => {
         if (!donation) return false;
@@ -1556,20 +1556,45 @@
         }
       });
 
-      // Calculate collected amount from payments
+      // Filter donations for total donation card: show all donations from all years, but only if member exists in member list
+      const donationsFromMembers = (Array.isArray(donations) ? donations : []).filter(donation => {
+        if (!donation) return false;
+        // Only include donations where the member exists in the members list
+        return isDonationMemberInList(donation);
+      });
+
+      // Calculate total subscription amount from all payments (all years, only from members in the list)
+      const allPaymentsFromMembers = paymentHistory.filter(payment => {
+        if (!isPaymentMemberInList(payment)) return false;
+        // Only count completed or paid payments
+        const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+        return isCompleted;
+      });
+      const totalSubscriptionAmount = allPaymentsFromMembers.reduce((sum, payment) => {
+        const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+        return sum + amount;
+      }, 0);
+
+      // Calculate collected amount from payments (date-filtered for date range reports)
       const paymentsTotal = paymentsInRange.reduce((sum, payment) => {
         const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
         return sum + amount;
       }, 0);
 
-      // Calculate collected amount from donations
-      const donationsTotal = donationsInRange.reduce((sum, donation) => {
+      // Calculate collected amount from donations (for date-filtered reports)
+      const donationsTotalInRange = donationsInRange.reduce((sum, donation) => {
         const amount = parseFloat(donation.amount?.replace(/[^0-9.]/g, '') || 0);
         return sum + amount;
       }, 0);
 
-      // Total collected (payments + donations)
-      const collected = paymentsTotal + donationsTotal;
+      // Calculate total donations from all years (only from members in member list) for total donation card
+      const donationsTotal = donationsFromMembers.reduce((sum, donation) => {
+        const amount = parseFloat(donation.amount?.replace(/[^0-9.]/g, '') || 0);
+        return sum + amount;
+      }, 0);
+
+      // Total collected (payments + donations from date range for reports)
+      const collected = paymentsTotal + donationsTotalInRange;
 
       // Calculate expected revenue based on members and their subscription types
       // Lifetime: $250/year, Yearly + Janaza Fund: $500/year
@@ -1629,9 +1654,12 @@
       return {
         collected,
         paymentsTotal,
-        donationsTotal,
+        totalSubscriptionAmount, // Total subscription amount from all years (only from members in member list)
+        donationsTotal, // Total donations from all years (only from members in member list)
+        donationsTotalInRange, // Donations within date range
         paymentsCount: paymentsInRange.length,
-        donationsCount: donationsInRange.length,
+        donationsCount: donationsInRange.length, // Donations within date range count
+        donationsFromMembersCount: donationsFromMembers.length, // All donations from members (all years)
         expected: expected || 1, // Avoid division by zero
         averagePerMember,
         methodMix,
@@ -13422,7 +13450,7 @@
                         Total Amount
                       </p>
                       <h4>
-                        {formatCurrency(reportStats.collected)}
+                        {formatCurrency((reportStats.totalSubscriptionAmount || 0) + (reportStats.donationsTotal || 0))}
                       </h4>
                       <small>Subscriptions + Donations</small>
                     </div>
@@ -13444,7 +13472,7 @@
                       <h4>
                         {formatCurrency(reportStats.donationsTotal)}
                       </h4>
-                      <small>{reportStats.donationsCount} donation{reportStats.donationsCount !== 1 ? 's' : ''}</small>
+                      <small>{reportStats.donationsFromMembersCount} donation{reportStats.donationsFromMembersCount !== 1 ? 's' : ''} from members</small>
                     </div>
                     <div className="card kpi">
                       <p>
@@ -13493,10 +13521,12 @@
                         </p>
                       </div>
                       {(() => {
-                        const total = reportStats.collected + dashboardMetrics.outstanding;
-                        const collectedHeight = Math.max(60, Math.round((reportStats.collected / total) * 200) || 0);
+                        // Calculate total collected as subscription + donations (all years)
+                        const totalCollected = (reportStats.totalSubscriptionAmount || 0) + (reportStats.donationsTotal || 0);
+                        const total = totalCollected + dashboardMetrics.outstanding;
+                        const collectedHeight = Math.max(60, Math.round((totalCollected / total) * 200) || 0);
                         const outstandingHeight = Math.max(60, Math.round((dashboardMetrics.outstanding / total) * 200) || 0);
-                        const collectedPercent = Math.round((reportStats.collected / total) * 100);
+                        const collectedPercent = Math.round((totalCollected / total) * 100);
                         const outstandingPercent = Math.round((dashboardMetrics.outstanding / total) * 100);
 
                         return (
@@ -13506,7 +13536,7 @@
                                 className="admin-reports-collected-bar"
                                 style={{ height: `${collectedHeight}px` }}
                               >
-                                {formatCurrency(reportStats.collected)}
+                                {formatCurrency(totalCollected)}
                               </div>
                               <div className="admin-reports-collected-label">
                                 <span className="admin-reports-collected-label-title">Collected</span>
@@ -13809,6 +13839,7 @@
                           Transactions
                         </h4>
                         <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                        
                           <input
                             type="text"
                             placeholder="Search transactions..."
@@ -13848,8 +13879,13 @@
                                 isPaymentMemberInList(p)
                               );
                               
-                              // Show all donations (both member and non-member donations)
-                              const donationsFromMembers = reportStats.donationsInRange || [];
+                              // Show all donations from all years (both member and non-member donations)
+                              // Don't filter by date range - show donations from every year
+                              const donationsFromMembers = (Array.isArray(donations) ? donations : []).filter(donation => {
+                                if (!donation) return false;
+                                // Include all valid donations regardless of year
+                                return true;
+                              });
                               
                               // Combine payments and donations
                               const allTransactions = [
@@ -14046,8 +14082,13 @@
                             isPaymentMemberInList(p)
                           );
                           
-                          // Show all donations (both member and non-member donations)
-                          const donationsFromMembers = reportStats.donationsInRange || [];
+                          // Show all donations from all years (both member and non-member donations)
+                          // Don't filter by date range - show donations from every year
+                          const donationsFromMembers = (Array.isArray(donations) ? donations : []).filter(donation => {
+                            if (!donation) return false;
+                            // Include all valid donations regardless of year
+                            return true;
+                          });
                           
                           const allTransactions = [
                             ...paymentsFromMembers.map(p => ({
