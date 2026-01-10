@@ -79,6 +79,7 @@ export function ServerPage() {
 
   const [showMemberPassword, setShowMemberPassword] = useState(false);
   const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [isDonationSubmitting, setIsDonationSubmitting] = useState(false);
 
   const [donationForm, setDonationForm] = useState({
     donorName: "",
@@ -328,6 +329,13 @@ export function ServerPage() {
   // Donation CRUD Operations
   const handleAddDonation = async (e) => {
     e.preventDefault();
+    
+    // Prevent duplicate submission
+    if (isDonationSubmitting) {
+      return;
+    }
+
+    setIsDonationSubmitting(true);
     try {
       await addDonation(donationForm);
       showToast("Donation added successfully!");
@@ -336,6 +344,8 @@ export function ServerPage() {
       fetchDonations();
     } catch (error) {
       showToast(error.message || "Failed to add donation", "error");
+    } finally {
+      setIsDonationSubmitting(false);
     }
   };
 
@@ -468,6 +478,10 @@ export function ServerPage() {
   const handleCancelForm = () => {
     setShowForm(false);
     setEditingItem(null);
+    // Reset submission state when canceling
+    if (activeTab === "donations") {
+      setIsDonationSubmitting(false);
+    }
     if (activeTab === "members") {
       resetMemberForm();
     } else if (activeTab === "admins") {
@@ -1182,11 +1196,24 @@ export function ServerPage() {
                           ></textarea>
                         </label>
                         <div className="server-form-actions">
-                          <button type="button" className="secondary-btn" onClick={handleCancelForm}>
+                          <button 
+                            type="button" 
+                            className="secondary-btn" 
+                            onClick={handleCancelForm}
+                            disabled={isDonationSubmitting && !editingItem}
+                          >
                             Cancel
                           </button>
-                          <button type="submit" className="primary-btn">
-                            {editingItem ? "Update" : "Add"} Donation
+                          <button 
+                            type="submit" 
+                            className="primary-btn"
+                            disabled={isDonationSubmitting && !editingItem}
+                          >
+                            {isDonationSubmitting && !editingItem 
+                              ? "Saving..." 
+                              : editingItem 
+                                ? "Update" 
+                                : "Add"} Donation
                           </button>
                         </div>
                       </form>

@@ -230,6 +230,7 @@ function AdminPage() {
   const [currentInvalidField, setCurrentInvalidField] = useState(null); // Track which field to highlight
 
   const [isMemberSubmitting, setIsMemberSubmitting] = useState(false);
+  const [isDonationSubmitting, setIsDonationSubmitting] = useState(false);
 
   const validateMemberField = (field, value, options = {}) => {
     let error = "";
@@ -801,25 +802,19 @@ function AdminPage() {
     }
   };
 
-  // Helper component for Dashboard KPI Segment
-  const DashboardKPISegment = ({ icon, iconClass, label, value, badge, badgeType = "green", onClick, valueClass = "" }) => (
+  // Helper component for Dashboard KPI Card
+  const DashboardKPICard = ({ icon, iconClass, label, value, description, onClick, valueClass = "" }) => (
     <button
       type="button"
-      className="admin-dashboard-kpi-segment"
+      className="admin-dashboard-kpi-card admin-dashboard-kpi-button"
       onClick={onClick}
     >
-      <i className={`${icon} ${iconClass || "admin-dashboard-kpi-icon"} admin-dashboard-kpi-segment-icon`}></i>
-      <div className="admin-dashboard-kpi-segment-text">
-        <p className="admin-dashboard-kpi-segment-label">{label}</p>
-        <div className="admin-dashboard-kpi-segment-value-row">
-          <h4 className={`admin-dashboard-kpi-segment-value ${valueClass}`}>{value}</h4>
-          {badge && (
-            <span className={`admin-dashboard-kpi-badge admin-dashboard-kpi-badge--${badgeType}`}>
-              {badge}
-            </span>
-          )}
-        </div>
-      </div>
+      <p className="admin-dashboard-kpi-label">
+        <i className={`${icon} ${iconClass || "admin-dashboard-kpi-icon"}`}></i>
+        {label}
+      </p>
+      <h4 className={`admin-dashboard-kpi-value ${valueClass}`}>{value}</h4>
+      {description && <small className="admin-dashboard-kpi-description">{description}</small>}
     </button>
   );
   const [sendingEmails, setSendingEmails] = useState({}); // Track which member is sending
@@ -988,10 +983,21 @@ function AdminPage() {
     );
   };
 
+  // Check if donation belongs to a member in the members list
+  const isDonationMemberInList = (donation) => {
+    if (!donation) return false;
+    // If donation is not from a member, exclude it
+    if (!donation.isMember || !donation.memberId) return false;
+    // Check if the memberId exists in the members list
+    return members.some(m => 
+      String(m.id || "").toLowerCase() === String(donation.memberId || "").toLowerCase() ||
+      (donation.donorName && String(m.name || "").toLowerCase() === String(donation.donorName || "").toLowerCase()) ||
+      (donation.donorEmail && String(m.email || "").toLowerCase() === String(donation.donorEmail || "").toLowerCase())
+    );
+  };
+
   // Calculate monthly collections from paymentHistory
   const calculateMonthlyCollections = () => {
-    // Ensure paymentHistory is an array
-    const safePaymentHistory = Array.isArray(paymentHistory) ? paymentHistory : [];
     const now = new Date();
     const months = [];
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -1003,25 +1009,12 @@ function AdminPage() {
       const monthLabel = monthNames[date.getMonth()];
 
       // Filter payments for this month (only completed/paid and from members in the list)
-      const monthPayments = safePaymentHistory.filter((payment) => {
-        if (!payment) return false;
+      const monthPayments = paymentHistory.filter((payment) => {
         // Only count completed or paid payments
         const isCompleted = payment.status === "Completed" || payment.status === "Paid";
         if (!isCompleted) return false;
         if (!payment.date) return false;
-        
-        // Parse date with error handling
-        let paymentDate;
-        try {
-          paymentDate = new Date(payment.date);
-          // Check if date is valid
-          if (isNaN(paymentDate.getTime())) {
-            return false;
-          }
-        } catch (e) {
-          return false;
-        }
-        
+        const paymentDate = new Date(payment.date);
         const isInMonth = paymentDate.getMonth() === date.getMonth() &&
           paymentDate.getFullYear() === date.getFullYear();
         if (!isInMonth) return false;
@@ -1032,7 +1025,7 @@ function AdminPage() {
       // Calculate total for this month
       const total = monthPayments.reduce((sum, payment) => {
         const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
-        return sum + (isNaN(amount) ? 0 : amount);
+        return sum + amount;
       }, 0);
 
       months.push({
@@ -1307,87 +1300,42 @@ function AdminPage() {
   };
 
   const getRecentPayments = () => {
-    // Ensure payments is an array
-    const safePayments = Array.isArray(payments) ? payments : [];
-    const safeMembers = Array.isArray(members) ? members : [];
-    const safeInvoices = Array.isArray(invoices) ? invoices : [];
-
     // Use payments from finance section, filter to only show payments from members in the members list
-    return safePayments
-      .filter(payment => {
-        if (!payment) return false;
+    return (payments || [])
+      .filter(payment => 
         // Only include payments from members in the members list
-        return isPaymentMemberInList(payment);
-      })
-      .filter(payment => {
-        if (!payment || !payment.status) return false;
-        return payment.status === "Paid" || payment.status === "Completed" || payment.status === "Pending Verification" || payment.status === "Pending";
-      })
+        isPaymentMemberInList(payment)
+      )
+      .filter(payment => payment.status === "Paid" || payment.status === "Completed" || payment.status === "Pending Verification" || payment.status === "Pending")
       .sort((a, b) => {
-        // Safe date parsing with error handling
-        let dateA, dateB;
-        try {
-          dateA = new Date(a.date || a.createdAt || 0);
-          if (isNaN(dateA.getTime())) dateA = new Date(0);
-        } catch (e) {
-          dateA = new Date(0);
-        }
-        try {
-          dateB = new Date(b.date || b.createdAt || 0);
-          if (isNaN(dateB.getTime())) dateB = new Date(0);
-        } catch (e) {
-          dateB = new Date(0);
-        }
+        const dateA = new Date(a.date || a.createdAt || 0);
+        const dateB = new Date(b.date || b.createdAt || 0);
         return dateB - dateA;
       })
       .slice(0, 3) // Show only 3 recent payments
       .map(payment => {
-        if (!payment) {
-          return {
-            Member: "Unknown",
-            Period: "-",
-            Amount: formatCurrency(0),
-            Method: "-",
-            Status: "-",
-            "Subscription Year": "-",
-            Native: "-",
-            "Joined Year": "-",
-          };
-        }
-
         // Find member for this payment
-        const member = safeMembers.find(m => {
-          if (!m) return false;
-          return m.id === payment.memberId || 
+        const member = members.find(m => 
+          m.id === payment.memberId || 
           m.email === payment.memberEmail ||
           m.name === payment.member ||
           String(m.id || "").toLowerCase() === String(payment.member || "").toLowerCase() ||
           String(m.email || "").toLowerCase() === String(payment.member || "").toLowerCase() ||
-            String(m.name || "").toLowerCase() === String(payment.member || "").toLowerCase();
-        });
+          String(m.name || "").toLowerCase() === String(payment.member || "").toLowerCase()
+        );
 
         // Get Subscription Year from member's invoices
         let subscriptionYear = "-";
         if (member) {
-          const memberInvoices = safeInvoices.filter(inv => {
-            if (!inv) return false;
-            return inv.memberId === member.id || 
+          const memberInvoices = invoices.filter(inv => 
+            inv.memberId === member.id || 
             inv.memberEmail === member.email || 
-              inv.memberName === member.name;
-          }).sort((a, b) => {
-            try {
-              const dateA = new Date(a.createdAt || 0);
-              const dateB = new Date(b.createdAt || 0);
-              if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
-              return dateB - dateA;
-            } catch (e) {
-              return 0;
-            }
-          });
+            inv.memberName === member.name
+          ).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
           
           if (memberInvoices.length > 0) {
             const latestInvoice = memberInvoices[0];
-            if (latestInvoice && latestInvoice.period) {
+            if (latestInvoice.period) {
               const periodStr = String(latestInvoice.period).trim();
               const yearMatch = periodStr.match(/\d{4}/);
               if (yearMatch) {
@@ -1400,37 +1348,17 @@ function AdminPage() {
         // Get Native from member
         const native = member?.native || "-";
 
-        // Get Joined Year from member with error handling
-        let joinedYear = "-";
-        if (member) {
-          try {
-            if (member.start_date) {
-              const startDate = new Date(member.start_date);
-              if (!isNaN(startDate.getTime())) {
-                joinedYear = startDate.getFullYear();
-              }
-            } else if (member.createdAt) {
-              const createdDate = new Date(member.createdAt);
-              if (!isNaN(createdDate.getTime())) {
-                joinedYear = createdDate.getFullYear();
-              }
-            }
-          } catch (e) {
-            // Keep joinedYear as "-"
-          }
-        }
-
-        // Parse amount safely
-        let amount = 0;
-        if (payment.amount) {
-          const parsedAmount = parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0);
-          amount = isNaN(parsedAmount) ? 0 : parsedAmount;
-        }
+        // Get Joined Year from member
+        const joinedYear = member?.start_date
+          ? new Date(member.start_date).getFullYear()
+          : (member?.createdAt ? new Date(member.createdAt).getFullYear() : "-");
 
         return {
           Member: payment.member || "Unknown",
           Period: payment.period || "-",
-          Amount: formatCurrency(amount),
+          Amount: payment.amount
+            ? formatCurrency(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0))
+            : formatCurrency(0),
           Method: getPaymentMethodDisplay(payment),
           Status: payment.status || "Pending",
           "Subscription Year": subscriptionYear,
@@ -1509,7 +1437,7 @@ function AdminPage() {
     });
 
     // Filter donations within date range
-    // Show all donations (both member and non-member donations)
+    // Show all donations (both member and non-member donations) within the date range
     const donationsInRange = (Array.isArray(donations) ? donations : []).filter(donation => {
       if (!donation) return false;
 
@@ -1660,12 +1588,14 @@ function AdminPage() {
   // Export CSV function
   const handleExportCSV = () => {
     try {
-      // Get payments in date range for detailed export
+      // Get payments in date range for detailed export (only from members in the list)
       const fromDate = new Date(dateRange.from);
       const toDate = new Date(dateRange.to);
       toDate.setHours(23, 59, 59, 999);
 
       const paymentsInRange = paymentHistory.filter(payment => {
+        // First check if payment belongs to a member in the list
+        if (!isPaymentMemberInList(payment)) return false;
         if (!payment.date) return false;
         const paymentDate = new Date(payment.date);
         return paymentDate >= fromDate && paymentDate <= toDate;
@@ -1687,11 +1617,15 @@ function AdminPage() {
       //   csvContent += `${item.label},${item.value}\n`;
       // });
 
-      // Detailed transactions (only completed/paid)
+      // Detailed transactions (only completed/paid and from members in the list)
       csvContent += "\nDetailed Transactions (Completed Payments Only)\n";
       csvContent += "Date,Member,Period,Amount,Method,Status,Reference\n";
       paymentsInRange
-        .filter(payment => payment.status === "Completed" || payment.status === "Paid")
+        .filter(payment => {
+          // Only include completed/paid payments from members in the list
+          const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+          return isCompleted && isPaymentMemberInList(payment);
+        })
         .forEach(payment => {
           const date = payment.date || "-";
           const member = payment.member || "Unknown";
@@ -1799,6 +1733,8 @@ function AdminPage() {
       toDate.setHours(23, 59, 59, 999);
 
       const paymentsInRange = paymentHistory.filter(payment => {
+        // First check if payment belongs to a member in the list
+        if (!isPaymentMemberInList(payment)) return false;
         if (!payment.date) return false;
         const paymentDate = new Date(payment.date);
         return paymentDate >= fromDate && paymentDate <= toDate;
@@ -1828,8 +1764,11 @@ function AdminPage() {
         yPos += lineHeight;
 
         doc.setFont(undefined, 'normal');
-        // Add transactions (limit to fit on page, only completed/paid)
-        const completedPayments = paymentsInRange.filter(p => p.status === "Completed" || p.status === "Paid");
+        // Add transactions (limit to fit on page, only completed/paid and from members in the list)
+        const completedPayments = paymentsInRange.filter(p => {
+          const isCompleted = p.status === "Completed" || p.status === "Paid";
+          return isCompleted && isPaymentMemberInList(p);
+        });
         const maxTransactions = Math.min(completedPayments.length, Math.floor((pageHeight - yPos - 20) / lineHeight));
         completedPayments.slice(0, maxTransactions).forEach(payment => {
           if (yPos > pageHeight - 20) {
@@ -3440,8 +3379,10 @@ Subscription Manager HK`;
         });
 
         if (!memberUpdateResponse.ok) {
-          console.error('Failed to update member payment fields');
-          // Continue anyway - invoice is already updated
+          const errorData = await memberUpdateResponse.json().catch(() => ({ message: 'Failed to update member payment fields' }));
+          console.error('Failed to update member payment fields:', errorData.message || memberUpdateResponse.statusText);
+          // Continue anyway - invoice is already updated, but show warning
+          showToast(`Payment processed, but member update failed: ${errorData.message || 'Unknown error'}`, "error");
         }
       }
 
@@ -3889,63 +3830,73 @@ Subscription Manager HK`;
   };
 
   const handleViewMemberDetail = async (member) => {
+    // Immediately show the member detail for smooth UX
+    // Find the best available member data first
+    let memberToView = member;
+
+    // Try to find from current members state (most up-to-date)
+    if (member.id) {
+      const foundMember = members.find(m =>
+        (m.id === member.id) ||
+        (member.email && m.email && m.email.toLowerCase() === member.email.toLowerCase())
+      );
+      if (foundMember) {
+        memberToView = foundMember;
+      }
+    }
+
+    // Ensure we have a valid member object
+    if (!memberToView || !memberToView.id) {
+      console.error("Member not found:", member);
+      showToast("Member data not available. Please refresh the page.", "error");
+      return;
+    }
+
+    // Immediately set the member and switch section for instant feedback
+    setSelectedMember(memberToView);
+    setActiveSection("member-detail");
+
+    // Refresh data in the background to ensure we have the latest information
+    // This doesn't block the UI, making the interaction feel smooth
     try {
-      // First, refresh all data to ensure we have the latest information
-      await Promise.all([
+      // Refresh all data in parallel without blocking
+      Promise.all([
         fetchMembers(),
         fetchInvoices(),
         fetchPayments(),
-      ]);
-
-      // Fetch the specific member directly from API to ensure we have the latest data
-      // This is more reliable than relying on state updates
-      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-      let memberToView = member;
-
-      if (member.id) {
-        try {
-          const response = await fetch(`${apiUrl}/api/members`);
-          if (response.ok) {
-            const allMembers = await response.json();
-            const latestMember = allMembers.find(m => m.id === member.id);
-            if (latestMember) {
-              memberToView = latestMember;
-            }
-          }
-        } catch (fetchError) {
-          console.warn("Could not fetch member directly, using provided member:", fetchError);
+      ]).then(() => {
+        // After data is refreshed, update the selected member with latest data
+        // This ensures the detail view shows the most current information
+        const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+        
+        if (memberToView.id) {
+          fetch(`${apiUrl}/api/members`)
+            .then(response => {
+              if (response.ok) {
+                return response.json();
+              }
+              return null;
+            })
+            .then(allMembers => {
+              if (allMembers) {
+                const latestMember = allMembers.find(m => m.id === memberToView.id);
+                if (latestMember) {
+                  setSelectedMember(latestMember);
+                }
+              }
+            })
+            .catch(fetchError => {
+              // Silently fail - we already have the member displayed
+              console.warn("Could not fetch latest member data:", fetchError);
+            });
         }
-      }
-
-      // Fallback: Find from current members state
-      if (!memberToView || memberToView === member) {
-        const foundMember = members.find(m =>
-          (member.id && m.id === member.id) ||
-          (member.email && m.email && m.email.toLowerCase() === member.email.toLowerCase())
-        );
-        if (foundMember) {
-          memberToView = foundMember;
-        }
-      }
-
-      // Ensure we have a valid member object
-      if (!memberToView || !memberToView.id) {
-        console.error("Member not found:", member);
-        showToast("Member data not available. Please refresh the page.", "error");
-        return;
-      }
-
-      setSelectedMember(memberToView);
-      setActiveSection("member-detail");
+      }).catch(error => {
+        // Silently fail - we already have the member displayed
+        console.warn("Could not refresh data:", error);
+      });
     } catch (error) {
-      console.error("Error viewing member detail:", error);
-      // Fallback to using the provided member object
-      if (member && member.id) {
-        setSelectedMember(member);
-        setActiveSection("member-detail");
-      } else {
-        showToast("Failed to load member details. Please try again.", "error");
-      }
+      // Silently fail - we already have the member displayed
+      console.warn("Error refreshing data:", error);
     }
   };
 
@@ -4342,40 +4293,37 @@ Subscription Manager HK`;
                   </div>
                 </header>
                 <div className="admin-dashboard-main-card">
-                  <div className="admin-dashboard-kpi-container">
-                    <DashboardKPISegment
+                  <div className="kpi-grid">
+                    <DashboardKPICard
                       icon="fas fa-users"
                       label="Total Members"
                       value={formatNumber(members.length)}
-                      badge={null}
+                      description="Active members"
                       onClick={() => handleNavClick("members")}
                     />
-                    <div className="admin-dashboard-kpi-divider"></div>
-                    <DashboardKPISegment
+                    <DashboardKPICard
                       icon="fas fa-dollar-sign"
                       iconClass="admin-dashboard-kpi-icon--green"
                       label="Total Collected"
                       value={formatCurrency(dashboardMetrics.collectedMonth)}
-                      badge={null}
+                      description={`${formatCurrency(dashboardMetrics.collectedYear)} YTD`}
                       onClick={() => handleNavClick("payments")}
                     />
-                    <div className="admin-dashboard-kpi-divider"></div>
-                    <DashboardKPISegment
+                    <DashboardKPICard
                       icon="fas fa-exclamation-triangle"
                       iconClass="admin-dashboard-kpi-icon--red"
                       label="Unpaid Members"
                       value={formatNumber(dashboardMetrics.unpaidMembers || 0)}
-                      badge={null}
+                      description="Members with unpaid invoices"
                       onClick={() => handleNavClick("members")}
                       valueClass={(dashboardMetrics.unpaidMembers || 0) > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}
                     />
-                    <div className="admin-dashboard-kpi-divider"></div>
-                    <DashboardKPISegment
+                    <DashboardKPICard
                       icon="fas fa-dollar-sign"
                       iconClass="admin-dashboard-kpi-icon--red"
                       label="Unpaid Total Amount"
                       value={formatCurrency(dashboardMetrics.outstanding)}
-                      badge={null}
+                      description={`Expected ${formatCurrency(dashboardMetrics.expectedAnnual)}`}
                       onClick={() => handleNavClick("members")}
                       valueClass={dashboardMetrics.outstanding > 0 ? "admin-dashboard-kpi-value--red" : "admin-dashboard-kpi-value--default"}
                     />
@@ -4386,13 +4334,10 @@ Subscription Manager HK`;
                     Last updated: {dashboardLastUpdated}
                   </div>
 
-                  {/* Two-column layout for chart and payments */}
-                  <div className="admin-dashboard-content-grid">
-                    {/* Left Column: Monthly Collections Chart */}
                   <div className="admin-dashboard-chart-card">
-                      <div className="admin-dashboard-card-header">
+                    <div className="card-header">
                       <div>
-                          <h4>Monthly Collections · Last 12 Months</h4>
+                        <h4><i className="fas fa-chart-bar admin-dashboard-chart-header-icon"></i>Monthly Collections · Last 12 Months</h4>
                         <p>Expected contribution is HK$800 per member per year</p>
                       </div>
                     </div>
@@ -4494,6 +4439,66 @@ Subscription Manager HK`;
                                   <strong>{hoveredMonth.count} payment{hoveredMonth.count > 1 ? 's' : ''}</strong>
                                 </div>
                               )}
+                              {/*{displayPayments.length > 0 && (
+                                <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
+                                  <div style={{ marginBottom: '8px', fontSize: '0.75rem', fontWeight: '600', color: 'rgba(255,255,255,0.9)' }}>
+                                    Payment Details:
+                                  </div>
+                                  <div style={{ maxHeight: hasMorePayments ? '280px' : 'none', overflowY: hasMorePayments ? 'auto' : 'visible' }}>
+                                    {displayPayments.slice(0, hasMorePayments ? maxVisiblePayments : displayPayments.length).map((payment, index) => {
+                                      const paymentDate = payment.date 
+                                        ? new Date(payment.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                        : (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-');
+                                      const paymentAmount = payment.amount 
+                                        ? formatCurrency(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0))
+                                        : formatCurrency(0);
+                                      const paymentMethod = getPaymentMethodDisplay(payment);
+                                      const memberName = payment.member || 'Unknown';
+                                      
+                                      return (
+                                        <div 
+                                          key={index} 
+                                          style={{ 
+                                            marginBottom: '10px', 
+                                            padding: '8px', 
+                                            backgroundColor: 'rgba(255,255,255,0.05)', 
+                                            borderRadius: '4px',
+                                            fontSize: '0.7rem'
+                                          }}
+                                        >
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Member:</span>
+                                            <strong style={{ color: '#fff' }}>{memberName}</strong>
+                                          </div>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Amount:</span>
+                                            <strong style={{ color: '#4CAF50' }}>{paymentAmount}</strong>
+                                          </div>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Method:</span>
+                                            <span style={{ color: 'rgba(255,255,255,0.9)' }}>{paymentMethod}</span>
+                                          </div>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <span style={{ color: 'rgba(255,255,255,0.8)' }}>Date:</span>
+                                            <span style={{ color: 'rgba(255,255,255,0.9)' }}>{paymentDate}</span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                    {hasMorePayments && (
+                                      <div style={{ 
+                                        textAlign: 'center', 
+                                        padding: '8px', 
+                                        fontSize: '0.7rem', 
+                                        color: 'rgba(255,255,255,0.7)',
+                                        fontStyle: 'italic'
+                                      }}>
+                                        ... and {paymentCount - maxVisiblePayments} more payment{paymentCount - maxVisiblePayments > 1 ? 's' : ''}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}*/}
                             </div>
                           </div>
                         );
@@ -4501,15 +4506,13 @@ Subscription Manager HK`;
                     </div>
                   </div>
 
-                    {/* Right Column: Recent Payments */}
                   <div className="admin-dashboard-payments-card">
-                      <div className="admin-dashboard-card-header admin-dashboard-card-header-flex">
-                        <h4>Recent Payments</h4>
+                    <div className="card-header">
+                      <h4><i className="fas fa-clock admin-icon" style={{ marginRight: "10px" }}></i>Recent Payments</h4>
                       <button className="text-btn" onClick={() => handleNavClick("members")}>
                         View all
                       </button>
                     </div>
-                      <div className="admin-dashboard-table-wrapper">
                     <Table
                       columns={["Member", "Amount", "Method", "Status", "Subscription Year", "Native", "Joined Year"]}
                       rows={recentPaymentsData.length > 0 ? recentPaymentsData : [
@@ -4525,8 +4528,6 @@ Subscription Manager HK`;
                         }
                       ]}
                     />
-                      </div>
-                    </div>
                   </div>
                 </div>
               </article>
@@ -5586,7 +5587,7 @@ Subscription Manager HK`;
                               </label>
                               <input
                                 type="text"
-                                placeholder="Search by name, email, ID, phone, or subscription year..."
+                                placeholder="Search by name,the year"
                                 value={memberSearchTerm}
                                 onChange={(e) => {
                                   setMemberSearchTerm(e.target.value);
@@ -6288,12 +6289,25 @@ Subscription Manager HK`;
                             return invoice.due || '-';
                           };
 
+                          // Determine subscription type based on invoice amount
+                          const invoiceAmount = invoice.amount
+                            ? parseFloat(invoice.amount.replace(/[^0-9.]/g, '') || 0)
+                            : 0;
+                          
+                          let subscriptionType = selectedMember?.subscriptionType || invoice.subscriptionType || "-";
+                          // If amount is 250, show "Lifetime"; if 500, show "Yearly + Janaza Fund"
+                          if (invoiceAmount === 250 || invoiceAmount === 250.00) {
+                            subscriptionType = "Lifetime";
+                          } else if (invoiceAmount === 500 || invoiceAmount === 500.00) {
+                            subscriptionType = "Yearly + Janaza Fund";
+                          }
+
                           return {
                             "Invoice #": invoice.id,
                             "Year": invoice.period || "-",
-                            "Subscription Type": selectedMember.subscriptionType || invoice.subscriptionType || "-",
+                            "Subscription Type": subscriptionType,
                             Amount: invoice.amount
-                              ? `HK$${formatNumber(parseFloat(invoice.amount.replace(/[^0-9.]/g, '') || 0), {
+                              ? `HK$${formatNumber(invoiceAmount, {
                                 minimumFractionDigits: 2,
                                 maximumFractionDigits: 2,
                               })}`
@@ -8528,20 +8542,43 @@ Subscription Manager HK`;
 
                 {/* Summary Cards */}
                 {(() => {
-                  // Build combined list for summary stats (unfiltered):
-                  const emailItems = (reminderLogs || []).map((log) => {
-                    // Normalize status - handle all status variations and ensure consistent format
-                    const logStatus = log.status ? String(log.status).trim() : "";
-                    const lowerStatus = logStatus.toLowerCase();
-                    let normalizedStatus = "Delivered"; // default
-                    if (lowerStatus === "failed") normalizedStatus = "Failed";
-                    else if (lowerStatus === "pending") normalizedStatus = "Pending";
-                    else if (logStatus) normalizedStatus = logStatus; // preserve original if valid
-                    return { status: normalizedStatus };
-                  });
+                  // Build combined list for summary stats - only include reminders for members in the members list
+                  const emailItems = (reminderLogs || [])
+                    .filter((log) => {
+                      // Only include if member is in the members list
+                      const member =
+                        members.find((m) => m.id === log.memberId) ||
+                        members.find(
+                          (m) =>
+                            m.email &&
+                            log.memberEmail &&
+                            m.email.toLowerCase() === log.memberEmail.toLowerCase()
+                        );
+                      return member !== undefined;
+                    })
+                    .map((log) => {
+                      // Normalize status - handle all status variations and ensure consistent format
+                      const logStatus = log.status ? String(log.status).trim() : "";
+                      const lowerStatus = logStatus.toLowerCase();
+                      let normalizedStatus = "Delivered"; // default
+                      if (lowerStatus === "failed") normalizedStatus = "Failed";
+                      else if (lowerStatus === "pending") normalizedStatus = "Pending";
+                      else if (logStatus) normalizedStatus = logStatus; // preserve original if valid
+                      return { status: normalizedStatus };
+                    });
 
                   const whatsappItems = (communicationLog || [])
-                    .filter((c) => c.channel === "WhatsApp")
+                    .filter((c) => {
+                      // Only include WhatsApp items for members in the members list
+                      if (c.channel !== "WhatsApp") return false;
+                      const member = members.find(
+                        (m) =>
+                          m.id === c.memberId ||
+                          (m.email && c.memberEmail && m.email.toLowerCase() === c.memberEmail?.toLowerCase()) ||
+                          (m.name && c.memberName && m.name.toLowerCase() === c.memberName?.toLowerCase())
+                      );
+                      return member !== undefined;
+                    })
                     .map((c) => {
                       // Normalize status - preserve original status values
                       const cStatus = c.status ? String(c.status).trim() : "";
@@ -10385,13 +10422,14 @@ Subscription Manager HK`;
                         </p>
                         <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">{formatNumber(unpaidInvoices.length)}</h4>
                       </div>
-                      <div className="admin-dashboard-kpi-card">
+                      {/* Overdue card hidden */}
+                      {/* <div className="admin-dashboard-kpi-card">
                         <p className="admin-dashboard-kpi-label">
                           <i className="fas fa-exclamation-triangle admin-dashboard-kpi-icon--red"></i>
                           Overdue
                         </p>
                         <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">{formatNumber(overdueInvoices.length)}</h4>
-                      </div>
+                      </div> */}
                       <div className="admin-dashboard-kpi-card">
                         <p className="admin-dashboard-kpi-label">
                           <i className="fas fa-dollar-sign admin-dashboard-kpi-icon--red"></i>
@@ -11608,6 +11646,7 @@ Subscription Manager HK`;
                     className="admin-members-form-overlay"
                     onClick={(e) => {
                       if (e.target === e.currentTarget) {
+                        setIsDonationSubmitting(false);
                         setShowDonationForm(false);
                         setDonationForm({
                           donorName: "",
@@ -11650,6 +11689,7 @@ Subscription Manager HK`;
                               screenshot: false,
                             });
                             setCurrentInvalidDonationField(null);
+                            setIsDonationSubmitting(false);
                             setShowDonationForm(false);
                             setDonationForm({
                               donorName: "",
@@ -11827,6 +11867,11 @@ Subscription Manager HK`;
                             return true;
                           };
 
+                          // Prevent duplicate submission
+                          if (isDonationSubmitting) {
+                            return;
+                          }
+
                           if (!validateDonationForm()) {
                             // Validation error already shown via Notie
                             return;
@@ -11839,6 +11884,7 @@ Subscription Manager HK`;
                             return;
                           }
 
+                          setIsDonationSubmitting(true);
                           try {
                             // Upload image if file exists
                             let imageUrl = donationForm.screenshot;
@@ -11896,6 +11942,8 @@ Subscription Manager HK`;
                             await fetchDonations();
                           } catch (error) {
                             showToast(error.message || "Failed to add donation", "error");
+                          } finally {
+                            setIsDonationSubmitting(false);
                           }
                         }}
                       >
@@ -12688,13 +12736,14 @@ Subscription Manager HK`;
                           />
                         </label>
                         <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
-                          <button type="submit" className="primary-btn">
-                            Save Donation
+                          <button type="submit" className="primary-btn" disabled={isDonationSubmitting}>
+                            {isDonationSubmitting ? "Saving..." : "Save Donation"}
                           </button>
                           <button
                             type="button"
                             className="ghost-btn"
                             onClick={() => {
+                              setIsDonationSubmitting(false);
                               setShowDonationForm(false);
                               setDonationForm({
                                 donorName: "",
@@ -12711,7 +12760,9 @@ Subscription Manager HK`;
                               setDonationImagePreview(null);
                               setDonationMemberSearch("");
                               setShowDonationMemberDropdown(false);
+                              setShowDonationPaymentMethodDropdown(false);
                             }}
+                            disabled={isDonationSubmitting}
                           >
                             Cancel
                           </button>
@@ -12789,8 +12840,8 @@ Subscription Manager HK`;
                                 className="ghost-btn"
                                 onClick={async () => {
                                   try {
-                                    // Dynamically import xlsx to avoid module resolution issues
-                                    const XLSX = await import("xlsx");
+                                    // Dynamically import exceljs to avoid module resolution issues
+                                    const ExcelJS = (await import("exceljs")).default;
                                     
                                     // Prepare data for Excel export
                                     const rows = filteredDonations.map((d) => ({
@@ -12814,26 +12865,34 @@ Subscription Manager HK`;
                                     }));
 
                                     // Create workbook and worksheet
-                                    const wb = XLSX.utils.book_new();
-                                    const ws = XLSX.utils.json_to_sheet(rows);
+                                    const workbook = new ExcelJS.Workbook();
+                                    const worksheet = workbook.addWorksheet("Donations");
 
-                                    // Set column widths
-                                    const colWidths = [
-                                      { wch: 12 }, // Date
-                                      { wch: 25 }, // Donor Name
-                                      { wch: 12 }, // Type
-                                      { wch: 15 }, // Amount
-                                      { wch: 15 }, // Method
-                                      { wch: 40 }, // Notes
+                                    // Add headers
+                                    worksheet.columns = [
+                                      { header: "Date", key: "Date", width: 12 },
+                                      { header: "Donor Name", key: "Donor Name", width: 25 },
+                                      { header: "Type", key: "Type", width: 12 },
+                                      { header: "Amount", key: "Amount", width: 15 },
+                                      { header: "Method", key: "Method", width: 15 },
+                                      { header: "Notes", key: "Notes", width: 40 },
                                     ];
-                                    ws['!cols'] = colWidths;
 
-                                    // Add worksheet to workbook
-                                    XLSX.utils.book_append_sheet(wb, ws, "Donations");
+                                    // Add rows
+                                    worksheet.addRows(rows);
 
                                     // Generate Excel file
+                                    const buffer = await workbook.xlsx.writeBuffer();
+                                    const blob = new Blob([buffer], { 
+                                      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 
+                                    });
+                                    const url = window.URL.createObjectURL(blob);
+                                    const link = document.createElement("a");
                                     const ts = new Date().toISOString().slice(0, 10);
-                                    XLSX.writeFile(wb, `donations-report-${ts}.xlsx`);
+                                    link.href = url;
+                                    link.download = `donations-report-${ts}.xlsx`;
+                                    link.click();
+                                    window.URL.revokeObjectURL(url);
                                     
                                     showToast("Donations report exported as Excel");
                                   } catch (error) {
@@ -14153,7 +14212,8 @@ Subscription Manager HK`;
                       </div>
                       <div className="settings-form__group">
                         <label className="settings-form__label">
-                          {/* <i className="fas fa-globe" style={{ marginRight: "8px", color: "#5a31ea" }}></i> */}
+                          {/* <i className="fas fa-globe" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                          -` */}
                           Number Format Locale 
                           {/* <span style={{ color: "#ef4444" }}>*</span> */}
                         </label>
@@ -15814,6 +15874,7 @@ Subscription Manager HK`;
                       <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Name</th>
                       <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Email</th>
                       <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Phone</th>
+                      <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Native</th>
                       <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Subscription Type</th>
                       <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Subscription Year</th>
                       <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333" }}>Start Date</th>
@@ -15831,6 +15892,9 @@ Subscription Manager HK`;
                         </td>
                         <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
                           {member.phone || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
+                        </td>
+                        <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
+                          {member.native || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                         </td>
                         <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
                           {member.subscriptionType || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}

@@ -453,12 +453,20 @@ export function MemberPage() {
     }
 
     try {
-      // Prepare update data
-      const updateData = {
-        name: profileForm.name,
-        email: profileForm.email,
-        phone: profileForm.phone,
-      };
+      // Only include fields that have actually changed
+      const updateData = {};
+      const originalMember = currentMember;
+
+      // Compare each field and only include if changed
+      if (profileForm.name !== (originalMember.name || "")) {
+        updateData.name = profileForm.name;
+      }
+      if (profileForm.email !== (originalMember.email || "")) {
+        updateData.email = profileForm.email;
+      }
+      if (profileForm.phone !== (originalMember.phone || "")) {
+        updateData.phone = profileForm.phone;
+      }
 
       // Only include password if it's provided (not empty)
       if (profileForm.password && profileForm.password.trim() !== "") {
@@ -467,6 +475,12 @@ export function MemberPage() {
           return;
         }
         updateData.password = profileForm.password;
+      }
+
+      // Only send update if there are actual changes
+      if (Object.keys(updateData).length === 0) {
+        showToast("No changes to update.", "error");
+        return;
       }
 
       // Update member in MongoDB

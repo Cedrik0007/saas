@@ -1658,7 +1658,7 @@ button {
 
 .admin-dashboard-kpi-value {
   margin: 0;
-  font-size: 2rem;
+  font-size: 1.6rem;
   margin: 8px 0px;
   font-weight: 800;
   color: #111827;
@@ -6424,7 +6424,7 @@ button[disabled] {
   }
 
   .admin-dashboard-kpi-value {
-    font-size: 1.5rem;
+    font-size: 1.2rem;
   }
 
   .admin-dashboard-kpi-change {

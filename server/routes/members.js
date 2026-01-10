@@ -332,22 +332,111 @@ router.put("/:id/approve", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     await ensureConnection();
-    // Ensure email is lowercase if being updated
-    const updateData = { ...req.body };
-    if (updateData.email) {
-      updateData.email = updateData.email.trim().toLowerCase();
-    }
-    const member = await UserModel.findOneAndUpdate(
-      { id: req.params.id },
-      { $set: updateData },
-      { new: true, runValidators: true }
-    );
+    
+    // Check if this is a payment update request (has payment-related fields)
+    const hasPaymentFields = req.body.payment_status || req.body.payment_mode || 
+                            req.body.last_payment_date || req.body.next_due_date || 
+                            req.body.payment_proof || req.body.lastPayment || req.body.nextDue;
+    
+    if (hasPaymentFields) {
+      // This is a payment update - allow payment-related fields
+      const allowedPaymentFields = [
+        'payment_status', 
+        'payment_mode', 
+        'last_payment_date', 
+        'next_due_date', 
+        'payment_proof',
+        'lastPayment',
+        'nextDue'
+      ];
+      
+      // Filter updateData to only include allowed payment fields
+      const updateData = {};
+      for (const field of allowedPaymentFields) {
+        if (req.body.hasOwnProperty(field)) {
+          updateData[field] = req.body[field];
+        }
+      }
+      
+      // Also allow basic fields if provided
+      const basicFields = ['name', 'email', 'phone', 'native', 'status', 'password'];
+      for (const field of basicFields) {
+        if (req.body.hasOwnProperty(field)) {
+          updateData[field] = req.body[field];
+        }
+      }
+      
+      // If no fields to update, return error
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update" });
+      }
+      
+      // Ensure email is lowercase if being updated
+      if (updateData.email) {
+        updateData.email = updateData.email.trim().toLowerCase();
+      }
+      
+      // Convert ISO date strings to Date objects for date fields
+      if (updateData.last_payment_date && typeof updateData.last_payment_date === 'string') {
+        updateData.last_payment_date = new Date(updateData.last_payment_date);
+      }
+      if (updateData.next_due_date && typeof updateData.next_due_date === 'string') {
+        updateData.next_due_date = new Date(updateData.next_due_date);
+      }
+      
+      // Update member with payment data
+      const member = await UserModel.findOneAndUpdate(
+        { id: req.params.id },
+        { $set: updateData },
+        { new: true, runValidators: true }
+      );
 
-    if (!member) {
-      return res.status(404).json({ message: "Member not found" });
-    }
+      if (!member) {
+        return res.status(404).json({ message: "Member not found" });
+      }
 
-    res.json(member);
+      // Update member balance after payment update
+      await calculateAndUpdateMemberBalance(member.id);
+
+      res.json(member);
+    } else {
+      // Regular member update - only allow basic fields
+      // Whitelist of allowed fields that can be updated when editing member
+      // This prevents accidentally overwriting subscription, invoice, payment, or calculated fields
+      const allowedFields = ['name', 'email', 'phone', 'native', 'status', 'password'];
+      
+      // Filter updateData to only include allowed fields
+      const updateData = {};
+      for (const field of allowedFields) {
+        if (req.body.hasOwnProperty(field)) {
+          updateData[field] = req.body[field];
+        }
+      }
+      
+      // If no fields to update, return error
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ message: "No valid fields to update" });
+      }
+      
+      // Ensure email is lowercase if being updated
+      if (updateData.email) {
+        updateData.email = updateData.email.trim().toLowerCase();
+      }
+      
+      // Only update the fields that are in updateData
+      // All other fields (balance, subscriptionType, invoices, payment data, etc.) remain unchanged
+      const member = await UserModel.findOneAndUpdate(
+        { id: req.params.id },
+        { $set: updateData },
+        { new: true, runValidators: true }
+      );
+
+      if (!member) {
+        return res.status(404).json({ message: "Member not found" });
+      }
+
+      res.json(member);
+    }
   } catch (error) {
     console.error("Error updating member:", error);
     if (error.code === 11000) {
