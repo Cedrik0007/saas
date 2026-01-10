@@ -1587,8 +1587,10 @@
         return sum + amount;
       }, 0);
 
-      // Calculate total donations from all years (only from members in member list) for total donation card
-      const donationsTotal = donationsFromMembers.reduce((sum, donation) => {
+      // Calculate total donations from all years: include ALL donations (non-member + member donations)
+      // This should include both member and non-member donations for the total donation card
+      const allDonations = (Array.isArray(donations) ? donations : []).filter(donation => donation !== null);
+      const donationsTotal = allDonations.reduce((sum, donation) => {
         const amount = parseFloat(donation.amount?.replace(/[^0-9.]/g, '') || 0);
         return sum + amount;
       }, 0);
@@ -1655,11 +1657,12 @@
         collected,
         paymentsTotal,
         totalSubscriptionAmount, // Total subscription amount from all years (only from members in member list)
-        donationsTotal, // Total donations from all years (only from members in member list)
+        donationsTotal, // Total donations from all years (ALL donations: non-member + member donations)
         donationsTotalInRange, // Donations within date range
         paymentsCount: paymentsInRange.length,
         donationsCount: donationsInRange.length, // Donations within date range count
         donationsFromMembersCount: donationsFromMembers.length, // All donations from members (all years)
+        donationsTotalCount: allDonations.length, // Total count of all donations (non-member + member)
         expected: expected || 1, // Avoid division by zero
         averagePerMember,
         methodMix,
@@ -13498,7 +13501,7 @@
                       <h4>
                         {formatCurrency(reportStats.donationsTotal)}
                       </h4>
-                      <small>{reportStats.donationsFromMembersCount} donation{reportStats.donationsFromMembersCount !== 1 ? 's' : ''} from members</small>
+                      <small>{reportStats.donationsTotalCount || reportStats.donationsFromMembersCount} donation{(reportStats.donationsTotalCount || reportStats.donationsFromMembersCount) !== 1 ? 's' : ''} (all donations)</small>
                     </div>
                     <div className="card kpi">
                       <p>
