@@ -78,20 +78,41 @@ export const ensureConnection = async () => {
     return;
   }
   
-  // If connecting, wait for it
+  // If connecting, wait for it with timeout
   if (mongoose.connection.readyState === 2) {
     await new Promise((resolve, reject) => {
-      mongoose.connection.once('connected', resolve);
-      mongoose.connection.once('error', reject);
-      setTimeout(() => reject(new Error('Connection timeout')), 10000);
+      const timeout = setTimeout(() => {
+        reject(new Error('Database connection timeout after 15 seconds'));
+      }, 15000);
+      
+      mongoose.connection.once('connected', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+      
+      mongoose.connection.once('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
     });
     return;
   }
   
-  // Otherwise, connect
-  await connectDB();
-  if (mongoose.connection.readyState !== 1) {
-    throw new Error("Database not connected");
+  // Otherwise, connect with timeout
+  try {
+    await Promise.race([
+      connectDB(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database connection timeout after 20 seconds')), 20000)
+      )
+    ]);
+    
+    if (mongoose.connection.readyState !== 1) {
+      throw new Error("Database not connected after connection attempt");
+    }
+  } catch (error) {
+    console.error('Database connection error:', error);
+    throw error;
   }
 };
 

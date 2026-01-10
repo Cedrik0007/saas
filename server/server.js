@@ -34,8 +34,16 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Request timeout middleware - set 20 second timeout for all requests
+app.use((req, res, next) => {
+  req.setTimeout(20000, () => {
+    res.status(408).json({ error: 'Request timeout - server took too long to respond' });
+  });
+  next();
+});
 
 // Initialize services
 initializeCloudinary();
@@ -84,6 +92,33 @@ app.use("/api/payment-methods", paymentMethodsRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api", authRoutes); // email/password login
 app.use("/api", authGoogleMemberRoutes); // Google member login
+
+// Global error handler middleware
+app.use((err, req, res, next) => {
+  console.error('Global error handler:', err);
+  
+  // Handle timeout errors
+  if (err.message && err.message.includes('timeout')) {
+    return res.status(408).json({ 
+      error: 'Request timeout', 
+      message: 'The server took too long to respond. Please try again.' 
+    });
+  }
+  
+  // Handle database connection errors
+  if (err.message && (err.message.includes('Database') || err.message.includes('connection'))) {
+    return res.status(503).json({ 
+      error: 'Database unavailable', 
+      message: 'Database connection failed. Please try again in a moment.' 
+    });
+  }
+  
+  // Default error response
+  res.status(err.status || 500).json({ 
+    error: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
 
 // Function to initialize all member balances on server start
 async function initializeAllMemberBalances() {

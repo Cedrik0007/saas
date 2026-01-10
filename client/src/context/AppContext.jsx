@@ -118,8 +118,29 @@ export function AppProvider({ children }) {
   const apiBaseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
 
   // Fetch data from server on mount
-  // Retry helper function
-  const retryFetch = async (fetchFn, maxRetries = 3, delay = 2000) => {
+  // Helper function to create fetch with timeout
+  const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error(`Request timeout after ${timeoutMs}ms`);
+      }
+      throw error;
+    }
+  };
+
+  // Retry helper function with exponential backoff
+  const retryFetch = async (fetchFn, maxRetries = 3, baseDelay = 1000) => {
     for (let i = 0; i < maxRetries; i++) {
       try {
         await fetchFn();
@@ -129,6 +150,8 @@ export function AppProvider({ children }) {
           console.error(`Failed after ${maxRetries} attempts:`, error);
           throw error;
         }
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = baseDelay * Math.pow(2, i);
         console.log(`Retry ${i + 1}/${maxRetries} in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -138,16 +161,16 @@ export function AppProvider({ children }) {
   // Fetch members from server
   const fetchMembers = async () => {
     try {
-      const response = await fetch(`${apiBaseUrl}/api/members`);
+      const response = await fetchWithTimeout(`${apiBaseUrl}/api/members`, {}, 15000);
 
-      if (!response.ok) throw new Error('Failed to fetch members');
+      if (!response.ok) throw new Error(`Failed to fetch members: ${response.status} ${response.statusText}`);
       const data = await response.json();
       setMembers(data);
       console.log('✓ Loaded', data.length, 'members from server');
     } catch (error) {
       console.error('Error fetching members:', error);
-      // Set empty array instead of dummy data - will retry automatically
-      setMembers([]);
+      // Only set empty array if we don't have data yet (first load)
+      setMembers(prev => prev.length === 0 ? [] : prev);
       throw error; // Re-throw to allow retry mechanism
     }
   };
@@ -155,16 +178,16 @@ export function AppProvider({ children }) {
    // Fetch Admins from server
    const fetchAdmins = async () => {
     try {
-      const response = await fetch(`${apiBaseUrl}/api/admins`);
+      const response = await fetchWithTimeout(`${apiBaseUrl}/api/admins`, {}, 15000);
 
-      if (!response.ok) throw new Error('Failed to fetch admins');
+      if (!response.ok) throw new Error(`Failed to fetch admins: ${response.status} ${response.statusText}`);
       const data = await response.json();
       setAdmins(data);
       console.log('✓ Loaded', data.length, 'Admins from server');
     } catch (error) {
       console.error('Error fetching Admins:', error);
-      // Set empty array instead of dummy data - will retry automatically
-      setAdmins([]);
+      // Only set empty array if we don't have data yet (first load)
+      setAdmins(prev => prev.length === 0 ? [] : prev);
       throw error; // Re-throw to allow retry mechanism
     }
   };
@@ -172,15 +195,15 @@ export function AppProvider({ children }) {
   // Fetch invoices from server
   const fetchInvoices = async () => {
     try {
-      const response = await fetch(`${apiBaseUrl}/api/invoices`);
-      if (!response.ok) throw new Error('Failed to fetch invoices');
+      const response = await fetchWithTimeout(`${apiBaseUrl}/api/invoices`, {}, 15000);
+      if (!response.ok) throw new Error(`Failed to fetch invoices: ${response.status} ${response.statusText}`);
       const data = await response.json();
       setInvoices(data);
       console.log('✓ Loaded', data.length, 'invoices from MongoDB');
     } catch (error) {
       console.error('Error fetching invoices:', error);
-      // Set empty array instead of dummy data - will retry automatically
-      setInvoices([]);
+      // Only set empty array if we don't have data yet (first load)
+      setInvoices(prev => prev.length === 0 ? [] : prev);
       throw error; // Re-throw to allow retry mechanism
     }
   };
@@ -188,8 +211,8 @@ export function AppProvider({ children }) {
   // Fetch payments from server
   const fetchPayments = async () => {
     try {
-      const response = await fetch(`${apiBaseUrl}/api/payments`);
-      if (!response.ok) throw new Error('Failed to fetch payments');
+      const response = await fetchWithTimeout(`${apiBaseUrl}/api/payments`, {}, 15000);
+      if (!response.ok) throw new Error(`Failed to fetch payments: ${response.status} ${response.statusText}`);
       const data = await response.json();
       setPayments(data);
       // Sync paymentHistory with MongoDB payments
@@ -198,10 +221,10 @@ export function AppProvider({ children }) {
       console.log('✓ Loaded', data.length, 'payments from MongoDB');
     } catch (error) {
       console.error('Error fetching payments:', error);
-      // Set empty arrays instead of dummy data - will retry automatically
-      setPayments([]);
-      setPaymentHistory([]);
-      setRecentPayments([]);
+      // Only set empty array if we don't have data yet (first load)
+      setPayments(prev => prev.length === 0 ? [] : prev);
+      setPaymentHistory(prev => prev.length === 0 ? [] : prev);
+      setRecentPayments(prev => prev.length === 0 ? [] : prev);
       throw error; // Re-throw to allow retry mechanism
     }
   };
@@ -209,22 +232,23 @@ export function AppProvider({ children }) {
   // Fetch donations from server
   const fetchDonations = async () => {
     try {
-      const response = await fetch(`${apiBaseUrl}/api/donations`);
-      if (!response.ok) throw new Error('Failed to fetch donations');
+      const response = await fetchWithTimeout(`${apiBaseUrl}/api/donations`, {}, 15000);
+      if (!response.ok) throw new Error(`Failed to fetch donations: ${response.status} ${response.statusText}`);
       const data = await response.json();
       setDonations(data);
       console.log('✓ Loaded', data.length, 'donations from MongoDB');
     } catch (error) {
       console.error('Error fetching donations:', error);
-      setDonations([]);
+      // Only set empty array if we don't have data yet (first load)
+      setDonations(prev => prev.length === 0 ? [] : prev);
     }
   };
 
   // Fetch payment methods from server
   const fetchPaymentMethods = async () => {
     try {
-      const response = await fetch(`${apiBaseUrl}/api/payment-methods`);
-      if (!response.ok) throw new Error('Failed to fetch payment methods');
+      const response = await fetchWithTimeout(`${apiBaseUrl}/api/payment-methods`, {}, 15000);
+      if (!response.ok) throw new Error(`Failed to fetch payment methods: ${response.status} ${response.statusText}`);
       const data = await response.json();
       
       // If database is empty, initialize with default payment methods
@@ -299,24 +323,22 @@ export function AppProvider({ children }) {
     // This improves perceived performance - page shows immediately
     const fetchAllData = async () => {
       try {
-        // Fetch critical data first (members, admins, invoices)
-        const criticalFetches = Promise.allSettled([
-          fetchMembers(),
-          fetchAdmins(),
-          fetchInvoices(),
+        // Fetch critical data first with retry mechanism (members, admins, invoices)
+        await Promise.allSettled([
+          retryFetch(() => fetchMembers(), 3, 1000).catch(err => console.error('Failed to fetch members after retries:', err)),
+          retryFetch(() => fetchAdmins(), 3, 1000).catch(err => console.error('Failed to fetch admins after retries:', err)),
+          retryFetch(() => fetchInvoices(), 3, 1000).catch(err => console.error('Failed to fetch invoices after retries:', err)),
         ]);
         
-        // Then fetch remaining data
-        const remainingFetches = Promise.allSettled([
-          fetchPayments(),
-          fetchDonations(),
-          fetchPaymentMethods(),
-          fetchReminderLogs(),
+        // Then fetch remaining data with retry
+        await Promise.allSettled([
+          retryFetch(() => fetchPayments(), 3, 1000).catch(err => console.error('Failed to fetch payments after retries:', err)),
+          retryFetch(() => fetchDonations(), 2, 1000).catch(err => console.error('Failed to fetch donations after retries:', err)),
+          retryFetch(() => fetchPaymentMethods(), 2, 1000).catch(err => console.error('Failed to fetch payment methods after retries:', err)),
+          fetchReminderLogs().catch(err => console.error('Failed to fetch reminder logs:', err)),
         ]);
         
-        // Wait for all but don't block render
-        await Promise.allSettled([criticalFetches, remainingFetches]);
-        // Set loading to false after data fetching completes
+        // Set loading to false after data fetching completes (even if some failed)
         setLoading(false);
       } catch (error) {
         console.error('Error fetching initial data:', error);
