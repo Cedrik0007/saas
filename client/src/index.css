@@ -10007,7 +10007,7 @@ button[disabled] {
   z-index: 10001;
   pointer-events: none;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  min-width: 120px;
+  min-width: 260px;
   overflow: hidden;
   animation: tooltipFadeIn 0.2s ease;
 }
