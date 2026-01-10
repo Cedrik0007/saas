@@ -12793,13 +12793,41 @@
                   <div style={{ marginBottom: "24px" }}>
                     {(() => {
                       const donationsArray = Array.isArray(donations) ? donations : [];
-                      let filteredDonations = donationsArray.filter(donation => donation !== null);
+                      // Always calculate total from all donations (all years), not filtered by year
+                      const allDonations = donationsArray.filter(donation => donation !== null);
                       
-                      // Filter by year
+                      // Calculate total donation amount from all years
+                      const totalDonationAmount = allDonations.reduce((sum, d) => {
+                        const val = parseFloat(d?.amount || 0);
+                        return sum + (isNaN(val) ? 0 : val);
+                      }, 0);
+                      
+                      // Calculate donations by year for display
+                      const donationsByYear = {};
+                      allDonations.forEach((donation) => {
+                        if (!donation) return;
+                        const donationDate = donation.date || donation.createdAt;
+                        if (!donationDate) return;
+                        
+                        try {
+                          const date = new Date(donationDate);
+                          const year = date.getFullYear().toString();
+                          if (!donationsByYear[year]) {
+                            donationsByYear[year] = { count: 0, amount: 0 };
+                          }
+                          donationsByYear[year].count += 1;
+                          const val = parseFloat(donation?.amount || 0);
+                          donationsByYear[year].amount += isNaN(val) ? 0 : val;
+                        } catch (e) {
+                          // Skip invalid dates
+                        }
+                      });
+                      
+                      // Get filtered donations count for current year filter
+                      let filteredDonations = allDonations;
                       if (donationYearFilter && donationYearFilter !== "All") {
                         filteredDonations = filteredDonations.filter((donation) => {
                           if (!donation) return false;
-                          // Get donation date from donation.date or donation.createdAt
                           const donationDate = donation.date || donation.createdAt;
                           if (!donationDate) return false;
                           
@@ -12812,11 +12840,6 @@
                           }
                         });
                       }
-                      
-                      const totalDonationAmount = filteredDonations.reduce((sum, d) => {
-                        const val = parseFloat(d?.amount || 0);
-                        return sum + (isNaN(val) ? 0 : val);
-                      }, 0);
 
                       return (
                         <div className="admin-dashboard-kpi-card" style={{ maxWidth: "400px" }}>
@@ -12826,12 +12849,15 @@
                             
                               <div className="admin-dashboard-kpi-label"><div className="admin-dashboard-kpi-icon admin-dashboard-kpi-icon--green">
                               <i className="fas fa-heart"></i>
-                            </div>Total Donation</div>
+                            </div>Total Donation (All Years)</div>
                               <div className="admin-dashboard-kpi-value">
                                 {formatCurrency(totalDonationAmount)}
                               </div>
                               <div className="admin-dashboard-kpi-description">
-                                {filteredDonations.length} donation{filteredDonations.length !== 1 ? 's' : ''} recorded
+                                {allDonations.length} donation{allDonations.length !== 1 ? 's' : ''} recorded across {Object.keys(donationsByYear).length} year{Object.keys(donationsByYear).length !== 1 ? 's' : ''}
+                                {donationYearFilter && donationYearFilter !== "All" && (
+                                  <span> • {filteredDonations.length} in {donationYearFilter}</span>
+                                )}
                               </div>
                             </div>
                           </div>
