@@ -817,6 +817,13 @@
       adminMobile: "", // Mobile number for selected admin
     });
     const [uploadingPaymentModal, setUploadingPaymentModal] = useState(false);
+    const [showPaymentConfirmationModal, setShowPaymentConfirmationModal] = useState(false);
+    const [paymentConfirmationInvoice, setPaymentConfirmationInvoice] = useState(null);
+    const [paymentConfirmationChannels, setPaymentConfirmationChannels] = useState({
+      email: false,
+      whatsapp: false,
+    });
+    const [sendingPaymentConfirmation, setSendingPaymentConfirmation] = useState(false);
     const [paymentModalErrors, setPaymentModalErrors] = useState({
       payment_type: false,
       method: false,
@@ -3720,34 +3727,11 @@
           }
         }
 
-        // Step 4: Send payment confirmation email with PDF receipt (optional - don't fail if email fails)
-        try {
-          const emailResponse = await fetch(`${apiUrl}/api/invoices/${invoiceId}/send-payment-confirmation`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-          });
-
-          if (emailResponse.ok) {
-            const emailData = await emailResponse.json();
-            if (emailData.success) {
-              console.log('✅ Payment confirmation email sent:', emailData.message);
-              showToast(`Payment confirmation email sent to ${invoice.memberEmail || 'member'}`, "success");
-            } else if (emailData.warning) {
-              // Email failed but payment was processed - show warning, not error
-              console.warn('⚠️ Payment confirmation email not sent:', emailData.message);
-              // Don't show toast for email warnings - payment was successful
-            }
-          } else {
-            // Only log error, don't show to user - payment was successful
-            const errorText = await emailResponse.text();
-            console.error('❌ Failed to send payment confirmation email:', errorText);
-            // Don't show error toast - payment process was successful
-          }
-        } catch (emailError) {
-          // Only log error, don't show to user - payment was successful
-          console.error('Error sending payment confirmation email:', emailError);
-          // Don't fail the payment process if email fails
-        }
+        // Step 4: Open payment confirmation modal instead of auto-sending
+        // Store invoice data for the confirmation modal
+        setPaymentConfirmationInvoice(invoice);
+        setPaymentConfirmationChannels({ email: false, whatsapp: false });
+        setShowPaymentConfirmationModal(true);
 
         // Step 5: Refresh all data to get updated balances and dates
         await Promise.all([
@@ -17639,6 +17623,377 @@
               >
                 ×
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Payment Confirmation Modal */}
+        {showPaymentConfirmationModal && paymentConfirmationInvoice && (
+          <div
+            className="admin-members-form-overlay"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowPaymentConfirmationModal(false);
+                setPaymentConfirmationInvoice(null);
+                setPaymentConfirmationChannels({ email: false, whatsapp: false });
+              }
+            }}
+          >
+            <div className="admin-members-form-container" style={{ maxWidth: "500px" }}>
+              <div className="admin-members-form-header">
+                <div className="admin-members-form-header-top">
+                  <h3 className="admin-members-form-title">
+                    <i className="fas fa-paper-plane" style={{ marginRight: "8px" }}></i>
+                    Send Payment Confirmation
+                  </h3>
+                  <button
+                    className="admin-members-form-close"
+                    onClick={() => {
+                      setShowPaymentConfirmationModal(false);
+                      setPaymentConfirmationInvoice(null);
+                      setPaymentConfirmationChannels({ email: false, whatsapp: false });
+                    }}
+                    aria-label="Close"
+                  >
+                    <i className="fa-solid fa-times" />
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ padding: "0 24px 24px" }}>
+                <p style={{ marginBottom: "24px", color: "#6b7280", fontSize: "0.875rem" }}>
+                  Invoice #{paymentConfirmationInvoice.id} has been marked as paid. Choose how you want to send the payment confirmation:
+                </p>
+
+                <div style={{ 
+                  display: "flex", 
+                  gap: "12px", 
+                  marginBottom: "24px",
+                  flexWrap: "wrap"
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentConfirmationChannels(prev => ({
+                        ...prev,
+                        email: !prev.email
+                      }));
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: "200px",
+                      padding: "16px 20px",
+                      border: `2px solid ${paymentConfirmationChannels.email ? "#5a31ea" : "#e5e7eb"}`,
+                      borderRadius: "8px",
+                      background: paymentConfirmationChannels.email ? "#f3f0ff" : "#ffffff",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "8px",
+                      textAlign: "center"
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!paymentConfirmationChannels.email) {
+                        e.target.style.borderColor = "#5a31ea";
+                        e.target.style.background = "#f9fafb";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!paymentConfirmationChannels.email) {
+                        e.target.style.borderColor = "#e5e7eb";
+                        e.target.style.background = "#ffffff";
+                      }
+                    }}
+                  >
+                    <div style={{ 
+                      width: "24px", 
+                      height: "24px", 
+                      borderRadius: "50%",
+                      background: paymentConfirmationChannels.email ? "#5a31ea" : "#e5e7eb",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "all 0.2s ease"
+                    }}>
+                      {paymentConfirmationChannels.email && (
+                        <i className="fas fa-check" style={{ color: "#ffffff", fontSize: "12px" }}></i>
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ 
+                        fontWeight: "600", 
+                        color: paymentConfirmationChannels.email ? "#5a31ea" : "#1a1a1a",
+                        marginBottom: "4px",
+                        fontSize: "1rem"
+                      }}>
+                        <i className="fas fa-envelope" style={{ marginRight: "8px" }}></i>
+                        Email
+                      </div>
+                      <div style={{ 
+                        fontSize: "0.75rem", 
+                        color: "#6b7280",
+                        lineHeight: "1.4"
+                      }}>
+                        Send with PDF receipt
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentConfirmationChannels(prev => ({
+                        ...prev,
+                        whatsapp: !prev.whatsapp
+                      }));
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: "200px",
+                      padding: "16px 20px",
+                      border: `2px solid ${paymentConfirmationChannels.whatsapp ? "#25D366" : "#e5e7eb"}`,
+                      borderRadius: "8px",
+                      background: paymentConfirmationChannels.whatsapp ? "#e6f7ed" : "#ffffff",
+                      cursor: "pointer",
+                      transition: "all 0.2s ease",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "8px",
+                      textAlign: "center"
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!paymentConfirmationChannels.whatsapp) {
+                        e.target.style.borderColor = "#25D366";
+                        e.target.style.background = "#f9fafb";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!paymentConfirmationChannels.whatsapp) {
+                        e.target.style.borderColor = "#e5e7eb";
+                        e.target.style.background = "#ffffff";
+                      }
+                    }}
+                  >
+                    <div style={{ 
+                      width: "24px", 
+                      height: "24px", 
+                      borderRadius: "50%",
+                      background: paymentConfirmationChannels.whatsapp ? "#25D366" : "#e5e7eb",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "all 0.2s ease"
+                    }}>
+                      {paymentConfirmationChannels.whatsapp && (
+                        <i className="fas fa-check" style={{ color: "#ffffff", fontSize: "12px" }}></i>
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ 
+                        fontWeight: "600", 
+                        color: paymentConfirmationChannels.whatsapp ? "#25D366" : "#1a1a1a",
+                        marginBottom: "4px",
+                        fontSize: "1rem"
+                      }}>
+                        <i className="fab fa-whatsapp" style={{ marginRight: "8px" }}></i>
+                        WhatsApp
+                      </div>
+                      <div style={{ 
+                        fontSize: "0.75rem", 
+                        color: "#6b7280",
+                        lineHeight: "1.4"
+                      }}>
+                        Send confirmation message
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => {
+                      setShowPaymentConfirmationModal(false);
+                      setPaymentConfirmationInvoice(null);
+                      setPaymentConfirmationChannels({ email: false, whatsapp: false });
+                    }}
+                    disabled={sendingPaymentConfirmation}
+                  >
+                    Skip
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    onClick={async () => {
+                      if (!paymentConfirmationChannels.email && !paymentConfirmationChannels.whatsapp) {
+                        showToast("Please select at least one channel", "error");
+                        return;
+                      }
+
+                      setSendingPaymentConfirmation(true);
+                      const apiUrl = import.meta.env.DEV
+                        ? ""
+                        : import.meta.env.VITE_API_URL || "";
+
+                      let emailSuccess = false;
+                      let whatsappSuccess = false;
+                      const errors = [];
+
+                      // Send Email
+                      if (paymentConfirmationChannels.email) {
+                        try {
+                          const emailResponse = await fetch(`${apiUrl}/api/invoices/${paymentConfirmationInvoice.id}/send-payment-confirmation`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                          });
+
+                          if (emailResponse.ok) {
+                            const emailData = await emailResponse.json();
+                            if (emailData.success) {
+                              emailSuccess = true;
+                              console.log('✅ Payment confirmation email sent:', emailData.message);
+                            } else {
+                              errors.push(`Email: ${emailData.message || 'Failed to send'}`);
+                            }
+                          } else {
+                            const errorData = await emailResponse.json().catch(() => ({}));
+                            errors.push(`Email: ${errorData.error || 'Failed to send'}`);
+                          }
+                        } catch (error) {
+                          console.error('Error sending payment confirmation email:', error);
+                          errors.push(`Email: ${error.message || 'Failed to send'}`);
+                        }
+                      }
+
+                      // Send WhatsApp
+                      if (paymentConfirmationChannels.whatsapp) {
+                        try {
+                          const member = members.find(m => m.id === paymentConfirmationInvoice.memberId);
+                          if (member && member.phone) {
+                            // Find the payment for this invoice
+                            const payment = payments.find(p => p.invoiceId === paymentConfirmationInvoice.id);
+                            
+                            // Generate PDF and get URL
+                            let pdfUrl = null;
+                            try {
+                              const pdfResponse = await fetch(`${apiUrl}/api/invoices/${paymentConfirmationInvoice.id}/pdf-receipt`, {
+                                method: 'GET',
+                              });
+
+                              if (pdfResponse.ok) {
+                                const pdfData = await pdfResponse.json();
+                                if (pdfData.success && pdfData.pdfUrl) {
+                                  pdfUrl = pdfData.pdfUrl;
+                                }
+                              }
+                            } catch (pdfError) {
+                              console.error('Error generating PDF for WhatsApp:', pdfError);
+                              // Continue without PDF URL
+                            }
+                            
+                            // Create WhatsApp message
+                            const paymentDate = paymentConfirmationInvoice.last_payment_date 
+                              ? new Date(paymentConfirmationInvoice.last_payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                              : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                            
+                            let message = `Hi *${member.name}* 👋
+
+Payment Confirmation ✅
+
+*Invoice #${paymentConfirmationInvoice.id}*
+*Amount:* ${paymentConfirmationInvoice.amount}
+*Payment Method:* ${paymentConfirmationInvoice.method || 'Payment'}
+*Date:* ${paymentDate}
+${paymentConfirmationInvoice.reference ? `*Reference:* ${paymentConfirmationInvoice.reference}` : ''}
+
+Your payment has been confirmed.`;
+
+                            // Add PDF link if available
+                            if (pdfUrl) {
+                              // If it's a Cloudinary URL, use it directly
+                              // If it's a data URL, we can't use it in WhatsApp, so we'll mention it
+                              if (pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://')) {
+                                message += `\n\n📎 Download your receipt:\n${pdfUrl}`;
+                              } else {
+                                message += `\n\n📎 Your payment receipt PDF is available. Please check your email for the PDF attachment.`;
+                              }
+                            } else {
+                              message += `\n\n📎 Your payment receipt PDF has been sent to your email.`;
+                            }
+
+                            message += `\n\nThank you for your payment! 🙏
+
+_Finance Team_
+Subscription Manager HK`;
+
+                            // Clean phone number
+                            const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
+                            const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+                            
+                            // Open WhatsApp
+                            window.open(whatsappUrl, '_blank');
+                            whatsappSuccess = true;
+                            
+                            // Log to communication
+                            const comm = {
+                              channel: "WhatsApp",
+                              type: "Payment Confirmation",
+                              memberId: member.id,
+                              memberEmail: member.email,
+                              memberName: member.name,
+                              message: `Payment confirmation sent to ${member.name} (${member.phone}) - Invoice #${paymentConfirmationInvoice.id}${pdfUrl ? ' (with PDF)' : ''}`,
+                              status: "Delivered",
+                            };
+                            addCommunication(comm);
+                          } else {
+                            errors.push("WhatsApp: Member phone number not found");
+                          }
+                        } catch (error) {
+                          console.error('Error sending WhatsApp confirmation:', error);
+                          errors.push(`WhatsApp: ${error.message || 'Failed to send'}`);
+                        }
+                      }
+
+                      setSendingPaymentConfirmation(false);
+
+                      // Show success/error messages
+                      const successMessages = [];
+                      if (emailSuccess) successMessages.push("Email sent");
+                      if (whatsappSuccess) successMessages.push("WhatsApp opened");
+
+                      if (successMessages.length > 0) {
+                        showToast(`Payment confirmation sent: ${successMessages.join(", ")}`, "success");
+                      }
+
+                      if (errors.length > 0) {
+                        showToast(`Some errors: ${errors.join("; ")}`, "error");
+                      }
+
+                      // Close modal
+                      setShowPaymentConfirmationModal(false);
+                      setPaymentConfirmationInvoice(null);
+                      setPaymentConfirmationChannels({ email: false, whatsapp: false });
+                    }}
+                    disabled={sendingPaymentConfirmation}
+                  >
+                    {sendingPaymentConfirmation ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin" style={{ marginRight: "6px" }}></i>
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-paper-plane" style={{ marginRight: "6px" }}></i>
+                        Send
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

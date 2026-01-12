@@ -555,5 +555,92 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
   }
 });
 
+// GET generate PDF receipt and return URL for download
+router.get("/:id/pdf-receipt", async (req, res) => {
+  try {
+    await ensureConnection();
+
+    const invoice = await InvoiceModel.findOne({ id: req.params.id });
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    if (invoice.status !== "Paid") {
+      return res.status(400).json({ error: "Invoice is not marked as paid" });
+    }
+
+    const member = await UserModel.findOne({ id: invoice.memberId });
+    if (!member) {
+      return res.status(404).json({ error: "Member not found" });
+    }
+
+    // Find the most recent payment for this invoice
+    const payment = await PaymentModel.findOne({
+      invoiceId: invoice.id
+    }).sort({ createdAt: -1 });
+
+    // Prepare payment object with screenshot from payment or invoice
+    const paymentData = payment ? {
+      ...payment.toObject(),
+      screenshot: payment.screenshot || invoice.screenshot || invoice.payment_proof || null,
+    } : {
+      invoiceId: invoice.id,
+      amount: invoice.amount,
+      method: invoice.method || 'Payment',
+      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      reference: invoice.reference || invoice.id,
+      screenshot: invoice.screenshot || invoice.payment_proof || null,
+    };
+
+    // Generate PDF receipt
+    const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
+    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData);
+
+    // Upload PDF to Cloudinary if configured
+    if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+      try {
+        const { cloudinary } = await import("../config/cloudinary.js");
+        const base64 = pdfBuffer.toString('base64');
+        const dataUri = `data:application/pdf;base64,${base64}`;
+        
+        const uploadResult = await cloudinary.uploader.upload(dataUri, {
+          folder: "payment-receipts",
+          resource_type: "raw",
+          format: "pdf",
+          public_id: `receipt_${invoice.id}_${Date.now()}`,
+        });
+
+        res.json({
+          success: true,
+          pdfUrl: uploadResult.secure_url,
+          message: "PDF receipt generated and uploaded successfully"
+        });
+      } catch (uploadError) {
+        console.error("Error uploading PDF to Cloudinary:", uploadError);
+        // Fallback: return PDF as base64 data URL
+        const base64 = pdfBuffer.toString('base64');
+        const dataUrl = `data:application/pdf;base64,${base64}`;
+        res.json({
+          success: true,
+          pdfUrl: dataUrl,
+          message: "PDF receipt generated (using base64 fallback)"
+        });
+      }
+    } else {
+      // Fallback: return PDF as base64 data URL
+      const base64 = pdfBuffer.toString('base64');
+      const dataUrl = `data:application/pdf;base64,${base64}`;
+      res.json({
+        success: true,
+        pdfUrl: dataUrl,
+        message: "PDF receipt generated (using base64 fallback)"
+      });
+    }
+  } catch (error) {
+    console.error("Error generating PDF receipt:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
 
