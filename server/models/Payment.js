@@ -6,7 +6,9 @@ const PaymentSchema = new mongoose.Schema({
   memberEmail: String,
   member: String,
   amount: String,
-  method: String,
+  payment_type: { type: String, enum: ["cash", "online"], default: "online" }, // "cash" or "online"
+  method: String, // Payment method (Cash / FPS / Alipay / Bank Deposit / Other)
+  receiver_name: String, // Required only for online payments
   reference: String,
   period: String,
   status: { type: String, default: "Pending" }, // Changed default to "Pending"

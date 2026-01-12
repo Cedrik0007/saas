@@ -7,6 +7,9 @@ const InvoiceSchema = new mongoose.Schema({
   memberEmail: String,
   period: String,
   amount: String,
+  membershipFee: { type: Number, default: 0 }, // Membership fee amount (HK$)
+  janazaFee: { type: Number, default: 0 }, // Janaza fund fee amount (HK$)
+  invoiceType: { type: String, default: "combined" }, // "membership", "janaza", "combined", "lifetime_membership"
   status: { type: String, default: "Unpaid" },
   due: String,
   method: String,

@@ -207,21 +207,23 @@
     };
 
     const [memberForm, setMemberForm] = useState({
+      id: "", // Optional: manually entered 4-digit member ID
       name: "",
       email: "",
       phone: "",
       native: "",
       status: "Active",
-      balance: "250", // default for Lifetime (numeric string)
+      balance: "500", // default for Annual Member (numeric string)
       nextDue: getTodayDate(), // Default to today's date
       subscriptionYear: new Date().getFullYear().toString(),
       lastPayment: "",
-      subscriptionType: "Lifetime",
+      subscriptionType: "Annual Member",
     });
 
     // Member validation state for red borders - progressive validation
     const [memberFieldErrors, setMemberFieldErrors] = useState({
       name: false,
+      id: false,
       email: false,
       phone: false,
       nextDue: false,
@@ -239,6 +241,18 @@
         case "name":
           if (!value.trim()) error = "Name is required.";
           else if (value.trim().length < 2) error = "Name must be at least 2 characters.";
+          break;
+
+        case "id":
+          // Member ID validation - must be exactly 4 digits if provided
+          if (!value || value.trim() === "") {
+            error = "Member ID is required. Please enter 4 digits.";
+          } else {
+            const idDigits = value.replace(/\D/g, '');
+            if (idDigits.length !== 4) {
+              error = "Member ID must be exactly 4 digits.";
+            }
+          }
           break;
 
         case "email":
@@ -334,8 +348,8 @@
     // Check if form is valid (for disabling submit button)
     const isMemberFormValid = () => {
       const fieldOrder = editingMember
-        ? ["name", "email", "phone"] // Edit Member: no date fields
-        : ["name", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields
+        ? ["name", "email", "phone"] // Edit Member: no date fields, no id field
+        : ["name", "id", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields and id
 
       for (const field of fieldOrder) {
         const error = validateMemberField(field, memberForm[field]);
@@ -350,12 +364,13 @@
     const validateMemberForm = () => {
       // Define field order for validation (only validate fields that exist in the form)
       const fieldOrder = editingMember
-        ? ["name", "email", "phone"] // Edit Member: no date fields
-        : ["name", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields
+        ? ["name", "email", "phone"] // Edit Member: no date fields, no id field
+        : ["name", "id", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields and id
 
       // Clear all errors first
       setMemberFieldErrors({
         name: false,
+        id: false,
         email: false,
         phone: false,
         nextDue: false,
@@ -381,17 +396,22 @@
             if (fieldIndex === 0) {
               // Name field - first required text input
               targetInput = formElement.querySelector('input[type="text"][required]');
-            } else if (fieldIndex === 1) {
+            } else if (fieldIndex === 1 && !editingMember) {
+              // ID field - member ID input (only in Add Member form)
+              const idInput = formElement.querySelector('input[placeholder*="4-digit"]') ||
+                             formElement.querySelector('input[placeholder*="Enter 4-digit"]');
+              targetInput = idInput;
+            } else if ((fieldIndex === 1 && editingMember) || (fieldIndex === 2 && !editingMember)) {
               // Email field
               targetInput = formElement.querySelector('input[type="email"]');
-            } else if (fieldIndex === 2) {
+            } else if ((fieldIndex === 2 && editingMember) || (fieldIndex === 3 && !editingMember)) {
               // Phone field - focus on phone input
               targetInput = formElement.querySelector('input[type="tel"]');
-            } else if (fieldIndex === 3) {
+            } else if ((fieldIndex === 3 && editingMember) || (fieldIndex === 4 && !editingMember)) {
               // nextDue field - first date input
               const dateInputs = formElement.querySelectorAll('input[type="date"]');
               targetInput = dateInputs[0];
-            } else if (fieldIndex === 4) {
+            } else if ((fieldIndex === 4 && editingMember) || (fieldIndex === 5 && !editingMember)) {
               // lastPayment field - second date input
               const dateInputs = formElement.querySelectorAll('input[type="date"]');
               targetInput = dateInputs[1];
@@ -409,6 +429,7 @@
       // All fields valid
       setMemberFieldErrors({
         name: false,
+        id: false,
         email: false,
         phone: false,
         nextDue: false,
@@ -428,21 +449,26 @@
         value = rawValue.replace(/\D/g, "");
       } else if (field === "subscriptionType") {
         // Auto-update balance when subscription changes
-        if (rawValue === "Yearly + Janaza Fund") {
-          value = rawValue;
-          setMemberForm(prev => ({
-            ...prev,
-            subscriptionType: rawValue,
-            balance: "500",
-          }));
+        value = rawValue;
+        let balance = "250"; // Default
+        
+        if (rawValue === "Annual Member") {
+          balance = "500"; // HK$250 membership + HK$250 Janaza = HK$500
+        } else if (rawValue === "Lifetime Janaza Fund Member") {
+          balance = "250"; // HK$0 membership + HK$250 Janaza = HK$250
+        } else if (rawValue === "Lifetime Membership") {
+          balance = "5250"; // HK$5,000 membership (one-time) + HK$250 Janaza = HK$5,250
+        } else if (rawValue === "Yearly + Janaza Fund") {
+          balance = "500"; // Legacy support
         } else {
-          value = rawValue;
-          setMemberForm(prev => ({
-            ...prev,
-            subscriptionType: rawValue,
-            balance: "250",
-          }));
+          balance = "250"; // Default/Lifetime
         }
+        
+        setMemberForm(prev => ({
+          ...prev,
+          subscriptionType: rawValue,
+          balance: balance,
+        }));
 
         // No need to run generic update below for subscriptionType
         return;
@@ -483,6 +509,14 @@
       subscriptionYear: new Date().getFullYear().toString(),
     });
 
+    // Invoice form validation state for progressive validation
+    const [invoiceFieldErrors, setInvoiceFieldErrors] = useState({
+      memberId: false,
+      subscriptionYear: false,
+      amount: false,
+    });
+    const [currentInvalidInvoiceField, setCurrentInvalidInvoiceField] = useState(null);
+
     // Auto-generate invoice numbers like INV-2025-001 based on existing invoices
     const generateInvoiceId = () => {
       const year = new Date().getFullYear();
@@ -509,6 +543,7 @@
     // Donation form validation state for progressive validation
     const [donationFieldErrors, setDonationFieldErrors] = useState({
       donorName: false,
+      donationType: false,
       amount: false,
       method: false,
       date: false,
@@ -521,8 +556,13 @@
       donorName: "",
       isMember: false,
       memberId: "",
+      donationType: "", // Empty by default - user must select
+      customDonationType: "", // Custom donation type when "Other" is selected
       amount: "",
+      payment_type: "", // "cash" or "online"
       method: "",
+      customMethod: "", // Custom payment method when "Other" is selected
+      receiver_name: "", // Required only for online payments
       date: "",
       notes: "",
       reference: "",
@@ -766,7 +806,9 @@
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [paymentModalInvoice, setPaymentModalInvoice] = useState(null);
     const [paymentModalData, setPaymentModalData] = useState({
-      paymentMethod: "", // "Cash" or "Online" - empty by default
+      payment_type: "", // "cash" or "online" - empty by default
+      method: "", // Payment method (Cash / FPS / Alipay / Bank Deposit / Other)
+      receiver_name: "", // Receiver name (required for both cash and online)
       imageFile: null,
       imagePreview: null,
       imageUrl: "",
@@ -776,6 +818,9 @@
     });
     const [uploadingPaymentModal, setUploadingPaymentModal] = useState(false);
     const [paymentModalErrors, setPaymentModalErrors] = useState({
+      payment_type: false,
+      method: false,
+      receiver_name: false,
       image: false,
       reference: false,
       selectedAdminId: false,
@@ -865,7 +910,9 @@
     const [paymentFieldErrors, setPaymentFieldErrors] = useState({
       memberId: false,
       amount: false,
+      payment_type: false,
       method: false,
+      receiver_name: false,
       screenshot: false,
     });
     const [currentInvalidPaymentField, setCurrentInvalidPaymentField] = useState(null);
@@ -875,7 +922,10 @@
       member: "",
       invoiceId: "",
       amount: "",
+      payment_type: "", // "cash" or "online"
       method: "",
+      customMethod: "", // Custom payment method when "Other" is selected
+      receiver_name: "", // Required only for online payments
       reference: "",
       date: new Date().toLocaleDateString("en-GB", {
         day: "2-digit",
@@ -1404,7 +1454,7 @@
             }
           }
 
-          // Get Native from member
+          // Get Native Place from member
           const native = member?.native || "-";
 
           // Get Joined Year from member
@@ -1421,7 +1471,7 @@
             Method: getPaymentMethodDisplay(payment),
             Status: payment.status || "Pending",
             "Subscription Year": subscriptionYear,
-            Native: native,
+            "Native Place": native,
             "Joined Year": joinedYear,
           };
         });
@@ -1599,7 +1649,7 @@
       const collected = paymentsTotal + donationsTotalInRange;
 
       // Calculate expected revenue based on members and their subscription types
-      // Lifetime: $250/year, Yearly + Janaza Fund: $500/year
+      // Annual Member: HK$500/year, Lifetime Janaza Fund Member: HK$250/year, Lifetime Membership: HK$5,250 first year then HK$250/year
       const activeMembers = members.filter(m => m.status === 'Active');
       let expected = 0;
 
@@ -1608,19 +1658,34 @@
         // Try to get member creation date or use a default
         const memberStartDate = member.createdAt ? new Date(member.createdAt) : new Date('2025-01-01');
 
-        if (subscriptionType === 'Yearly + Janaza Fund') {
-          // For yearly + janaza fund: $500 per year
-          // Calculate how many years in the date range
-          const rangeStart = Math.max(fromDate.getTime(), memberStartDate.getTime());
-          const rangeEnd = toDate.getTime();
-          const yearsInRange = Math.max(0, (rangeEnd - rangeStart) / (365.25 * 24 * 60 * 60 * 1000));
-          expected += Math.ceil(yearsInRange) * 500;
+        const rangeStart = Math.max(fromDate.getTime(), memberStartDate.getTime());
+        const rangeEnd = toDate.getTime();
+        const yearsInRange = Math.max(0, (rangeEnd - rangeStart) / (365.25 * 24 * 60 * 60 * 1000));
+        const yearsCount = Math.ceil(yearsInRange);
+        
+        if (subscriptionType === 'Annual Member') {
+          // Annual Member: HK$500 per year (HK$250 membership + HK$250 Janaza)
+          expected += yearsCount * 500;
+        } else if (subscriptionType === 'Lifetime Janaza Fund Member') {
+          // Lifetime Janaza Fund Member: HK$250 per year (HK$0 membership + HK$250 Janaza)
+          expected += yearsCount * 250;
+        } else if (subscriptionType === 'Lifetime Membership') {
+          // Lifetime Membership: HK$5,250 first year (HK$5,000 membership one-time + HK$250 Janaza), then HK$250/year
+          if (!member.lifetimeMembershipPaid && yearsCount > 0) {
+            expected += 5250; // First year
+            if (yearsCount > 1) {
+              expected += (yearsCount - 1) * 250; // Subsequent years (Janaza only)
+            }
+          } else {
+            // Lifetime membership already paid, only Janaza fee
+            expected += yearsCount * 250;
+          }
+        } else if (subscriptionType === 'Yearly + Janaza Fund') {
+          // Legacy: HK$500 per year
+          expected += yearsCount * 500;
         } else {
-          // For lifetime: $250 per year
-          const rangeStart = Math.max(fromDate.getTime(), memberStartDate.getTime());
-          const rangeEnd = toDate.getTime();
-          const yearsInRange = Math.max(0, (rangeEnd - rangeStart) / (365.25 * 24 * 60 * 60 * 1000));
-          expected += Math.ceil(yearsInRange) * 250;
+          // Default/Lifetime: HK$250 per year
+          expected += yearsCount * 250;
         }
       });
 
@@ -2338,7 +2403,7 @@
     // Progressive validation for payment form
     const validatePaymentForm = () => {
       // Define field order for validation
-      const fieldOrder = ["memberId", "amount", "method", "screenshot"];
+      const fieldOrder = ["memberId", "amount", "payment_type", "method", "receiver_name", "screenshot"];
 
       // If we have a current invalid field, check if it's now valid
       if (currentInvalidPaymentField) {
@@ -2351,9 +2416,20 @@
         } else if (currentInvalidPaymentField === "amount" && (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0)) {
           isValid = false;
           errorMsg = "Amount must be a positive number";
-        } else if (currentInvalidPaymentField === "method" && !paymentForm.method) {
+        } else if (currentInvalidPaymentField === "payment_type" && !paymentForm.payment_type) {
           isValid = false;
-          errorMsg = "Payment method is required";
+          errorMsg = "Payment type is required";
+        } else if (currentInvalidPaymentField === "method") {
+          if (!paymentForm.method) {
+            isValid = false;
+            errorMsg = "Payment method is required";
+          } else if (paymentForm.method === "Other" && !paymentForm.customMethod) {
+            isValid = false;
+            errorMsg = "Please specify the payment method";
+          }
+        } else if (currentInvalidPaymentField === "receiver_name" && !paymentForm.receiver_name) {
+          isValid = false;
+          errorMsg = "Receiver name is required";
         } else if (currentInvalidPaymentField === "screenshot" && paymentForm.method === "Cash" && !paymentForm.screenshot) {
           isValid = false;
           errorMsg = "Screenshot upload is required for Cash payments";
@@ -2380,9 +2456,20 @@
         } else if (field === "amount" && (!paymentForm.amount || parseFloat(paymentForm.amount) <= 0)) {
           isValid = false;
           errorMsg = "Amount must be a positive number";
-        } else if (field === "method" && !paymentForm.method) {
+        } else if (field === "payment_type" && !paymentForm.payment_type) {
           isValid = false;
-          errorMsg = "Payment method is required";
+          errorMsg = "Payment type is required";
+        } else if (field === "method") {
+          if (!paymentForm.method) {
+            isValid = false;
+            errorMsg = "Payment method is required";
+          } else if (paymentForm.method === "Other" && !paymentForm.customMethod) {
+            isValid = false;
+            errorMsg = "Please specify the payment method";
+          }
+        } else if (field === "receiver_name" && !paymentForm.receiver_name) {
+          isValid = false;
+          errorMsg = "Receiver name is required";
         } else if (field === "screenshot" && paymentForm.method === "Cash" && !paymentForm.screenshot) {
           isValid = false;
           errorMsg = "Screenshot upload is required for Cash payments";
@@ -2393,7 +2480,9 @@
           setPaymentFieldErrors({
             memberId: false,
             amount: false,
+            payment_type: false,
             method: false,
+            receiver_name: false,
             screenshot: false,
           });
           // Set only this field as invalid
@@ -2408,7 +2497,9 @@
       setPaymentFieldErrors({
         memberId: false,
         amount: false,
+        payment_type: false,
         method: false,
+        receiver_name: false,
         screenshot: false,
       });
       setCurrentInvalidPaymentField(null);
@@ -2425,8 +2516,32 @@
       }
 
       try {
+        // Ensure payment_type and method are properly set
+        // Use custom payment method if "Other" is selected and custom value is provided
+        const finalMethod = paymentForm.method === "Other" && paymentForm.customMethod 
+          ? paymentForm.customMethod 
+          : paymentForm.method;
+        
+        const paymentData = { 
+          ...paymentForm,
+          method: finalMethod
+        };
+        // Remove customMethod from data sent to backend
+        delete paymentData.customMethod;
+        
+        // If cash is selected, ensure method is "Cash"
+        if (paymentData.payment_type === "cash") {
+          paymentData.method = "Cash";
+          paymentData.receiver_name = ""; // Clear receiver_name for cash
+        }
+        
+        // If online is selected, ensure method is set
+        if (paymentData.payment_type === "online" && !paymentData.method) {
+          showToast("Please select a payment method", "error");
+          return;
+        }
 
-        await addPayment(paymentForm);
+        await addPayment(paymentData);
         showToast("Payment added successfully!");
         setShowPaymentForm(false);
         setPaymentForm({
@@ -2434,7 +2549,10 @@
           member: "",
           invoiceId: "",
           amount: "",
+          payment_type: "",
           method: "",
+          customMethod: "",
+          receiver_name: "",
           reference: "",
           date: new Date().toLocaleDateString("en-GB", {
             day: "2-digit",
@@ -2459,7 +2577,10 @@
         member: payment.member || "",
         invoiceId: payment.invoiceId || "",
         amount: payment.amount || "",
+        payment_type: payment.payment_type || (payment.method === "Cash" ? "cash" : "online"),
         method: payment.method || "",
+        customMethod: "", // Reset custom method when editing
+        receiver_name: payment.receiver_name || "",
         reference: payment.reference || "",
         date: payment.date || payment.createdAt ? new Date(payment.createdAt).toLocaleDateString("en-GB", {
           day: "2-digit",
@@ -2515,7 +2636,9 @@
           member: "",
           invoiceId: "",
           amount: "",
+          payment_type: "",
           method: "",
+          receiver_name: "",
           reference: "",
           date: new Date().toLocaleDateString("en-GB", {
             day: "2-digit",
@@ -3108,7 +3231,17 @@
       try {
         setIsMemberSubmitting(true);
 
-        const newMember = await addMember(memberForm);
+        // Prepare member data - include ID if manually entered (4 digits)
+        const memberData = { ...memberForm };
+        if (memberForm.id && memberForm.id.length === 4) {
+          memberData.id = `HK${memberForm.id}`;
+        }
+        // Remove id from memberData if not provided or incomplete
+        if (!memberForm.id || memberForm.id.length !== 4) {
+          delete memberData.id;
+        }
+        
+        const newMember = await addMember(memberData);
 
 
 
@@ -3121,20 +3254,22 @@
         ]);
 
         setMemberForm({
+          id: "",
           name: "",
           email: "",
           phone: "",
           native: "",
           status: "Active",
-          balance: "250",
+          balance: "500",
           nextDue: getTodayDate(), // Reset to today's date
           subscriptionYear: new Date().getFullYear().toString(),
           lastPayment: "",
-          subscriptionType: "Lifetime",
+          subscriptionType: "Annual Member",
         });
         // Clear validation state
         setMemberFieldErrors({
           name: false,
+          id: false,
           email: false,
           phone: false,
           nextDue: false,
@@ -3234,11 +3369,12 @@
           balance: "HK$0",
           nextDue: "",
           lastPayment: "",
-          subscriptionType: "Lifetime",
+          subscriptionType: "Annual Member",
         });
         // Clear validation state
         setMemberFieldErrors({
           name: false,
+          id: false,
           email: false,
           phone: false,
           nextDue: false,
@@ -3266,17 +3402,111 @@
       );
     };
 
+    // Progressive validation for invoice form
+    const validateInvoiceForm = () => {
+      // Define field order for validation
+      const fieldOrder = ["memberId", "subscriptionYear", "amount"];
+
+      // If we have a current invalid field, check if it's now valid
+      if (currentInvalidInvoiceField) {
+        let isValid = true;
+        let errorMsg = "";
+
+        if (currentInvalidInvoiceField === "memberId" && !invoiceForm.memberId) {
+          isValid = false;
+          errorMsg = "Member is required";
+        } else if (currentInvalidInvoiceField === "subscriptionYear" && !invoiceForm.subscriptionYear) {
+          isValid = false;
+          errorMsg = "Subscription year is required";
+        } else if (currentInvalidInvoiceField === "amount") {
+          const amountNum = parseFloat(invoiceForm.amount);
+          if (!invoiceForm.amount || !amountNum || amountNum <= 0 || isNaN(amountNum)) {
+            isValid = false;
+            errorMsg = "Amount must be a positive number";
+          }
+        }
+
+        if (isValid) {
+          setInvoiceFieldErrors(prev => ({ ...prev, [currentInvalidInvoiceField]: false }));
+          setCurrentInvalidInvoiceField(null);
+        } else {
+          setInvoiceFieldErrors(prev => ({ ...prev, [currentInvalidInvoiceField]: true }));
+          showToast(errorMsg, "error");
+          return false;
+        }
+      }
+
+      // Find first invalid field
+      for (const field of fieldOrder) {
+        let isValid = true;
+        let errorMsg = "";
+
+        if (field === "memberId" && !invoiceForm.memberId) {
+          isValid = false;
+          errorMsg = "Member is required";
+        } else if (field === "subscriptionYear" && !invoiceForm.subscriptionYear) {
+          isValid = false;
+          errorMsg = "Subscription year is required";
+        } else if (field === "amount") {
+          const amountNum = parseFloat(invoiceForm.amount);
+          if (!invoiceForm.amount || !amountNum || amountNum <= 0 || isNaN(amountNum)) {
+            isValid = false;
+            errorMsg = "Amount must be a positive number";
+          }
+        }
+
+        if (!isValid) {
+          // Clear all errors first
+          setInvoiceFieldErrors({
+            memberId: false,
+            subscriptionYear: false,
+            amount: false,
+          });
+          // Set only this field as invalid
+          setInvoiceFieldErrors(prev => ({ ...prev, [field]: true }));
+          setCurrentInvalidInvoiceField(field);
+          showToast(errorMsg, "error");
+
+          // Focus on the invalid field
+          setTimeout(() => {
+            if (field === "memberId") {
+              const dropdown = document.querySelector('[data-member-dropdown]');
+              if (dropdown) {
+                const clickableDiv = dropdown.querySelector('div[style*="cursor: pointer"]');
+                clickableDiv?.click();
+                clickableDiv?.scrollIntoView({ behavior: "smooth", block: "center" });
+              }
+            } else if (field === "subscriptionYear") {
+              const input = document.querySelector('input[type="number"][placeholder="YYYY"]');
+              input?.focus();
+              input?.scrollIntoView({ behavior: "smooth", block: "center" });
+            } else if (field === "amount") {
+              const input = document.querySelector('input[type="number"][inputmode="numeric"]');
+              input?.focus();
+              input?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+          }, 100);
+
+          return false;
+        }
+      }
+
+      // All fields valid
+      setInvoiceFieldErrors({
+        memberId: false,
+        subscriptionYear: false,
+        amount: false,
+      });
+      setCurrentInvalidInvoiceField(null);
+      return true;
+    };
+
     // Invoice CRUD Operations
     const handleAddInvoice = (e) => {
       e.preventDefault();
-      if (!invoiceForm.memberId || !invoiceForm.subscriptionYear) {
-        showToast("Please fill all required fields", "error");
-        return;
-      }
-
-      const amountNum = parseFloat(invoiceForm.amount);
-      if (!amountNum || amountNum <= 0 || isNaN(amountNum)) {
-        showToast("Amount must be a positive number", "error");
+      
+      if (!validateInvoiceForm()) {
+        // Validation error already shown via Notie
         return;
       }
 
@@ -3335,11 +3565,17 @@
         notes: "",
         subscriptionYear: new Date().getFullYear().toString(),
       });
+      setInvoiceFieldErrors({
+        memberId: false,
+        subscriptionYear: false,
+        amount: false,
+      });
+      setCurrentInvalidInvoiceField(null);
       setShowInvoiceForm(false);
       showToast("Invoice created successfully!");
     };
 
-    const handleMarkAsPaid = async (invoiceId, method = "Cash", screenshotUrl = null, referenceNumber = null) => {
+    const handleMarkAsPaid = async (invoiceId, method = "Cash", screenshotUrl = null, referenceNumber = null, paymentData = {}) => {
       try {
         const invoice = invoices.find((inv) => inv.id === invoiceId);
         if (!invoice) {
@@ -3358,18 +3594,18 @@
         const adminId = sessionStorage.getItem('adminId') || currentAdmin?.id || 'Admin';
         const adminName = sessionStorage.getItem('adminName') || currentAdmin?.name || 'Admin';
 
-        // Map UI method to payment_mode (online or cash)
-        const paymentMode = method === "Online" ? "online" : "cash";
+        // Use paymentData if provided, otherwise fallback to method parameter
+        const payment_type = paymentData.payment_type || (method === "Online" ? "online" : "cash");
+        const paymentMethod = paymentData.method || method || (payment_type === "cash" ? "Cash" : "Online Payment");
+        const receiver_name = paymentData.receiver_name || "";
 
-        // Map UI method to stored payment method + reference
-        let paymentMethod = "Cash to Admin";
-        let reference;
-        if (method === "Online") {
-          paymentMethod = "Online Payment";
-          // Use provided reference number or generate one
-          reference = referenceNumber || `ONL_${Date.now()}`;
-        } else {
-          reference = `CASH_${Date.now()}`;
+        // Map payment_type to payment_mode (online or cash)
+        const paymentMode = payment_type;
+
+        // Generate reference if not provided
+        let reference = referenceNumber;
+        if (!reference) {
+          reference = payment_type === "online" ? `ONL_${Date.now()}` : `CASH_${Date.now()}`;
         }
 
         // Calculate payment dates
@@ -3399,7 +3635,9 @@
           body: JSON.stringify({
             invoiceId: invoiceId,
             amount: invoice.amount,
+            payment_type: payment_type,
             method: paymentMethod,
+            receiver_name: receiver_name,
             reference: reference,
             member: invoice.memberName || "Member",
             memberId: invoice.memberId,
@@ -3453,6 +3691,17 @@
             year: 'numeric'
           }).replace(',', '');
 
+          // Check if this is a lifetime membership full payment
+          // Check by invoice type, amount (5250), or membershipFee (5000)
+          const member = members.find(m => m.id === invoice.memberId);
+          const isLifetimeMembershipFullPayment = member?.subscriptionType === "Lifetime Membership" 
+            && !member?.lifetimeMembershipPaid 
+            && (
+              invoice.invoiceType === "lifetime_membership" ||
+              invoice.amount === "HK$5250" ||
+              invoice.membershipFee === 5000
+            );
+          
           const memberUpdateResponse = await fetch(`${apiUrl}/api/members/${invoice.memberId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -3462,6 +3711,8 @@
               last_payment_date: lastPaymentDate.toISOString(),
               next_due_date: nextDueDate.toISOString(),
               payment_proof: screenshotUrl || invoice.screenshot || null,
+              // Mark lifetime membership as paid if this is the full payment
+              lifetimeMembershipPaid: isLifetimeMembershipFullPayment ? true : (member?.lifetimeMembershipPaid || false),
               // Also update the display string fields
               lastPayment: lastPaymentDateFormatted,
               nextDue: nextDueDateFormatted,
@@ -4611,7 +4862,7 @@
                         </button>
                       </div>
                       <Table
-                        columns={["Member", "Amount", "Method", "Status", "Subscription Year", "Native", "Joined Year"]}
+                        columns={["Member", "Amount", "Method", "Status", "Subscription Year", "Native Place", "Joined Year"]}
                         rows={recentPaymentsData.length > 0 ? recentPaymentsData : [
                           {
                             Member: "No payments yet",
@@ -4620,7 +4871,7 @@
                             Method: "-",
                             Status: "-",
                             "Subscription Year": "-",
-                            Native: "-",
+                            "Native Place": "-",
                             "Joined Year": "-",
                           }
                         ]}
@@ -4699,16 +4950,17 @@
                             setEditingMember(null);
                             // Reset form with balance matching default subscription type
                             setMemberForm({
+                              id: "",
                               name: "",
                               email: "",
                               phone: "",
                               native: "",
                               status: "Active",
-                              balance: "250", // default based on Lifetime subscription
+                              balance: "500", // default based on Annual Member subscription
                               nextDue: getTodayDate(), // Default to today's date
                               subscriptionYear: new Date().getFullYear().toString(),
                               lastPayment: "",
-                              subscriptionType: "Lifetime",
+                              subscriptionType: "Annual Member",
                             });
                           }}
                         >
@@ -4755,6 +5007,7 @@
                                 // Clear validation state when closing
                                 setMemberFieldErrors({
                                   name: false,
+                                  id: false,
                                   email: false,
                                   phone: false,
                                   nextDue: false,
@@ -4775,6 +5028,7 @@
                             onSubmit={editingMember ? handleUpdateMember : handleAddMember}
                             noValidate
                           >
+                            
                             <label>
                               <span>
                                 <i className="fas fa-user admin-members-form-icon" aria-hidden="true"></i>
@@ -4824,6 +5078,61 @@
                                 }}
                               />
                             </label>
+                            {!editingMember && (
+                              <label>
+                                <span>
+                                  <i className="fas fa-id-card admin-members-form-icon" style={{ marginRight: "8px" }} aria-hidden="true"></i>
+                                  Member ID <span className="admin-members-form-required" style={{ color: "#ef4444" }}>*</span>
+                                </span>
+                                <input
+                                  type="text"
+                                  value={memberForm.id}
+                                  onChange={(e) => {
+                                    // Only allow 4 digits
+                                    const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                                    setMemberForm(prev => ({ ...prev, id: value }));
+                                    if (memberFieldErrors.id) {
+                                      setMemberFieldErrors(prev => ({ ...prev, id: false }));
+                                      if (currentInvalidField === "id") {
+                                        setCurrentInvalidField(null);
+                                      }
+                                    }
+                                  }}
+                                  placeholder="Enter 4-digit ID"
+                                  maxLength={4}
+                                  style={{
+                                    border: memberFieldErrors.id ? "2px solid #ef4444" : undefined
+                                  }}
+                                  // style={{
+                                  //   textAlign: "center",
+                                  //   letterSpacing: "0.5em",
+                                  //   fontFamily: "monospace",
+                                  //   fontSize: "1rem",
+                                  //   fontWeight: "600"
+                                  // }}
+                                />
+                                {memberForm.id && memberForm.id.length === 4 && (
+                                  <span style={{ 
+                                    fontSize: "0.75rem", 
+                                    color: "#10b981", 
+                                    marginTop: "4px", 
+                                    display: "block" 
+                                  }}>
+                                    ID will be: HK{memberForm.id}
+                                  </span>
+                                )}
+                                {memberForm.id && memberForm.id.length > 0 && memberForm.id.length < 4 && (
+                                  <span style={{ 
+                                    fontSize: "0.75rem", 
+                                    color: "#ef4444", 
+                                    marginTop: "4px", 
+                                    display: "block" 
+                                  }}>
+                                    Please enter 4 digits
+                                  </span>
+                                )}
+                              </label>
+                            )}
 
                             {/* <label>
                               <span>
@@ -4984,7 +5293,7 @@
                             <label>
                               <span>
                                 <i className="fas fa-globe" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                                Native
+                                Native Place
                               </span>
                               <input
                                 type="text"
@@ -4994,7 +5303,7 @@
                                   const value = e.target.value.replace(/[^a-zA-Z\s]/g, '');
                                   handleMemberFieldChange("native", value);
                                 }}
-                                placeholder="Enter Your native "
+                                placeholder="Enter Your native place"
                                 style={{
                                   textTransform: "capitalize"
                                 }}
@@ -5023,13 +5332,83 @@
                                   <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
                                   Subscription Type
                                 </span>
-                                <select
-                                  value={memberForm.subscriptionType || "Lifetime"}
-                                  onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
+                                <div 
+                                  style={{ position: "relative" }}
+                                  onMouseEnter={(e) => {
+                                    const tooltip = e.currentTarget.querySelector('.subscription-details-tooltip');
+                                    if (tooltip) tooltip.style.opacity = '1';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    const tooltip = e.currentTarget.querySelector('.subscription-details-tooltip');
+                                    if (tooltip) tooltip.style.opacity = '0';
+                                  }}
                                 >
-                                  <option value="Lifetime">Lifetime - HK$250/year</option>
-                                  <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - HK$500/year</option>
-                                </select>
+                                  <select
+                                    value={memberForm.subscriptionType || "Annual Member"}
+                                    onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
+                                    style={{
+                                      width: "100%",
+                                      padding: "10px 12px",
+                                      borderRadius: "8px",
+                                      border: "1px solid #e0e0e0",
+                                      fontSize: "0.9375rem",
+                                      background: "#fff",
+                                      outline: "none",
+                                      cursor: "pointer",
+                                      appearance: "none",
+                                      WebkitAppearance: "none",
+                                      MozAppearance: "none",
+                                      backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E\")",
+                                      backgroundRepeat: "no-repeat",
+                                      backgroundPosition: "right 12px center",
+                                      paddingRight: "36px",
+                                      transition: "all 0.2s ease"
+                                    }}
+                                    onFocus={(e) => {
+                                      e.target.style.borderColor = "#5a31ea";
+                                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                      const tooltip = e.target.parentElement.querySelector('.subscription-details-tooltip');
+                                      if (tooltip) tooltip.style.opacity = '1';
+                                    }}
+                                    onBlur={(e) => {
+                                      e.target.style.borderColor = "#e0e0e0";
+                                      e.target.style.boxShadow = "none";
+                                      const tooltip = e.target.parentElement.querySelector('.subscription-details-tooltip');
+                                      if (tooltip) tooltip.style.opacity = '0';
+                                    }}
+                                  >
+                                    <option value="Annual Member">Annual Member - HK$500/year</option>
+                                    <option value="Lifetime Janaza Fund Member">Lifetime Janaza Fund - HK$250/year</option>
+                                    <option value="Lifetime Membership">Lifetime Membership - HK$5,250 first year</option>
+                                  </select>
+                                  <div style={{
+                                    position: "absolute",
+                                    top: "100%",
+                                    left: 0,
+                                    right: 0,
+                                    marginTop: "4px",
+                                    padding: "8px 12px",
+                                    background: "#f8f9ff",
+                                    borderRadius: "6px",
+                                    fontSize: "0.75rem",
+                                    color: "#666",
+                                    opacity: 0,
+                                    pointerEvents: "none",
+                                    transition: "opacity 0.2s ease",
+                                    zIndex: 1000,
+                                    border: "1px solid #e5e7eb"
+                                  }} className="subscription-details-tooltip">
+                                    {memberForm.subscriptionType === "Annual Member" && (
+                                      <div>Membership: HK$250/year + Janaza: HK$250/year</div>
+                                    )}
+                                    {memberForm.subscriptionType === "Lifetime Janaza Fund Member" && (
+                                      <div>Membership: HK$0 + Janaza: HK$250/year</div>
+                                    )}
+                                    {memberForm.subscriptionType === "Lifetime Membership" && (
+                                      <div>Membership: HK$5,000 (one-time) + Janaza: HK$250/year, then HK$250/year</div>
+                                    )}
+                                  </div>
+                                </div>
                               </label>
                             )}
 
@@ -5711,7 +6090,7 @@
                                 <Table
                                   columns={[
                                     "Name",
-                                    "Native",
+                                    "Native Place",
                                     "Year",
                                     "Subscription Type",
                                     "Joined Year",
@@ -5799,7 +6178,7 @@
 
                                     const rowData = {
                                       "Name": member.name,
-                                      "Native": member.native || "-",
+                                      "Native Place": member.native || "-",
                                       "Year": subYear,
                                       "Subscription Type": member.subscriptionType || "-",
                                       "Joined Year": joinedYear,
@@ -5835,7 +6214,7 @@
                                       },
                                       Actions: {
                                         render: () => (
-                                          <div className="flex gap-sm flex-wrap justify-center">
+                                          <div className="flex gap-sm justify-center" style={{ flexWrap: "unset" }}>
                                             <button
                                               className="ghost-btn icon-btn icon-btn--view"
                                               onClick={() => handleViewMemberDetail(member)}
@@ -5880,7 +6259,7 @@
                                     // Always set _rowStyle property (even if empty) to ensure it's recalculated on re-render
                                     if (hasUnpaidInvoices) {
                                       rowData._rowStyle = {
-                                        backgroundColor: "rgb(254, 242, 242)"
+                                        // Background color removed
                                       };
                                     } else {
                                       // Explicitly set to undefined to clear any previous styling
@@ -6420,7 +6799,7 @@
                                             selectedAdminId: "",
                                             adminMobile: "",
                                           });
-                                          setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                                          setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
                                           setCurrentInvalidPaymentModalField(null);
                                           setShowPaymentModal(true);
                                         }}
@@ -7058,7 +7437,7 @@
                           onClick={() => setShowMemberDropdown(!showMemberDropdown)}
                           style={{
                             padding: "14px 16px",
-                            border: "1px solid #e5e7eb",
+                            border: invoiceFieldErrors.memberId ? "2px solid #ef4444" : "1px solid #e5e7eb",
                             borderRadius: "10px",
                             background: "#f8f9ff",
                             cursor: "pointer",
@@ -7206,6 +7585,12 @@
                                     key={member.id}
                                     onClick={() => {
                                       setInvoiceForm({ ...invoiceForm, memberId: member.id });
+                                      if (invoiceFieldErrors.memberId) {
+                                        setInvoiceFieldErrors(prev => ({ ...prev, memberId: false }));
+                                        if (currentInvalidInvoiceField === "memberId") {
+                                          setCurrentInvalidInvoiceField(null);
+                                        }
+                                      }
                                       setShowMemberDropdown(false);
                                       setInvoiceMemberSearch("");
                                     }}
@@ -7257,33 +7642,99 @@
 
                     <label style={{ marginBottom: "24px" }}>
                       <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-id-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice Type <span style={{ color: "#ef4444" }}>*</span></span>
-                      <select
-                        required
-                        value={invoiceForm.invoiceType}
-                        onChange={(e) => {
-                          const type = e.target.value;
-                          const amount = type === "Yearly + Janaza Fund" ? "500" : "250";
-                          setInvoiceForm({ ...invoiceForm, invoiceType: type, amount: amount });
+                      <div 
+                        style={{ position: "relative" }}
+                        onMouseEnter={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.invoice-details-tooltip');
+                          if (tooltip && invoiceForm.invoiceType) tooltip.style.opacity = '1';
                         }}
-                        style={{
-                          color: "#1a1a1a",
-                          background: "#ffffff",
-                          boxShadow: "0 2px 4px rgba(90, 49, 234, 0.08)",
-                          transition: "all 0.2s"
-                        }}
-                        className="mono-input"
-                        onFocus={(e) => {
-                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1), 0 4px 12px rgba(90, 49, 234, 0.12)";
-                        }}
-                        onBlur={(e) => {
-                          e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.08)";
+                        onMouseLeave={(e) => {
+                          const tooltip = e.currentTarget.querySelector('.invoice-details-tooltip');
+                          if (tooltip) tooltip.style.opacity = '0';
                         }}
                       >
-                        <option value="">Select Invoice Type</option>
-                        <option value="Lifetime">Lifetime - HK$250</option>
-                        <option value="Yearly + Janaza Fund">Yearly + Janaza Fund - HK$500</option>
-                        {/* <option value="Eid">Eid - HK$100</option> */}
-                      </select>
+                        <select
+                          required
+                          value={invoiceForm.invoiceType}
+                          onChange={(e) => {
+                            const type = e.target.value;
+                            let amount = "250"; // Default
+                            if (type === "Annual Member") {
+                              amount = "500";
+                            } else if (type === "Lifetime Janaza Fund Member") {
+                              amount = "250";
+                            } else if (type === "Lifetime Membership") {
+                              amount = "5250";
+                            }
+                            setInvoiceForm({ ...invoiceForm, invoiceType: type, amount: amount });
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: "8px",
+                            border: "1px solid #e0e0e0",
+                            fontSize: "0.9375rem",
+                            background: "#fff",
+                            outline: "none",
+                            cursor: "pointer",
+                            appearance: "none",
+                            WebkitAppearance: "none",
+                            MozAppearance: "none",
+                            backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E\")",
+                            backgroundRepeat: "no-repeat",
+                            backgroundPosition: "right 12px center",
+                            paddingRight: "36px",
+                            transition: "all 0.2s ease",
+                            color: "#1a1a1a"
+                          }}
+                          onFocus={(e) => {
+                            e.target.style.borderColor = "#5a31ea";
+                            e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                            const tooltip = e.target.parentElement.querySelector('.invoice-details-tooltip');
+                            if (tooltip && invoiceForm.invoiceType) tooltip.style.opacity = '1';
+                          }}
+                          onBlur={(e) => {
+                            e.target.style.borderColor = "#e0e0e0";
+                            e.target.style.boxShadow = "none";
+                            const tooltip = e.target.parentElement.querySelector('.invoice-details-tooltip');
+                            if (tooltip) tooltip.style.opacity = '0';
+                          }}
+                        >
+                          <option value="">Select Invoice Type</option>
+                          <option value="Annual Member">Annual Member - HK$500</option>
+                          <option value="Lifetime Janaza Fund Member">Lifetime Janaza Fund - HK$250</option>
+                          <option value="Lifetime Membership">Lifetime Membership - HK$5,250</option>
+                        </select>
+                        {invoiceForm.invoiceType && (
+                          <div style={{
+                            position: "absolute",
+                            top: "100%",
+                            left: 0,
+                            right: 0,
+                            marginTop: "4px",
+                            padding: "8px 12px",
+                            background: "#f8f9ff",
+                            borderRadius: "6px",
+                            fontSize: "0.75rem",
+                            color: "#666",
+                            border: "1px solid #e5e7eb",
+                            zIndex: 1000,
+                            opacity: 0,
+                            pointerEvents: "none",
+                            transition: "opacity 0.2s ease"
+                          }} className="invoice-details-tooltip">
+                            {invoiceForm.invoiceType === "Annual Member" && (
+                              <div>Membership: HK$250 + Janaza: HK$250</div>
+                            )}
+                            {invoiceForm.invoiceType === "Lifetime Janaza Fund Member" && (
+                              <div>Membership: HK$0 + Janaza: HK$250</div>
+                            )}
+                            {invoiceForm.invoiceType === "Lifetime Membership" && (
+                              <div>Membership: HK$5,000 (one-time) + Janaza: HK$250</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </label>
 
                     <label style={{ marginBottom: "24px" }}>
@@ -7298,11 +7749,20 @@
                           const year = e.target.value;
                           if (year === "" || (parseInt(year) >= 2000 && parseInt(year) <= 2100)) {
                             setInvoiceForm({ ...invoiceForm, subscriptionYear: year });
+                            if (invoiceFieldErrors.subscriptionYear) {
+                              setInvoiceFieldErrors(prev => ({ ...prev, subscriptionYear: false }));
+                              if (currentInvalidInvoiceField === "subscriptionYear") {
+                                setCurrentInvalidInvoiceField(null);
+                              }
+                            }
                           }
                         }}
                         placeholder="YYYY"
                         className="mono-input"
-                        style={{ color: "#1a1a1a" }}
+                        style={{ 
+                          color: "#1a1a1a",
+                          border: invoiceFieldErrors.subscriptionYear ? "2px solid #ef4444" : undefined
+                        }}
                       />
                     </label>
 
@@ -9911,7 +10371,9 @@
                               setPaymentFieldErrors({
                                 memberId: false,
                                 amount: false,
+                                payment_type: false,
                                 method: false,
+                                receiver_name: false,
                                 screenshot: false,
                               });
                               setCurrentInvalidPaymentField(null);
@@ -9922,7 +10384,9 @@
                                 member: "",
                                 invoiceId: "",
                                 amount: "",
+                                payment_type: "",
                                 method: "",
+                                receiver_name: "",
                                 reference: "",
                                 date: new Date().toLocaleDateString("en-GB", {
                                   day: "2-digit",
@@ -10018,25 +10482,169 @@
                               required
                             />
                           </label>
-                          <label>
-                            <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
-                            <select
-                              value={paymentForm.method}
-                              onChange={(e) =>
-                                setPaymentForm({
-                                  ...paymentForm,
-                                  method: e.target.value,
-                                })
-                              }
-                              required
-                            >
-                              <option value="">Select Method</option>
-                              <option value="Bank Transfer">Bank Transfer</option>
-                              <option value="FPS">FPS</option>
-                              <option value="PayMe">PayMe</option>
-                              <option value="Cash">Cash</option>
-                            </select>
-                          </label>
+                          {/* Payment Type Selection: Online or Cash */}
+                          <div style={{ gridColumn: "1 / -1", marginBottom: "20px" }}>
+                            <label>
+                              <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Type <span style={{ color: "#ef4444" }}>*</span></span>
+                              <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPaymentForm({
+                                      ...paymentForm,
+                                      payment_type: "online",
+                                      method: "", // Reset method when switching type
+                                      receiver_name: "", // Reset receiver name
+                                    });
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    padding: "14px 20px",
+                                    borderRadius: "8px",
+                                    border: "2px solid",
+                                    borderColor: paymentForm.payment_type === "online" ? "#5a31ea" : "#e5e7eb",
+                                    background: paymentForm.payment_type === "online" ? "#5a31ea" : "#ffffff",
+                                    color: paymentForm.payment_type === "online" ? "#ffffff" : "#333",
+                                    fontWeight: "600",
+                                    fontSize: "0.9375rem",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s ease",
+                                  }}
+                                >
+                                  <i className="fas fa-globe" style={{ marginRight: "8px" }}></i>
+                                  Online
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPaymentForm({
+                                      ...paymentForm,
+                                      payment_type: "cash",
+                                      method: "Cash",
+                                      receiver_name: "", // Clear receiver name for cash
+                                    });
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    padding: "14px 20px",
+                                    borderRadius: "8px",
+                                    border: "2px solid",
+                                    borderColor: paymentForm.payment_type === "cash" ? "#5a31ea" : "#e5e7eb",
+                                    background: paymentForm.payment_type === "cash" ? "#5a31ea" : "#ffffff",
+                                    color: paymentForm.payment_type === "cash" ? "#ffffff" : "#333",
+                                    fontWeight: "600",
+                                    fontSize: "0.9375rem",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s ease",
+                                  }}
+                                >
+                                  <i className="fas fa-money-bill" style={{ marginRight: "8px" }}></i>
+                                  Cash
+                                </button>
+                              </div>
+                            </label>
+                          </div>
+
+                          {/* Online Payment Method Selection - Only shown when Online is selected */}
+                          {paymentForm.payment_type === "online" && (
+                            <>
+                              <label>
+                                <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
+                                <select
+                                  value={paymentForm.method}
+                                  onChange={(e) =>
+                                    setPaymentForm({
+                                      ...paymentForm,
+                                      method: e.target.value,
+                                      customMethod: e.target.value === "Other" ? paymentForm.customMethod : "", // Keep custom value if switching back to Other
+                                    })
+                                  }
+                                  required
+                                  style={{
+                                    width: "100%",
+                                    padding: "12px 16px",
+                                    borderRadius: "8px",
+                                    border: paymentFieldErrors.method ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                    fontSize: "0.9375rem",
+                                  }}
+                                >
+                                  <option value="">Select Method</option>
+                                  <option value="FPS">FPS</option>
+                                  <option value="Alipay">Alipay</option>
+                                  <option value="Bank Deposit">Bank Deposit</option>
+                                  <option value="Other">Other</option>
+                                </select>
+                              </label>
+                              {/* Custom Payment Method Input - Shown when "Other" is selected */}
+                              {paymentForm.method === "Other" && (
+                                <label style={{ marginTop: "12px" }}>
+                                  <span><i className="fas fa-edit" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Specify Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
+                                  <input
+                                    type="text"
+                                    value={paymentForm.customMethod}
+                                    onChange={(e) => {
+                                      setPaymentForm({ ...paymentForm, customMethod: e.target.value });
+                                      if (paymentFieldErrors.method) {
+                                        setPaymentFieldErrors(prev => ({ ...prev, method: false }));
+                                        if (currentInvalidPaymentField === "method") {
+                                          setCurrentInvalidPaymentField(null);
+                                        }
+                                      }
+                                    }}
+                                    placeholder="Enter payment method"
+                                    required
+                                    style={{
+                                      width: "100%",
+                                      padding: "12px 16px",
+                                      borderRadius: "8px",
+                                      border: paymentFieldErrors.method ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                      fontSize: "0.9375rem",
+                                      marginTop: "8px"
+                                    }}
+                                    onFocus={(e) => {
+                                      e.target.style.borderColor = "#5a31ea";
+                                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                    }}
+                                    onBlur={(e) => {
+                                      if (paymentFieldErrors.method) {
+                                        e.target.style.borderColor = "#ef4444";
+                                        e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                                      } else {
+                                        e.target.style.borderColor = "#e5e7eb";
+                                        e.target.style.boxShadow = "none";
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              )}
+                            </>
+                          )}
+
+                          {/* Receiver Name - Required for both Cash and Online payments */}
+                          {(paymentForm.payment_type === "cash" || paymentForm.payment_type === "online") && (
+                            <label>
+                              <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Receiver Name <span style={{ color: "#ef4444" }}>*</span></span>
+                              <input
+                                type="text"
+                                value={paymentForm.receiver_name}
+                                onChange={(e) =>
+                                  setPaymentForm({
+                                    ...paymentForm,
+                                    receiver_name: e.target.value,
+                                  })
+                                }
+                                placeholder="Enter receiver name"
+                                required
+                                style={{
+                                  width: "100%",
+                                  padding: "12px 16px",
+                                  borderRadius: "8px",
+                                  border: paymentFieldErrors.receiver_name ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                  fontSize: "0.9375rem",
+                                }}
+                              />
+                            </label>
+                          )}
                           <label>
                             <span><i className="fas fa-hashtag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Reference Number</span>
                             <input
@@ -10504,7 +11112,7 @@
                           });
                         }
 
-                        // Filter invoices by search term (name, year, native)
+                        // Filter invoices by search term (name, year, native place)
                         if (invoiceSearchTerm.trim()) {
                           const searchLower = invoiceSearchTerm.toLowerCase();
                           filteredInvoices = filteredInvoices.filter((invoice) => {
@@ -10525,7 +11133,7 @@
                             const invoiceYear = yearMatch ? yearMatch[0] : "";
                             if (invoiceYear.includes(searchLower)) return true;
 
-                            // Search by native
+                            // Search by native place
                             const memberNative = (member?.native || "").toLowerCase();
                             if (memberNative.includes(searchLower)) return true;
 
@@ -10777,7 +11385,7 @@
                                 <label style={{ fontWeight: "600", color: "#1a1a1a" ,whiteSpace: "nowrap" }}> Search:</label>
                                 <input
                                   type="text"
-                                  placeholder="Search by name, year, or native..."
+                                  placeholder="Search by name, year, or native place..."
                                   value={invoiceSearchTerm}
                                   onChange={(e) => {
                                     setInvoiceSearchTerm(e.target.value);
@@ -10842,7 +11450,7 @@
                                 {/* Invoice Table */}
                                 <div style={{ marginBottom: "20px" }}>
                                   <Table
-                                    columns={["Name", "Native", "Year", "Subscription Type", "Joined Year", "Status", "Outstanding", "Actions"]}
+                                    columns={["Name", "Native Place", "Year", "Subscription Type", "Joined Year", "Status", "Outstanding", "Actions"]}
                                     rows={paginatedInvoices.map((invoice) => {
                                       const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
                                       const isOverdue = invoice.status === "Overdue";
@@ -10887,7 +11495,7 @@
 
                                       return {
                                         "Name": invoice.memberName || invoice.member || "Unknown",
-                                        "Native": member?.native || "-",
+                                        "Native Place": member?.native || "-",
                                         "Year": subYear,
                                         "Subscription Type": member?.subscriptionType || invoice.subscriptionType || "-",
                                         "Joined Year": joinedYear,
@@ -11545,7 +12153,7 @@
                                 "Date",
                                 "Member",
                                 "Year",
-                                "Native",
+                                "Native Place",
                                 "Invoice ID",
                                 "Amount",
                                 "Method",
@@ -11568,7 +12176,7 @@
                                   }
                                 }
 
-                                // Find member to get native
+                                // Find member to get native place
                                 const member = members.find(m => 
                                   m.id === payment.memberId || 
                                   m.email === payment.memberEmail ||
@@ -11587,7 +12195,7 @@
                                   }) : "-"),
                                   Member: payment.member || "Unknown",
                                   Year: paymentYear,
-                                  Native: memberNative,
+                                  "Native Place": memberNative,
                                   "Invoice ID": payment.invoiceId || "-",
                                   Amount: payment.amount
                                     ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
@@ -11672,8 +12280,11 @@
                             donorName: "",
                             isMember: false,
                             memberId: "",
+                            donationType: "",
                             amount: "",
+                            payment_type: "",
                             method: "",
+                            receiver_name: "",
                             date: "",
                             notes: "",
                             reference: "",
@@ -11703,8 +12314,11 @@
                               // Clear validation state when closing
                               setDonationFieldErrors({
                                 donorName: false,
+                                donationType: false,
                                 amount: false,
+                                payment_type: false,
                                 method: false,
+                                receiver_name: false,
                                 date: false,
                                 screenshot: false,
                               });
@@ -11715,8 +12329,13 @@
                                 donorName: "",
                                 isMember: false,
                                 memberId: "",
+                                donationType: "",
+                                customDonationType: "",
                                 amount: "",
+                                payment_type: "",
                                 method: "",
+                                customMethod: "",
+                                receiver_name: "",
                                 date: "",
                                 notes: "",
                                 reference: "",
@@ -11741,7 +12360,7 @@
                             // Progressive validation for donation form
                             const validateDonationForm = () => {
                               // Define field order for validation
-                              const fieldOrder = ["donorName", "amount", "method", "date", "screenshot"];
+                              const fieldOrder = ["donorName", "donationType", "amount", "payment_type", "method", "receiver_name", "date", "screenshot"];
 
                               // If we have a current invalid field, check if it's now valid
                               if (currentInvalidDonationField) {
@@ -11751,6 +12370,14 @@
                                 if (currentInvalidDonationField === "donorName" && !donationForm.donorName) {
                                   isValid = false;
                                   errorMsg = "Donor name is required";
+                                } else if (currentInvalidDonationField === "donationType") {
+                                  if (!donationForm.donationType) {
+                                    isValid = false;
+                                    errorMsg = "Donation type is required";
+                                  } else if (donationForm.donationType === "Other" && !donationForm.customDonationType) {
+                                    isValid = false;
+                                    errorMsg = "Please specify the donation type";
+                                  }
                                 } else if (currentInvalidDonationField === "amount") {
                                   if (!donationForm.amount) {
                                     isValid = false;
@@ -11762,19 +12389,27 @@
                                       errorMsg = "Amount must be a positive number";
                                     }
                                   }
-                                } else if (currentInvalidDonationField === "method" && !donationForm.method) {
+                                } else if (currentInvalidDonationField === "payment_type" && !donationForm.payment_type) {
                                   isValid = false;
-                                  errorMsg = "Payment method is required";
+                                  errorMsg = "Payment type is required";
+                                } else if (currentInvalidDonationField === "method") {
+                                  if (!donationForm.method) {
+                                    isValid = false;
+                                    errorMsg = "Payment method is required";
+                                  } else if (donationForm.method === "Other" && !donationForm.customMethod) {
+                                    isValid = false;
+                                    errorMsg = "Please specify the payment method";
+                                  }
+                                } else if (currentInvalidDonationField === "receiver_name" && !donationForm.receiver_name) {
+                                  isValid = false;
+                                  errorMsg = "Receiver name is required";
                                 } else if (currentInvalidDonationField === "date" && !donationForm.date) {
                                   isValid = false;
                                   errorMsg = "Date is required";
                                 } else if (currentInvalidDonationField === "screenshot") {
-                                  if (donationForm.method === "Cash Payment" && !donationForm.screenshot && !donationImageFile) {
+                                  if ((donationForm.payment_type === "cash" || donationForm.payment_type === "online") && !donationForm.screenshot && !donationImageFile) {
                                     isValid = false;
-                                    errorMsg = "Proof image is required";
-                                  } else if (donationForm.method === "Online Payment" && !donationForm.screenshot && !donationImageFile) {
-                                    isValid = false;
-                                    errorMsg = "Proof image is required";
+                                    errorMsg = "Proof image is required for all payments";
                                   }
                                 }
 
@@ -11796,6 +12431,14 @@
                                 if (field === "donorName" && !donationForm.donorName) {
                                   isValid = false;
                                   errorMsg = "Donor name is required";
+                                } else if (field === "donationType") {
+                                  if (!donationForm.donationType) {
+                                    isValid = false;
+                                    errorMsg = "Donation type is required";
+                                  } else if (donationForm.donationType === "Other" && !donationForm.customDonationType) {
+                                    isValid = false;
+                                    errorMsg = "Please specify the donation type";
+                                  }
                                 } else if (field === "amount") {
                                   if (!donationForm.amount) {
                                     isValid = false;
@@ -11807,19 +12450,27 @@
                                       errorMsg = "Amount must be a positive number";
                                     }
                                   }
-                                } else if (field === "method" && !donationForm.method) {
+                                } else if (field === "payment_type" && !donationForm.payment_type) {
                                   isValid = false;
-                                  errorMsg = "Payment method is required";
+                                  errorMsg = "Payment type is required";
+                                } else if (field === "method") {
+                                  if (!donationForm.method) {
+                                    isValid = false;
+                                    errorMsg = "Payment method is required";
+                                  } else if (donationForm.method === "Other" && !donationForm.customMethod) {
+                                    isValid = false;
+                                    errorMsg = "Please specify the payment method";
+                                  }
+                                } else if (field === "receiver_name" && !donationForm.receiver_name) {
+                                  isValid = false;
+                                  errorMsg = "Receiver name is required";
                                 } else if (field === "date" && !donationForm.date) {
                                   isValid = false;
                                   errorMsg = "Date is required";
                                 } else if (field === "screenshot") {
-                                  if (donationForm.method === "Cash Payment" && !donationForm.screenshot && !donationImageFile) {
+                                  if ((donationForm.payment_type === "cash" || donationForm.payment_type === "online") && !donationForm.screenshot && !donationImageFile) {
                                     isValid = false;
-                                    errorMsg = "Proof image is required";
-                                  } else if (donationForm.method === "Online Payment" && !donationForm.screenshot && !donationImageFile) {
-                                    isValid = false;
-                                    errorMsg = "Proof image is required";
+                                    errorMsg = "Proof image is required for all payments";
                                   }
                                 }
 
@@ -11827,8 +12478,11 @@
                                   // Clear all errors first
                                   setDonationFieldErrors({
                                     donorName: false,
+                                    donationType: false,
                                     amount: false,
+                                    payment_type: false,
                                     method: false,
+                                    receiver_name: false,
                                     date: false,
                                     screenshot: false,
                                   });
@@ -11851,13 +12505,38 @@
                                       const input = document.querySelector('input[type="number"][inputmode="numeric"]');
                                       input?.focus();
                                       input?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                    } else if (field === "method") {
-                                      const selects = document.querySelectorAll('select');
-                                      const methodSelect = Array.from(selects).find(select =>
-                                        select.options[0]?.text === "Select method"
+                                    } else if (field === "donationType") {
+                                      const inputs = document.querySelectorAll('input[type="text"]');
+                                      const donationTypeInput = Array.from(inputs).find(input =>
+                                        input.placeholder?.toLowerCase().includes("donation type")
                                       );
-                                      methodSelect?.focus();
-                                      methodSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                      if (donationTypeInput) {
+                                        donationTypeInput.focus();
+                                        donationTypeInput.scrollIntoView({ behavior: "smooth", block: "center" });
+                                      } else {
+                                        const selects = document.querySelectorAll('select');
+                                        const donationTypeSelect = Array.from(selects).find(select =>
+                                          Array.from(select.options).some(opt => opt.value === "Other")
+                                        );
+                                        donationTypeSelect?.focus();
+                                        donationTypeSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                      }
+                                    } else if (field === "method") {
+                                      const inputs = document.querySelectorAll('input[type="text"]');
+                                      const methodInput = Array.from(inputs).find(input =>
+                                        input.placeholder?.toLowerCase().includes("payment method")
+                                      );
+                                      if (methodInput) {
+                                        methodInput.focus();
+                                        methodInput.scrollIntoView({ behavior: "smooth", block: "center" });
+                                      } else {
+                                        const selects = document.querySelectorAll('select');
+                                        const methodSelect = Array.from(selects).find(select =>
+                                          select.options[0]?.text === "Select Method"
+                                        );
+                                        methodSelect?.focus();
+                                        methodSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                      }
                                     } else if (field === "date") {
                                       const input = document.querySelector('input[type="date"]');
                                       input?.focus();
@@ -11878,14 +12557,43 @@
                               // All fields valid
                               setDonationFieldErrors({
                                 donorName: false,
+                                donationType: false,
                                 amount: false,
+                                payment_type: false,
                                 method: false,
+                                receiver_name: false,
                                 date: false,
                                 screenshot: false,
                               });
                               setCurrentInvalidDonationField(null);
                               return true;
                             };
+
+                            // Validate donation type if "Other" is selected
+                            if (donationForm.donationType === "Other" && !donationForm.customDonationType) {
+                              showToast("Please specify the donation type", "error");
+                              setDonationFieldErrors(prev => ({ ...prev, donationType: true }));
+                              setCurrentInvalidDonationField("donationType");
+                              return;
+                            }
+                            
+                            // Validate custom donation type is not only numbers
+                            if (donationForm.donationType === "Other" && donationForm.customDonationType) {
+                              if (/^\d+$/.test(donationForm.customDonationType.trim())) {
+                                showToast("Donation type cannot be only numbers. Please enter a text description.", "error");
+                                setDonationFieldErrors(prev => ({ ...prev, donationType: true }));
+                                setCurrentInvalidDonationField("donationType");
+                                return;
+                              }
+                            }
+
+                            // Validate payment method if "Other" is selected
+                            if (donationForm.payment_type === "online" && donationForm.method === "Other" && !donationForm.customMethod) {
+                              showToast("Please specify the payment method", "error");
+                              setDonationFieldErrors(prev => ({ ...prev, method: true }));
+                              setCurrentInvalidDonationField("method");
+                              return;
+                            }
 
                             // Prevent duplicate submission
                             if (isDonationSubmitting) {
@@ -11937,8 +12645,20 @@
                                 imageUrl = uploadData.url;
                               }
 
+                              // Use custom donation type if "Other" is selected and custom value is provided
+                              const finalDonationType = donationForm.donationType === "Other" && donationForm.customDonationType 
+                                ? donationForm.customDonationType 
+                                : donationForm.donationType;
+                              
+                              // Use custom payment method if "Other" is selected and custom value is provided
+                              const finalMethod = donationForm.method === "Other" && donationForm.customMethod 
+                                ? donationForm.customMethod 
+                                : donationForm.method;
+
                               await addDonation({
                                 ...donationForm,
+                                donationType: finalDonationType,
+                                method: finalMethod,
                                 amount: amountNum.toFixed(2),
                                 screenshot: imageUrl,
                               });
@@ -11948,8 +12668,13 @@
                                 donorName: "",
                                 isMember: false,
                                 memberId: "",
+                                donationType: "",
+                                customDonationType: "",
                                 amount: "",
+                                payment_type: "",
                                 method: "",
+                                customMethod: "",
+                                receiver_name: "",
                                 date: "",
                                 notes: "",
                                 reference: "",
@@ -11967,7 +12692,7 @@
                             }
                           }}
                         >
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
                             <label>
                               <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donor Name <span style={{ color: "#ef4444" }}>*</span></span>
                               <input
@@ -12112,8 +12837,110 @@
                               </button>
                             </div>
                           </div>
+                          
+                          {/* Donation Type Selector */}
+                          <div style={{ marginBottom: "20px" }}>
+                            <label>
+                              <span><i className="fas fa-tag" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donation Type <span style={{ color: "#ef4444" }}>*</span></span>
+                              <select
+                                value={donationForm.donationType}
+                                onChange={(e) => {
+                                  setDonationForm({ 
+                                    ...donationForm, 
+                                    donationType: e.target.value,
+                                    customDonationType: e.target.value === "Other" ? donationForm.customDonationType : "" // Keep custom value if switching back to Other
+                                  });
+                                  if (donationFieldErrors.donationType) {
+                                    setDonationFieldErrors(prev => ({ ...prev, donationType: false }));
+                                    if (currentInvalidDonationField === "donationType") {
+                                      setCurrentInvalidDonationField(null);
+                                    }
+                                  }
+                                }}
+                                required
+                                style={{
+                                  width: "100%",
+                                  padding: "12px 16px",
+                                  borderRadius: "8px",
+                                  border: donationFieldErrors.donationType ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                  fontSize: "0.9375rem",
+                                  background: "#ffffff",
+                                  cursor: "pointer",
+                                  transition: "all 0.2s ease"
+                                }}
+                                onFocus={(e) => {
+                                  e.target.style.borderColor = "#5a31ea";
+                                  e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                }}
+                                onBlur={(e) => {
+                                  if (donationFieldErrors.donationType) {
+                                    e.target.style.borderColor = "#ef4444";
+                                    e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                                  } else {
+                                    e.target.style.borderColor = "#e5e7eb";
+                                    e.target.style.boxShadow = "none";
+                                  }
+                                }}
+                              >
+                                <option value="">Select Type</option>
+                                <option value="Janaza">Janaza</option>
+                                <option value="Iftar">Iftar</option>
+                                <option value="Cemetery">Cemetery</option>
+                                <option value="Masjid">Masjid</option>
+                                <option value="Calamity">Calamity</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </label>
+                            {/* Custom Donation Type Input - Shown when "Other" is selected */}
+                            {donationForm.donationType === "Other" && (
+                              <label style={{ marginTop: "12px" }}>
+                                <span><i className="fas fa-edit" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Specify Donation Type <span style={{ color: "#ef4444" }}>*</span></span>
+                                <input
+                                  type="text"
+                                  value={donationForm.customDonationType}
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    // Allow the input but we'll validate on submit
+                                    setDonationForm({ ...donationForm, customDonationType: value });
+                                    if (donationFieldErrors.donationType) {
+                                      setDonationFieldErrors(prev => ({ ...prev, donationType: false }));
+                                      if (currentInvalidDonationField === "donationType") {
+                                        setCurrentInvalidDonationField(null);
+                                      }
+                                    }
+                                  }}
+                                  placeholder="Enter donation type (text only, not numbers)"
+                                  required
+                                  style={{
+                                    width: "100%",
+                                    padding: "12px 16px",
+                                    borderRadius: "8px",
+                                    border: donationFieldErrors.donationType && currentInvalidDonationField === "donationType" ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                    fontSize: "0.9375rem",
+                                    marginTop: "8px"
+                                  }}
+                                  onFocus={(e) => {
+                                    if (!donationFieldErrors.donationType || currentInvalidDonationField !== "donationType") {
+                                      e.target.style.borderColor = "#5a31ea";
+                                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    if (donationFieldErrors.donationType && currentInvalidDonationField === "donationType") {
+                                      e.target.style.borderColor = "#ef4444";
+                                      e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                                    } else {
+                                      e.target.style.borderColor = "#e5e7eb";
+                                      e.target.style.boxShadow = "none";
+                                    }
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
+
                           {donationForm.isMember && (
-                            <div style={{ marginBottom: "16px" }}>
+                            <div style={{ marginBottom: "20px" }}>
                               <label>
                                 Select Member <span style={{ color: "#ef4444" }}>*</span>
                                 <div style={{ position: "relative" }} data-donation-member-dropdown>
@@ -12313,148 +13140,194 @@
                               </label>
                             </div>
                           )}
-                          <label>
-                            Payment Method <span style={{ color: "#ef4444" }}>*</span>
-                            <div className="donation-payment-method-select-wrapper">
-                              <select
-                                className="donation-payment-method-select-default"
-                                value={donationForm.method}
+                          {/* Payment Type Selection: Online or Cash */}
+                          <div style={{ gridColumn: "1 / -1", marginBottom: "20px" }}>
+                            <label>
+                              <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Type <span style={{ color: "#ef4444" }}>*</span></span>
+                              <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDonationForm({
+                                      ...donationForm,
+                                      payment_type: "online",
+                                      method: "", // Reset method when switching type
+                                      receiver_name: "", // Reset receiver name
+                                    });
+                                    if (donationFieldErrors.method) {
+                                      setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                    }
+                                    if (donationFieldErrors.payment_type) {
+                                      setDonationFieldErrors(prev => ({ ...prev, payment_type: false }));
+                                    }
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    padding: "14px 20px",
+                                    borderRadius: "8px",
+                                    border: "2px solid",
+                                    borderColor: donationForm.payment_type === "online" ? "#5a31ea" : "#e5e7eb",
+                                    background: donationForm.payment_type === "online" ? "#5a31ea" : "#ffffff",
+                                    color: donationForm.payment_type === "online" ? "#ffffff" : "#333",
+                                    fontWeight: "600",
+                                    fontSize: "0.9375rem",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s ease",
+                                  }}
+                                >
+                                  <i className="fas fa-globe" style={{ marginRight: "8px" }}></i>
+                                  Online
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDonationForm({
+                                      ...donationForm,
+                                      payment_type: "cash",
+                                      method: "Cash",
+                                      receiver_name: "", // Clear receiver name for cash
+                                    });
+                                    if (donationFieldErrors.method) {
+                                      setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                    }
+                                    if (donationFieldErrors.payment_type) {
+                                      setDonationFieldErrors(prev => ({ ...prev, payment_type: false }));
+                                    }
+                                  }}
+                                  style={{
+                                    flex: 1,
+                                    padding: "14px 20px",
+                                    borderRadius: "8px",
+                                    border: "2px solid",
+                                    borderColor: donationForm.payment_type === "cash" ? "#5a31ea" : "#e5e7eb",
+                                    background: donationForm.payment_type === "cash" ? "#5a31ea" : "#ffffff",
+                                    color: donationForm.payment_type === "cash" ? "#ffffff" : "#333",
+                                    fontWeight: "600",
+                                    fontSize: "0.9375rem",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s ease",
+                                  }}
+                                >
+                                  <i className="fas fa-money-bill" style={{ marginRight: "8px" }}></i>
+                                  Cash
+                                </button>
+                              </div>
+                            </label>
+                          </div>
+
+                          {/* Online Payment Method Selection - Only shown when Online is selected */}
+                          {donationForm.payment_type === "online" && (
+                            <div style={{ marginBottom: "20px" }}>
+                              <label>
+                                <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
+                                <select
+                                  value={donationForm.method}
+                                  onChange={(e) => {
+                                    setDonationForm({ 
+                                      ...donationForm, 
+                                      method: e.target.value,
+                                      customMethod: e.target.value === "Other" ? donationForm.customMethod : "" // Keep custom value if switching back to Other
+                                    });
+                                    if (donationFieldErrors.method) {
+                                      setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                      if (currentInvalidDonationField === "method") {
+                                        setCurrentInvalidDonationField(null);
+                                      }
+                                    }
+                                  }}
+                                  required
+                                  style={{
+                                    width: "100%",
+                                    padding: "12px 16px",
+                                    borderRadius: "8px",
+                                    border: donationFieldErrors.method ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                    fontSize: "0.9375rem",
+                                  }}
+                                >
+                                  <option value="">Select Method</option>
+                                  <option value="FPS">FPS</option>
+                                  <option value="Alipay">Alipay</option>
+                                  <option value="Bank Deposit">Bank Deposit</option>
+                                  <option value="Other">Other</option>
+                                </select>
+                              </label>
+                              {/* Custom Payment Method Input - Shown when "Other" is selected */}
+                              {donationForm.method === "Other" && (
+                                <label style={{ marginTop: "12px" }}>
+                                  <span><i className="fas fa-edit" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Specify Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
+                                  <input
+                                    type="text"
+                                    value={donationForm.customMethod}
+                                    onChange={(e) => {
+                                      setDonationForm({ ...donationForm, customMethod: e.target.value });
+                                      if (donationFieldErrors.method) {
+                                        setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                        if (currentInvalidDonationField === "method") {
+                                          setCurrentInvalidDonationField(null);
+                                        }
+                                      }
+                                    }}
+                                    placeholder="Enter payment method"
+                                    required
+                                    style={{
+                                      width: "100%",
+                                      padding: "12px 16px",
+                                      borderRadius: "8px",
+                                      border: donationFieldErrors.method ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                      fontSize: "0.9375rem",
+                                      marginTop: "8px"
+                                    }}
+                                    onFocus={(e) => {
+                                      e.target.style.borderColor = "#5a31ea";
+                                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                    }}
+                                    onBlur={(e) => {
+                                      if (donationFieldErrors.method) {
+                                        e.target.style.borderColor = "#ef4444";
+                                        e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                                      } else {
+                                        e.target.style.borderColor = "#e5e7eb";
+                                        e.target.style.boxShadow = "none";
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Receiver Name - Required for both Cash and Online payments */}
+                          {(donationForm.payment_type === "cash" || donationForm.payment_type === "online") && (
+                            <label style={{ marginBottom: "20px", display: "block" }}>
+                              <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Receiver Name <span style={{ color: "#ef4444" }}>*</span></span>
+                              <input
+                                type="text"
+                                value={donationForm.receiver_name}
                                 onChange={(e) => {
-                                  setDonationForm({ ...donationForm, method: e.target.value });
-                                  if (donationFieldErrors.method) {
-                                    setDonationFieldErrors(prev => ({ ...prev, method: false }));
-                                    if (currentInvalidDonationField === "method") {
+                                  setDonationForm({ ...donationForm, receiver_name: e.target.value });
+                                  if (donationFieldErrors.receiver_name) {
+                                    setDonationFieldErrors(prev => ({ ...prev, receiver_name: false }));
+                                    if (currentInvalidDonationField === "receiver_name") {
                                       setCurrentInvalidDonationField(null);
                                     }
                                   }
                                 }}
+                                placeholder="Enter receiver name"
                                 required
                                 style={{
-                                  border: donationFieldErrors.method ? "2px solid #ef4444" : undefined
+                                  width: "100%",
+                                  padding: "12px 16px",
+                                  borderRadius: "8px",
+                                  border: donationFieldErrors.receiver_name ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                  fontSize: "0.9375rem",
                                 }}
-                              >
-                                <option value="">Select method</option>
-                                <option value="Online Payment">Online Payment</option>
-                                <option value="Cash Payment">Cash Payment</option>
-                              </select>
+                              />
+                            </label>
+                          )}
 
-                              {/* Custom dropdown UI for mobile */}
-                              <div className="donation-payment-method-select-custom" data-donation-payment-method-dropdown>
-                                <div
-                                  onClick={() => setShowDonationPaymentMethodDropdown(!showDonationPaymentMethodDropdown)}
-                                  style={{
-                                    padding: "10px 16px",
-                                    border: donationFieldErrors.method ? "2px solid #ef4444" : "1px solid #e0e0e0",
-                                    borderRadius: "4px",
-                                    background: "#fff",
-                                    cursor: "pointer",
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    color: donationForm.method ? "#000" : "#999",
-                                    minHeight: "42px"
-                                  }}
-                                >
-                                  <span>
-                                    {donationForm.method || "Select method"}
-                                  </span>
-                                  <span style={{
-                                    fontSize: "0.75rem",
-                                    color: "#5a31ea",
-                                    transition: "transform 0.2s ease",
-                                    transform: showDonationPaymentMethodDropdown ? "rotate(180deg)" : "rotate(0deg)",
-                                    display: "inline-block"
-                                  }}>▼</span>
-                                </div>
-
-                                {showDonationPaymentMethodDropdown && (
-                                  <div
-                                    style={{
-                                      position: "absolute",
-                                      top: "100%",
-                                      left: 0,
-                                      right: 0,
-                                      background: "#fff",
-                                      border: "1px solid #e0e0e0",
-                                      borderRadius: "4px",
-                                      marginTop: "4px",
-                                      zIndex: 1000,
-                                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <div
-                                      onClick={() => {
-                                        setDonationForm({ ...donationForm, method: "Online Payment" });
-                                        setShowDonationPaymentMethodDropdown(false);
-                                        if (donationFieldErrors.method) {
-                                          setDonationFieldErrors(prev => ({ ...prev, method: false }));
-                                          if (currentInvalidDonationField === "method") {
-                                            setCurrentInvalidDonationField(null);
-                                          }
-                                        }
-                                      }}
-                                      style={{
-                                        padding: "12px 16px",
-                                        cursor: "pointer",
-                                        borderBottom: "1px solid #e5e7eb",
-                                        background: donationForm.method === "Online Payment" ? "#f9fafb" : "#fff",
-                                        transition: "background 0.2s",
-                                        color: "#1a1a1a"
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        if (donationForm.method !== "Online Payment") {
-                                          e.currentTarget.style.background = "#f3f4f6";
-                                        }
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        if (donationForm.method !== "Online Payment") {
-                                          e.currentTarget.style.background = "#fff";
-                                        }
-                                      }}
-                                    >
-                                      Online Payment
-                                    </div>
-                                    <div
-                                      onClick={() => {
-                                        setDonationForm({ ...donationForm, method: "Cash Payment" });
-                                        setShowDonationPaymentMethodDropdown(false);
-                                        if (donationFieldErrors.method) {
-                                          setDonationFieldErrors(prev => ({ ...prev, method: false }));
-                                          if (currentInvalidDonationField === "method") {
-                                            setCurrentInvalidDonationField(null);
-                                          }
-                                        }
-                                      }}
-                                      style={{
-                                        padding: "12px 16px",
-                                        cursor: "pointer",
-                                        background: donationForm.method === "Cash Payment" ? "#f9fafb" : "#fff",
-                                        transition: "background 0.2s",
-                                        color: "#1a1a1a"
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        if (donationForm.method !== "Cash Payment") {
-                                          e.currentTarget.style.background = "#f3f4f6";
-                                        }
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        if (donationForm.method !== "Cash Payment") {
-                                          e.currentTarget.style.background = "#fff";
-                                        }
-                                      }}
-                                    >
-                                      Cash Payment
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </label>
-
-                          {/* Proof Image - Required for Cash Payment */}
-                          {donationForm.method === "Cash Payment" && (
-                            <label style={{ gridColumn: "1 / -1" }}>
+                          {/* Proof Image - Required for both Cash and Online Payment */}
+                          {(donationForm.payment_type === "cash" || donationForm.payment_type === "online") && (
+                            <label style={{ gridColumn: "1 / -1", marginBottom: "20px", display: "block" }}>
                               Proof Image <span style={{ color: "#ef4444" }}>*</span>
                               <div
                                 style={{
@@ -12574,129 +13447,8 @@
                             </label>
                           )}
 
-                          {/* Proof Image - Also required for Online Payment */}
-                          {donationForm.method === "Online Payment" && (
-                            <label style={{ gridColumn: "1 / -1" }}>
-                              Proof Image <span style={{ color: "#ef4444" }}>*</span>
-                              <div
-                                style={{
-                                  border: donationFieldErrors.screenshot ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
-                                  borderRadius: "4px",
-                                  padding: "24px",
-                                  textAlign: "center",
-                                  cursor: "pointer",
-                                  transition: "all 0.2s ease",
-                                  background: donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa",
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (!donationFieldErrors.screenshot) {
-                                    e.currentTarget.style.borderColor = "#5a31ea";
-                                  }
-                                  e.currentTarget.style.background = "#f8f9ff";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.borderColor = donationFieldErrors.screenshot ? "#ef4444" : "#d0d0d0";
-                                  e.currentTarget.style.background = donationImagePreview || donationForm.screenshot ? "#f9fafb" : "#fafafa";
-                                }}
-                                onClick={() => {
-                                  const input = document.createElement("input");
-                                  input.type = "file";
-                                  input.accept = "image/*";
-                                  input.onchange = async (e) => {
-                                    const file = e.target.files[0];
-                                    if (!file) return;
 
-                                    if (!file.type.startsWith("image/")) {
-                                      showToast("Please upload an image file", "error");
-                                      return;
-                                    }
-
-                                    // Create preview
-                                    const reader = new FileReader();
-                                    reader.onloadend = () => {
-                                      setDonationImageFile(file);
-                                      setDonationImagePreview(reader.result);
-                                      if (donationFieldErrors.screenshot) {
-                                        setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
-                                        if (currentInvalidDonationField === "screenshot") {
-                                          setCurrentInvalidDonationField(null);
-                                        }
-                                      }
-                                    };
-                                    reader.readAsDataURL(file);
-                                  };
-                                  input.click();
-                                }}
-                              >
-                                {donationImagePreview || donationForm.screenshot ? (
-                                  <div style={{ position: "relative", display: "inline-block" }}>
-                                    <img
-                                      src={donationImagePreview || donationForm.screenshot}
-                                      alt="Preview"
-                                      style={{
-                                        maxWidth: "100%",
-                                        maxHeight: "200px",
-                                        borderRadius: "4px",
-                                        marginBottom: "8px"
-                                      }}
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setDonationImageFile(null);
-                                        setDonationImagePreview(null);
-                                        setDonationForm({ ...donationForm, screenshot: "" });
-                                        if (donationFieldErrors.screenshot) {
-                                          setDonationFieldErrors(prev => ({ ...prev, screenshot: false }));
-                                          if (currentInvalidDonationField === "screenshot") {
-                                            setCurrentInvalidDonationField(null);
-                                          }
-                                        }
-                                      }}
-                                      style={{
-                                        position: "absolute",
-                                        top: "8px",
-                                        right: "8px",
-                                        background: "#ef4444",
-                                        color: "#fff",
-                                        border: "none",
-                                        borderRadius: "50%",
-                                        width: "28px",
-                                        height: "28px",
-                                        cursor: "pointer",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        fontSize: "0.875rem",
-                                      }}
-                                    >
-                                      ×
-                                    </button>
-                                    <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
-                                      Click to change image
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <i className="fas fa-cloud-upload-alt" style={{
-                                      fontSize: "2rem",
-                                      color: "#5a31ea",
-                                      marginBottom: "8px"
-                                    }}></i>
-                                    <div style={{ fontSize: "0.875rem", color: "#666", marginTop: "8px" }}>
-                                      Click to upload image
-                                    </div>
-                                    <div style={{ fontSize: "0.75rem", color: "#999", marginTop: "4px" }}>
-                                      PNG, JPG, GIF up to 10MB
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            </label>
-                          )}
-
-                          <label>
+                          <label style={{ marginBottom: "20px", display: "block" }}>
                             <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date <span style={{ color: "#ef4444" }}>*</span></span>
                             <input
                               type="date"
@@ -12746,7 +13498,7 @@
                             />
                           </label>
 
-                          <label>
+                          <label style={{ marginBottom: "20px", display: "block" }}>
                             Notes (Optional)
                             <textarea
                               value={donationForm.notes}
@@ -13112,7 +13864,8 @@
                                             })
                                             : "-"),
                                         "Donor Name": d.donorName || "",
-                                        Type: d.isMember ? "Member" : "Non-Member",
+                                        "Donor Type": d.isMember ? "Member" : "Non-Member",
+                                        "Donation Type": d.donationType || "Other",
                                         Amount: d.amount ? `HK$${formatNumber(Number(d.amount), {
                                           minimumFractionDigits: 2,
                                           maximumFractionDigits: 2,
@@ -13129,7 +13882,8 @@
                                       worksheet.columns = [
                                         { header: "Date", key: "Date", width: 12 },
                                         { header: "Donor Name", key: "Donor Name", width: 25 },
-                                        { header: "Type", key: "Type", width: 12 },
+                                        { header: "Donor Type", key: "Donor Type", width: 12 },
+                                        { header: "Donation Type", key: "Donation Type", width: 15 },
                                         { header: "Amount", key: "Amount", width: 15 },
                                         { header: "Method", key: "Method", width: 15 },
                                         { header: "Notes", key: "Notes", width: 40 },
@@ -13163,7 +13917,7 @@
                               </div>
 
                               <Table
-                                columns={["Date", "Donor Name", "Type", "Amount", "Method", "Screenshot", "Notes"]}
+                                columns={["Date", "Donor Name", "Donor Type", "Donation Type", "Amount", "Method", "Screenshot", "Notes"]}
                                 rows={paginatedDonations.map((donation) => {
                                   if (!donation) return null;
                                   const donationDate =
@@ -13176,14 +13930,27 @@
                                       })
                                       : "-");
 
+                                  const getDonationTypeBadge = (type) => {
+                                    const badgeColors = {
+                                      "Janaza": "badge-warning",
+                                      "Iftar": "badge-success",
+                                      "Cemetery": "badge-info",
+                                      "Masjid": "badge-primary",
+                                      "Calamity": "badge-danger",
+                                      "Other": "badge-secondary"
+                                    };
+                                    return <span className={`badge ${badgeColors[type] || "badge-secondary"}`}>{type || "Other"}</span>;
+                                  };
+
                                   return {
                                     Date: donationDate,
                                     "Donor Name": donation.donorName || "Unknown",
-                                    Type: donation.isMember ? (
+                                    "Donor Type": donation.isMember ? (
                                       <span className="badge badge-active">Member</span>
                                     ) : (
                                       <span className="badge badge-inactive">Non-Member</span>
                                     ),
+                                    "Donation Type": getDonationTypeBadge(donation.donationType),
                                     Amount: donation.amount
                                       ? `HK$${formatNumber(Number(donation.amount), {
                                         minimumFractionDigits: 2,
@@ -14986,7 +15753,9 @@
                 setShowPaymentModal(false);
                 setPaymentModalInvoice(null);
                 setPaymentModalData({
-                  paymentMethod: "",
+                  payment_type: "",
+                  method: "",
+                  receiver_name: "",
                   imageFile: null,
                   imagePreview: null,
                   imageUrl: "",
@@ -15070,7 +15839,7 @@
                   </div>
                 </div>
 
-                {/* Payment Method Selection */}
+                {/* Payment Type Selection: Online or Cash */}
                 <div>
                   <label style={{
                     display: "block",
@@ -15079,26 +15848,29 @@
                     color: "#333",
                     marginBottom: "12px"
                   }}>
-                    Payment Method
+                    Payment Type <span style={{ color: "#ef4444" }}>*</span>
                   </label>
                   <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                     <button
                       type="button"
                       onClick={() => setPaymentModalData({
                         ...paymentModalData,
-                        paymentMethod: "Cash"
+                        payment_type: "cash",
+                        method: "Cash",
+                        receiver_name: "", // Reset receiver name when switching
                       })}
                       style={{
                         flex: "1",
                         minWidth: "150px",
                         padding: "12px 20px",
                         borderRadius: "8px",
-                        border: "1px solid rgb(224, 224, 224)",
-                        background: paymentModalData.paymentMethod === "Cash"
+                        border: "2px solid",
+                        borderColor: paymentModalData.payment_type === "cash" ? "#5a31ea" : "#e5e7eb",
+                        background: paymentModalData.payment_type === "cash"
                           ? "#5a31ea"
-                          : "#f8f9ff",
-                        color: paymentModalData.paymentMethod === "Cash" ? "#ffffff" : "#1a1a1a",
-                        boxShadow: paymentModalData.paymentMethod === "Cash"
+                          : "#ffffff",
+                        color: paymentModalData.payment_type === "cash" ? "#ffffff" : "#333",
+                        boxShadow: paymentModalData.payment_type === "cash"
                           ? "0 4px 12px rgba(90, 49, 234, 0.3)"
                           : "0 2px 4px rgba(90, 49, 234, 0.08)",
                         fontWeight: "600",
@@ -15118,19 +15890,22 @@
                       type="button"
                       onClick={() => setPaymentModalData({
                         ...paymentModalData,
-                        paymentMethod: "Online"
+                        payment_type: "online",
+                        method: "", // Reset method when switching to online
+                        receiver_name: "", // Reset receiver name when switching
                       })}
                       style={{
                         flex: "1",
                         minWidth: "150px",
                         padding: "12px 20px",
                         borderRadius: "8px",
-                        border: "1px solid rgb(224, 224, 224)",
-                        background: paymentModalData.paymentMethod === "Online"
+                        border: "2px solid",
+                        borderColor: paymentModalData.payment_type === "online" ? "#5a31ea" : "#e5e7eb",
+                        background: paymentModalData.payment_type === "online"
                           ? "#5a31ea"
-                          : "#f8f9ff",
-                        color: paymentModalData.paymentMethod === "Online" ? "#ffffff" : "#1a1a1a",
-                        boxShadow: paymentModalData.paymentMethod === "Online"
+                          : "#ffffff",
+                        color: paymentModalData.payment_type === "online" ? "#ffffff" : "#333",
+                        boxShadow: paymentModalData.payment_type === "online"
                           ? "0 4px 12px rgba(90, 49, 234, 0.3)"
                           : "0 2px 4px rgba(90, 49, 234, 0.08)",
                         fontWeight: "600",
@@ -15149,8 +15924,178 @@
                   </div>
                 </div>
 
-                {/* Admin Selection - Shown for both Cash and Online */}
-                {(paymentModalData.paymentMethod === "Cash" || paymentModalData.paymentMethod === "Online") && (
+                {/* Online Payment Method Selection - Only shown when Online is selected */}
+                {paymentModalData.payment_type === "online" && (
+                  <div>
+                    <label style={{
+                      display: "block",
+                      fontSize: "0.875rem",
+                      fontWeight: "600",
+                      color: "#333",
+                      marginBottom: "8px"
+                    }}>
+                      Payment Method <span style={{ color: "#ef4444" }}>*</span>
+                    </label>
+                    <select
+                      value={paymentModalData.method}
+                      onChange={(e) => {
+                        setPaymentModalData({ 
+                          ...paymentModalData, 
+                          method: e.target.value,
+                          customMethod: e.target.value === "Other" ? paymentModalData.customMethod : "" // Keep custom value if switching back to Other
+                        });
+                        if (paymentModalErrors.method) {
+                          setPaymentModalErrors(prev => ({ ...prev, method: false }));
+                          if (currentInvalidPaymentModalField === "method") {
+                            setCurrentInvalidPaymentModalField(null);
+                          }
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        border: paymentModalErrors.method && currentInvalidPaymentModalField === "method" ? "2px solid #ef4444" : "1px solid #e0e0e0",
+                        borderRadius: "8px",
+                        fontSize: "0.875rem",
+                        background: "#fff",
+                        outline: "none",
+                        cursor: "pointer",
+                        transition: "border-color 0.2s"
+                      }}
+                      onFocus={(e) => {
+                        if (!paymentModalErrors.method || currentInvalidPaymentModalField !== "method") {
+                          e.target.style.borderColor = "#5a31ea";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                        }
+                      }}
+                      onBlur={(e) => {
+                        if (paymentModalErrors.method && currentInvalidPaymentModalField === "method") {
+                          e.target.style.borderColor = "#ef4444";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                        } else {
+                          e.target.style.borderColor = "#e0e0e0";
+                          e.target.style.boxShadow = "none";
+                        }
+                      }}
+                    >
+                      <option value="">Select Method</option>
+                      <option value="FPS">FPS</option>
+                      <option value="Alipay">Alipay</option>
+                      <option value="Bank Deposit">Bank Deposit</option>
+                      <option value="Other">Other</option>
+                    </select>
+                    {/* Custom Payment Method Input - Shown when "Other" is selected */}
+                    {paymentModalData.method === "Other" && (
+                      <div style={{ marginTop: "12px" }}>
+                        <label style={{
+                          display: "block",
+                          fontSize: "0.875rem",
+                          fontWeight: "600",
+                          color: "#333",
+                          marginBottom: "8px"
+                        }}>
+                          Specify Payment Method <span style={{ color: "#ef4444" }}>*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={paymentModalData.customMethod}
+                          onChange={(e) => {
+                            setPaymentModalData({ ...paymentModalData, customMethod: e.target.value });
+                            if (paymentModalErrors.method) {
+                              setPaymentModalErrors(prev => ({ ...prev, method: false }));
+                              if (currentInvalidPaymentModalField === "method") {
+                                setCurrentInvalidPaymentModalField(null);
+                              }
+                            }
+                          }}
+                          placeholder="Enter payment method"
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            border: paymentModalErrors.method && currentInvalidPaymentModalField === "method" ? "2px solid #ef4444" : "1px solid #e0e0e0",
+                            borderRadius: "8px",
+                            fontSize: "0.875rem",
+                            background: "#fff",
+                            outline: "none",
+                            transition: "border-color 0.2s"
+                          }}
+                          onFocus={(e) => {
+                            if (!paymentModalErrors.method || currentInvalidPaymentModalField !== "method") {
+                              e.target.style.borderColor = "#5a31ea";
+                              e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                            }
+                          }}
+                          onBlur={(e) => {
+                            if (paymentModalErrors.method && currentInvalidPaymentModalField === "method") {
+                              e.target.style.borderColor = "#ef4444";
+                              e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                            } else {
+                              e.target.style.borderColor = "#e0e0e0";
+                              e.target.style.boxShadow = "none";
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Receiver Name - Required for both Cash and Online */}
+                {(paymentModalData.payment_type === "cash" || paymentModalData.payment_type === "online") && (
+                  <div>
+                    <label style={{
+                      display: "block",
+                      fontSize: "0.875rem",
+                      fontWeight: "600",
+                      color: "#333",
+                      marginBottom: "8px"
+                    }}>
+                      Receiver Name <span style={{ color: "#ef4444" }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={paymentModalData.receiver_name}
+                      onChange={(e) => {
+                        setPaymentModalData({ ...paymentModalData, receiver_name: e.target.value });
+                        if (paymentModalErrors.receiver_name) {
+                          setPaymentModalErrors(prev => ({ ...prev, receiver_name: false }));
+                          if (currentInvalidPaymentModalField === "receiver_name") {
+                            setCurrentInvalidPaymentModalField(null);
+                          }
+                        }
+                      }}
+                      placeholder="Enter receiver name"
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        border: paymentModalErrors.receiver_name && currentInvalidPaymentModalField === "receiver_name" ? "2px solid #ef4444" : "1px solid #e0e0e0",
+                        borderRadius: "8px",
+                        fontSize: "0.875rem",
+                        background: "#fff",
+                        outline: "none",
+                        transition: "border-color 0.2s"
+                      }}
+                      onFocus={(e) => {
+                        if (!paymentModalErrors.receiver_name || currentInvalidPaymentModalField !== "receiver_name") {
+                          e.target.style.borderColor = "#5a31ea";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                        }
+                      }}
+                      onBlur={(e) => {
+                        if (paymentModalErrors.receiver_name && currentInvalidPaymentModalField === "receiver_name") {
+                          e.target.style.borderColor = "#ef4444";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                        } else {
+                          e.target.style.borderColor = "#e0e0e0";
+                          e.target.style.boxShadow = "none";
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Admin Selection - Hidden as requested */}
+                {/* {(paymentModalData.payment_type === "cash" || paymentModalData.payment_type === "online") && (
                   <div style={{ marginBottom: "2px" }}>
                     <div style={{ marginBottom: "2px" }}>
                       <label style={{
@@ -15209,10 +16154,10 @@
                       </select>
                     </div>
                   </div>
-                )}
+                )} */}
 
                 {/* Attachment Upload - Required for both payment methods */}
-                {(paymentModalData.paymentMethod === "Cash" || paymentModalData.paymentMethod === "Online") && (
+                {(paymentModalData.payment_type === "cash" || paymentModalData.payment_type === "online") && (
                   <div>
                     <label style={{
                       display: "block",
@@ -15362,15 +16307,15 @@
                         selectedAdminId: "",
                         adminMobile: "",
                       });
-                      setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                      setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
                       setCurrentInvalidPaymentModalField(null);
                     }}
                     disabled={uploadingPaymentModal}
                   >
                     Cancel
                   </button>
-                  {/* Show Mark as Paid button only when payment method is selected */}
-                  {paymentModalData.paymentMethod && (
+                  {/* Show Mark as Paid button only when payment type is selected */}
+                  {paymentModalData.payment_type && (
                     <button
                       type="button"
                       className="primary-btn"
@@ -15378,17 +16323,28 @@
                       onClick={async () => {
                         // Progressive validation for payment modal
                         const validatePaymentModal = () => {
-                          // Define field order for validation - only admin is required, image is optional
-                          const fieldOrder = ["selectedAdminId"];
+                          // Define field order for validation (selectedAdminId removed as field is hidden)
+                          const fieldOrder = ["payment_type", "method", "receiver_name"];
 
                           // If we have a current invalid field, check if it's now valid
                           if (currentInvalidPaymentModalField) {
                             let isValid = true;
                             let errorMsg = "";
 
-                            if (currentInvalidPaymentModalField === "selectedAdminId" && !paymentModalData.selectedAdminId) {
+                            if (currentInvalidPaymentModalField === "payment_type" && !paymentModalData.payment_type) {
                               isValid = false;
-                              errorMsg = "Please select an admin";
+                              errorMsg = "Payment type is required";
+                            } else if (currentInvalidPaymentModalField === "method") {
+                              if (paymentModalData.payment_type === "online" && !paymentModalData.method) {
+                                isValid = false;
+                                errorMsg = "Payment method is required for online payments";
+                              } else if (paymentModalData.method === "Other" && !paymentModalData.customMethod) {
+                                isValid = false;
+                                errorMsg = "Please specify the payment method";
+                              }
+                            } else if (currentInvalidPaymentModalField === "receiver_name" && !paymentModalData.receiver_name) {
+                              isValid = false;
+                              errorMsg = "Receiver name is required";
                             }
 
                             if (isValid) {
@@ -15406,14 +16362,28 @@
                             let isValid = true;
                             let errorMsg = "";
 
-                            if (field === "selectedAdminId" && !paymentModalData.selectedAdminId) {
+                            if (field === "payment_type" && !paymentModalData.payment_type) {
                               isValid = false;
-                              errorMsg = "Please select an admin";
+                              errorMsg = "Payment type is required";
+                            } else if (field === "method") {
+                              if (paymentModalData.payment_type === "online" && !paymentModalData.method) {
+                                isValid = false;
+                                errorMsg = "Payment method is required for online payments";
+                              } else if (paymentModalData.method === "Other" && !paymentModalData.customMethod) {
+                                isValid = false;
+                                errorMsg = "Please specify the payment method";
+                              }
+                            } else if (field === "receiver_name" && !paymentModalData.receiver_name) {
+                              isValid = false;
+                              errorMsg = "Receiver name is required";
                             }
 
                             if (!isValid) {
                               // Clear all errors first
                               setPaymentModalErrors({
+                                payment_type: false,
+                                method: false,
+                                receiver_name: false,
                                 image: false,
                                 reference: false,
                                 selectedAdminId: false,
@@ -15426,13 +16396,13 @@
 
                               // Focus on the invalid field
                               setTimeout(() => {
-                                if (field === "selectedAdminId") {
-                                  const selects = document.querySelectorAll('select');
-                                  const adminSelect = Array.from(selects).find(select =>
-                                    select.options[0]?.text === "Select an admin"
+                                if (field === "receiver_name") {
+                                  const inputs = document.querySelectorAll('input[type="text"]');
+                                  const receiverInput = Array.from(inputs).find(input =>
+                                    input.placeholder?.includes("receiver name")
                                   );
-                                  adminSelect?.focus();
-                                  adminSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                  receiverInput?.focus();
+                                  receiverInput?.scrollIntoView({ behavior: "smooth", block: "center" });
                                 }
                               }, 100);
 
@@ -15442,6 +16412,9 @@
 
                           // All fields valid
                           setPaymentModalErrors({
+                            payment_type: false,
+                            method: false,
+                            receiver_name: false,
                             image: false,
                             reference: false,
                             selectedAdminId: false,
@@ -15506,14 +16479,28 @@
                               }
 
                               // Mark invoice as paid - wait for it to complete before closing modal
-                              const paymentMethod = paymentModalData.paymentMethod; // Already "Cash" or "Online"
-                              await handleMarkAsPaid(paymentModalInvoice.id, paymentMethod, imageUrl, null);
+                              // Ensure payment_type and method are properly set
+                              // Use custom payment method if "Other" is selected and custom value is provided
+                              const finalMethod = paymentModalData.payment_type === "cash" 
+                                ? "Cash" 
+                                : (paymentModalData.method === "Other" && paymentModalData.customMethod 
+                                    ? paymentModalData.customMethod 
+                                    : paymentModalData.method || "Online");
+                              
+                              await handleMarkAsPaid(paymentModalInvoice.id, finalMethod, imageUrl, null, {
+                                payment_type: paymentModalData.payment_type,
+                                method: finalMethod,
+                                receiver_name: paymentModalData.receiver_name,
+                              });
 
                               // Close modal and reset AFTER payment is successfully processed
                               setShowPaymentModal(false);
                               setPaymentModalInvoice(null);
                               setPaymentModalData({
-                                paymentMethod: "",
+                                payment_type: "",
+                                method: "",
+                                customMethod: "",
+                                receiver_name: "",
                                 imageFile: null,
                                 imagePreview: null,
                                 imageUrl: "",
@@ -15521,7 +16508,7 @@
                                 selectedAdminId: "",
                                 adminMobile: "",
                               });
-                              setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                              setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
                               setCurrentInvalidPaymentModalField(null);
                               setUploadingPaymentModal(false);
 
@@ -15535,7 +16522,10 @@
                                 setShowPaymentModal(false);
                                 setPaymentModalInvoice(null);
                                 setPaymentModalData({
-                                  paymentMethod: "",
+                                  payment_type: "",
+                                  method: "",
+                                  customMethod: "",
+                                  receiver_name: "",
                                   imageFile: null,
                                   imagePreview: null,
                                   imageUrl: "",
@@ -15543,7 +16533,7 @@
                                   selectedAdminId: "",
                                   adminMobile: "",
                                 });
-                                setPaymentModalErrors({ image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                                setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
                                 setCurrentInvalidPaymentModalField(null);
                                 setUploadingPaymentModal(false);
                               }, 100);
@@ -16144,7 +17134,7 @@
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Name</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Email</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Phone</th>
-                        <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Native</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Native Place</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Subscription Type</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Subscription Year</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333" }}>Start Date</th>

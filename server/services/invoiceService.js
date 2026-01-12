@@ -3,12 +3,29 @@ import UserModel from "../models/User.js";
 import InvoiceModel from "../models/Invoice.js";
 import PaymentModel from "../models/Payment.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
+import { calculateFees, shouldChargeMembershipFee, shouldChargeJanazaFee, SUBSCRIPTION_TYPES } from "../utils/subscriptionTypes.js";
 
 // Helper function to create a subscription invoice
 async function createSubscriptionInvoice(member, subscriptionType, customPeriod = null) {
   try {
-    const invoiceAmount = subscriptionType === 'Yearly + Janaza Fund' ? 'HK$500' : 'HK$250';
-    const invoicePeriod = customPeriod || (subscriptionType === 'Yearly + Janaza Fund' ? 'Yearly Subscription + Janaza Fund' : 'Lifetime Subscription');
+    // Calculate fees based on subscription type and whether lifetime membership is paid
+    const fees = calculateFees(subscriptionType, member.lifetimeMembershipPaid || false);
+    const invoiceAmount = `HK$${fees.totalFee}`;
+    
+    // Determine invoice period
+    let invoicePeriod = customPeriod;
+    if (!invoicePeriod) {
+      if (subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+        invoicePeriod = 'Annual Member Subscription';
+      } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
+        invoicePeriod = 'Lifetime Janaza Fund Member Subscription';
+      } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
+        invoicePeriod = member.lifetimeMembershipPaid ? 'Lifetime Membership - Janaza Fund' : 'Lifetime Membership - Full Payment';
+      } else {
+        // Legacy support
+        invoicePeriod = subscriptionType === 'Yearly + Janaza Fund' ? 'Yearly Subscription + Janaza Fund' : 'Lifetime Subscription';
+      }
+    }
 
     // Final check for existing invoice for the same member and period (prevent duplicates)
     const existingInvoice = await InvoiceModel.findOne({
@@ -33,6 +50,21 @@ async function createSubscriptionInvoice(member, subscriptionType, customPeriod 
       year: 'numeric'
     }).replace(',', '');
 
+    // Determine invoice type
+    let invoiceType = "combined";
+    if (fees.membershipFee > 0 && fees.janazaFee > 0) {
+      invoiceType = "combined";
+    } else if (fees.membershipFee > 0) {
+      invoiceType = "membership";
+    } else if (fees.janazaFee > 0) {
+      invoiceType = "janaza";
+    }
+    
+    // Special case for lifetime membership first payment
+    if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && !member.lifetimeMembershipPaid) {
+      invoiceType = "lifetime_membership";
+    }
+
     // Create invoice
     const invoiceData = {
       id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
@@ -41,6 +73,9 @@ async function createSubscriptionInvoice(member, subscriptionType, customPeriod 
       memberEmail: member.email,
       period: invoicePeriod,
       amount: invoiceAmount,
+      membershipFee: fees.membershipFee,
+      janazaFee: fees.janazaFee,
+      invoiceType: invoiceType,
       status: "Unpaid",
       due: dueDateFormatted,
       method: "",
@@ -140,9 +175,22 @@ export async function generateSubscriptionInvoices() {
         if (timeSincePayment >= periodMs) {
           shouldCreate = true;
           const monthYear = now.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
-          periodName = subscriptionType === 'Yearly + Janaza Fund'
-            ? `${monthYear} Yearly Subscription + Janaza Fund`
-            : `${monthYear} Lifetime Subscription`;
+          
+          // Determine period name based on subscription type
+          if (subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+            periodName = `${monthYear} Annual Member Subscription`;
+          } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
+            periodName = `${monthYear} Lifetime Janaza Fund Member Subscription`;
+          } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
+            periodName = member.lifetimeMembershipPaid 
+              ? `${monthYear} Lifetime Membership - Janaza Fund`
+              : `${monthYear} Lifetime Membership - Full Payment`;
+          } else {
+            // Legacy support
+            periodName = subscriptionType === 'Yearly + Janaza Fund'
+              ? `${monthYear} Yearly Subscription + Janaza Fund`
+              : `${monthYear} Lifetime Subscription`;
+          }
         }
 
         // Check if there's already an unpaid invoice for current period

@@ -148,12 +148,28 @@ router.put("/:id/approve", async (req, res) => {
           const day = String(newNextDueDate.getDate()).padStart(2, '0');
           const nextDueStr = `${year}-${month}-${day}`;
 
+          // Check if this is a lifetime membership full payment
+          // Check by invoice type, amount (5250), or membershipFee (5000)
+          const isLifetimeMembershipFullPayment = member.subscriptionType === "Lifetime Membership" 
+            && !member.lifetimeMembershipPaid 
+            && (
+              invoice.invoiceType === "lifetime_membership" ||
+              invoice.amount === "HK$5250" ||
+              invoice.membershipFee === 5000
+            );
+          
           const memberUpdate = {
             payment_status: 'paid',
             last_payment_date: new Date(),
             next_due_date: newNextDueDate,
             nextDue: nextDueStr
           };
+          
+          // Mark lifetime membership as paid if this is the full payment
+          if (isLifetimeMembershipFullPayment) {
+            memberUpdate.lifetimeMembershipPaid = true;
+            console.log(`✓ Marked lifetime membership as paid for member ${member.name} (${member.id})`);
+          }
 
           await UserModel.findOneAndUpdate(
             { id: member.id },

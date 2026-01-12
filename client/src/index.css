@@ -1971,7 +1971,7 @@ button {
 .admin-dashboard-table-wrapper table thead th:nth-child(3) { width: 15%; } /* Method */
 .admin-dashboard-table-wrapper table thead th:nth-child(4) { width: 12%; } /* Status */
 .admin-dashboard-table-wrapper table thead th:nth-child(5) { width: 13%; } /* Subscription Year */
-.admin-dashboard-table-wrapper table thead th:nth-child(6) { width: 12%; } /* Native */
+.admin-dashboard-table-wrapper table thead th:nth-child(6) { width: 12%; } /* Native Place */
 .admin-dashboard-table-wrapper table thead th:nth-child(7) { width: 13%; } /* Joined Year */
 
 .admin-dashboard-table-wrapper table tbody tr {
@@ -3252,7 +3252,7 @@ button {
 
 .kpi h4 {
   margin: 6px 0;
-  font-size: 1.8rem;
+  font-size: 1.6rem;
 }
 
 .toggle-chip-group {
@@ -8515,7 +8515,7 @@ button {
 
 .kpi h4 {
   margin: 6px 0;
-  font-size: 1.8rem;
+  font-size: 1.6rem;
 }
 
 .toggle-chip-group {

@@ -11,7 +11,11 @@ const UserSchema = new mongoose.Schema({
   balance: String,
   nextDue: String,
   lastPayment: String,
-  subscriptionType: { type: String, default: "Lifetime" },
+  subscriptionType: { type: String, default: "Lifetime" }, // "Annual Member", "Lifetime Janaza Fund Member", "Lifetime Membership"
+  // Subscription fee fields
+  membershipFee: { type: Number, default: 0 }, // Annual membership fee (HK$)
+  janazaFee: { type: Number, default: 250 }, // Annual Janaza fund fee (HK$)
+  lifetimeMembershipPaid: { type: Boolean, default: false }, // Whether lifetime membership fee has been paid
   // Payment management fields
   start_date: { type: Date, default: null },
   payment_status: { type: String, default: "unpaid" }, // unpaid, paid

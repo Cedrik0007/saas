@@ -206,6 +206,10 @@ router.post("/", async (req, res) => {
       nextDue: nextDueStr,
       lastPayment: req.body.lastPayment || '',
       subscriptionType: req.body.subscriptionType || 'Lifetime',
+      // Subscription fee fields - set based on subscription type
+      membershipFee: req.body.membershipFee !== undefined ? req.body.membershipFee : 0,
+      janazaFee: req.body.janazaFee !== undefined ? req.body.janazaFee : 250,
+      lifetimeMembershipPaid: req.body.lifetimeMembershipPaid || false,
       // Payment management fields - set defaults on creation
       start_date: startDate,
       payment_status: 'unpaid',
@@ -217,12 +221,33 @@ router.post("/", async (req, res) => {
 
     const savedMember = await newMember.save();
 
+    // Import subscription types utility
+    const { calculateFees, SUBSCRIPTION_TYPES } = await import("../utils/subscriptionTypes.js");
+    
     // Determine the invoice period first to check for duplicates accurately
     const subscriptionType = req.body.subscriptionType || 'Lifetime';
+    
+    // Calculate fees based on subscription type
+    const fees = calculateFees(subscriptionType, savedMember.lifetimeMembershipPaid || false);
+    
+    // Set member fees based on subscription type
+    savedMember.membershipFee = fees.membershipFee;
+    savedMember.janazaFee = fees.janazaFee;
+    await savedMember.save();
+    
     let invoicePeriod = 'Lifetime Subscription';
-    if (subscriptionType === 'Yearly + Janaza Fund') {
+    if (subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+      invoicePeriod = 'Annual Member Subscription';
+    } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
+      invoicePeriod = 'Lifetime Janaza Fund Member Subscription';
+    } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
+      invoicePeriod = savedMember.lifetimeMembershipPaid 
+        ? 'Lifetime Membership - Janaza Fund'
+        : 'Lifetime Membership - Full Payment';
+    } else if (subscriptionType === 'Yearly + Janaza Fund') {
       invoicePeriod = 'Yearly Subscription + Janaza Fund';
     }
+    
     // If subscriptionYear is provided, use it as the period
     if (req.body.subscriptionYear) {
       invoicePeriod = req.body.subscriptionYear;
@@ -238,12 +263,8 @@ router.post("/", async (req, res) => {
     // Only create invoice if one doesn't already exist
     if (!existingInvoice) {
       // Create initial invoice
-      let invoiceAmount = 'HK$250';
+      const invoiceAmount = `HK$${fees.totalFee}`;
       let dueDate = new Date();
-
-      if (subscriptionType === 'Yearly + Janaza Fund') {
-        invoiceAmount = 'HK$500';
-      }
       
       // Calculate due date based on subscriptionYear if provided, otherwise 1 year from now
       if (req.body.subscriptionYear) {
@@ -267,6 +288,21 @@ router.post("/", async (req, res) => {
         year: 'numeric'
       }).replace(',', '');
 
+      // Determine invoice type
+      let invoiceType = "combined";
+      if (fees.membershipFee > 0 && fees.janazaFee > 0) {
+        invoiceType = "combined";
+      } else if (fees.membershipFee > 0) {
+        invoiceType = "membership";
+      } else if (fees.janazaFee > 0) {
+        invoiceType = "janaza";
+      }
+      
+      // Special case for lifetime membership first payment
+      if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && !savedMember.lifetimeMembershipPaid) {
+        invoiceType = "lifetime_membership";
+      }
+
       // Create invoice
       const invoiceData = {
         id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
@@ -275,6 +311,9 @@ router.post("/", async (req, res) => {
         memberEmail: savedMember.email,
         period: invoicePeriod,
         amount: invoiceAmount,
+        membershipFee: fees.membershipFee,
+        janazaFee: fees.janazaFee,
+        invoiceType: invoiceType,
         status: "Unpaid",
         due: dueDateFormatted,
         method: "",
@@ -499,7 +538,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const nameIndex = headers.findIndex(h => h.includes('name'));
       const emailIndex = headers.findIndex(h => h.includes('email'));
       const phoneIndex = headers.findIndex(h => h.includes('phone') || h.includes('whatsapp') || h.includes('mobile'));
-      const nativeIndex = headers.findIndex(h => h.includes('native'));
+      const nativeIndex = headers.findIndex(h => h.includes('native') || h.includes('native place'));
       const statusIndex = headers.findIndex(h => h.includes('status'));
       const subscriptionTypeIndex = headers.findIndex(h => h.includes('subscription') || h.includes('type'));
       const subscriptionYearIndex = headers.findIndex(h => (h.includes('subscription') && h.includes('year')) || h.includes('subyear') || (h.includes('year') && !h.includes('start') && !h.includes('date')));
@@ -656,7 +695,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const nameIndex = headers.findIndex(h => h.includes('name'));
       const emailIndex = headers.findIndex(h => h.includes('email'));
       const phoneIndex = headers.findIndex(h => h.includes('phone') || h.includes('whatsapp') || h.includes('mobile'));
-      const nativeIndex = headers.findIndex(h => h.includes('native'));
+      const nativeIndex = headers.findIndex(h => h.includes('native') || h.includes('native place'));
       const statusIndex = headers.findIndex(h => h.includes('status'));
       const subscriptionTypeIndex = headers.findIndex(h => h.includes('subscription') || h.includes('type'));
       const subscriptionYearIndex = headers.findIndex(h => (h.includes('subscription') && h.includes('year')) || h.includes('subyear') || (h.includes('year') && !h.includes('start') && !h.includes('date')));
