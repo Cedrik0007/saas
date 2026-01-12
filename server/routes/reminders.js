@@ -191,5 +191,105 @@ router.get("/logs", async (req, res) => {
   }
 });
 
+// POST endpoint to retry a failed reminder
+router.post("/retry", async (req, res) => {
+  try {
+    await ensureConnection();
+    const { reminderId } = req.body;
+    
+    if (!reminderId) {
+      return res.status(400).json({ error: "reminderId is required" });
+    }
+
+    // Find the reminder log
+    const reminderLog = await ReminderLogModel.findById(reminderId);
+    if (!reminderLog) {
+      return res.status(404).json({ error: "Reminder log not found" });
+    }
+
+    // Check if email is configured
+    const emailSettings = await EmailSettingsModel.findOne({});
+    if (!emailSettings || !emailSettings.emailUser || !emailSettings.emailPassword) {
+      return res.status(400).json({ error: "Email not configured. Please configure email settings first." });
+    }
+
+    // Update transporter with saved settings
+    const transporter = nodemailer.createTransport({
+      service: emailSettings.emailService || 'gmail',
+      auth: {
+        user: emailSettings.emailUser,
+        pass: emailSettings.emailPassword,
+      },
+    });
+    setTransporter(transporter);
+
+    // Find the member
+    const member = await UserModel.findOne({ id: reminderLog.memberId });
+    if (!member) {
+      return res.status(404).json({ error: "Member not found" });
+    }
+
+    // Find unpaid invoices
+    const unpaidInvoices = await InvoiceModel.find({
+      memberId: member.id,
+      status: { $in: ['Unpaid', 'Overdue'] }
+    });
+
+    if (unpaidInvoices.length === 0) {
+      return res.status(400).json({ error: "This member has no outstanding invoices" });
+    }
+
+    const totalDue = unpaidInvoices.reduce((sum, inv) => {
+      return sum + parseFloat(inv.amount.replace(/HK\$|\$/g, '').replace(',', '')) || 0;
+    }, 0);
+
+    // Send the reminder email
+    const sent = await sendReminderEmail(member, unpaidInvoices, totalDue);
+    
+    if (sent) {
+      // Update the reminder log status
+      reminderLog.status = "Delivered";
+      reminderLog.sentAt = new Date();
+      await reminderLog.save();
+      
+      res.json({ 
+        success: true, 
+        message: "Reminder retried successfully" 
+      });
+    } else {
+      // Update the reminder log status to failed
+      reminderLog.status = "Failed";
+      await reminderLog.save();
+      
+      res.status(500).json({ error: "Failed to send email" });
+    }
+  } catch (error) {
+    console.error("Error retrying reminder:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE endpoint to delete a reminder log
+router.delete("/logs/:id", async (req, res) => {
+  try {
+    await ensureConnection();
+    const { id } = req.params;
+    
+    const deletedLog = await ReminderLogModel.findByIdAndDelete(id);
+    
+    if (!deletedLog) {
+      return res.status(404).json({ error: "Reminder log not found" });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: "Reminder log deleted successfully" 
+    });
+  } catch (error) {
+    console.error("Error deleting reminder log:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
 

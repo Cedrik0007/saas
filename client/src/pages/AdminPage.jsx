@@ -871,6 +871,7 @@
     const [selectedReminderLogItem, setSelectedReminderLogItem] = useState(null);
     const [pendingReminderAction, setPendingReminderAction] = useState(null); // { type: 'single'|'bulk', memberData?: member }
     const [selectedChannels, setSelectedChannels] = useState([]); // Track selected channels for bulk send (can be multiple)
+    const [selectedReminderLogs, setSelectedReminderLogs] = useState(new Set()); // Track selected reminder log IDs
     const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
     const [paymentSearchTerm, setPaymentSearchTerm] = useState(""); // Search filter for payments
     const [paymentYearFilter, setPaymentYearFilter] = useState("All"); // Year filter for payments
@@ -9396,13 +9397,282 @@
                             const end = start + pageSize;
                             const pageItems = allItems.slice(start, end);
 
+                            // Generate unique ID for each item
+                            const getItemId = (item, index) => {
+                              if (item.raw?._id) return item.raw._id;
+                              if (item.raw?.id) return item.raw.id;
+                              return `${item.memberId || item.memberEmail || item.memberName || "item"}-${item.date || index || ""}-${item.channel || ""}`;
+                            };
+
+                            const allPageItemIds = pageItems.map((item, idx) => getItemId(item, idx));
+                            const allSelected = allPageItemIds.length > 0 && allPageItemIds.every(id => selectedReminderLogs.has(id));
+                            const someSelected = allPageItemIds.some(id => selectedReminderLogs.has(id));
+
+                            const handleSelectAll = (e) => {
+                              if (e.target.checked) {
+                                const newSelected = new Set(selectedReminderLogs);
+                                allPageItemIds.forEach(id => newSelected.add(id));
+                                setSelectedReminderLogs(newSelected);
+                              } else {
+                                const newSelected = new Set(selectedReminderLogs);
+                                allPageItemIds.forEach(id => newSelected.delete(id));
+                                setSelectedReminderLogs(newSelected);
+                              }
+                            };
+
+                            const handleSelectItem = (itemId) => {
+                              const newSelected = new Set(selectedReminderLogs);
+                              if (newSelected.has(itemId)) {
+                                newSelected.delete(itemId);
+                              } else {
+                                newSelected.add(itemId);
+                              }
+                              setSelectedReminderLogs(newSelected);
+                            };
+
                             return (
                               <>
+                                {/* Bulk Actions Bar */}
+                                {selectedReminderLogs.size > 0 && (
+                                  <div style={{ 
+                                    marginBottom: "16px", 
+                                    padding: "12px 16px", 
+                                    backgroundColor: "#f3f4f6", 
+                                    borderRadius: "8px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    flexWrap: "wrap",
+                                    gap: "12px"
+                                  }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                                      <span style={{ fontWeight: "600", color: "#374151" }}>
+                                        {selectedReminderLogs.size} item{selectedReminderLogs.size !== 1 ? 's' : ''} selected
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedReminderLogs(new Set())}
+                                        style={{
+                                          padding: "4px 12px",
+                                          fontSize: "0.875rem",
+                                          color: "#6b7280",
+                                          background: "transparent",
+                                          border: "1px solid #d1d5db",
+                                          borderRadius: "4px",
+                                          cursor: "pointer"
+                                        }}
+                                      >
+                                        Clear selection
+                                      </button>
+                                    </div>
+                                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                      {/* Bulk Retry - only for failed email reminders */}
+                                      {!isViewer && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const selectedItems = allItems.filter((item, idx) => {
+                                              const itemId = getItemId(item, idx);
+                                              return selectedReminderLogs.has(itemId) && 
+                                                     item.channel === "Email" && 
+                                                     item.status === "Failed";
+                                            });
+                                            
+                                            if (selectedItems.length === 0) {
+                                              showToast("No failed email reminders selected", "error");
+                                              return;
+                                            }
+
+                                            showConfirmation(
+                                              `Are you sure you want to retry ${selectedItems.length} failed reminder(s)?`,
+                                              async () => {
+                                                try {
+                                                  const apiUrl = import.meta.env.DEV
+                                                    ? ""
+                                                    : import.meta.env.VITE_API_URL || "";
+                                                  
+                                                  let successCount = 0;
+                                                  let failCount = 0;
+
+                                                  for (const item of selectedItems) {
+                                                    try {
+                                                      const raw = item.raw;
+                                                      const reminderId = raw?._id || raw?.id;
+                                                      if (!reminderId) continue;
+
+                                                      const res = await fetch(
+                                                        `${apiUrl}/api/reminders/retry`,
+                                                        {
+                                                          method: "POST",
+                                                          headers: { "Content-Type": "application/json" },
+                                                          body: JSON.stringify({ reminderId }),
+                                                        }
+                                                      );
+                                                      
+                                                      if (res.ok) {
+                                                        const data = await res.json();
+                                                        if (data.success) {
+                                                          successCount++;
+                                                        } else {
+                                                          failCount++;
+                                                        }
+                                                      } else {
+                                                        const errorData = await res.json().catch(() => ({}));
+                                                        console.error("Retry failed:", errorData.error || "Unknown error");
+                                                        failCount++;
+                                                      }
+                                                    } catch (error) {
+                                                      console.error("Retry reminder failed", error);
+                                                      failCount++;
+                                                    }
+                                                  }
+
+                                                  if (successCount > 0) {
+                                                    showToast(`Successfully retried ${successCount} reminder(s)${failCount > 0 ? `, ${failCount} failed` : ''}`);
+                                                    if (typeof fetchReminderLogs === "function") {
+                                                      fetchReminderLogs();
+                                                    }
+                                                    setSelectedReminderLogs(new Set());
+                                                  } else {
+                                                    showToast("Failed to retry reminders", "error");
+                                                  }
+                                                } catch (error) {
+                                                  console.error("Bulk retry failed", error);
+                                                  showToast("Failed to retry reminders", "error");
+                                                }
+                                              },
+                                              null,
+                                              "Retry"
+                                            );
+                                          }}
+                                      style={{
+                                            padding: "6px 16px",
+                                            fontSize: "0.875rem",
+                                            color: "#fff",
+                                            background: "#10b981",
+                                            border: "none",
+                                            borderRadius: "6px",
+                                            cursor: "pointer",
+                                            fontWeight: "500"
+                                          }}
+                                        >
+                                          <i className="fas fa-redo" style={{ marginRight: "6px" }}></i>
+                                          Retry Selected
+                                        </button>
+                                      )}
+                                      {/* Bulk Delete - for all selected */}
+                                      {!isViewer && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            showConfirmation(
+                                              `Are you sure you want to delete ${selectedReminderLogs.size} selected reminder log(s)? This action cannot be undone.`,
+                                              async () => {
+                                                try {
+                                                  const apiUrl = import.meta.env.DEV
+                                                    ? ""
+                                                    : import.meta.env.VITE_API_URL || "";
+                                                  
+                                                  const selectedItems = allItems.filter((item, idx) => {
+                                                    const itemId = getItemId(item, idx);
+                                                    return selectedReminderLogs.has(itemId);
+                                                  });
+
+                                                  let successCount = 0;
+                                                  let failCount = 0;
+
+                                                  for (const item of selectedItems) {
+                                                    try {
+                                                      const raw = item.raw;
+                                                      const reminderId = raw?._id || raw?.id;
+                                                      if (!reminderId) {
+                                                        // For items without backend ID (like WhatsApp), just remove from selection
+                                                        successCount++;
+                                                        continue;
+                                                      }
+
+                                                      const res = await fetch(
+                                                        `${apiUrl}/api/reminders/logs/${reminderId}`,
+                                                        {
+                                                          method: "DELETE",
+                                                        }
+                                                      );
+                                                      
+                                                      if (res.ok) {
+                                                        const data = await res.json();
+                                                        if (data.success) {
+                                                          successCount++;
+                                                        } else {
+                                                          failCount++;
+                                                        }
+                                                      } else {
+                                                        const errorData = await res.json().catch(() => ({}));
+                                                        console.error("Delete failed:", errorData.error || "Unknown error");
+                                                        failCount++;
+                                                      }
+                                                    } catch (error) {
+                                                      console.error("Delete reminder failed", error);
+                                                      failCount++;
+                                                    }
+                                                  }
+
+                                                  if (successCount > 0) {
+                                                    showToast(`Successfully deleted ${successCount} reminder log(s)${failCount > 0 ? `, ${failCount} failed` : ''}`);
+                                                    if (typeof fetchReminderLogs === "function") {
+                                                      fetchReminderLogs();
+                                                    }
+                                                    setSelectedReminderLogs(new Set());
+                                                  } else {
+                                                    showToast("Failed to delete reminder logs", "error");
+                                                  }
+                                                } catch (error) {
+                                                  console.error("Bulk delete failed", error);
+                                                  showToast("Failed to delete reminder logs", "error");
+                                                }
+                                              },
+                                              null,
+                                              "Delete"
+                                            );
+                                          }}
+                                      style={{
+                                            padding: "6px 16px",
+                                            fontSize: "0.875rem",
+                                            color: "#fff",
+                                            background: "#ef4444",
+                                            border: "none",
+                                            borderRadius: "6px",
+                                            cursor: "pointer",
+                                            fontWeight: "500"
+                                          }}
+                                        >
+                                          <i className="fas fa-trash" style={{ marginRight: "6px" }}></i>
+                                          Delete Selected
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
                                 {/* Desktop Table */}
                                 <div style={{ overflowX: "auto" }} className="reminder-logs-table-wrapper">
                                   <table className="table data-table">
                                     <thead>
                                       <tr>
+                                        <th style={{ width: "5%", textAlign: "left", paddingLeft: "16px" }}>
+                                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                            <input
+                                              type="checkbox"
+                                              className="reminder-log-checkbox"
+                                              checked={allSelected}
+                                              ref={(input) => {
+                                                if (input) input.indeterminate = someSelected && !allSelected;
+                                              }}
+                                              onChange={handleSelectAll}
+                                              aria-label="Select all"
+                                            />
+                                            {/* <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>Select All</span> */}
+                                          </div>
+                                        </th>
                                         <th>Member</th>
                                         <th>Channel</th>
                                         <th>Type</th>
@@ -9413,10 +9683,24 @@
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {pageItems.map((item, idx) => (
+                                      {pageItems.map((item, idx) => {
+                                        const itemId = getItemId(item, idx);
+                                        const isSelected = selectedReminderLogs.has(itemId);
+                                        return (
                                         <tr
                                           key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
+                                          style={{ backgroundColor: isSelected ? "#f0f9ff" : undefined }}
                                         >
+                                          <td style={{ textAlign: "left", paddingLeft: "16px" }}>
+                                            <input
+                                              type="checkbox"
+                                              className="reminder-log-checkbox"
+                                              checked={isSelected}
+                                              onChange={() => handleSelectItem(itemId)}
+                                              onClick={(e) => e.stopPropagation()}
+                                              aria-label={`Select ${item.memberName || item.member || "item"}`}
+                                            />
+                                          </td>
                                           <td>
                                             {item.memberName || item.member || "-"}
                                             {item.memberId ? ` (${item.memberId})` : ""}
@@ -9496,29 +9780,44 @@
                                             </div>
                                           </td>
                                         </tr>
-                                      ))}
+                                        );
+                                      })}
                                     </tbody>
                                   </table>
                                 </div>
 
                                 {/* Mobile Cards */}
                                 <div className="mobile-table-cards reminder-logs-mobile-cards">
-                                  {pageItems.map((item, idx) => (
+                                  {pageItems.map((item, idx) => {
+                                    const itemId = getItemId(item, idx);
+                                    const isSelected = selectedReminderLogs.has(itemId);
+                                    return (
                                     <div
                                       key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
                                       className="mobile-table-card"
                                       onClick={() => setSelectedReminderLogItem(item)}
+                                      style={{ backgroundColor: isSelected ? "#f0f9ff" : undefined }}
                                     >
                                       <div className="mobile-table-card-header">
                                         <div className="mobile-table-card-header-content">
-                                          <div className="mobile-table-card-title-section">
-                                            <div className="mobile-table-card-title">
-                                              {item.memberName || item.member || "-"}
-                                              {item.memberId ? ` (${item.memberId})` : ""}
-                                            </div>
-                                            <div className="mobile-table-card-metric">
-                                              <i className={`fas ${item.channel === "Email" ? "fa-envelope" : "fa-whatsapp"}`} style={{ fontSize: "0.75rem", marginRight: "4px" }}></i>
-                                              <span>{item.channel || "-"}</span>
+                                          <div style={{ display: "flex", alignItems: "center", gap: "12px", width: "100%" }}>
+                                            <input
+                                              type="checkbox"
+                                              checked={isSelected}
+                                              onChange={() => handleSelectItem(itemId)}
+                                              onClick={(e) => e.stopPropagation()}
+                                              style={{ cursor: "pointer", flexShrink: 0 }}
+                                              aria-label={`Select ${item.memberName || item.member || "item"}`}
+                                            />
+                                            <div className="mobile-table-card-title-section" style={{ flex: 1 }}>
+                                              <div className="mobile-table-card-title">
+                                                {item.memberName || item.member || "-"}
+                                                {item.memberId ? ` (${item.memberId})` : ""}
+                                              </div>
+                                              <div className="mobile-table-card-metric">
+                                                <i className={`fas ${item.channel === "Email" ? "fa-envelope" : "fa-whatsapp"}`} style={{ fontSize: "0.75rem", marginRight: "4px" }}></i>
+                                                <span>{item.channel || "-"}</span>
+                                              </div>
                                             </div>
                                           </div>
                                           <div className="mobile-table-card-header-right">
@@ -9532,7 +9831,8 @@
                                         </div>
                                       </div>
                                     </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
 
                                 {/* Pagination controls */}
