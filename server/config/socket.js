@@ -3,14 +3,32 @@ import { Server } from "socket.io";
 let io = null;
 
 export const initializeSocket = (server) => {
+  // Allow multiple origins for production
+  const allowedOrigins = process.env.NODE_ENV === 'production' 
+    ? [
+        "https://subs-manager.vercel.app",
+        "https://saas-cj3b.onrender.com",
+        process.env.FRONTEND_URL || "*"
+      ]
+    : ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"];
+
   io = new Server(server, {
     cors: {
-      origin: process.env.NODE_ENV === 'production' 
-        ? "https://subs-manager.vercel.app"
-        : ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+      origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps, Postman, etc.)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.includes("*") || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
       methods: ["GET", "POST"],
       credentials: true
-    }
+    },
+    transports: ['websocket', 'polling'], // Allow both transports
+    allowEIO3: true // Support older Socket.io clients
   });
 
   io.on('connection', (socket) => {

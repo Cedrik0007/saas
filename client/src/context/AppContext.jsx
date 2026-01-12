@@ -126,22 +126,53 @@ export function AppProvider({ children }) {
   useEffect(() => {
     const socketUrl = import.meta.env.DEV 
       ? 'http://localhost:4000' 
-      : (import.meta.env.VITE_API_URL || '');
+      : (import.meta.env.VITE_API_URL || window.location.origin);
     
     if (socketUrl) {
+      // Try polling first if WebSocket fails (better for production environments)
       socketRef.current = io(socketUrl, {
-        transports: ['websocket', 'polling'],
+        transports: ['polling', 'websocket'], // Try polling first, then upgrade to websocket
         reconnection: true,
         reconnectionDelay: 1000,
-        reconnectionAttempts: 5,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: Infinity, // Keep trying to reconnect
+        timeout: 20000,
+        forceNew: false,
+        upgrade: true,
+        rememberUpgrade: true
       });
 
       socketRef.current.on('connect', () => {
-        console.log('✓ Socket.io connected:', socketRef.current.id);
+        console.log('✓ Socket.io connected:', socketRef.current.id, 'Transport:', socketRef.current.io.engine.transport.name);
       });
 
-      socketRef.current.on('disconnect', () => {
-        console.log('✗ Socket.io disconnected');
+      socketRef.current.on('disconnect', (reason) => {
+        console.log('✗ Socket.io disconnected:', reason);
+        if (reason === 'io server disconnect') {
+          // Server disconnected, reconnect manually
+          socketRef.current.connect();
+        }
+      });
+
+      socketRef.current.on('connect_error', (error) => {
+        console.warn('⚠ Socket.io connection error:', error.message);
+        // Don't show error to user - it will retry automatically
+      });
+
+      socketRef.current.on('reconnect', (attemptNumber) => {
+        console.log('✓ Socket.io reconnected after', attemptNumber, 'attempts');
+      });
+
+      socketRef.current.on('reconnect_attempt', () => {
+        console.log('🔄 Attempting to reconnect Socket.io...');
+      });
+
+      socketRef.current.on('reconnect_error', (error) => {
+        console.warn('⚠ Socket.io reconnection error:', error.message);
+      });
+
+      socketRef.current.on('reconnect_failed', () => {
+        console.error('❌ Socket.io reconnection failed - will continue trying');
       });
 
       // Listen for member updates

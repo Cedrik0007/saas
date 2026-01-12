@@ -33,10 +33,26 @@ const PORT = process.env.PORT || 4000;
 initializeSocket(server);
 
 // Middleware
+const allowedOrigins = process.env.NODE_ENV === 'production' 
+  ? [
+      "https://subs-manager.vercel.app",
+      "https://saas-cj3b.onrender.com",
+      process.env.FRONTEND_URL
+    ].filter(Boolean) // Remove undefined values
+  : ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"];
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? "https://subs-manager.vercel.app"
-    : ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      console.warn('CORS blocked origin:', origin);
+      callback(null, true); // Allow for now, but log it
+    }
+  },
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
