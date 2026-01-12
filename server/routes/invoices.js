@@ -1,4 +1,5 @@
 import express from "express";
+import { emitInvoiceUpdate } from "../config/socket.js";
 import { ensureConnection } from "../config/database.js";
 import InvoiceModel from "../models/Invoice.js";
 import UserModel from "../models/User.js";
@@ -99,6 +100,9 @@ router.post("/", async (req, res) => {
     if (invoiceData.memberId && (invoiceData.status === "Unpaid" || invoiceData.status === "Overdue")) {
       await calculateAndUpdateMemberBalance(invoiceData.memberId);
     }
+
+    // Emit Socket.io event for real-time update
+    emitInvoiceUpdate('created', newInvoice);
 
     res.status(201).json(newInvoice);
   } catch (error) {
@@ -437,6 +441,9 @@ router.put("/:id", async (req, res) => {
       }
     }
 
+    // Emit Socket.io event for real-time update
+    emitInvoiceUpdate('updated', updatedInvoice);
+
     res.json(updatedInvoice);
   } catch (error) {
     console.error("Error updating invoice:", error);
@@ -459,6 +466,9 @@ router.delete("/:id", async (req, res) => {
       (deletedInvoice.status === "Unpaid" || deletedInvoice.status === "Overdue")) {
       await calculateAndUpdateMemberBalance(deletedInvoice.memberId);
     }
+
+    // Emit Socket.io event for real-time update
+    emitInvoiceUpdate('deleted', { id: req.params.id });
 
     res.status(204).send();
   } catch (error) {

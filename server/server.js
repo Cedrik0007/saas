@@ -1,12 +1,14 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import { createServer } from "http";
 import connectDB from "./config/database.js";
 import { initializeCloudinary } from "./config/cloudinary.js";
 import { initializeEmailTransporter } from "./config/email.js";
 import { scheduleReminderCron, scheduleInvoiceGenerationCron, scheduleNextYearInvoiceCron, reminderCronJob } from "./utils/cron.js";
 import { calculateAndUpdateMemberBalance } from "./utils/balance.js";
 import UserModel from "./models/User.js";
+import { initializeSocket } from "./config/socket.js";
 
 // Import routes
 import membersRoutes from "./routes/members.js";
@@ -24,7 +26,11 @@ import authGoogleMemberRoutes from "./routes/authGoogleMember.js";
 dotenv.config();
 
 const app = express();
+const server = createServer(app);
 const PORT = process.env.PORT || 4000;
+
+// Initialize Socket.io
+initializeSocket(server);
 
 // Middleware
 app.use(cors({
@@ -139,10 +145,11 @@ async function initializeAllMemberBalances() {
 
 // Export for Vercel serverless functions
 export default app;
+export { server };
 
 // Only listen locally (not on Vercel)
 if (!process.env.VERCEL) {
-  app.listen(PORT, async () => {
+  server.listen(PORT, async () => {
     console.log(`Subscription Manager HK API running on port ${PORT}`);
     console.log(`✓ API endpoints available:`);
     console.log(`  - GET    /api/members`);

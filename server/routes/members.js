@@ -6,6 +6,7 @@ import UserModel from "../models/User.js";
 import InvoiceModel from "../models/Invoice.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { sendAccountApprovalEmail } from "../utils/emailHelpers.js";
+import { emitMemberUpdate } from "../config/socket.js";
 
 const router = express.Router();
 
@@ -333,6 +334,9 @@ router.post("/", async (req, res) => {
     // Fetch the updated member with the computed balance so frontend sees correct outstanding
     const updatedMember = await UserModel.findOne({ id: savedMember.id });
 
+    // Emit Socket.io event for real-time update
+    emitMemberUpdate('created', updatedMember);
+
     res.status(201).json(updatedMember);
   } catch (error) {
     console.error("Error creating member:", error);
@@ -437,6 +441,9 @@ router.put("/:id", async (req, res) => {
       // Update member balance after payment update
       await calculateAndUpdateMemberBalance(member.id);
 
+      // Emit Socket.io event for real-time update
+      emitMemberUpdate('updated', member);
+
       res.json(member);
     } else {
       // Regular member update - only allow basic fields
@@ -474,6 +481,9 @@ router.put("/:id", async (req, res) => {
         return res.status(404).json({ message: "Member not found" });
       }
 
+      // Emit Socket.io event for real-time update
+      emitMemberUpdate('updated', member);
+
       res.json(member);
     }
   } catch (error) {
@@ -494,6 +504,9 @@ router.delete("/:id", async (req, res) => {
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
     }
+
+    // Emit Socket.io event for real-time update
+    emitMemberUpdate('deleted', { id: req.params.id });
 
     res.status(204).send();
   } catch (error) {

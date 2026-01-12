@@ -2349,8 +2349,8 @@
           throw new Error(errorData.error || 'Failed to approve payment');
         }
 
-        await fetchPayments(); // Refresh payments
-        await fetchInvoices(); // Refresh invoices
+        // No need to refetch - Socket.io will update in real-time
+        // State is already updated optimistically
 
         // Update member balance after payment approval
         const payment = paymentHistory.find(p => p.id === paymentId) || payments.find(p => p.id === paymentId);
@@ -2391,8 +2391,7 @@
           throw new Error(errorData.error || 'Failed to reject payment');
         }
 
-        await fetchPayments(); // Refresh payments
-        await fetchInvoices(); // Refresh invoices
+        // No need to refetch - Socket.io will update in real-time
         showToast("Payment rejected successfully!");
       } catch (error) {
         console.error('Error rejecting payment:', error);
@@ -2563,7 +2562,7 @@
           screenshot: "",
           notes: "",
         });
-        await fetchPayments();
+        // No need to refetch - Socket.io will update in real-time
       } catch (error) {
         console.error('Error adding payment:', error);
         showToast(error.message || "Failed to add payment", "error");
@@ -2649,8 +2648,7 @@
           screenshot: "",
           notes: "",
         });
-        await fetchPayments();
-        await fetchInvoices();
+        // No need to refetch - Socket.io will update in real-time
       } catch (error) {
         console.error('Error updating payment:', error);
         showToast(error.message || "Failed to update payment", "error");
@@ -2677,8 +2675,7 @@
             }
 
             showToast("Payment deleted successfully!");
-            await fetchPayments();
-            await fetchInvoices();
+            // No need to refetch - Socket.io will update in real-time
           } catch (error) {
             console.error('Error deleting payment:', error);
             showToast(error.message || "Failed to delete payment", "error");
@@ -3245,13 +3242,8 @@
 
 
 
-        // Refresh all related data to ensure complete member details are available
-        // This ensures invoices, payments, and all member data is up-to-date
-        await Promise.all([
-          fetchMembers(), // Refresh members list - this will update the members state
-          fetchInvoices(), // Refresh invoices (new member might have invoice created)
-          fetchPayments(), // Refresh payments
-        ]);
+        // No need to refetch - Socket.io will update in real-time
+        // State is already updated optimistically and will be confirmed via Socket.io
 
         setMemberForm({
           id: "",
@@ -4278,9 +4270,7 @@
           throw new Error(errorData.error || 'Failed to approve member');
         }
 
-        // Refresh members list
-        await fetchMembers();
-
+        // No need to refetch - Socket.io will update in real-time
         showToast("Member approved successfully! Approval email sent.");
       } catch (error) {
         console.error('Error approving member:', error);
@@ -12684,7 +12674,7 @@
                               setDonationImagePreview(null);
                               setDonationMemberSearch("");
                               setShowDonationMemberDropdown(false);
-                              await fetchDonations();
+                              // No need to refetch - Socket.io will update in real-time
                             } catch (error) {
                               showToast(error.message || "Failed to add donation", "error");
                             } finally {

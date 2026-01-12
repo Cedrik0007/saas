@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
+import { io } from "socket.io-client";
 import {
   members as initialMembers,
   admins as initialAdmins,
@@ -116,6 +117,108 @@ export function AppProvider({ children }) {
   // In development, use empty string to use Vite proxy (localhost:4000)
   // In production, use VITE_API_URL if set
   const apiBaseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+  
+  // Socket.io connection and request deduplication
+  const socketRef = useRef(null);
+  const pendingRequestsRef = useRef(new Set()); // Track pending requests to prevent duplicates
+  
+  // Initialize Socket.io connection
+  useEffect(() => {
+    const socketUrl = import.meta.env.DEV 
+      ? 'http://localhost:4000' 
+      : (import.meta.env.VITE_API_URL || '');
+    
+    if (socketUrl) {
+      socketRef.current = io(socketUrl, {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 5,
+      });
+
+      socketRef.current.on('connect', () => {
+        console.log('✓ Socket.io connected:', socketRef.current.id);
+      });
+
+      socketRef.current.on('disconnect', () => {
+        console.log('✗ Socket.io disconnected');
+      });
+
+      // Listen for member updates
+      socketRef.current.on('member:created', (member) => {
+        setMembers(prev => {
+          const exists = prev.find(m => m.id === member.id);
+          if (exists) {
+            return prev.map(m => m.id === member.id ? member : m);
+          }
+          return [member, ...prev];
+        });
+      });
+
+      socketRef.current.on('member:updated', (member) => {
+        setMembers(prev => prev.map(m => m.id === member.id ? member : m));
+      });
+
+      socketRef.current.on('member:deleted', (data) => {
+        setMembers(prev => prev.filter(m => m.id !== data.id));
+      });
+
+      // Listen for invoice updates
+      socketRef.current.on('invoice:created', (invoice) => {
+        setInvoices(prev => {
+          const exists = prev.find(inv => inv.id === invoice.id);
+          if (exists) {
+            return prev.map(inv => inv.id === invoice.id ? invoice : inv);
+          }
+          return [invoice, ...prev];
+        });
+      });
+
+      socketRef.current.on('invoice:updated', (invoice) => {
+        setInvoices(prev => prev.map(inv => inv.id === invoice.id ? invoice : inv));
+      });
+
+      socketRef.current.on('invoice:deleted', (data) => {
+        setInvoices(prev => prev.filter(inv => inv.id !== data.id));
+      });
+
+      // Listen for payment updates
+      socketRef.current.on('payment:created', (payment) => {
+        setPayments(prev => {
+          const exists = prev.find(p => p._id === payment._id || p.id === payment.id);
+          if (exists) {
+            return prev.map(p => (p._id === payment._id || p.id === payment.id) ? payment : p);
+          }
+          return [payment, ...prev];
+        });
+      });
+
+      socketRef.current.on('payment:updated', (payment) => {
+        setPayments(prev => prev.map(p => (p._id === payment._id || p.id === payment.id) ? payment : p));
+      });
+
+      // Listen for donation updates
+      socketRef.current.on('donation:created', (donation) => {
+        setDonations(prev => {
+          const exists = prev.find(d => d._id === donation._id);
+          if (exists) {
+            return prev.map(d => d._id === donation._id ? donation : d);
+          }
+          return [donation, ...prev];
+        });
+      });
+
+      socketRef.current.on('donation:deleted', (data) => {
+        setDonations(prev => prev.filter(d => d._id !== data.id));
+      });
+    }
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, []);
 
   // Fetch data from server on mount
   // Helper function to create fetch with timeout
@@ -389,54 +492,114 @@ export function AppProvider({ children }) {
     // adminUsers localStorage removed - now using MongoDB API
   }, []);
 
-  // CRUD Operations for Members (Server-based)
-  const addMember = async (member) => {
+  // Request deduplication helper
+  const makeRequest = useCallback(async (requestKey, requestFn) => {
+    if (pendingRequestsRef.current.has(requestKey)) {
+      console.log('⚠ Duplicate request prevented:', requestKey);
+      throw new Error('Request already in progress');
+    }
+    
+    pendingRequestsRef.current.add(requestKey);
     try {
-      const response = await fetch(`${apiBaseUrl}/api/members`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(member),
+      const result = await requestFn();
+      return result;
+    } finally {
+      pendingRequestsRef.current.delete(requestKey);
+    }
+  }, []);
+
+  // CRUD Operations for Members (Server-based) with Optimistic Updates
+  const addMember = async (member) => {
+    const requestKey = `add-member-${Date.now()}`;
+    
+    // Optimistic update - update UI immediately
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMember = { ...member, id: tempId, _isOptimistic: true };
+    const previousMembers = members;
+    setMembers(prev => [...prev, optimisticMember]);
+    updateMetrics({ totalMembers: metrics.totalMembers + 1 });
+    
+    try {
+      const newMember = await makeRequest(requestKey, async () => {
+        const response = await fetch(`${apiBaseUrl}/api/members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(member),
+        });
+        if (!response.ok) throw new Error('Failed to add member');
+        return await response.json();
       });
-      if (!response.ok) throw new Error('Failed to add member');
-      const newMember = await response.json();
-      setMembers([...members, newMember]);
-      updateMetrics({ totalMembers: metrics.totalMembers + 1 });
+      
+      // Replace optimistic member with real one
+      setMembers(prev => prev.map(m => m._isOptimistic && m.id === tempId ? newMember : m));
       console.log('✓ Member added to server:', newMember);
       return newMember;
     } catch (error) {
       console.error('Error adding member:', error);
+      // Rollback optimistic update
+      setMembers(previousMembers);
+      updateMetrics({ totalMembers: metrics.totalMembers - 1 });
       throw error;
     }
   };
 
   const updateMember = async (id, updatedData) => {
+    const requestKey = `update-member-${id}-${Date.now()}`;
+    
+    // Optimistic update
+    const previousMembers = members;
+    setMembers(prev => prev.map(m => m.id === id ? { ...m, ...updatedData, _isOptimistic: true } : m));
+    
     try {
+      const updated = await makeRequest(requestKey, async () => {
         const response = await fetch(`${apiBaseUrl}/api/members/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedData),
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedData),
+        });
+        if (!response.ok) throw new Error('Failed to update member');
+        return await response.json();
       });
-      if (!response.ok) throw new Error('Failed to update member');
-      const updated = await response.json();
-      setMembers(members.map((m) => (m.id === id ? updated : m)));
+      
+      // Replace optimistic update with real one
+      setMembers(prev => prev.map(m => m.id === id ? updated : m));
       console.log('✓ Member updated on server:', updated);
+      return updated;
     } catch (error) {
       console.error('Error updating member:', error);
+      // Rollback optimistic update
+      setMembers(previousMembers);
       throw error;
     }
   };
 
   const deleteMember = async (id) => {
+    const requestKey = `delete-member-${id}-${Date.now()}`;
+    
+    // Optimistic update
+    const previousMembers = members;
+    const previousInvoices = invoices;
+    const deletedMember = members.find(m => m.id === id);
+    setMembers(prev => prev.filter((m) => m.id !== id));
+    setInvoices(prev => prev.filter((inv) => inv.memberId !== id));
+    updateMetrics({ totalMembers: metrics.totalMembers - 1 });
+    
     try {
-      const response = await fetch(`${apiBaseUrl}/api/members/${id}`, { method: 'DELETE' });
-
-      if (!response.ok) throw new Error('Failed to delete member');
-      setMembers(members.filter((m) => m.id !== id));
-      setInvoices(invoices.filter((inv) => inv.memberId !== id));
-      updateMetrics({ totalMembers: metrics.totalMembers - 1 });
+      await makeRequest(requestKey, async () => {
+        const response = await fetch(`${apiBaseUrl}/api/members/${id}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error('Failed to delete member');
+        return response;
+      });
+      
       console.log('✓ Member deleted from server:', id);
     } catch (error) {
       console.error('Error deleting member:', error);
+      // Rollback optimistic update
+      setMembers(previousMembers);
+      setInvoices(previousInvoices);
+      if (deletedMember) {
+        updateMetrics({ totalMembers: metrics.totalMembers + 1 });
+      }
       throw error;
     }
   };
@@ -461,113 +624,164 @@ export function AppProvider({ children }) {
   };
 
   const updateInvoice = async (id, updatedData) => {
-    try {
-        const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedData),
-      });
-      if (!response.ok) throw new Error('Failed to update invoice');
-      const updated = await response.json();
-      setInvoices(invoices.map((inv) => (inv.id === id ? updated : inv)));
-      
-      // If status changed to Paid, update metrics
-      if (updatedData.status === "Paid") {
-        const invoice = invoices.find((inv) => inv.id === id);
-        if (invoice && invoice.status !== "Paid") {
-          const amount = parseFloat(invoice.amount.replace("$", ""));
-          updateMetrics({
-            collectedMonth: metrics.collectedMonth + amount,
-            collectedYear: metrics.collectedYear + amount,
-            outstanding: metrics.outstanding - amount,
-          });
-        }
-      }
-      console.log('✓ Invoice updated on server:', updated);
-    } catch (error) {
-      console.error('Error updating invoice:', error);
-      throw error;
-    }
-  };
-
-  const deleteInvoice = async (id) => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, { method: 'DELETE' });
-      if (!response.ok) throw new Error('Failed to delete invoice');
-      setInvoices(invoices.filter((inv) => inv.id !== id));
-      console.log('✓ Invoice deleted from server:', id);
-    } catch (error) {
-      console.error('Error deleting invoice:', error);
-      throw error;
-    }
-  };
-
-  // Payment Operations
-  const addPayment = async (payment) => {
-    try {
-      const paymentData = {
-        ...payment,
-        date: payment.date || new Date().toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
-      };
-      
-      // Save payment to MongoDB
-      const response = await fetch(`${apiBaseUrl}/api/payments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(paymentData),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to save payment');
-      }
-      
-      const newPayment = await response.json();
-      
-      // Update local state
-      setPayments([newPayment, ...payments]);
-      setRecentPayments([newPayment, ...recentPayments]);
-      setPaymentHistory([newPayment, ...paymentHistory]);
-      
-      // Update related invoice
-      if (payment.invoiceId) {
-        await updateInvoice(payment.invoiceId, { 
-          status: "Paid", 
-          method: payment.method, 
-          reference: payment.reference,
-          screenshot: payment.screenshot || payment.screenshotUrl,
-          paidToAdmin: payment.paidToAdmin,
-          paidToAdminName: payment.paidToAdminName,
-        });
-      }
-      
-      // Update metrics
-      const amount = parseFloat(payment.amount.replace("$", ""));
+    const requestKey = `update-invoice-${id}-${Date.now()}`;
+    
+    // Optimistic update
+    const previousInvoices = invoices;
+    const previousMetrics = { ...metrics };
+    const oldInvoice = invoices.find((inv) => inv.id === id);
+    setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, ...updatedData, _isOptimistic: true } : inv));
+    
+    // Optimistic metrics update
+    if (updatedData.status === "Paid" && oldInvoice && oldInvoice.status !== "Paid") {
+      const amount = parseFloat(oldInvoice.amount.replace(/[^0-9.]/g, ""));
       updateMetrics({
         collectedMonth: metrics.collectedMonth + amount,
         collectedYear: metrics.collectedYear + amount,
         outstanding: Math.max(0, metrics.outstanding - amount),
       });
+    }
+    
+    try {
+      const updated = await makeRequest(requestKey, async () => {
+        const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedData),
+        });
+        if (!response.ok) throw new Error('Failed to update invoice');
+        return await response.json();
+      });
+      
+      // Replace optimistic update with real one
+      setInvoices(prev => prev.map(inv => inv.id === id ? updated : inv));
+      console.log('✓ Invoice updated on server:', updated);
+      return updated;
+    } catch (error) {
+      console.error('Error updating invoice:', error);
+      // Rollback optimistic update
+      setInvoices(previousInvoices);
+      setMetrics(previousMetrics);
+      throw error;
+    }
+  };
+
+  const deleteInvoice = async (id) => {
+    const requestKey = `delete-invoice-${id}-${Date.now()}`;
+    
+    // Optimistic update
+    const previousInvoices = invoices;
+    setInvoices(prev => prev.filter((inv) => inv.id !== id));
+    
+    try {
+      await makeRequest(requestKey, async () => {
+        const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error('Failed to delete invoice');
+        return response;
+      });
+      
+      console.log('✓ Invoice deleted from server:', id);
+    } catch (error) {
+      console.error('Error deleting invoice:', error);
+      // Rollback optimistic update
+      setInvoices(previousInvoices);
+      throw error;
+    }
+  };
+
+  // Payment Operations with Optimistic Updates
+  const addPayment = async (payment) => {
+    const requestKey = `add-payment-${Date.now()}`;
+    
+    const paymentData = {
+      ...payment,
+      date: payment.date || new Date().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }),
+    };
+    
+    // Optimistic update
+    const tempId = `temp-payment-${Date.now()}`;
+    const optimisticPayment = { ...paymentData, _id: tempId, id: tempId, _isOptimistic: true };
+    const previousPayments = payments;
+    const previousRecentPayments = recentPayments;
+    const previousPaymentHistory = paymentHistory;
+    const previousMetrics = { ...metrics };
+    
+    setPayments(prev => [optimisticPayment, ...prev]);
+    setRecentPayments(prev => [optimisticPayment, ...prev]);
+    setPaymentHistory(prev => [optimisticPayment, ...prev]);
+    
+    // Optimistic invoice update
+    if (payment.invoiceId) {
+      const previousInvoices = invoices;
+      setInvoices(prev => prev.map(inv => 
+        inv.id === payment.invoiceId 
+          ? { ...inv, status: "Paid", method: payment.method, reference: payment.reference, _isOptimistic: true }
+          : inv
+      ));
+    }
+    
+    // Optimistic metrics update
+    const amount = parseFloat(payment.amount.replace(/[^0-9.]/g, ""));
+    updateMetrics({
+      collectedMonth: metrics.collectedMonth + amount,
+      collectedYear: metrics.collectedYear + amount,
+      outstanding: Math.max(0, metrics.outstanding - amount),
+    });
+    
+    try {
+      const newPayment = await makeRequest(requestKey, async () => {
+        const response = await fetch(`${apiBaseUrl}/api/payments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(paymentData),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to save payment');
+        }
+        
+        return await response.json();
+      });
+      
+      // Replace optimistic payment with real one
+      setPayments(prev => prev.map(p => (p._isOptimistic && (p._id === tempId || p.id === tempId)) ? newPayment : p));
+      setRecentPayments(prev => prev.map(p => (p._isOptimistic && (p._id === tempId || p.id === tempId)) ? newPayment : p));
+      setPaymentHistory(prev => prev.map(p => (p._isOptimistic && (p._id === tempId || p.id === tempId)) ? newPayment : p));
+      
+      // Update related invoice (real update)
+      if (payment.invoiceId) {
+        try {
+          await updateInvoice(payment.invoiceId, { 
+            status: "Paid", 
+            method: payment.method, 
+            reference: payment.reference,
+            screenshot: payment.screenshot || payment.screenshotUrl,
+            paidToAdmin: payment.paidToAdmin,
+            paidToAdminName: payment.paidToAdminName,
+          });
+        } catch (invoiceError) {
+          console.error('Error updating invoice after payment:', invoiceError);
+          // Don't throw - payment was successful
+        }
+      }
 
       console.log('✓ Payment saved to MongoDB:', newPayment);
       return newPayment;
     } catch (error) {
       console.error('Error adding payment:', error);
-      // Still update local state for UI feedback, but log the error
-      const fallbackPayment = {
-        ...payment,
-        date: payment.date || new Date().toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }),
-      };
-      setRecentPayments([fallbackPayment, ...recentPayments]);
-      setPaymentHistory([fallbackPayment, ...paymentHistory]);
+      // Rollback optimistic updates
+      setPayments(previousPayments);
+      setRecentPayments(previousRecentPayments);
+      setPaymentHistory(previousPaymentHistory);
+      setMetrics(previousMetrics);
+      if (payment.invoiceId) {
+        // Rollback invoice update would be handled by updateInvoice's own rollback
+      }
       throw error;
     }
   };
@@ -702,7 +916,7 @@ export function AppProvider({ children }) {
       }
       const updatedAdmin = await response.json();
       setAdmins(admins.map((admin) => (admin.id === id ? updatedAdmin : admin)));
-      await fetchAdmins(); // Refresh to get latest data
+      // No need to refetch - Socket.io will update in real-time if implemented
       return updatedAdmin;
     } catch (error) {
       console.error('Error updating admin:', error);
@@ -721,7 +935,7 @@ export function AppProvider({ children }) {
         throw new Error(errorData.message || 'Failed to delete admin');
       }
       setAdmins(admins.filter((admin) => admin.id !== id));
-      await fetchAdmins(); // Refresh to get latest data
+      // No need to refetch - Socket.io will update in real-time if implemented
     } catch (error) {
       console.error('Error deleting admin:', error);
       throw error;
@@ -753,20 +967,31 @@ export function AppProvider({ children }) {
   };
 
   const deleteDonation = async (id) => {
+    const requestKey = `delete-donation-${id}-${Date.now()}`;
+    
+    // Optimistic update
+    const previousDonations = donations;
+    setDonations(prev => prev.filter(d => d._id !== id));
+    
     try {
-      const response = await fetch(`${apiBaseUrl}/api/donations/${id}`, {
-        method: 'DELETE',
+      await makeRequest(requestKey, async () => {
+        const response = await fetch(`${apiBaseUrl}/api/donations/${id}`, {
+          method: 'DELETE',
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to delete donation');
+        }
+        
+        return response;
       });
       
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to delete donation');
-      }
-      
-      setDonations(donations.filter(d => d._id !== id));
       console.log('✓ Donation deleted from server:', id);
     } catch (error) {
       console.error('Error deleting donation:', error);
+      // Rollback optimistic update
+      setDonations(previousDonations);
       throw error;
     }
   };

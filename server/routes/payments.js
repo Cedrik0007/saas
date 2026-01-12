@@ -5,6 +5,7 @@ import InvoiceModel from "../models/Invoice.js";
 import UserModel from "../models/User.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { sendPaymentApprovalEmail, sendPaymentRejectionEmail } from "../utils/emailHelpers.js";
+import { emitPaymentUpdate } from "../config/socket.js";
 
 const router = express.Router();
 
@@ -54,6 +55,9 @@ router.post("/", async (req, res) => {
 
     const newPayment = new PaymentModel(paymentData);
     await newPayment.save();
+
+    // Emit Socket.io event for real-time update
+    emitPaymentUpdate('created', newPayment);
 
     res.status(201).json(newPayment);
   } catch (error) {
@@ -197,6 +201,9 @@ router.put("/:id/approve", async (req, res) => {
       await sendPaymentApprovalEmail(member, payment, invoice);
     }
 
+    // Emit Socket.io event for real-time update
+    emitPaymentUpdate('updated', payment);
+
     res.json({ success: true, payment });
   } catch (error) {
     console.error("Error approving payment:", error);
@@ -264,6 +271,9 @@ router.put("/:id/reject", async (req, res) => {
       await sendPaymentRejectionEmail(member, payment, invoice, payment.rejectionReason);
     }
 
+    // Emit Socket.io event for real-time update
+    emitPaymentUpdate('updated', payment);
+
     res.json({ success: true, payment });
   } catch (error) {
     console.error("Error rejecting payment:", error);
@@ -292,6 +302,9 @@ router.put("/:id", async (req, res) => {
 
     Object.assign(payment, updateData);
     await payment.save();
+
+    // Emit Socket.io event for real-time update
+    emitPaymentUpdate('updated', payment);
 
     res.json({ success: true, payment });
   } catch (error) {

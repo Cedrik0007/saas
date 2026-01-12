@@ -1,6 +1,7 @@
 import express from "express";
 import { ensureConnection } from "../config/database.js";
 import DonationModel from "../models/Donation.js";
+import { emitDonationUpdate } from "../config/socket.js";
 
 const router = express.Router();
 
@@ -33,6 +34,9 @@ router.post("/", async (req, res) => {
     const newDonation = new DonationModel(donationData);
     await newDonation.save();
     
+    // Emit Socket.io event for real-time update
+    emitDonationUpdate('created', newDonation);
+    
     res.status(201).json(newDonation);
   } catch (error) {
     console.error("Error creating donation:", error);
@@ -49,6 +53,9 @@ router.delete("/:id", async (req, res) => {
     if (!donation) {
       return res.status(404).json({ message: "Donation not found" });
     }
+    
+    // Emit Socket.io event for real-time update
+    emitDonationUpdate('deleted', { id: req.params.id });
     
     res.status(204).send();
   } catch (error) {
