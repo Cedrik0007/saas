@@ -960,6 +960,7 @@
     const [outstandingMembersPage, setOutstandingMembersPage] = useState(1);
     const [outstandingMembersPageSize, setOutstandingMembersPageSize] = useState(5);
     const [outstandingMembersSearch, setOutstandingMembersSearch] = useState(""); // Search filter for outstanding members
+    const [outstandingMembersYearFilter, setOutstandingMembersYearFilter] = useState("All"); // Year filter for outstanding members
     const [invoicesPage, setInvoicesPage] = useState(1);
     const [invoicesPageSize, setInvoicesPageSize] = useState(10);
     const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed, Pending
@@ -8323,21 +8324,19 @@ IMA Subscription Manager`;
                       </div>
                     </div>
 
-                    {/* Search Filter */}
+                    {/* Search and Year Filter */}
                     <div style={{
-                      marginBottom: "16px"
+                      marginBottom: "16px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      flexWrap: "wrap"
                     }}>
-                      <div style={{
-                        position: "relative",
-                        display: "flex",
-                        alignItems: "center"
-                      }}>
-                        <i className="fas fa-search" style={{
-                          position: "absolute",
-                          left: "12px",
-                          color: "#9ca3af",
-                          fontSize: "0.875rem"
-                        }}></i>
+                      {/* Search Input */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <label className="text-l font-semibold" style={{ whiteSpace: "nowrap" }}>
+                          Search:&nbsp;
+                        </label>
                         <input
                           type="text"
                           placeholder="Search by name, email, or phone..."
@@ -8346,49 +8345,199 @@ IMA Subscription Manager`;
                             setOutstandingMembersSearch(e.target.value);
                             setOutstandingMembersPage(1); // Reset to first page when search changes
                           }}
+                          className="search-input"
                           style={{
-                            width: "100%",
-                            padding: "10px 12px 10px 40px",
-                            fontSize: "0.875rem",
+                            padding: "8px 12px",
+                            borderRadius: "4px",
                             border: "1px solid #e5e7eb",
-                            borderRadius: "6px",
+                            background: "#ffffff",
+                            fontSize: "0.875rem",
+                            minWidth: "200px",
                             outline: "none",
-                            transition: "all 0.2s ease",
-                            background: "#ffffff"
+                            transition: "border-color 0.2s"
                           }}
                           onFocus={(e) => {
-                            e.target.style.borderColor = "#5a31ea";
                             e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
                           }}
                           onBlur={(e) => {
-                            e.target.style.borderColor = "#e5e7eb";
                             e.target.style.boxShadow = "none";
                           }}
                         />
-                        {outstandingMembersSearch && (
+                      </div>
+
+                      {/* Year Filter */}
+                      <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "16px" }}>
+                        <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Year:</label>
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                           <button
                             type="button"
                             onClick={() => {
-                              setOutstandingMembersSearch("");
+                              setOutstandingMembersYearFilter("All");
                               setOutstandingMembersPage(1);
                             }}
                             style={{
-                              position: "absolute",
-                              right: "8px",
-                              background: "transparent",
-                              border: "none",
+                              padding: "8px 12px",
+                              borderRadius: "4px 0 0 4px",
+                              border: "1px solid #e5e7eb",
+                              borderRight: "none",
+                              background: outstandingMembersYearFilter === "All" ? "#5a31ea" : "#ffffff",
+                              color: outstandingMembersYearFilter === "All" ? "#ffffff" : "#6b7280",
+                              fontSize: "0.875rem",
+                              fontWeight: "500",
                               cursor: "pointer",
-                              padding: "4px",
-                              color: "#9ca3af",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center"
+                              outline: "none",
+                              transition: "all 0.2s ease",
+                              whiteSpace: "nowrap"
                             }}
-                            title="Clear search"
+                            onMouseEnter={(e) => {
+                              if (outstandingMembersYearFilter !== "All") {
+                                e.target.style.background = "#f3f4f6";
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (outstandingMembersYearFilter !== "All") {
+                                e.target.style.background = "#ffffff";
+                              }
+                            }}
                           >
-                            <i className="fas fa-times" style={{ fontSize: "0.75rem" }}></i>
+                            All
                           </button>
-                        )}
+                          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                            <input
+                              type="text"
+                              value={outstandingMembersYearFilter === "All" ? "" : outstandingMembersYearFilter}
+                              placeholder="Year"
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                // Allow empty, "All", or valid year (4 digits)
+                                if (value === "" || value === "All" || /^\d{0,4}$/.test(value)) {
+                                  setOutstandingMembersYearFilter(value === "" ? "All" : value);
+                                  setOutstandingMembersPage(1);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                // Allow arrow keys to increment/decrement
+                                if (e.key === "ArrowUp") {
+                                  e.preventDefault();
+                                  const currentYear = outstandingMembersYearFilter === "All" || outstandingMembersYearFilter === "" ? new Date().getFullYear() : parseInt(outstandingMembersYearFilter);
+                                  if (!isNaN(currentYear)) {
+                                    setOutstandingMembersYearFilter(String(currentYear + 1));
+                                    setOutstandingMembersPage(1);
+                                  }
+                                } else if (e.key === "ArrowDown") {
+                                  e.preventDefault();
+                                  const currentYear = outstandingMembersYearFilter === "All" || outstandingMembersYearFilter === "" ? new Date().getFullYear() : parseInt(outstandingMembersYearFilter);
+                                  if (!isNaN(currentYear) && currentYear > 1900) {
+                                    setOutstandingMembersYearFilter(String(currentYear - 1));
+                                    setOutstandingMembersPage(1);
+                                  }
+                                }
+                              }}
+                              style={{
+                                padding: "8px 32px 8px 12px",
+                                borderRadius: "0 4px 4px 0",
+                                border: "1px solid #e5e7eb",
+                                borderLeft: "none",
+                                background: "#ffffff",
+                                fontSize: "0.875rem",
+                                fontWeight: "500",
+                                outline: "none",
+                                transition: "border-color 0.2s",
+                                width: "100px",
+                                textAlign: "center"
+                              }}
+                              onFocus={(e) => {
+                                e.target.style.borderColor = "#5a31ea";
+                                e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                              }}
+                              onBlur={(e) => {
+                                e.target.style.borderColor = "#e5e7eb";
+                                e.target.style.boxShadow = "none";
+                                // Validate year on blur
+                                if (e.target.value && e.target.value !== "All") {
+                                  const year = parseInt(e.target.value);
+                                  if (isNaN(year) || year < 1900 || year > 2100) {
+                                    setOutstandingMembersYearFilter("All");
+                                  }
+                                }
+                              }}
+                            />
+                            <div style={{ 
+                              position: "absolute", 
+                              right: "4px", 
+                              display: "flex", 
+                              flexDirection: "column",
+                              gap: "2px"
+                            }}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  const currentYear = outstandingMembersYearFilter === "All" || outstandingMembersYearFilter === "" ? new Date().getFullYear() : parseInt(outstandingMembersYearFilter);
+                                  if (!isNaN(currentYear)) {
+                                    setOutstandingMembersYearFilter(String(currentYear + 1));
+                                    setOutstandingMembersPage(1);
+                                  }
+                                }}
+                                style={{
+                                  padding: "2px 4px",
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "10px",
+                                  color: "#6b7280",
+                                  lineHeight: "1",
+                                  transition: "color 0.2s"
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.target.style.color = "#5a31ea";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.target.style.color = "#6b7280";
+                                }}
+                                title="Increase year"
+                              >
+                                ▲
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  const currentYear = outstandingMembersYearFilter === "All" || outstandingMembersYearFilter === "" ? new Date().getFullYear() : parseInt(outstandingMembersYearFilter);
+                                  if (!isNaN(currentYear) && currentYear > 1900) {
+                                    setOutstandingMembersYearFilter(String(currentYear - 1));
+                                    setOutstandingMembersPage(1);
+                                  }
+                                }}
+                                style={{
+                                  padding: "2px 4px",
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: "10px",
+                                  color: "#6b7280",
+                                  lineHeight: "1",
+                                  transition: "color 0.2s"
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.target.style.color = "#5a31ea";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.target.style.color = "#6b7280";
+                                }}
+                                title="Decrease year"
+                              >
+                                ▼
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -8417,7 +8566,26 @@ IMA Subscription Manager`;
                           })
                           .filter(Boolean);
 
-                        // Apply search filter
+                        // Apply year filter first
+                        if (outstandingMembersYearFilter !== "All") {
+                          outstandingMembers = outstandingMembers.filter(({ member }) => {
+                            // Check if member has outstanding invoices in the selected year
+                            const memberInvoices = invoices.filter(
+                              (inv) =>
+                                inv.memberId === member.id &&
+                                (inv.status === "Unpaid" || inv.status === "Overdue")
+                            );
+                            
+                            return memberInvoices.some((inv) => {
+                              const periodStr = String(inv.period || "").trim();
+                              const yearMatch = periodStr.match(/\d{4}/);
+                              const invoiceYear = yearMatch ? yearMatch[0] : "";
+                              return invoiceYear === outstandingMembersYearFilter;
+                            });
+                          });
+                        }
+
+                        // Apply search filter (name, email, phone)
                         if (outstandingMembersSearch.trim()) {
                           const searchLower = outstandingMembersSearch.toLowerCase().trim();
                           outstandingMembers = outstandingMembers.filter(({ member }) => {
@@ -8438,8 +8606,8 @@ IMA Subscription Manager`;
                                 fontSize: "0.9375rem",
                               }}
                             >
-                              {outstandingMembersSearch.trim() 
-                                ? `No members found matching "${outstandingMembersSearch}"`
+                              {outstandingMembersSearch.trim() || outstandingMembersYearFilter !== "All"
+                                ? `No members found${outstandingMembersSearch.trim() ? ` matching "${outstandingMembersSearch}"` : ""}${outstandingMembersYearFilter !== "All" ? ` for year ${outstandingMembersYearFilter}` : ""}`
                                 : "No members with outstanding invoices"}
                             </div>
                           );
