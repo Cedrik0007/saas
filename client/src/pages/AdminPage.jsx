@@ -7822,7 +7822,7 @@ IMA Subscription Manager`;
                         <option value="">Select Invoice Type</option>
                           <option value="Annual Member">Annual Member - HK$500</option>
                           <option value="Lifetime Janaza Fund Member">Lifetime Janaza Fund - HK$250</option>
-                          <option value="Lifetime Membership">Lifetime Membership - HK$5,250</option>
+                          {/* <option value="Lifetime Membership">Lifetime Membership - HK$5,250</option> */}
                       </select>
                         {invoiceForm.invoiceType && (
                           <div style={{
