@@ -178,11 +178,16 @@ export function AppProvider({ children }) {
       // Listen for member updates
       socketRef.current.on('member:created', (member) => {
         setMembers(prev => {
+          // Check if member already exists (by ID)
           const exists = prev.find(m => m.id === member.id);
           if (exists) {
-            return prev.map(m => m.id === member.id ? member : m);
+            // Update existing member, removing any optimistic flags
+            return prev.map(m => m.id === member.id ? { ...member, _isOptimistic: false } : m);
           }
-          return [member, ...prev];
+          // Remove any optimistic members that might match (by email or name) to prevent duplicates
+          // Also add the new real member
+          const filtered = prev.filter(m => !(m._isOptimistic && (m.email === member.email || (m.name === member.name && m.email === member.email))));
+          return [member, ...filtered];
         });
       });
 
@@ -562,7 +567,19 @@ export function AppProvider({ children }) {
       });
       
       // Replace optimistic member with real one
-      setMembers(prev => prev.map(m => m._isOptimistic && m.id === tempId ? newMember : m));
+      // Also remove any duplicate members that might have been added via Socket.io
+      setMembers(prev => {
+        // Remove the optimistic member and any duplicate members with the same ID
+        const filtered = prev.filter(m => !(m._isOptimistic && m.id === tempId) && m.id !== newMember.id);
+        // Check if newMember already exists (shouldn't, but check to be safe)
+        const alreadyExists = prev.find(m => m.id === newMember.id && !m._isOptimistic);
+        if (alreadyExists) {
+          // If exists, update it instead of adding
+          return prev.map(m => m.id === newMember.id ? newMember : m);
+        }
+        // Add the new member at the beginning
+        return [newMember, ...filtered];
+      });
       console.log('✓ Member added to server:', newMember);
       return newMember;
     } catch (error) {
