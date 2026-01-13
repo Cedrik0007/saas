@@ -557,12 +557,12 @@ export function AppProvider({ children }) {
     
     try {
       const newMember = await makeRequest(requestKey, async () => {
-        const response = await fetch(`${apiBaseUrl}/api/members`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(member),
-        });
-        if (!response.ok) throw new Error('Failed to add member');
+      const response = await fetch(`${apiBaseUrl}/api/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(member),
+      });
+      if (!response.ok) throw new Error('Failed to add member');
         return await response.json();
       });
       
@@ -601,11 +601,11 @@ export function AppProvider({ children }) {
     try {
       const updated = await makeRequest(requestKey, async () => {
         const response = await fetch(`${apiBaseUrl}/api/members/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedData),
-        });
-        if (!response.ok) throw new Error('Failed to update member');
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData),
+      });
+      if (!response.ok) throw new Error('Failed to update member');
         return await response.json();
       });
       
@@ -634,8 +634,8 @@ export function AppProvider({ children }) {
     
     try {
       await makeRequest(requestKey, async () => {
-        const response = await fetch(`${apiBaseUrl}/api/members/${id}`, { method: 'DELETE' });
-        if (!response.ok) throw new Error('Failed to delete member');
+      const response = await fetch(`${apiBaseUrl}/api/members/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete member');
         return response;
       });
       
@@ -693,11 +693,11 @@ export function AppProvider({ children }) {
     try {
       const updated = await makeRequest(requestKey, async () => {
         const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedData),
-        });
-        if (!response.ok) throw new Error('Failed to update invoice');
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData),
+      });
+      if (!response.ok) throw new Error('Failed to update invoice');
         return await response.json();
       });
       
@@ -723,8 +723,8 @@ export function AppProvider({ children }) {
     
     try {
       await makeRequest(requestKey, async () => {
-        const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, { method: 'DELETE' });
-        if (!response.ok) throw new Error('Failed to delete invoice');
+      const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Failed to delete invoice');
         return response;
       });
       
@@ -741,15 +741,15 @@ export function AppProvider({ children }) {
   const addPayment = async (payment) => {
     const requestKey = `add-payment-${Date.now()}`;
     
-    const paymentData = {
-      ...payment,
-      date: payment.date || new Date().toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
-    };
-    
+      const paymentData = {
+        ...payment,
+        date: payment.date || new Date().toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+      };
+      
     // Optimistic update
     const tempId = `temp-payment-${Date.now()}`;
     const optimisticPayment = { ...paymentData, _id: tempId, id: tempId, _isOptimistic: true };
@@ -782,17 +782,17 @@ export function AppProvider({ children }) {
     
     try {
       const newPayment = await makeRequest(requestKey, async () => {
-        const response = await fetch(`${apiBaseUrl}/api/payments`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(paymentData),
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Failed to save payment');
-        }
-        
+      const response = await fetch(`${apiBaseUrl}/api/payments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentData),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to save payment');
+      }
+      
         return await response.json();
       });
       
@@ -804,14 +804,14 @@ export function AppProvider({ children }) {
       // Update related invoice (real update)
       if (payment.invoiceId) {
         try {
-          await updateInvoice(payment.invoiceId, { 
-            status: "Paid", 
-            method: payment.method, 
-            reference: payment.reference,
-            screenshot: payment.screenshot || payment.screenshotUrl,
-            paidToAdmin: payment.paidToAdmin,
-            paidToAdminName: payment.paidToAdminName,
-          });
+        await updateInvoice(payment.invoiceId, { 
+          status: "Paid", 
+          method: payment.method, 
+          reference: payment.reference,
+          screenshot: payment.screenshot || payment.screenshotUrl,
+          paidToAdmin: payment.paidToAdmin,
+          paidToAdminName: payment.paidToAdminName,
+        });
         } catch (invoiceError) {
           console.error('Error updating invoice after payment:', invoiceError);
           // Don't throw - payment was successful
@@ -1023,15 +1023,15 @@ export function AppProvider({ children }) {
     
     try {
       await makeRequest(requestKey, async () => {
-        const response = await fetch(`${apiBaseUrl}/api/donations/${id}`, {
-          method: 'DELETE',
-        });
-        
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Failed to delete donation');
-        }
-        
+      const response = await fetch(`${apiBaseUrl}/api/donations/${id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to delete donation');
+      }
+      
         return response;
       });
       
