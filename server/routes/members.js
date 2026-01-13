@@ -224,7 +224,7 @@ router.post("/", async (req, res) => {
 
     // Import subscription types utility
     const { calculateFees, SUBSCRIPTION_TYPES } = await import("../utils/subscriptionTypes.js");
-    
+
     // Determine the invoice period first to check for duplicates accurately
     const subscriptionType = req.body.subscriptionType || 'Lifetime';
     

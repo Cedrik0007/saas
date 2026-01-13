@@ -161,7 +161,7 @@ router.put("/:id/approve", async (req, res) => {
               invoice.amount === "HK$5250" ||
               invoice.membershipFee === 5000
             );
-          
+
           const memberUpdate = {
             payment_status: 'paid',
             last_payment_date: new Date(),

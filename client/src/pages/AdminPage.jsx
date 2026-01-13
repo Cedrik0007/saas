@@ -449,7 +449,7 @@
         value = rawValue.replace(/\D/g, "");
       } else if (field === "subscriptionType") {
         // Auto-update balance when subscription changes
-        value = rawValue;
+          value = rawValue;
         let balance = "250"; // Default
         
         if (rawValue === "Annual Member") {
@@ -464,11 +464,11 @@
           balance = "250"; // Default/Lifetime
         }
         
-        setMemberForm(prev => ({
-          ...prev,
-          subscriptionType: rawValue,
+          setMemberForm(prev => ({
+            ...prev,
+            subscriptionType: rawValue,
           balance: balance,
-        }));
+          }));
 
         // No need to run generic update below for subscriptionType
         return;
@@ -959,6 +959,7 @@
     const [remindersPageSize, setRemindersPageSize] = useState(10);
     const [outstandingMembersPage, setOutstandingMembersPage] = useState(1);
     const [outstandingMembersPageSize, setOutstandingMembersPageSize] = useState(5);
+    const [outstandingMembersSearch, setOutstandingMembersSearch] = useState(""); // Search filter for outstanding members
     const [invoicesPage, setInvoicesPage] = useState(1);
     const [invoicesPageSize, setInvoicesPageSize] = useState(10);
     const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed, Pending
@@ -1667,9 +1668,9 @@
         // Try to get member creation date or use a default
         const memberStartDate = member.createdAt ? new Date(member.createdAt) : new Date('2025-01-01');
 
-        const rangeStart = Math.max(fromDate.getTime(), memberStartDate.getTime());
-        const rangeEnd = toDate.getTime();
-        const yearsInRange = Math.max(0, (rangeEnd - rangeStart) / (365.25 * 24 * 60 * 60 * 1000));
+          const rangeStart = Math.max(fromDate.getTime(), memberStartDate.getTime());
+          const rangeEnd = toDate.getTime();
+          const yearsInRange = Math.max(0, (rangeEnd - rangeStart) / (365.25 * 24 * 60 * 60 * 1000));
         const yearsCount = Math.ceil(yearsInRange);
         
         if (subscriptionType === 'Annual Member') {
@@ -1685,7 +1686,7 @@
             if (yearsCount > 1) {
               expected += (yearsCount - 1) * 250; // Subsequent years (Janaza only)
             }
-          } else {
+        } else {
             // Lifetime membership already paid, only Janaza fee
             expected += yearsCount * 250;
           }
@@ -2429,8 +2430,8 @@
           errorMsg = "Payment type is required";
         } else if (currentInvalidPaymentField === "method") {
           if (!paymentForm.method) {
-            isValid = false;
-            errorMsg = "Payment method is required";
+          isValid = false;
+          errorMsg = "Payment method is required";
           } else if (paymentForm.method === "Other" && !paymentForm.customMethod) {
             isValid = false;
             errorMsg = "Please specify the payment method";
@@ -2469,8 +2470,8 @@
           errorMsg = "Payment type is required";
         } else if (field === "method") {
           if (!paymentForm.method) {
-            isValid = false;
-            errorMsg = "Payment method is required";
+          isValid = false;
+          errorMsg = "Payment method is required";
           } else if (paymentForm.method === "Other" && !paymentForm.customMethod) {
             isValid = false;
             errorMsg = "Please specify the payment method";
@@ -3636,7 +3637,7 @@ IMA Subscription Manager`;
     // Invoice CRUD Operations
     const handleAddInvoice = (e) => {
       e.preventDefault();
-      
+
       if (!validateInvoiceForm()) {
         // Validation error already shown via Notie
         return;
@@ -3833,7 +3834,7 @@ IMA Subscription Manager`;
               invoice.amount === "HK$5250" ||
               invoice.membershipFee === 5000
             );
-          
+
           const memberUpdateResponse = await fetch(`${apiUrl}/api/members/${invoice.memberId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -4106,7 +4107,7 @@ IMA Subscription Manager`;
               if (hasSelectedMembers) {
                 await handleSendToSelectedMembers(selectedMembers, 'Email');
               } else {
-                await handleSendToAllOutstanding();
+              await handleSendToAllOutstanding();
               }
             }
 
@@ -4118,7 +4119,7 @@ IMA Subscription Manager`;
               if (hasSelectedMembers) {
                 await handleSendWhatsAppToSelectedMembers(selectedMembers);
               } else {
-                await handleSendWhatsAppToAllOutstanding();
+              await handleSendWhatsAppToAllOutstanding();
               }
             }
 
@@ -5464,9 +5465,9 @@ IMA Subscription Manager`;
                                     if (tooltip) tooltip.style.opacity = '0';
                                   }}
                                 >
-                                  <select
+                                <select
                                     value={memberForm.subscriptionType || "Annual Member"}
-                                    onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
+                                  onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
                                     style={{
                                       width: "100%",
                                       padding: "10px 12px",
@@ -5501,7 +5502,7 @@ IMA Subscription Manager`;
                                     <option value="Annual Member">Annual Member - HK$500/year</option>
                                     <option value="Lifetime Janaza Fund Member">Lifetime Janaza Fund - HK$250/year</option>
                                     <option value="Lifetime Membership">Lifetime Membership - HK$5,250 first year</option>
-                                  </select>
+                                </select>
                                   <div style={{
                                     position: "absolute",
                                     top: "100%",
@@ -7767,11 +7768,11 @@ IMA Subscription Manager`;
                           if (tooltip) tooltip.style.opacity = '0';
                         }}
                       >
-                        <select
-                          required
-                          value={invoiceForm.invoiceType}
-                          onChange={(e) => {
-                            const type = e.target.value;
+                      <select
+                        required
+                        value={invoiceForm.invoiceType}
+                        onChange={(e) => {
+                          const type = e.target.value;
                             let amount = "250"; // Default
                             if (type === "Annual Member") {
                               amount = "500";
@@ -7780,9 +7781,9 @@ IMA Subscription Manager`;
                             } else if (type === "Lifetime Membership") {
                               amount = "5250";
                             }
-                            setInvoiceForm({ ...invoiceForm, invoiceType: type, amount: amount });
-                          }}
-                          style={{
+                          setInvoiceForm({ ...invoiceForm, invoiceType: type, amount: amount });
+                        }}
+                        style={{
                             width: "100%",
                             padding: "10px 12px",
                             borderRadius: "8px",
@@ -7801,24 +7802,24 @@ IMA Subscription Manager`;
                             transition: "all 0.2s ease",
                             color: "#1a1a1a"
                           }}
-                          onFocus={(e) => {
+                        onFocus={(e) => {
                             e.target.style.borderColor = "#5a31ea";
                             e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
                             const tooltip = e.target.parentElement.querySelector('.invoice-details-tooltip');
                             if (tooltip && invoiceForm.invoiceType) tooltip.style.opacity = '1';
-                          }}
-                          onBlur={(e) => {
+                        }}
+                        onBlur={(e) => {
                             e.target.style.borderColor = "#e0e0e0";
                             e.target.style.boxShadow = "none";
                             const tooltip = e.target.parentElement.querySelector('.invoice-details-tooltip');
                             if (tooltip) tooltip.style.opacity = '0';
-                          }}
-                        >
-                          <option value="">Select Invoice Type</option>
+                        }}
+                      >
+                        <option value="">Select Invoice Type</option>
                           <option value="Annual Member">Annual Member - HK$500</option>
                           <option value="Lifetime Janaza Fund Member">Lifetime Janaza Fund - HK$250</option>
                           <option value="Lifetime Membership">Lifetime Membership - HK$5,250</option>
-                        </select>
+                      </select>
                         {invoiceForm.invoiceType && (
                           <div style={{
                             position: "absolute",
@@ -8322,6 +8323,75 @@ IMA Subscription Manager`;
                       </div>
                     </div>
 
+                    {/* Search Filter */}
+                    <div style={{
+                      marginBottom: "16px"
+                    }}>
+                      <div style={{
+                        position: "relative",
+                        display: "flex",
+                        alignItems: "center"
+                      }}>
+                        <i className="fas fa-search" style={{
+                          position: "absolute",
+                          left: "12px",
+                          color: "#9ca3af",
+                          fontSize: "0.875rem"
+                        }}></i>
+                        <input
+                          type="text"
+                          placeholder="Search by name, email, or phone..."
+                          value={outstandingMembersSearch}
+                          onChange={(e) => {
+                            setOutstandingMembersSearch(e.target.value);
+                            setOutstandingMembersPage(1); // Reset to first page when search changes
+                          }}
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px 10px 40px",
+                            fontSize: "0.875rem",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "6px",
+                            outline: "none",
+                            transition: "all 0.2s ease",
+                            background: "#ffffff"
+                          }}
+                          onFocus={(e) => {
+                            e.target.style.borderColor = "#5a31ea";
+                            e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                          }}
+                          onBlur={(e) => {
+                            e.target.style.borderColor = "#e5e7eb";
+                            e.target.style.boxShadow = "none";
+                          }}
+                        />
+                        {outstandingMembersSearch && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOutstandingMembersSearch("");
+                              setOutstandingMembersPage(1);
+                            }}
+                            style={{
+                              position: "absolute",
+                              right: "8px",
+                              background: "transparent",
+                              border: "none",
+                              cursor: "pointer",
+                              padding: "4px",
+                              color: "#9ca3af",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center"
+                            }}
+                            title="Clear search"
+                          >
+                            <i className="fas fa-times" style={{ fontSize: "0.75rem" }}></i>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
                     {/* Members List with pagination */}
                     <div style={{
                       display: "flex",
@@ -8329,13 +8399,13 @@ IMA Subscription Manager`;
                       gap: "12px"
                     }}>
                       {(() => {
-                        const outstandingMembers = members
+                        let outstandingMembers = members
                           .map((member) => {
-                            const memberInvoices = invoices.filter(
-                              (inv) =>
-                                inv.memberId === member.id &&
-                                (inv.status === "Unpaid" || inv.status === "Overdue")
-                            );
+                          const memberInvoices = invoices.filter(
+                            (inv) =>
+                              inv.memberId === member.id &&
+                              (inv.status === "Unpaid" || inv.status === "Overdue")
+                          );
                             if (memberInvoices.length === 0) return null;
                             const totalDue = memberInvoices.reduce((sum, inv) => {
                               const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, "") || 0);
@@ -8347,8 +8417,19 @@ IMA Subscription Manager`;
                           })
                           .filter(Boolean);
 
+                        // Apply search filter
+                        if (outstandingMembersSearch.trim()) {
+                          const searchLower = outstandingMembersSearch.toLowerCase().trim();
+                          outstandingMembers = outstandingMembers.filter(({ member }) => {
+                            const nameMatch = member.name?.toLowerCase().includes(searchLower);
+                            const emailMatch = member.email?.toLowerCase().includes(searchLower);
+                            const phoneMatch = member.phone?.toLowerCase().includes(searchLower);
+                            return nameMatch || emailMatch || phoneMatch;
+                          });
+                        }
+
                         if (outstandingMembers.length === 0) {
-                          return (
+                        return (
                             <div
                               style={{
                                 padding: "24px",
@@ -8357,7 +8438,9 @@ IMA Subscription Manager`;
                                 fontSize: "0.9375rem",
                               }}
                             >
-                              No members with outstanding invoices
+                              {outstandingMembersSearch.trim() 
+                                ? `No members found matching "${outstandingMembersSearch}"`
+                                : "No members with outstanding invoices"}
                             </div>
                           );
                         }
@@ -8401,8 +8484,8 @@ IMA Subscription Manager`;
                         return (
                           <>
                             {/* Select All Header with all controls */}
-                            <div style={{
-                              display: "flex",
+                          <div style={{
+                            display: "flex",
                               alignItems: "center",
                               justifyContent: "space-between",
                               padding: "12px 16px",
@@ -8410,7 +8493,7 @@ IMA Subscription Manager`;
                               borderRadius: "4px",
                               border: selectedOutstandingMembers.size > 0 ? "1px solid #bae6fd" : "1px solid #e5e7eb",
                               marginBottom: "8px",
-                              flexWrap: "wrap",
+                            flexWrap: "wrap",
                               gap: "12px"
                             }}>
                               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -8439,108 +8522,108 @@ IMA Subscription Manager`;
                                   <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                                     <span style={{ fontSize: "0.875rem", color: "#666", marginRight: "4px" }}>Send via:</span>
                                     {/* Email Channel Button */}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (selectedChannels.includes('Email')) {
-                                          setSelectedChannels(prev => prev.filter(c => c !== 'Email'));
-                                        } else {
-                                          setSelectedChannels(prev => [...prev, 'Email']);
-                                        }
-                                      }}
-                                      disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
-                                      title="Email"
-                                      style={{
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedChannels.includes('Email')) {
+                                  setSelectedChannels(prev => prev.filter(c => c !== 'Email'));
+                                } else {
+                                  setSelectedChannels(prev => [...prev, 'Email']);
+                                }
+                              }}
+                              disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                              title="Email"
+                              style={{
                                         padding: "8px 12px",
                                         borderRadius: "6px",
-                                        fontWeight: "600",
+                                fontWeight: "600",
                                         fontSize: "0.875rem",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
-                                        transition: "all 0.2s ease",
-                                        background: selectedChannels.includes('Email')
-                                          ? "#5a31ea"
-                                          : "#ffffff",
-                                        color: selectedChannels.includes('Email') ? "#ffffff" : "#6b7280",
-                                        border: selectedChannels.includes('Email') ? "2px solid #5a31ea" : "2px solid #e5e7eb",
-                                        boxShadow: selectedChannels.includes('Email')
-                                          ? "0 2px 8px rgba(90, 49, 234, 0.3)"
-                                          : "none",
-                                        opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
-                                          e.target.style.background = "#f3f4f6";
-                                          e.target.style.color = "#374151";
-                                        }
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
-                                          e.target.style.background = "#ffffff";
-                                          e.target.style.color = "#6b7280";
-                                        }
-                                      }}
-                                    >
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
+                                transition: "all 0.2s ease",
+                                background: selectedChannels.includes('Email')
+                                  ? "#5a31ea"
+                                  : "#ffffff",
+                                color: selectedChannels.includes('Email') ? "#ffffff" : "#6b7280",
+                                border: selectedChannels.includes('Email') ? "2px solid #5a31ea" : "2px solid #e5e7eb",
+                                boxShadow: selectedChannels.includes('Email')
+                                  ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                  : "none",
+                                opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
+                                  e.target.style.background = "#f3f4f6";
+                                  e.target.style.color = "#374151";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
+                                  e.target.style.background = "#ffffff";
+                                  e.target.style.color = "#6b7280";
+                                }
+                              }}
+                            >
                                       <i className="fas fa-envelope" style={{ marginRight: "6px" }}></i>
                                       Email
-                                    </button>
+                            </button>
 
                                     {/* WhatsApp Channel Button */}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        if (selectedChannels.includes('WhatsApp')) {
-                                          setSelectedChannels(prev => prev.filter(c => c !== 'WhatsApp'));
-                                        } else {
-                                          setSelectedChannels(prev => [...prev, 'WhatsApp']);
-                                        }
-                                      }}
-                                      disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
-                                      title="WhatsApp"
-                                      style={{
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedChannels.includes('WhatsApp')) {
+                                  setSelectedChannels(prev => prev.filter(c => c !== 'WhatsApp'));
+                                } else {
+                                  setSelectedChannels(prev => [...prev, 'WhatsApp']);
+                                }
+                              }}
+                              disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                              title="WhatsApp"
+                              style={{
                                         padding: "8px 12px",
                                         borderRadius: "6px",
-                                        fontWeight: "600",
+                                fontWeight: "600",
                                         fontSize: "0.875rem",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
-                                        transition: "all 0.2s ease",
-                                        background: selectedChannels.includes('WhatsApp')
-                                          ? "#25D366"
-                                          : "#ffffff",
-                                        color: selectedChannels.includes('WhatsApp') ? "#ffffff" : "#25D366",
-                                        border: selectedChannels.includes('WhatsApp') ? "2px solid #25D366" : "2px solid #25D366",
-                                        boxShadow: selectedChannels.includes('WhatsApp')
-                                          ? "0 2px 8px rgba(37, 211, 102, 0.3)"
-                                          : "none",
-                                        opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
-                                          e.target.style.background = "#dcfce7";
-                                          e.target.style.color = "#16a34a";
-                                        }
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
-                                          e.target.style.background = "#ffffff";
-                                          e.target.style.color = "#25D366";
-                                        }
-                                      }}
-                                    >
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
+                                transition: "all 0.2s ease",
+                                background: selectedChannels.includes('WhatsApp')
+                                  ? "#25D366"
+                                  : "#ffffff",
+                                color: selectedChannels.includes('WhatsApp') ? "#ffffff" : "#25D366",
+                                border: selectedChannels.includes('WhatsApp') ? "2px solid #25D366" : "2px solid #25D366",
+                                boxShadow: selectedChannels.includes('WhatsApp')
+                                  ? "0 2px 8px rgba(37, 211, 102, 0.3)"
+                                  : "none",
+                                opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
+                                  e.target.style.background = "#dcfce7";
+                                  e.target.style.color = "#16a34a";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
+                                  e.target.style.background = "#ffffff";
+                                  e.target.style.color = "#25D366";
+                                }
+                              }}
+                            >
                                       <i className="fab fa-whatsapp" style={{ marginRight: "6px" }}></i>
                                       WhatsApp
-                                    </button>
+                            </button>
                                   </div>
 
                                   {/* Send Button - shown when channels are selected */}
-                                  {selectedChannels.length > 0 && (
-                                    <button
-                                      className="primary-btn"
+                            {selectedChannels.length > 0 && (
+                              <button
+                                className="primary-btn"
                                       onClick={async () => {
                                         // Get selected members from the outstanding members list
                                         const selectedMembers = outstandingMembers
@@ -8558,20 +8641,20 @@ IMA Subscription Manager`;
                                         setSelectedOutstandingMembers(new Set());
                                         setSelectedChannels([]);
                                       }}
-                                      disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
-                                      style={{
-                                        fontSize: "0.875rem",
+                                disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                                style={{
+                                  fontSize: "0.875rem",
                                         padding: "8px 16px",
-                                        opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
-                                        cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer"
-                                      }}
-                                    >
+                                  opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                                  cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer"
+                                }}
+                              >
                                       {sendingToAll || sendingWhatsAppToAll ? "Sending..." : `Send to ${selectedOutstandingMembers.size} Selected`}
-                                    </button>
-                                  )}
-                                </div>
+                              </button>
+                            )}
+                          </div>
                               )}
-                            </div>
+                    </div>
 
                             {paginatedMembers.map(({ member, totalDue, overdueCount, unpaidCount }) => {
                               const isSending = sendingEmails[member.id];
@@ -8601,49 +8684,49 @@ IMA Subscription Manager`;
                                       aria-label={`Select ${member.name}`}
                                     />
                                     <div style={{ flex: 1 }}>
-                                      <div
-                                        style={{
-                                          fontSize: "1rem",
-                                          fontWeight: "600",
-                                          color: "#000",
-                                          marginBottom: "4px",
-                                        }}
-                                      >
-                                        {member.name}
-                                      </div>
-                                      <div
-                                        style={{
-                                          fontSize: "0.875rem",
-                                          color: "#666",
-                                          marginBottom: "4px",
-                                        }}
-                                      >
-                                        {member.email}
-                                      </div>
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          gap: "12px",
-                                          fontSize: "0.8125rem",
-                                          color: "#666",
-                                        }}
-                                      >
-                                        <span>
-                                          <strong style={{ color: "#000" }}>
-                                            {formatCurrency(totalDue)}
-                                          </strong>{" "}
-                                          outstanding
+                                    <div
+                                      style={{
+                                        fontSize: "1rem",
+                                        fontWeight: "600",
+                                        color: "#000",
+                                        marginBottom: "4px",
+                                      }}
+                                    >
+                                      {member.name}
+                                    </div>
+                                    <div
+                                      style={{
+                                        fontSize: "0.875rem",
+                                        color: "#666",
+                                        marginBottom: "4px",
+                                      }}
+                                    >
+                                      {member.email}
+                                    </div>
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        gap: "12px",
+                                        fontSize: "0.8125rem",
+                                        color: "#666",
+                                      }}
+                                    >
+                                      <span>
+                                        <strong style={{ color: "#000" }}>
+                                          {formatCurrency(totalDue)}
+                                        </strong>{" "}
+                                        outstanding
+                                      </span>
+                                      {overdueCount > 0 && (
+                                        <span style={{ color: "#ef4444", fontWeight: "600" }}>
+                                          {overdueCount} overdue
                                         </span>
-                                        {overdueCount > 0 && (
-                                          <span style={{ color: "#ef4444", fontWeight: "600" }}>
-                                            {overdueCount} overdue
-                                          </span>
-                                        )}
-                                        {unpaidCount > 0 && (
-                                          <span style={{ color: "#ef4444", fontWeight: "600" }}>
-                                            {unpaidCount} unpaid
-                                          </span>
-                                        )}
+                                      )}
+                                      {unpaidCount > 0 && (
+                                        <span style={{ color: "#ef4444", fontWeight: "600" }}>
+                                          {unpaidCount} unpaid
+                                        </span>
+                                      )}
                                       </div>
                                     </div>
                                   </div>
@@ -10000,13 +10083,13 @@ IMA Subscription Manager`;
                                               aria-label={`Select ${item.memberName || item.member || "item"}`}
                                             />
                                             <div className="mobile-table-card-title-section" style={{ flex: 1 }}>
-                                              <div className="mobile-table-card-title">
-                                                {item.memberName || item.member || "-"}
-                                                {item.memberId ? ` (${item.memberId})` : ""}
-                                              </div>
-                                              <div className="mobile-table-card-metric">
-                                                <i className={`fas ${item.channel === "Email" ? "fa-envelope" : "fa-whatsapp"}`} style={{ fontSize: "0.75rem", marginRight: "4px" }}></i>
-                                                <span>{item.channel || "-"}</span>
+                                            <div className="mobile-table-card-title">
+                                              {item.memberName || item.member || "-"}
+                                              {item.memberId ? ` (${item.memberId})` : ""}
+                                            </div>
+                                            <div className="mobile-table-card-metric">
+                                              <i className={`fas ${item.channel === "Email" ? "fa-envelope" : "fa-whatsapp"}`} style={{ fontSize: "0.75rem", marginRight: "4px" }}></i>
+                                              <span>{item.channel || "-"}</span>
                                               </div>
                                             </div>
                                           </div>
@@ -11028,18 +11111,18 @@ IMA Subscription Manager`;
                           {/* Online Payment Method Selection - Only shown when Online is selected */}
                           {paymentForm.payment_type === "online" && (
                             <>
-                              <label>
-                                <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
-                                <select
-                                  value={paymentForm.method}
-                                  onChange={(e) =>
-                                    setPaymentForm({
-                                      ...paymentForm,
-                                      method: e.target.value,
+                          <label>
+                            <span><i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Payment Method <span style={{ color: "#ef4444" }}>*</span></span>
+                            <select
+                              value={paymentForm.method}
+                              onChange={(e) =>
+                                setPaymentForm({
+                                  ...paymentForm,
+                                  method: e.target.value,
                                       customMethod: e.target.value === "Other" ? paymentForm.customMethod : "", // Keep custom value if switching back to Other
-                                    })
-                                  }
-                                  required
+                                })
+                              }
+                              required
                                   style={{
                                     width: "100%",
                                     padding: "12px 16px",
@@ -11047,14 +11130,14 @@ IMA Subscription Manager`;
                                     border: paymentFieldErrors.method ? "2px solid #ef4444" : "2px solid #e5e7eb",
                                     fontSize: "0.9375rem",
                                   }}
-                                >
-                                  <option value="">Select Method</option>
-                                  <option value="FPS">FPS</option>
+                            >
+                              <option value="">Select Method</option>
+                              <option value="FPS">FPS</option>
                                   <option value="Alipay">Alipay</option>
                                   <option value="Bank Deposit">Bank Deposit</option>
                                   <option value="Other">Other</option>
-                                </select>
-                              </label>
+                            </select>
+                          </label>
                               {/* Custom Payment Method Input - Shown when "Other" is selected */}
                               {paymentForm.method === "Other" && (
                                 <label style={{ marginTop: "12px" }}>
@@ -12906,8 +12989,8 @@ IMA Subscription Manager`;
                                   errorMsg = "Payment type is required";
                                 } else if (currentInvalidDonationField === "method") {
                                   if (!donationForm.method) {
-                                    isValid = false;
-                                    errorMsg = "Payment method is required";
+                                  isValid = false;
+                                  errorMsg = "Payment method is required";
                                   } else if (donationForm.method === "Other" && !donationForm.customMethod) {
                                     isValid = false;
                                     errorMsg = "Please specify the payment method";
@@ -12967,8 +13050,8 @@ IMA Subscription Manager`;
                                   errorMsg = "Payment type is required";
                                 } else if (field === "method") {
                                   if (!donationForm.method) {
-                                    isValid = false;
-                                    errorMsg = "Payment method is required";
+                                  isValid = false;
+                                  errorMsg = "Payment method is required";
                                   } else if (donationForm.method === "Other" && !donationForm.customMethod) {
                                     isValid = false;
                                     errorMsg = "Please specify the payment method";
@@ -13042,12 +13125,12 @@ IMA Subscription Manager`;
                                         methodInput.focus();
                                         methodInput.scrollIntoView({ behavior: "smooth", block: "center" });
                                       } else {
-                                        const selects = document.querySelectorAll('select');
-                                        const methodSelect = Array.from(selects).find(select =>
+                                      const selects = document.querySelectorAll('select');
+                                      const methodSelect = Array.from(selects).find(select =>
                                           select.options[0]?.text === "Select Method"
-                                        );
-                                        methodSelect?.focus();
-                                        methodSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                      );
+                                      methodSelect?.focus();
+                                      methodSelect?.scrollIntoView({ behavior: "smooth", block: "center" });
                                       }
                                     } else if (field === "date") {
                                       const input = document.querySelector('input[type="date"]');
@@ -13503,7 +13586,7 @@ IMA Subscription Manager`;
                           
                           {/* Donor Name and Amount - Below Donor Type */}
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
-                            <label>
+                          <label>
                               <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donor Name <span style={{ color: "#ef4444" }}>*</span></span>
                               <input
                                 type="text"
@@ -13665,52 +13748,52 @@ IMA Subscription Manager`;
                                 <div style={{ position: "relative" }} data-donation-member-dropdown>
                                   <div
                                     onClick={() => setShowDonationMemberDropdown(!showDonationMemberDropdown)}
-                                    style={{
-                                      padding: "10px 16px",
+                                  style={{
+                                    padding: "10px 16px",
                                       border: "1px solid #e0e0e0",
-                                      borderRadius: "4px",
-                                      background: "#fff",
-                                      cursor: "pointer",
-                                      display: "flex",
-                                      justifyContent: "space-between",
-                                      alignItems: "center",
+                                    borderRadius: "4px",
+                                    background: "#fff",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
                                       color: donationForm.memberId ? "#000" : "#999",
-                                      minHeight: "42px"
-                                    }}
-                                  >
-                                    <span>
+                                    minHeight: "42px"
+                                  }}
+                                >
+                                  <span>
                                       {donationForm.memberId
                                         ? (() => {
                                           const selected = members.find(m => m.id === donationForm.memberId);
                                           return selected ? `${selected.name} (${selected.id})` : "Select Member";
                                         })()
                                         : "Select Member"}
-                                    </span>
-                                    <span style={{
-                                      fontSize: "0.75rem",
-                                      color: "#5a31ea",
-                                      transition: "transform 0.2s ease",
+                                  </span>
+                                  <span style={{
+                                    fontSize: "0.75rem",
+                                    color: "#5a31ea",
+                                    transition: "transform 0.2s ease",
                                       transform: showDonationMemberDropdown ? "rotate(180deg)" : "rotate(0deg)",
-                                      display: "inline-block"
-                                    }}>▼</span>
-                                  </div>
+                                    display: "inline-block"
+                                  }}>▼</span>
+                                </div>
 
                                   {showDonationMemberDropdown && (
-                                    <div
-                                      style={{
-                                        position: "absolute",
-                                        top: "100%",
-                                        left: 0,
-                                        right: 0,
-                                        background: "#fff",
-                                        border: "1px solid #e0e0e0",
-                                        borderRadius: "4px",
-                                        marginTop: "4px",
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      top: "100%",
+                                      left: 0,
+                                      right: 0,
+                                      background: "#fff",
+                                      border: "1px solid #e0e0e0",
+                                      borderRadius: "4px",
+                                      marginTop: "4px",
                                         maxHeight: "300px",
                                         overflow: "hidden",
-                                        zIndex: 1000,
-                                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
-                                      }}
+                                      zIndex: 1000,
+                                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
+                                    }}
                                     >
                                       {/* Search Input */}
                                       <div style={{
@@ -13724,7 +13807,7 @@ IMA Subscription Manager`;
                                             placeholder=" Search member by name or ID..."
                                             value={donationMemberSearch}
                                             onChange={(e) => setDonationMemberSearch(e.target.value)}
-                                            onClick={(e) => e.stopPropagation()}
+                                    onClick={(e) => e.stopPropagation()}
                                             onKeyDown={(e) => e.stopPropagation()}
                                             autoFocus
                                             style={{
@@ -13804,7 +13887,7 @@ IMA Subscription Manager`;
                                           .map((member) => (
                                             <div
                                               key={member.id}
-                                              onClick={() => {
+                                      onClick={() => {
                                                 setDonationForm({
                                                   ...donationForm,
                                                   memberId: member.id,
@@ -13812,29 +13895,29 @@ IMA Subscription Manager`;
                                                 });
                                                 setShowDonationMemberDropdown(false);
                                                 setDonationMemberSearch("");
-                                              }}
-                                              style={{
-                                                padding: "12px 16px",
-                                                cursor: "pointer",
-                                                borderBottom: "1px solid #e5e7eb",
+                                      }}
+                                      style={{
+                                        padding: "12px 16px",
+                                        cursor: "pointer",
+                                        borderBottom: "1px solid #e5e7eb",
                                                 background: donationForm.memberId === member.id ? "#f9fafb" : "#fff",
                                                 transition: "background 0.2s"
-                                              }}
-                                              onMouseEnter={(e) => {
+                                      }}
+                                      onMouseEnter={(e) => {
                                                 if (donationForm.memberId !== member.id) {
                                                   e.target.style.background = "#f9f9f9";
-                                                }
-                                              }}
-                                              onMouseLeave={(e) => {
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
                                                 if (donationForm.memberId !== member.id) {
                                                   e.target.style.background = "#fff";
-                                                }
-                                              }}
-                                            >
+                                        }
+                                      }}
+                                    >
                                               <div style={{ fontWeight: "500", color: "#000" }}>{member.name}</div>
                                               <div style={{ fontSize: "0.75rem", color: "#666", marginTop: "2px" }}>
                                                 {member.id} {member.email ? `• ${member.email}` : ""}
-                                              </div>
+                                    </div>
                                             </div>
                                           ))}
 
@@ -13866,21 +13949,21 @@ IMA Subscription Manager`;
                               <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
                                 <button
                                   type="button"
-                                  onClick={() => {
+                                      onClick={() => {
                                     setDonationForm({
                                       ...donationForm,
                                       payment_type: "online",
                                       method: "", // Reset method when switching type
                                       receiver_name: "", // Reset receiver name
                                     });
-                                    if (donationFieldErrors.method) {
-                                      setDonationFieldErrors(prev => ({ ...prev, method: false }));
-                                    }
+                                        if (donationFieldErrors.method) {
+                                          setDonationFieldErrors(prev => ({ ...prev, method: false }));
+                                          }
                                     if (donationFieldErrors.payment_type) {
                                       setDonationFieldErrors(prev => ({ ...prev, payment_type: false }));
-                                    }
-                                  }}
-                                  style={{
+                                        }
+                                      }}
+                                      style={{
                                     flex: 1,
                                     padding: "14px 20px",
                                     borderRadius: "8px",
@@ -13890,7 +13973,7 @@ IMA Subscription Manager`;
                                     color: donationForm.payment_type === "online" ? "#ffffff" : "#333",
                                     fontWeight: "600",
                                     fontSize: "0.9375rem",
-                                    cursor: "pointer",
+                                        cursor: "pointer",
                                     transition: "all 0.2s ease",
                                   }}
                                 >
@@ -13913,7 +13996,7 @@ IMA Subscription Manager`;
                                       setDonationFieldErrors(prev => ({ ...prev, payment_type: false }));
                                     }
                                   }}
-                                  style={{
+                                style={{
                                     flex: 1,
                                     padding: "14px 20px",
                                     borderRadius: "8px",
@@ -13923,8 +14006,8 @@ IMA Subscription Manager`;
                                     color: donationForm.payment_type === "cash" ? "#ffffff" : "#333",
                                     fontWeight: "600",
                                     fontSize: "0.9375rem",
-                                    cursor: "pointer",
-                                    transition: "all 0.2s ease",
+                                  cursor: "pointer",
+                                  transition: "all 0.2s ease",
                                   }}
                                 >
                                   <i className="fas fa-money-bill" style={{ marginRight: "8px" }}></i>
@@ -13988,7 +14071,7 @@ IMA Subscription Manager`;
                                     }}
                                     placeholder="Enter payment method"
                                     required
-                                    style={{
+                                      style={{
                                       width: "100%",
                                       padding: "12px 16px",
                                       borderRadius: "8px",
@@ -14027,13 +14110,13 @@ IMA Subscription Manager`;
                                   if (donationFieldErrors.receiver_name) {
                                     setDonationFieldErrors(prev => ({ ...prev, receiver_name: false }));
                                     if (currentInvalidDonationField === "receiver_name") {
-                                      setCurrentInvalidDonationField(null);
-                                    }
-                                  }
-                                }}
+                                            setCurrentInvalidDonationField(null);
+                                          }
+                                        }
+                                      }}
                                 placeholder="Enter receiver name"
                                 required
-                                style={{
+                                      style={{
                                   width: "100%",
                                   padding: "12px 16px",
                                   borderRadius: "8px",
