@@ -3650,6 +3650,9 @@ IMA Subscription Manager`;
       const subscriptionYear = invoiceForm.subscriptionYear;
       const period = subscriptionYear; // Use subscription year as period
 
+      // Parse amount
+      const amountNum = parseFloat(invoiceForm.amount);
+
       // Check if an invoice for the same period already exists for this member
       const existingInvoice = invoices.find(
         (inv) => inv.memberId === invoiceForm.memberId &&
