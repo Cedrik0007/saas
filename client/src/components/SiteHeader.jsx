@@ -31,7 +31,7 @@ export function SiteHeader({
       <div className="brand">
         <span className="logo-mark">SM</span>
         <div>
-          <p className="logo-title">Subscription Manager HK</p>
+          <p className="logo-title">IMA Subscription Manager</p>
           <p className="logo-subtitle">
             Recurring payments for Hong Kong memberships
           </p>

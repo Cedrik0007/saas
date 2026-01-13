@@ -2,7 +2,7 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <p>
-        © 2025 Subscription Manager HK · Built for recurring memberships in
+        © 2025 IMA Subscription Manager · Built for recurring memberships in
         Hong Kong.
       </p>
       <p>

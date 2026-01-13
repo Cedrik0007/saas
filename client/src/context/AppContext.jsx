@@ -77,7 +77,7 @@ export function AppProvider({ children }) {
   const [organizationInfo, setOrganizationInfo] = useState(() => {
     const saved = localStorage.getItem("organizationInfo");
     return saved ? JSON.parse(saved) : {
-      name: "Subscription Manager HK",
+      name: "IMA Subscription Manager",
       email: "support@subscriptionhk.org",
       phone: "+852 2800 1122",
       address: "123 Central Street, Hong Kong",
@@ -397,7 +397,7 @@ export function AppProvider({ children }) {
           { name: "Alipay", visible: false, qrImageUrl: "", details: [] },
           { name: "PayMe", visible: false, qrImageUrl: "", details: [] },
           { name: "FPS", visible: true, details: ["FPS ID 1234567"] },
-          { name: "Direct Bank Transfer", visible: true, details: ["HSBC Hong Kong", "123-456789-001", "Subscription Manager HK"] },
+          { name: "Direct Bank Transfer", visible: true, details: ["HSBC Hong Kong", "123-456789-001", "IMA Subscription Manager"] },
           { name: "Credit/Debit Cards", visible: true, details: ["Gateway: Stripe"] },
         ];
         

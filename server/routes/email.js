@@ -139,7 +139,7 @@ router.post("/test", async (req, res) => {
     const testSubject = `Test Email - Email Configuration - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
     
     await testTransporter.sendMail({
-      from: `"Subscription Manager HK" <${emailUser}>`,
+      from: `"IMA Subscription Manager" <${emailUser}>`,
       to: testEmail || emailUser,
       subject: testSubject,
       html: `
@@ -147,7 +147,7 @@ router.post("/test", async (req, res) => {
           <h2 style="color: #333;">✅ Email Configuration Test</h2>
           <p>This is a test email to verify your email configuration is working correctly.</p>
           <p>If you received this email, your email settings are configured properly!</p>
-          <p>Best regards,<br><strong>Subscription Manager HK</strong></p>
+          <p>Best regards,<br><strong>IMA Subscription Manager</strong></p>
         </div>
       `,
       text: "This is a test email to verify your email configuration is working correctly.",
@@ -221,7 +221,7 @@ router.get("/template", async (req, res) => {
     </a>
   </p>
   <p>Please settle your outstanding balance at your earliest convenience.</p>
-  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>IMA Subscription Manager</p>
 </div>`,
       });
       await template.save();

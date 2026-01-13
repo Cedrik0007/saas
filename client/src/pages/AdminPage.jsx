@@ -777,7 +777,7 @@
       </a>
     </p>
     <p>Please settle your outstanding balance at your earliest convenience.</p>
-    <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+    <p>Best regards,<br><strong>Finance Team</strong><br>IMA Subscription Manager</p>
   </div>`,
     });
 
@@ -879,6 +879,7 @@
     const [pendingReminderAction, setPendingReminderAction] = useState(null); // { type: 'single'|'bulk', memberData?: member }
     const [selectedChannels, setSelectedChannels] = useState([]); // Track selected channels for bulk send (can be multiple)
     const [selectedReminderLogs, setSelectedReminderLogs] = useState(new Set()); // Track selected reminder log IDs
+    const [selectedOutstandingMembers, setSelectedOutstandingMembers] = useState(new Set()); // Track selected outstanding member IDs
     const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
     const [paymentSearchTerm, setPaymentSearchTerm] = useState(""); // Search filter for payments
     const [paymentYearFilter, setPaymentYearFilter] = useState("All"); // Year filter for payments
@@ -2149,7 +2150,7 @@
       </a>
     </p>
     <p>Please settle your outstanding balance at your earliest convenience.</p>
-    <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+    <p>Best regards,<br><strong>Finance Team</strong><br>IMA Subscription Manager</p>
   </div>`;
             setEmailTemplate({
               subject: data.subject || "Payment Reminder - Outstanding Balance",
@@ -2734,6 +2735,137 @@
       }
     };
 
+    // Send reminder to selected members only
+    const handleSendToSelectedMembers = async (selectedMembers, channel) => {
+      if (!isAdminOrOwner) {
+        showToast("Only Owner and Finance Admin can send bulk reminders", "error");
+        return;
+      }
+      if (channel === 'Email' && (!emailSettings.emailUser || !emailSettings.emailPassword)) {
+        showToast('Please configure email credentials first', 'error');
+        return;
+      }
+
+      setSendingToAll(true);
+      try {
+        const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+        
+        // Send to each selected member
+        for (const member of selectedMembers) {
+          const memberInvoices = invoices.filter(
+            (inv) =>
+              inv.memberId === member.id &&
+              (inv.status === "Unpaid" || inv.status === "Overdue")
+          );
+          
+          if (memberInvoices.length === 0) continue;
+
+          const totalDue = memberInvoices.reduce((sum, inv) => {
+            const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, "") || 0);
+            return sum + amount;
+          }, 0);
+
+          if (channel === 'Email') {
+            await handleSendReminder(member);
+          }
+        }
+
+        fetchReminderLogs();
+        showToast(`Reminder ${channel === 'Email' ? 'emails' : 'messages'} sent to ${selectedMembers.length} selected member(s)!`);
+      } catch (error) {
+        console.error('Error sending reminders to selected members:', error);
+        showToast('Failed to send reminders', 'error');
+      } finally {
+        setSendingToAll(false);
+      }
+    };
+
+    // Send WhatsApp reminder to selected members only
+    const handleSendWhatsAppToSelectedMembers = async (selectedMembers) => {
+      if (!isAdminOrOwner) {
+        showToast("Only Owner and Finance Admin can send bulk reminders", "error");
+        return;
+      }
+
+      setSendingWhatsAppToAll(true);
+      try {
+        for (let i = 0; i < selectedMembers.length; i++) {
+          const member = selectedMembers[i];
+          
+          if (!member.phone) continue;
+
+          const memberUnpaidInvoices = invoices.filter(
+            (inv) =>
+              inv.memberId === member.id &&
+              (inv.status === "Unpaid" || inv.status === "Overdue")
+          );
+
+          if (memberUnpaidInvoices.length === 0) continue;
+
+          const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
+            const amountStr = String(inv.amount).replace(/HK\$|\$|,/g, '').trim();
+            const amount = parseFloat(amountStr) || 0;
+            return sum + amount;
+          }, 0);
+
+          const invoiceList = memberUnpaidInvoices
+            .map(
+              (inv, index) =>
+                `${index + 1}. *${inv.period}*: ${inv.amount} (Due: ${inv.due}) - _${inv.status}_`
+            )
+            .join("\n");
+
+          const message = `Hi *${member.name}* 👋
+
+Payment Reminder
+
+*Total Outstanding:* ${formatCurrency(totalDue)}
+
+*Invoices (${memberUnpaidInvoices.length}):*
+${invoiceList}
+
+*Payment Options:*
+• FPS: ID 1234567
+• PayMe: Scan QR in portal
+• Bank Transfer: HSBC 123-456789-001
+
+*Pay Online:*
+${window.location.origin}/member
+
+Please settle your balance at your earliest convenience.
+
+Thank you! 🙏
+
+_Finance Team_
+IMA Subscription Manager`;
+
+          const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
+          const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+
+          setTimeout(() => {
+            window.open(whatsappUrl, '_blank');
+            const comm = {
+              channel: "WhatsApp",
+              type: "Bulk Outstanding Reminder",
+              memberId: member.id,
+              memberEmail: member.email,
+              memberName: member.name,
+              message: `WhatsApp reminder sent to ${member.name} (${member.phone}) - $${totalDue} due (${memberUnpaidInvoices.length} invoice${memberUnpaidInvoices.length > 1 ? "s" : ""})`,
+              status: "Delivered",
+            };
+            addCommunication(comm);
+          }, i * 1000);
+        }
+
+        showToast(`✓ Opening WhatsApp for ${selectedMembers.length} selected members. Please review and send each message.`);
+      } catch (error) {
+        console.error("Error sending WhatsApp reminders:", error);
+        showToast("Failed to open WhatsApp", "error");
+      } finally {
+        setSendingWhatsAppToAll(false);
+      }
+    };
+
     // Send WhatsApp reminder to all outstanding members
     const handleSendWhatsAppToAllOutstanding = async () => {
       if (!isAdminOrOwner) {
@@ -2812,7 +2944,7 @@
   Thank you! 🙏
 
   _Finance Team_
-  Subscription Manager HK`;
+  IMA Subscription Manager`;
 
           // Clean phone number
           const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
@@ -3881,7 +4013,7 @@
   Thank you! 🙏
 
   _Finance Team_
-  Subscription Manager HK`;
+  IMA Subscription Manager`;
 
       // Clean phone number (remove all non-numeric except +)
       const cleanPhone = memberData.phone.replace(/[^0-9+]/g, "");
@@ -3953,12 +4085,17 @@
         return;
       }
 
+      // Check if we have selected members from the selection UI
+      const selectedMembers = pendingReminderAction?.selectedMembers;
+      const hasSelectedMembers = selectedMembers && selectedMembers.length > 0;
+
       // Show confirmation for bulk send
+      const memberCount = hasSelectedMembers ? selectedMembers.length : 'ALL outstanding';
       const confirmationMessage = selectedChannels.length === 2
-        ? `Are you sure you want to send reminders via Email AND WhatsApp to ALL outstanding members?`
+        ? `Are you sure you want to send reminders via Email AND WhatsApp to ${memberCount} member${hasSelectedMembers && selectedMembers.length !== 1 ? 's' : ''}?`
         : selectedChannels.includes('Email')
-          ? 'Are you sure you want to send reminder emails to ALL outstanding members?'
-          : `Are you sure you want to open WhatsApp for all outstanding members? This will open multiple WhatsApp windows.`;
+          ? `Are you sure you want to send reminder emails to ${memberCount} member${hasSelectedMembers && selectedMembers.length !== 1 ? 's' : ''}?`
+          : `Are you sure you want to open WhatsApp for ${memberCount} member${hasSelectedMembers && selectedMembers.length !== 1 ? 's' : ''}? This will open multiple WhatsApp windows.`;
 
       showConfirmation(
         confirmationMessage,
@@ -3966,7 +4103,11 @@
           try {
             // Send to all selected channels
             if (selectedChannels.includes('Email')) {
-              await handleSendToAllOutstanding();
+              if (hasSelectedMembers) {
+                await handleSendToSelectedMembers(selectedMembers, 'Email');
+              } else {
+                await handleSendToAllOutstanding();
+              }
             }
 
             if (selectedChannels.includes('WhatsApp')) {
@@ -3974,10 +4115,15 @@
               if (selectedChannels.includes('Email')) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
               }
-              await handleSendWhatsAppToAllOutstanding();
+              if (hasSelectedMembers) {
+                await handleSendWhatsAppToSelectedMembers(selectedMembers);
+              } else {
+                await handleSendWhatsAppToAllOutstanding();
+              }
             }
 
             setSelectedChannels([]);
+            setPendingReminderAction(null);
           } catch (error) {
             console.error("Error sending bulk reminders:", error);
           }
@@ -6697,43 +6843,30 @@
                               Screenshot: invoice.screenshot ? {
                                 render: () => (
                                   <button
-                                    onClick={() => {
-                                      const newWindow = window.open();
-                                      if (newWindow) {
-                                        newWindow.document.write(`
-                                        <html>
-                                          <head><title>Payment Screenshot - ${invoice.id}</title></head>
-                                          <body style="margin:0;padding:20px;background:#f9fafb;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                                            <img src="${invoice.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
-                                          </body>
-                                        </html>
-                                      `);
-                                      }
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setSelectedImageUrl(invoice.screenshot);
+                                      setShowImagePopup(true);
                                     }}
                                     style={{
-                                      padding: "4px 10px",
-                                      background: "#5a31ea",
-                                      color: "#ffffff",
+                                      background: "none",
                                       border: "none",
-                                      borderRadius: "4px",
-                                      fontSize: "0.85rem",
+                                      color: "#000",
+                                      textDecoration: "none",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "6px",
                                       cursor: "pointer",
-                                      transition: "all 0.2s ease",
-                                      boxShadow: "0 2px 4px rgba(90, 49, 234, 0.3)"
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.target.style.background = "#4a28d0";
-                                      e.target.style.boxShadow = "0 4px 8px rgba(90, 49, 234, 0.4)";
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.target.style.background = "#5a31ea";
-                                      e.target.style.boxShadow = "0 2px 4px rgba(90, 49, 234, 0.3)";
+                                      padding: 0,
+                                      fontSize: "inherit"
                                     }}
                                     aria-label="View screenshot"
                                   >
                                     <Tooltip text="View screenshot" position="top">
                                     <i className="fas fa-image" aria-hidden="true"></i>
                                     </Tooltip>
+                                    <span>View</span>
                                   </button>
                                 )
                               } : "-",
@@ -6992,6 +7125,12 @@
                                             border: "2px solid #e0e0e0",
                                             flexShrink: 0,
                                             marginLeft: "12px",
+                                            cursor: "pointer",
+                                          }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedImageUrl(item.screenshot);
+                                            setShowImagePopup(true);
                                           }}
                                         >
                                           <img
@@ -8181,150 +8320,6 @@
                           Send manual reminder emails or WhatsApp messages to members with outstanding invoices
                         </p>
                       </div>
-                      {(() => {
-                        // Calculate outstanding members count
-                        const outstandingMembersCount = members.filter((member) => {
-                          const memberInvoices = invoices.filter(
-                            (inv) =>
-                              inv.memberId === member.id &&
-                              (inv.status === "Unpaid" || inv.status === "Overdue")
-                          );
-                          return memberInvoices.length > 0;
-                        }).length;
-
-                        // Hide buttons if no outstanding members
-                        if (outstandingMembersCount === 0) {
-                          return null;
-                        }
-
-                        return (
-                          <div style={{
-                            display: "flex",
-                            gap: "12px",
-                            flexWrap: "wrap",
-                            alignItems: "center"
-                          }}>
-                            {/* Email Channel Button - Icon Only */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (selectedChannels.includes('Email')) {
-                                  setSelectedChannels(prev => prev.filter(c => c !== 'Email'));
-                                } else {
-                                  setSelectedChannels(prev => [...prev, 'Email']);
-                                }
-                              }}
-                              disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
-                              title="Email"
-                              style={{
-                                padding: "12px",
-                                borderRadius: "8px",
-                                fontWeight: "600",
-                                fontSize: "1.25rem",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
-                                transition: "all 0.2s ease",
-                                background: selectedChannels.includes('Email')
-                                  ? "#5a31ea"
-                                  : "#ffffff",
-                                color: selectedChannels.includes('Email') ? "#ffffff" : "#6b7280",
-                                border: selectedChannels.includes('Email') ? "2px solid #5a31ea" : "2px solid #e5e7eb",
-                                boxShadow: selectedChannels.includes('Email')
-                                  ? "0 2px 8px rgba(90, 49, 234, 0.3)"
-                                  : "none",
-                                opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
-                                width: "48px",
-                                height: "48px",
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
-                                  e.target.style.background = "#f3f4f6";
-                                  e.target.style.color = "#374151";
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
-                                  e.target.style.background = "#ffffff";
-                                  e.target.style.color = "#6b7280";
-                                }
-                              }}
-                            >
-                              <i className="fas fa-envelope"></i>
-                            </button>
-
-                            {/* WhatsApp Channel Button - Icon Only with Green Background */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (selectedChannels.includes('WhatsApp')) {
-                                  setSelectedChannels(prev => prev.filter(c => c !== 'WhatsApp'));
-                                } else {
-                                  setSelectedChannels(prev => [...prev, 'WhatsApp']);
-                                }
-                              }}
-                              disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
-                              title="WhatsApp"
-                              style={{
-                                padding: "12px",
-                                borderRadius: "8px",
-                                fontWeight: "600",
-                                fontSize: "1.25rem",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
-                                transition: "all 0.2s ease",
-                                background: selectedChannels.includes('WhatsApp')
-                                  ? "#25D366"
-                                  : "#ffffff",
-                                color: selectedChannels.includes('WhatsApp') ? "#ffffff" : "#25D366",
-                                border: selectedChannels.includes('WhatsApp') ? "2px solid #25D366" : "2px solid #25D366",
-                                boxShadow: selectedChannels.includes('WhatsApp')
-                                  ? "0 2px 8px rgba(37, 211, 102, 0.3)"
-                                  : "none",
-                                opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
-                                width: "48px",
-                                height: "48px",
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
-                                  e.target.style.background = "#dcfce7";
-                                  e.target.style.color = "#16a34a";
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
-                                  e.target.style.background = "#ffffff";
-                                  e.target.style.color = "#25D366";
-                                }
-                              }}
-                            >
-                              <i className="fab fa-whatsapp"></i>
-                            </button>
-
-                            {/* Send All Button - shown when at least one channel is selected */}
-                            {selectedChannels.length > 0 && (
-                              <button
-                                className="primary-btn"
-                                onClick={handleSendAllWithSelectedChannels}
-                                disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
-                                style={{
-                                  padding: "12px 20px",
-                                  borderRadius: "4px",
-                                  fontWeight: "600",
-                                  fontSize: "0.875rem",
-                                  opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
-                                  cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer"
-                                }}
-                              >
-                                {sendingToAll || sendingWhatsAppToAll ? "Sending..." : "Send All"}
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
                     </div>
 
                     {/* Members List with pagination */}
@@ -8376,10 +8371,211 @@
                         const endIndex = startIndex + outstandingMembersPageSize;
                         const paginatedMembers = outstandingMembers.slice(startIndex, endIndex);
 
+                        // Calculate select all state
+                        const allPageMemberIds = paginatedMembers.map(({ member }) => member.id);
+                        const allSelected = allPageMemberIds.length > 0 && allPageMemberIds.every(id => selectedOutstandingMembers.has(id));
+                        const someSelected = allPageMemberIds.some(id => selectedOutstandingMembers.has(id));
+
+                        const handleSelectAllMembers = (e) => {
+                          if (e.target.checked) {
+                            const newSelected = new Set(selectedOutstandingMembers);
+                            allPageMemberIds.forEach(id => newSelected.add(id));
+                            setSelectedOutstandingMembers(newSelected);
+                          } else {
+                            const newSelected = new Set(selectedOutstandingMembers);
+                            allPageMemberIds.forEach(id => newSelected.delete(id));
+                            setSelectedOutstandingMembers(newSelected);
+                          }
+                        };
+
+                        const handleSelectMember = (memberId) => {
+                          const newSelected = new Set(selectedOutstandingMembers);
+                          if (newSelected.has(memberId)) {
+                            newSelected.delete(memberId);
+                          } else {
+                            newSelected.add(memberId);
+                          }
+                          setSelectedOutstandingMembers(newSelected);
+                        };
+
                         return (
                           <>
+                            {/* Select All Header with all controls */}
+                            <div style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              padding: "12px 16px",
+                              background: selectedOutstandingMembers.size > 0 ? "#f0f9ff" : "#f9fafb",
+                              borderRadius: "4px",
+                              border: selectedOutstandingMembers.size > 0 ? "1px solid #bae6fd" : "1px solid #e5e7eb",
+                              marginBottom: "8px",
+                              flexWrap: "wrap",
+                              gap: "12px"
+                            }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <input
+                                  type="checkbox"
+                                  className="reminder-log-checkbox"
+                                  checked={allSelected}
+                                  ref={(input) => {
+                                    if (input) input.indeterminate = someSelected && !allSelected;
+                                  }}
+                                  onChange={handleSelectAllMembers}
+                                  aria-label="Select all"
+                                />
+                                <span style={{ fontSize: "0.875rem", fontWeight: "600", color: "#374151" }}>Select All</span>
+                                {selectedOutstandingMembers.size > 0 && (
+                                  <span style={{ fontSize: "0.875rem", color: "#1e40af", fontWeight: "500", marginLeft: "8px" }}>
+                                    ({selectedOutstandingMembers.size} selected)
+                                  </span>
+                                )}
+                              </div>
+                              
+                              {/* Show Email and WhatsApp buttons only when members are selected */}
+                              {selectedOutstandingMembers.size > 0 && (
+                                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                                  {/* Channel Selection Buttons */}
+                                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                                    <span style={{ fontSize: "0.875rem", color: "#666", marginRight: "4px" }}>Send via:</span>
+                                    {/* Email Channel Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (selectedChannels.includes('Email')) {
+                                          setSelectedChannels(prev => prev.filter(c => c !== 'Email'));
+                                        } else {
+                                          setSelectedChannels(prev => [...prev, 'Email']);
+                                        }
+                                      }}
+                                      disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                                      title="Email"
+                                      style={{
+                                        padding: "8px 12px",
+                                        borderRadius: "6px",
+                                        fontWeight: "600",
+                                        fontSize: "0.875rem",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
+                                        transition: "all 0.2s ease",
+                                        background: selectedChannels.includes('Email')
+                                          ? "#5a31ea"
+                                          : "#ffffff",
+                                        color: selectedChannels.includes('Email') ? "#ffffff" : "#6b7280",
+                                        border: selectedChannels.includes('Email') ? "2px solid #5a31ea" : "2px solid #e5e7eb",
+                                        boxShadow: selectedChannels.includes('Email')
+                                          ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                          : "none",
+                                        opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
+                                          e.target.style.background = "#f3f4f6";
+                                          e.target.style.color = "#374151";
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('Email')) {
+                                          e.target.style.background = "#ffffff";
+                                          e.target.style.color = "#6b7280";
+                                        }
+                                      }}
+                                    >
+                                      <i className="fas fa-envelope" style={{ marginRight: "6px" }}></i>
+                                      Email
+                                    </button>
+
+                                    {/* WhatsApp Channel Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (selectedChannels.includes('WhatsApp')) {
+                                          setSelectedChannels(prev => prev.filter(c => c !== 'WhatsApp'));
+                                        } else {
+                                          setSelectedChannels(prev => [...prev, 'WhatsApp']);
+                                        }
+                                      }}
+                                      disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                                      title="WhatsApp"
+                                      style={{
+                                        padding: "8px 12px",
+                                        borderRadius: "6px",
+                                        fontWeight: "600",
+                                        fontSize: "0.875rem",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
+                                        transition: "all 0.2s ease",
+                                        background: selectedChannels.includes('WhatsApp')
+                                          ? "#25D366"
+                                          : "#ffffff",
+                                        color: selectedChannels.includes('WhatsApp') ? "#ffffff" : "#25D366",
+                                        border: selectedChannels.includes('WhatsApp') ? "2px solid #25D366" : "2px solid #25D366",
+                                        boxShadow: selectedChannels.includes('WhatsApp')
+                                          ? "0 2px 8px rgba(37, 211, 102, 0.3)"
+                                          : "none",
+                                        opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
+                                          e.target.style.background = "#dcfce7";
+                                          e.target.style.color = "#16a34a";
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (!sendingToAll && !sendingWhatsAppToAll && isAdminOrOwner && !selectedChannels.includes('WhatsApp')) {
+                                          e.target.style.background = "#ffffff";
+                                          e.target.style.color = "#25D366";
+                                        }
+                                      }}
+                                    >
+                                      <i className="fab fa-whatsapp" style={{ marginRight: "6px" }}></i>
+                                      WhatsApp
+                                    </button>
+                                  </div>
+
+                                  {/* Send Button - shown when channels are selected */}
+                                  {selectedChannels.length > 0 && (
+                                    <button
+                                      className="primary-btn"
+                                      onClick={async () => {
+                                        // Get selected members from the outstanding members list
+                                        const selectedMembers = outstandingMembers
+                                          .filter(({ member }) => selectedOutstandingMembers.has(member.id))
+                                          .map(({ member }) => member);
+                                        
+                                        if (selectedMembers.length === 0) {
+                                          showToast("No members selected", "error");
+                                          return;
+                                        }
+
+                                        // Update handleSendAllWithSelectedChannels to use selected members
+                                        setPendingReminderAction({ type: 'bulk', selectedMembers });
+                                        await handleSendAllWithSelectedChannels();
+                                        setSelectedOutstandingMembers(new Set());
+                                        setSelectedChannels([]);
+                                      }}
+                                      disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
+                                      style={{
+                                        fontSize: "0.875rem",
+                                        padding: "8px 16px",
+                                        opacity: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? 0.5 : 1,
+                                        cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer"
+                                      }}
+                                    >
+                                      {sendingToAll || sendingWhatsAppToAll ? "Sending..." : `Send to ${selectedOutstandingMembers.size} Selected`}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
                             {paginatedMembers.map(({ member, totalDue, overdueCount, unpaidCount }) => {
                               const isSending = sendingEmails[member.id];
+                              const isSelected = selectedOutstandingMembers.has(member.id);
                               return (
                                 <div
                                   key={member.id}
@@ -8388,57 +8584,67 @@
                                     alignItems: "center",
                                     justifyContent: "space-between",
                                     padding: "16px",
-                                    background: "#f9f9f9",
+                                    background: isSelected ? "#f0f9ff" : "#f9f9f9",
                                     borderRadius: "4px",
-                                    border: "1px solid #e0e0e0",
+                                    border: isSelected ? "2px solid #5a31ea" : "1px solid #e0e0e0",
                                     gap: "16px",
                                     flexWrap: "wrap",
                                   }}
                                 >
-                                  <div style={{ flex: "1 1 300px", minWidth: "200px" }}>
-                                    <div
-                                      style={{
-                                        fontSize: "1rem",
-                                        fontWeight: "600",
-                                        color: "#000",
-                                        marginBottom: "4px",
-                                      }}
-                                    >
-                                      {member.name}
-                                    </div>
-                                    <div
-                                      style={{
-                                        fontSize: "0.875rem",
-                                        color: "#666",
-                                        marginBottom: "4px",
-                                      }}
-                                    >
-                                      {member.email}
-                                    </div>
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        gap: "12px",
-                                        fontSize: "0.8125rem",
-                                        color: "#666",
-                                      }}
-                                    >
-                                      <span>
-                                        <strong style={{ color: "#000" }}>
-                                          {formatCurrency(totalDue)}
-                                        </strong>{" "}
-                                        outstanding
-                                      </span>
-                                      {overdueCount > 0 && (
-                                        <span style={{ color: "#ef4444", fontWeight: "600" }}>
-                                          {overdueCount} overdue
+                                  <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: "1 1 300px", minWidth: "200px" }}>
+                                    <input
+                                      type="checkbox"
+                                      className="reminder-log-checkbox"
+                                      checked={isSelected}
+                                      onChange={() => handleSelectMember(member.id)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      aria-label={`Select ${member.name}`}
+                                    />
+                                    <div style={{ flex: 1 }}>
+                                      <div
+                                        style={{
+                                          fontSize: "1rem",
+                                          fontWeight: "600",
+                                          color: "#000",
+                                          marginBottom: "4px",
+                                        }}
+                                      >
+                                        {member.name}
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: "0.875rem",
+                                          color: "#666",
+                                          marginBottom: "4px",
+                                        }}
+                                      >
+                                        {member.email}
+                                      </div>
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          gap: "12px",
+                                          fontSize: "0.8125rem",
+                                          color: "#666",
+                                        }}
+                                      >
+                                        <span>
+                                          <strong style={{ color: "#000" }}>
+                                            {formatCurrency(totalDue)}
+                                          </strong>{" "}
+                                          outstanding
                                         </span>
-                                      )}
-                                      {unpaidCount > 0 && (
-                                        <span style={{ color: "#ef4444", fontWeight: "600" }}>
-                                          {unpaidCount} unpaid
-                                        </span>
-                                      )}
+                                        {overdueCount > 0 && (
+                                          <span style={{ color: "#ef4444", fontWeight: "600" }}>
+                                            {overdueCount} overdue
+                                          </span>
+                                        )}
+                                        {unpaidCount > 0 && (
+                                          <span style={{ color: "#ef4444", fontWeight: "600" }}>
+                                            {unpaidCount} unpaid
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                   <div
@@ -11106,17 +11312,33 @@
                                   Method: getPaymentMethodDisplay(payment),
                                   Screenshot: {
                                     render: () => payment.screenshot ? (
-                                      <a
-                                        href={payment.screenshot}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        style={{ color: "#000", textDecoration: "none" }}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          setSelectedImageUrl(payment.screenshot);
+                                          setShowImagePopup(true);
+                                        }}
+                                        style={{
+                                          background: "none",
+                                          border: "none",
+                                          color: "#000",
+                                          textDecoration: "none",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "6px",
+                                          cursor: "pointer",
+                                          padding: 0,
+                                          fontSize: "inherit"
+                                        }}
                                         aria-label="View screenshot"
                                       >
                                         <Tooltip text="View screenshot" position="top">
                                         <i className="fas fa-image" aria-hidden="true"></i>
                                         </Tooltip>
-                                      </a>
+                                        <span>View</span>
+                                      </button>
                                     ) : "-"
                                   },
                                   Status: {
@@ -12480,14 +12702,30 @@
                                   Method: getPaymentMethodDisplay(payment),
                                   Screenshot: {
                                     render: () => payment.screenshot ? (
-                                      <a
-                                        href={payment.screenshot}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        style={{ color: "#5a31ea", textDecoration: "none" }}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          setSelectedImageUrl(payment.screenshot);
+                                          setShowImagePopup(true);
+                                        }}
+                                        style={{
+                                          background: "none",
+                                          border: "none",
+                                          color: "#5a31ea",
+                                          textDecoration: "none",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "6px",
+                                          cursor: "pointer",
+                                          padding: 0,
+                                          fontSize: "inherit"
+                                        }}
+                                        aria-label="View screenshot"
                                       >
                                         <i className="fas fa-image" style={{ marginRight: "4px" }}></i>View
-                                      </a>
+                                      </button>
                                     ) : "-"
                                   },
                                   Status: {
@@ -15688,7 +15926,7 @@
                               className="settings-form__input"
                               value={orgForm.name}
                               onChange={(e) => setOrgForm({ ...orgForm, name: e.target.value })}
-                              placeholder="Subscription Manager HK"
+                              placeholder="IMA Subscription Manager"
                             />
                           </label>
                         </div>
@@ -16716,7 +16954,13 @@
                               maxWidth: "100%",
                               maxHeight: "200px",
                               borderRadius: "4px",
-                              marginBottom: "8px"
+                              marginBottom: "8px",
+                              cursor: "pointer"
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedImageUrl(paymentModalData.imagePreview || paymentModalInvoice.screenshot);
+                              setShowImagePopup(true);
                             }}
                           />
                           <button
@@ -17381,34 +17625,16 @@
                           cursor: "pointer",
                         }}
                         onClick={() => {
-                          const newWindow = window.open();
-                          if (newWindow) {
-                            newWindow.document.write(`
-                              <html>
-                                <head><title>Payment Screenshot</title></head>
-                                <body style="margin:0;padding:20px;background:#f9fafb;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                                  <img src="${selectedPaymentDetails.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
-                                </body>
-                              </html>
-                            `);
-                          }
+                          setSelectedImageUrl(selectedPaymentDetails.screenshot);
+                          setShowImagePopup(true);
                         }}
                       />
                     </div>
                     <button
                       type="button"
                       onClick={() => {
-                        const newWindow = window.open();
-                        if (newWindow) {
-                          newWindow.document.write(`
-                            <html>
-                              <head><title>Payment Screenshot</title></head>
-                              <body style="margin:0;padding:20px;background:#f9fafb;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                                <img src="${selectedPaymentDetails.screenshot}" alt="Payment Screenshot" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
-                              </body>
-                            </html>
-                          `);
-                        }
+                        setSelectedImageUrl(selectedPaymentDetails.screenshot);
+                        setShowImagePopup(true);
                       }}
                       className="primary-btn"
                       style={{
@@ -17422,7 +17648,7 @@
                       }}
                     >
                       <i className="fas fa-expand"></i>
-                      Open Screenshot in New Window
+                      View Screenshot
                     </button>
                   </div>
                 )}
@@ -18135,7 +18361,7 @@ Your payment has been confirmed.`;
                             message += `\n\nThank you for your payment! 🙏
 
 _Finance Team_
-Subscription Manager HK`;
+IMA Subscription Manager`;
 
                             // Clean phone number
                             const cleanPhone = member.phone.replace(/[^0-9+]/g, "");

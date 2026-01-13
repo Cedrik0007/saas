@@ -262,7 +262,7 @@ export const paymentMethods = [
   {
     name: "Direct Bank Transfer",
     visible: true,
-    details: ["HSBC Hong Kong", "123-456789-001", "Subscription Manager HK"],
+    details: ["HSBC Hong Kong", "123-456789-001", "IMA Subscription Manager"],
   },
   { name: "FPS", visible: true, details: ["FPS ID 1234567"] },
   { name: "Alipay", visible: true, details: ["Upload QR placeholder"] },

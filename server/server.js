@@ -166,7 +166,7 @@ export { server };
 // Only listen locally (not on Vercel)
 if (!process.env.VERCEL) {
   server.listen(PORT, async () => {
-    console.log(`Subscription Manager HK API running on port ${PORT}`);
+    console.log(`IMA Subscription Manager API running on port ${PORT}`);
     console.log(`✓ API endpoints available:`);
     console.log(`  - GET    /api/members`);
     console.log(`  - POST   /api/members`);

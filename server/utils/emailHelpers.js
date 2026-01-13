@@ -17,7 +17,7 @@ export async function sendAccountApprovalEmail(member) {
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: member.email,
-      subject: "Account Approved - Subscription Manager HK",
+      subject: "Account Approved - IMA Subscription Manager",
       html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
     Account Approved
@@ -35,8 +35,8 @@ export async function sendAccountApprovalEmail(member) {
       Access Member Portal
     </a>
   </p>
-  <p>Welcome to Subscription Manager HK!</p>
-  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+  <p>Welcome to IMA Subscription Manager!</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>IMA Subscription Manager</p>
 </div>`,
     };
 
@@ -149,7 +149,7 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
     console.log(`📧 Preparing to send payment confirmation email to ${toEmail}...`);
 
     const mailOptions = {
-      from: `"Subscription Manager HK" <${fromEmail}>`,
+      from: `"IMA Subscription Manager" <${fromEmail}>`,
       to: toEmail,
       subject: `Payment Confirmed - Receipt ${invoice?.id || payment?.invoiceId || 'N/A'}`,
       html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -168,7 +168,7 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
   </div>
   ${pdfBuffer ? '<p style="color: #4caf50; font-weight: bold;">📎 Your payment receipt is attached as a PDF file.</p>' : ''}
   <p>Your invoice has been marked as paid. Thank you for your payment!</p>
-  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>IMA Subscription Manager</p>
 </div>`,
       attachments: pdfBuffer ? [
         {
@@ -251,7 +251,7 @@ export async function sendPaymentRejectionEmail(member, payment, invoice, reason
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: member.email || member.memberEmail,
-      subject: "Payment Rejected - Subscription Manager HK",
+      subject: "Payment Rejected - IMA Subscription Manager",
       html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <h2 style="color: #333; border-bottom: 2px solid #000; padding-bottom: 10px;">
     Payment Rejected
@@ -271,7 +271,7 @@ export async function sendPaymentRejectionEmail(member, payment, invoice, reason
       Resubmit Payment
     </a>
   </p>
-  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>IMA Subscription Manager</p>
 </div>`,
     };
 
@@ -328,7 +328,7 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
     </a>
   </p>
   <p>Please settle your outstanding balance at your earliest convenience.</p>
-  <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+  <p>Best regards,<br><strong>Finance Team</strong><br>IMA Subscription Manager</p>
 </div>`,
       };
     }
@@ -387,7 +387,7 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
     const uniqueSubject = `${emailSubject} - ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
     
     await transporter.sendMail({
-      from: `"Subscription Manager HK" <${fromEmail}>`,
+      from: `"IMA Subscription Manager" <${fromEmail}>`,
       to: member.email,
       subject: uniqueSubject,
       html: emailHTML,
@@ -404,7 +404,7 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
           formattedAmount = `HK$${formattedAmount}`;
         }
         return `• ${inv.period}: ${formattedAmount} (Due: ${inv.due}) - ${inv.status}`;
-      }).join('\n')}\n\nPayment Methods: Available in member portal\n\nAccess Member Portal: ${portalLink}/member\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+      }).join('\n')}\n\nPayment Methods: Available in member portal\n\nAccess Member Portal: ${portalLink}/member\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nIMA Subscription Manager`,
       // Add unique headers to prevent email threading
       messageId: generateUniqueMessageId(),
       headers: {

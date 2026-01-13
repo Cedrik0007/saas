@@ -232,7 +232,7 @@ export function SignupPage() {
         <div className="login-shell">
           <aside className="login-menu">
             <p className="eyebrow light">Welcome</p>
-            <h2>Subscription Manager HK</h2>
+            <h2>IMA Subscription Manager</h2>
             <p>
               Create your member account to access the subscription portal.
             </p>

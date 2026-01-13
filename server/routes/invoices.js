@@ -206,7 +206,7 @@ router.post("/send-reminder", async (req, res) => {
           </a>
         </p>
         <p>Please settle your outstanding balance at your earliest convenience.</p>
-        <p>Best regards,<br><strong>Finance Team</strong><br>Subscription Manager HK</p>
+        <p>Best regards,<br><strong>Finance Team</strong><br>IMA Subscription Manager</p>
       </div>
     `;
 
@@ -281,11 +281,11 @@ router.post("/send-reminder", async (req, res) => {
     let emailError = null;
     try {
       await invoiceTransporter.sendMail({
-        from: `"Subscription Manager HK" <${emailSettings.emailUser}>`,
+        from: `"IMA Subscription Manager" <${emailSettings.emailUser}>`,
         to: toEmail,
         subject: uniqueSubject,
         html: emailHTML,
-        text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nSubscription Manager HK`,
+        text: `Dear ${toName},\n\nThis is a friendly reminder about your outstanding subscription payments.\n\nMember ID: ${memberId || 'N/A'}\nTotal Outstanding: ${totalDue}\n\nOutstanding Invoices (${invoiceCount}):\n${finalInvoiceListText || 'N/A'}\n\nPayment Methods: ${paymentMethods || 'Available in member portal'}\n\nAccess Member Portal: ${portalLink || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`}\n\nPlease settle your outstanding balance at your earliest convenience.\n\nBest regards,\nFinance Team\nIMA Subscription Manager`,
         // Add unique headers to prevent email threading
         messageId: generateUniqueMessageId(),
         headers: {
