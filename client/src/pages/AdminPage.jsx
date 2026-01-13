@@ -12966,60 +12966,7 @@
                             }
                           }}
                         >
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
-                            <label>
-                              <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donor Name <span style={{ color: "#ef4444" }}>*</span></span>
-                              <input
-                                type="text"
-                                value={donationForm.donorName}
-                                onChange={(e) => {
-                                  setDonationForm({ ...donationForm, donorName: e.target.value });
-                                  if (donationFieldErrors.donorName) {
-                                    setDonationFieldErrors(prev => ({ ...prev, donorName: false }));
-                                    if (currentInvalidDonationField === "donorName") {
-                                      setCurrentInvalidDonationField(null);
-                                    }
-                                  }
-                                }}
-                                required
-                                placeholder={donationForm.isMember ? "Will be filled automatically when member is selected" : "Enter donor name"}
-                                disabled={donationForm.isMember && donationForm.memberId ? true : false}
-                                style={{
-                                  background: donationForm.isMember && donationForm.memberId ? "#f9fafb" : "#fff",
-                                  cursor: donationForm.isMember && donationForm.memberId ? "not-allowed" : "text",
-                                  border: donationFieldErrors.donorName ? "2px solid #ef4444" : undefined
-                                }}
-                              />
-                              {donationForm.isMember && donationForm.memberId && (
-                                <span style={{ fontSize: "0.75rem", color: "#666", marginTop: "4px", display: "block" }}>
-                                  Donor name is automatically set from selected member
-                                </span>
-                              )}
-                            </label>
-                            <label>
-                              <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                value={donationForm.amount}
-                                onChange={(e) => {
-                                  const value = e.target.value.replace(/[^0-9.]/g, "");
-                                  setDonationForm({ ...donationForm, amount: value });
-                                  if (donationFieldErrors.amount) {
-                                    setDonationFieldErrors(prev => ({ ...prev, amount: false }));
-                                    if (currentInvalidDonationField === "amount") {
-                                      setCurrentInvalidDonationField(null);
-                                    }
-                                  }
-                                }}
-                                placeholder="100"
-                                required
-                                style={{
-                                  border: donationFieldErrors.amount ? "2px solid #ef4444" : undefined
-                                }}
-                              />
-                            </label>
-                          </div>
+                          {/* Donor Type - Moved to top */}
                           <div style={{ marginBottom: "20px" }}>
                             <label style={{
                               display: "block",
@@ -13110,6 +13057,266 @@
                                 <span style={{ color: !donationForm.isMember ? "#ffffff" : "inherit" }}>Non-Member</span>
                               </button>
                             </div>
+                          </div>
+                          
+                          {/* Select Member - Shown when Member is selected */}
+                          {donationForm.isMember && (
+                            <div style={{ marginBottom: "20px" }}>
+                              <label>
+                                <span><i className="fas fa-users" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Select Member <span style={{ color: "#ef4444" }}>*</span></span>
+                                <div style={{ position: "relative" }} data-donation-member-dropdown>
+                                  <div
+                                    onClick={() => setShowDonationMemberDropdown(!showDonationMemberDropdown)}
+                                    style={{
+                                      padding: "10px 16px",
+                                      border: "1px solid #e0e0e0",
+                                      borderRadius: "4px",
+                                      background: "#fff",
+                                      cursor: "pointer",
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      color: donationForm.memberId ? "#000" : "#999",
+                                      minHeight: "42px",
+                                      marginTop: "8px"
+                                    }}
+                                  >
+                                    <span>
+                                      {donationForm.memberId
+                                        ? (() => {
+                                          const selected = members.find(m => m.id === donationForm.memberId);
+                                          return selected ? `${selected.name} (${selected.id})` : "Select Member";
+                                        })()
+                                        : "Select Member"}
+                                    </span>
+                                    <span style={{
+                                      fontSize: "0.75rem",
+                                      color: "#5a31ea",
+                                      transition: "transform 0.2s ease",
+                                      transform: showDonationMemberDropdown ? "rotate(180deg)" : "rotate(0deg)",
+                                      display: "inline-block"
+                                    }}>▼</span>
+                                  </div>
+
+                                  {showDonationMemberDropdown && (
+                                    <div
+                                      style={{
+                                        position: "absolute",
+                                        top: "100%",
+                                        left: 0,
+                                        right: 0,
+                                        background: "#fff",
+                                        border: "1px solid #e0e0e0",
+                                        borderRadius: "4px",
+                                        marginTop: "4px",
+                                        maxHeight: "300px",
+                                        overflow: "hidden",
+                                        zIndex: 1000,
+                                        boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
+                                      }}
+                                    >
+                                      {/* Search Input */}
+                                      <div style={{
+                                        padding: "12px",
+                                        borderBottom: "1px solid #e0e0e0",
+                                        background: "#f9fafb"
+                                      }}>
+                                        <div style={{ position: "relative" }}>
+                                          <input
+                                            type="text"
+                                            placeholder=" Search member by name or ID..."
+                                            value={donationMemberSearch}
+                                            onChange={(e) => setDonationMemberSearch(e.target.value)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onKeyDown={(e) => e.stopPropagation()}
+                                            autoFocus
+                                            style={{
+                                              width: "100%",
+                                              padding: "10px 36px 10px 12px",
+                                              border: "1px solid #e0e0e0",
+                                              borderRadius: "4px",
+                                              fontSize: "0.875rem",
+                                              outline: "none",
+                                              background: "#fff",
+                                              transition: "border-color 0.2s"
+                                            }}
+                                            onFocus={(e) => {
+                                              e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1), 0 4px 12px rgba(90, 49, 234, 0.12)";
+                                              e.target.style.boxShadow = "0 0 0 2px rgba(0,0,0,0.05)";
+                                            }}
+                                            onBlur={(e) => {
+                                              e.target.style.borderColor = "#e0e0e0";
+                                              e.target.style.boxShadow = "none";
+                                            }}
+                                          />
+                                          {donationMemberSearch && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDonationMemberSearch("");
+                                              }}
+                                              style={{
+                                                position: "absolute",
+                                                right: "8px",
+                                                top: "50%",
+                                                transform: "translateY(-50%)",
+                                                background: "none",
+                                                border: "none",
+                                                cursor: "pointer",
+                                                padding: "4px",
+                                                color: "#666",
+                                                fontSize: "0.875rem",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                justifyContent: "center"
+                                              }}
+                                              title="Clear search"
+                                            >
+                                              ✕
+                                            </button>
+                                          )}
+                                        </div>
+                                        {donationMemberSearch && (
+                                          <div style={{
+                                            marginTop: "8px",
+                                            fontSize: "0.75rem",
+                                            color: "#666"
+                                          }}>
+                                            {members.filter(member =>
+                                              !donationMemberSearch ||
+                                              member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                              member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                            ).length} member{members.filter(member =>
+                                              !donationMemberSearch ||
+                                              member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                              member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                            ).length !== 1 ? 's' : ''} found
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* Member List */}
+                                      <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+                                        {members
+                                          .filter(member =>
+                                            !donationMemberSearch ||
+                                            member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                            member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                          )
+                                          .map((member) => (
+                                            <div
+                                              key={member.id}
+                                              onClick={() => {
+                                                setDonationForm({
+                                                  ...donationForm,
+                                                  memberId: member.id,
+                                                  donorName: member.name || ""
+                                                });
+                                                setShowDonationMemberDropdown(false);
+                                                setDonationMemberSearch("");
+                                              }}
+                                              style={{
+                                                padding: "12px 16px",
+                                                cursor: "pointer",
+                                                borderBottom: "1px solid #e5e7eb",
+                                                background: donationForm.memberId === member.id ? "#f9fafb" : "#fff",
+                                                transition: "background 0.2s"
+                                              }}
+                                              onMouseEnter={(e) => {
+                                                if (donationForm.memberId !== member.id) {
+                                                  e.target.style.background = "#f9f9f9";
+                                                }
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                if (donationForm.memberId !== member.id) {
+                                                  e.target.style.background = "#fff";
+                                                }
+                                              }}
+                                            >
+                                              <div style={{ fontWeight: "500", color: "#000" }}>{member.name}</div>
+                                              <div style={{ fontSize: "0.75rem", color: "#666", marginTop: "2px" }}>
+                                                {member.id} {member.email ? `• ${member.email}` : ""}
+                                              </div>
+                                            </div>
+                                          ))}
+
+                                        {members.filter(member =>
+                                          !donationMemberSearch ||
+                                          member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                          member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                        ).length === 0 && (
+                                            <div style={{ padding: "16px", textAlign: "center", color: "#999", fontSize: "0.875rem" }}>
+                                              No members found
+                                            </div>
+                                          )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                {!donationForm.memberId && (
+                                  <span style={{ fontSize: "0.75rem", color: "#ef4444", marginTop: "4px", display: "none" }}>
+                                    Please select a member
+                                  </span>
+                                )}
+                              </label>
+                            </div>
+                          )}
+                          
+                          {/* Donor Name and Amount - Below Donor Type */}
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "20px" }}>
+                            <label>
+                              <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Donor Name <span style={{ color: "#ef4444" }}>*</span></span>
+                              <input
+                                type="text"
+                                value={donationForm.donorName}
+                                onChange={(e) => {
+                                  setDonationForm({ ...donationForm, donorName: e.target.value });
+                                  if (donationFieldErrors.donorName) {
+                                    setDonationFieldErrors(prev => ({ ...prev, donorName: false }));
+                                    if (currentInvalidDonationField === "donorName") {
+                                      setCurrentInvalidDonationField(null);
+                                    }
+                                  }
+                                }}
+                                required
+                                placeholder={donationForm.isMember ? "Will be filled automatically when member is selected" : "Enter donor name"}
+                                disabled={donationForm.isMember && donationForm.memberId ? true : false}
+                                style={{
+                                  background: donationForm.isMember && donationForm.memberId ? "#f9fafb" : "#fff",
+                                  cursor: donationForm.isMember && donationForm.memberId ? "not-allowed" : "text",
+                                  border: donationFieldErrors.donorName ? "2px solid #ef4444" : undefined
+                                }}
+                              />
+                              {donationForm.isMember && donationForm.memberId && (
+                                <span style={{ fontSize: "0.75rem", color: "#666", marginTop: "4px", display: "block" }}>
+                                  Donor name is automatically set from selected member
+                                </span>
+                              )}
+                            </label>
+                            <label>
+                              <span><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount <span style={{ color: "#ef4444" }}>*</span></span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                value={donationForm.amount}
+                                onChange={(e) => {
+                                  const value = e.target.value.replace(/[^0-9.]/g, "");
+                                  setDonationForm({ ...donationForm, amount: value });
+                                  if (donationFieldErrors.amount) {
+                                    setDonationFieldErrors(prev => ({ ...prev, amount: false }));
+                                    if (currentInvalidDonationField === "amount") {
+                                      setCurrentInvalidDonationField(null);
+                                    }
+                                  }
+                                }}
+                                placeholder="100"
+                                required
+                                style={{
+                                  border: donationFieldErrors.amount ? "2px solid #ef4444" : undefined
+                                }}
+                              />
+                            </label>
                           </div>
                           
                           {/* Donation Type Selector */}
