@@ -335,32 +335,32 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
       html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; line-height: 1.8;">
   <div style="text-align: center; margin-bottom: 30px;">
     <h1 style="color: #1a1a1a; font-size: 24px; font-weight: bold; margin: 0; padding: 0;">
-      🕌 Indian Muslim Association – Hong Kong
+      Indian Muslim Association – Hong Kong
     </h1>
     <h2 style="color: #333; font-size: 18px; font-weight: 600; margin: 10px 0;">Membership Renewal Receipt</h2>
   </div>
   
   <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
     <p style="margin: 12px 0; font-size: 16px; color: #333;">
-      📅 <strong>Date:</strong> ${displayDate}
+      <strong>Date:</strong> ${displayDate}
     </p>
     <p style="margin: 12px 0; font-size: 16px; color: #333;">
-      👤 <strong>Member:</strong> ${memberName}
+      <strong>Member:</strong> ${memberName}
     </p>
     <p style="margin: 12px 0; font-size: 16px; color: #333;">
-      🆔 <strong>Receipt No:</strong> ${receiptNo}
+     <strong>Receipt No:</strong> ${receiptNo}
     </p>
     <p style="margin: 12px 0; font-size: 16px; color: #333;">
-      💳 <strong>Amount:</strong> ${amountStr}
+       <strong>Amount:</strong> ${amountStr}
     </p>
     <p style="margin: 12px 0; font-size: 16px; color: #333;">
-      💳 <strong>Payment Mode:</strong> ${paymentMode}
+       <strong>Payment Mode:</strong> ${paymentMode}
     </p>
   </div>
   
   <div style="text-align: center; margin: 30px 0; padding: 20px; background: #e8f5e9; border-radius: 8px;">
     <p style="margin: 0; font-size: 18px; font-weight: bold; color: #2e7d32;">
-      ✅ Renewal confirmed for Year ${invoiceYear || '____'}
+      Renewal confirmed for Year ${invoiceYear || '____'}
     </p>
   </div>
   
@@ -370,7 +370,7 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
     </p>
   </div>
   
-  ${pdfBuffer ? '<p style="color: #4caf50; font-weight: bold; margin-top: 20px; text-align: center;">📎 Your payment receipt is attached as a PDF file.</p>' : ''}
+  ${pdfBuffer ? '<p style="color: #4caf50; font-weight: bold; margin-top: 20px; text-align: center;"> Your payment receipt is attached as a PDF file.</p>' : ''}
 </div>`,
       attachments: pdfBuffer ? [
         {

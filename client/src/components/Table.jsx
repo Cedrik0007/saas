@@ -375,22 +375,9 @@ export function Table({ columns, rows }) {
             return (
               <th
                 key={col}
-                style={{ textAlign: align, cursor: isActionsColumn ? "default" : "pointer", whiteSpace: "nowrap" }}
-                onClick={isActionsColumn ? undefined : () => handleSort(col)}
-                aria-sort={
-                  isActionsColumn
-                    ? undefined
-                    : isSorted
-                      ? (sortConfig.direction === "asc" ? "ascending" : "descending")
-                      : "none"
-                }
+                style={{ textAlign: align, cursor: "default", whiteSpace: "nowrap" }}
               >
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                  <span>{col}</span>
-                  {!isActionsColumn && (
-                    <span style={{ fontSize: "0.7rem", opacity: 0.7 }}>{sortIndicator}</span>
-                  )}
-                </span>
+                <span>{col}</span>
               </th>
             );
           })}

@@ -548,6 +548,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
 
       // Find column indices
+      const memberIdIndex = headers.findIndex(h => h.includes('member id') || h.includes('memberid') || (h.includes('id') && !h.includes('email') && !h.includes('subscription')));
       const nameIndex = headers.findIndex(h => h.includes('name'));
       const emailIndex = headers.findIndex(h => h.includes('email'));
       const phoneIndex = headers.findIndex(h => h.includes('phone') || h.includes('whatsapp') || h.includes('mobile'));
@@ -587,6 +588,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
         }
         values.push(current.trim().replace(/^"|"$/g, ''));
 
+        const memberId = memberIdIndex !== -1 ? values[memberIdIndex]?.trim() : '';
         const name = values[nameIndex]?.trim();
         const email = values[emailIndex]?.trim();
 
@@ -635,6 +637,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
             row: rowNumber,
             errors: errors,
             data: {
+              id: memberId || '',
               name: name || '',
               email: email || '',
               phone: phoneIndex !== -1 ? (values[phoneIndex]?.trim() || '') : '',
@@ -646,6 +649,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
           });
         } else {
           membersData.push({
+            id: memberId || undefined, // Only include if provided
             name: name,
             email: email.toLowerCase(),
             phone: phoneIndex !== -1 ? (values[phoneIndex]?.trim() || '') : '',
@@ -705,6 +709,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const headers = data[0].map(h => String(h || '').trim().toLowerCase());
 
       // Find column indices
+      const memberIdIndex = headers.findIndex(h => h.includes('member id') || h.includes('memberid') || (h.includes('id') && !h.includes('email') && !h.includes('subscription')));
       const nameIndex = headers.findIndex(h => h.includes('name'));
       const emailIndex = headers.findIndex(h => h.includes('email'));
       const phoneIndex = headers.findIndex(h => h.includes('phone') || h.includes('whatsapp') || h.includes('mobile'));
@@ -726,6 +731,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
         const rowNumber = i + 1; // Row number for error reporting (1-indexed, +1 for header)
         const errors = [];
 
+        const memberId = memberIdIndex !== -1 ? String(row[memberIdIndex] || '').trim() : '';
         const name = String(row[nameIndex] || '').trim();
         const email = String(row[emailIndex] || '').trim();
 
@@ -799,6 +805,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
             row: rowNumber,
             errors: errors,
             data: {
+              id: memberId || '',
               name: name || '',
               email: email || '',
               phone: phoneIndex !== -1 ? String(row[phoneIndex] || '').trim() : '',
@@ -810,6 +817,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
           });
         } else {
           membersData.push({
+            id: memberId || undefined, // Only include if provided
             name: name,
             email: email.toLowerCase(),
             phone: phoneIndex !== -1 ? String(row[phoneIndex] || '').trim() : '',

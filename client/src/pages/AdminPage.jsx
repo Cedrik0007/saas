@@ -348,7 +348,7 @@
     // Check if form is valid (for disabling submit button)
     const isMemberFormValid = () => {
       const fieldOrder = editingMember
-        ? ["name", "email", "phone"] // Edit Member: no date fields, no id field
+        ? ["name", "email", "phone"] // Edit Member: validate basic fields (dates are optional)
         : ["name", "id", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields and id
 
       for (const field of fieldOrder) {
@@ -364,7 +364,7 @@
     const validateMemberForm = () => {
       // Define field order for validation (only validate fields that exist in the form)
       const fieldOrder = editingMember
-        ? ["name", "email", "phone"] // Edit Member: no date fields, no id field
+        ? ["name", "email", "phone"] // Edit Member: validate basic fields (dates are optional)
         : ["name", "id", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields and id
 
       // Clear all errors first
@@ -874,6 +874,7 @@
     const [sendingWhatsApp, setSendingWhatsApp] = useState({}); // Track which member is sending WhatsApp
     const [sendingWhatsAppToAll, setSendingWhatsAppToAll] = useState(false);
     const [showTemplatePreview, setShowTemplatePreview] = useState(false);
+    const [showTemplateCode, setShowTemplateCode] = useState(false); // Toggle between preview and code view
     const [showChannelSelection, setShowChannelSelection] = useState(false);
     const [selectedReminderLogItem, setSelectedReminderLogItem] = useState(null);
     const [pendingReminderAction, setPendingReminderAction] = useState(null); // { type: 'single'|'bulk', memberData?: member }
@@ -967,6 +968,8 @@
     const [outstandingMembersYearFilter, setOutstandingMembersYearFilter] = useState("All"); // Year filter for outstanding members
     const [invoicesPage, setInvoicesPage] = useState(1);
     const [invoicesPageSize, setInvoicesPageSize] = useState(10);
+    const [memberDetailInvoicesPage, setMemberDetailInvoicesPage] = useState(1);
+    const [memberDetailInvoicesPageSize, setMemberDetailInvoicesPageSize] = useState(10);
     const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed, Pending
     const [remindersChannelFilter, setRemindersChannelFilter] = useState("All"); // All, Email, WhatsApp
 
@@ -3206,6 +3209,13 @@ Indian Muslim Association Hong Kong`;
       }
     }, [donations, donationsPageSize, donationsPage]);
 
+    // Reset member detail invoices pagination when selected member changes
+    useEffect(() => {
+      if (selectedMember) {
+        setMemberDetailInvoicesPage(1);
+      }
+    }, [selectedMember?.id]);
+
     // Lock body scroll when mobile menu is open
     useEffect(() => {
       if (isMobileMenuOpen) {
@@ -3582,15 +3592,18 @@ Indian Muslim Association Hong Kong`;
       });
       setCurrentInvalidField(null);
       setEditingMember(member);
-      // Show only existing member data - use actual values from member object
-      // Do NOT include subscription details in Edit Member popup
+      // Include all fields from add member form - use actual values from member object
       setMemberForm({
         name: member.name || "",
         email: member.email || "",
         phone: member.phone || "",
         native: member.native || "",
         status: member.status || "Active",
-        // Do not set subscriptionType, balance, nextDue, or lastPayment for editing - these are subscription details
+        subscriptionType: member.subscriptionType || "Annual Member",
+        subscriptionYear: member.subscriptionYear || new Date().getFullYear().toString(),
+        balance: member.balance ? member.balance.replace(/[^0-9.]/g, '') : "500",
+        nextDue: member.start_date ? new Date(member.start_date).toISOString().split('T')[0] : getTodayDate(),
+        lastPayment: member.last_payment_date ? new Date(member.last_payment_date).toISOString().split('T')[0] : "",
       });
       setShowMemberForm(true);
     };
@@ -3629,7 +3642,36 @@ Indian Muslim Association Hong Kong`;
         if (memberForm.status !== (originalMember.status || "Active")) {
           updateData.status = memberForm.status;
         }
-        // Do not update nextDue, lastPayment, subscriptionType, or balance in Edit Member - these are subscription details
+        
+        // Compare subscription type
+        const originalSubscriptionType = originalMember.subscriptionType || "Annual Member";
+        if (memberForm.subscriptionType !== originalSubscriptionType) {
+          updateData.subscriptionType = memberForm.subscriptionType;
+        }
+        
+        // Compare subscription year
+        const originalSubscriptionYear = originalMember.subscriptionYear || new Date().getFullYear().toString();
+        if (memberForm.subscriptionYear !== originalSubscriptionYear) {
+          updateData.subscriptionYear = memberForm.subscriptionYear;
+        }
+        
+        // Compare balance (convert to string for comparison)
+        const originalBalance = originalMember.balance ? originalMember.balance.replace(/[^0-9.]/g, '') : "500";
+        if (memberForm.balance !== originalBalance) {
+          updateData.balance = memberForm.balance;
+        }
+        
+        // Compare start date (nextDue)
+        const originalStartDate = originalMember.start_date ? new Date(originalMember.start_date).toISOString().split('T')[0] : getTodayDate();
+        if (memberForm.nextDue !== originalStartDate) {
+          updateData.start_date = memberForm.nextDue;
+        }
+        
+        // Compare last payment date
+        const originalLastPayment = originalMember.last_payment_date ? new Date(originalMember.last_payment_date).toISOString().split('T')[0] : "";
+        if (memberForm.lastPayment !== originalLastPayment) {
+          updateData.last_payment_date = memberForm.lastPayment || null;
+        }
 
         // Only include password in update if it's provided
         if (memberForm.password && memberForm.password.trim() !== "") {
@@ -3651,10 +3693,11 @@ Indian Muslim Association Hong Kong`;
           native: "",
           password: "",
           status: "Active",
-          balance: "HK$0",
-          nextDue: "",
+          balance: "500",
+          nextDue: getTodayDate(),
           lastPayment: "",
           subscriptionType: "Annual Member",
+          subscriptionYear: new Date().getFullYear().toString(),
         });
         // Clear validation state
         setMemberFieldErrors({
@@ -4698,7 +4741,7 @@ Indian Muslim Association Hong Kong`;
               <div className="modal-header mb-2xl">
                 <h3 className="modal-title">
                   <i className="fas fa-eye text-primary"></i>
-                  Email Template Preview
+                  Email Template {showTemplateCode ? "Code" : "Preview"}
                 </h3>
                 <button
                   type="button"
@@ -4709,10 +4752,47 @@ Indian Muslim Association Hong Kong`;
                   ×
                 </button>
               </div>
-              <div
-                className="admin-template-preview-content"
-                dangerouslySetInnerHTML={{ __html: getPreviewTemplate() }}
-              />
+              <div style={{ marginBottom: "16px", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowTemplateCode(!showTemplateCode)}
+                  className="secondary-btn"
+                  style={{
+                    fontSize: "0.875rem",
+                    padding: "8px 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px"
+                  }}
+                >
+                  <i className={`fas ${showTemplateCode ? "fa-eye" : "fa-code"}`}></i>
+                  {showTemplateCode ? "Show Preview" : "Show Template Code"}
+                </button>
+              </div>
+              {showTemplateCode ? (
+                <div
+                  style={{
+                    background: "#1e1e1e",
+                    color: "#d4d4d4",
+                    padding: "20px",
+                    borderRadius: "8px",
+                    fontFamily: "Monaco, 'Courier New', monospace",
+                    fontSize: "0.875rem",
+                    lineHeight: "1.6",
+                    overflow: "auto",
+                    maxHeight: "600px",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word"
+                  }}
+                >
+                  {emailTemplate.htmlTemplate || "No template available"}
+                </div>
+              ) : (
+                <div
+                  className="admin-template-preview-content"
+                  dangerouslySetInnerHTML={{ __html: getPreviewTemplate() }}
+                />
+              )}
               <div className="mt-2xl pt-xl border-t flex justify-end">
                 <button
                   className="secondary-btn"
@@ -4770,6 +4850,7 @@ Indian Muslim Association Hong Kong`;
                     <button
                       className={`admin-channel-button ${selectedChannels.includes('Email') ? 'admin-channel-button--selected' : ''}`}
                       onClick={() => handleSelectChannel('Email')}
+                      style={{ display: "none" }}
                     >
                       <div className="admin-channel-button-content">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
@@ -4836,6 +4917,7 @@ Indian Muslim Association Hong Kong`;
                     <button
                       className="admin-channel-action-button"
                       onClick={() => handleSelectChannel('Email')}
+                      style={{ display: "none" }}
                     >
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
                         <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor" />
@@ -5022,7 +5104,7 @@ Indian Muslim Association Hong Kong`;
                     <div className="admin-dashboard-chart-card">
                       <div className="card-header">
                         <div>
-                          <h4><i className="fas fa-chart-bar admin-dashboard-chart-header-icon"></i>Monthly Collections · Last 12 Months</h4>
+                          <h4>Monthly Collections · Last 12 Months</h4>
                           <p>Expected contribution is HK$800 per member per year</p>
                         </div>
                       </div>
@@ -5193,7 +5275,7 @@ Indian Muslim Association Hong Kong`;
 
                     <div className="admin-dashboard-payments-card">
                       <div className="card-header">
-                        <h4><i className="fas fa-clock admin-icon" style={{ marginRight: "10px" }}></i>Recent Payments</h4>
+                        <h4>Recent Payments</h4>
                         <button className="text-btn" onClick={() => handleNavClick("members")}>
                           View all
                         </button>
@@ -5663,12 +5745,11 @@ Indian Muslim Association Hong Kong`;
                               </select>
                             </label>
 
-                            {!editingMember && (
-                              <label>
-                                <span>
-                                  <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                                  Subscription Type
-                                </span>
+                            <label>
+                              <span>
+                                <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                Subscription Type
+                              </span>
                                 <div 
                                   style={{ position: "relative" }}
                                   onMouseEnter={(e) => {
@@ -5746,45 +5827,40 @@ Indian Muslim Association Hong Kong`;
                                     )}
                                   </div>
                                 </div>
-                              </label>
-                            )}
+                            </label>
 
-                            {!editingMember && (
-                              <label>
-                                <span>
-                                  <i className="fas fa-calendar" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                                  Subscription Year
-                                </span>
-                                <input
-                                  type="number"
-                                  min="2000"
-                                  max="2100"
-                                  value={memberForm.subscriptionYear}
-                                  onChange={(e) => handleMemberFieldChange("subscriptionYear", e.target.value)}
-                                  placeholder="YYYY"
-                                />
-                              </label>
-                            )}
+                            <label>
+                              <span>
+                                <i className="fas fa-calendar" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                Subscription Year
+                              </span>
+                              <input
+                                type="number"
+                                min="2000"
+                                max="2100"
+                                value={memberForm.subscriptionYear}
+                                onChange={(e) => handleMemberFieldChange("subscriptionYear", e.target.value)}
+                                placeholder="YYYY"
+                              />
+                            </label>
 
-                            {!editingMember && (
-                              <label>
-                                <span>
-                                  <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                                  Balance
-                                </span>
-                                <input
-                                  type="number"
-                                  inputMode="numeric"
-                                  value={memberForm.balance}
-                                  readOnly
-                                  style={{
-                                    background: "#f9fafb",
-                                    cursor: "not-allowed",
-                                    color: "#666"
-                                  }}
-                                />
-                              </label>
-                            )}
+                            <label>
+                              <span>
+                                <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                Balance
+                              </span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                value={memberForm.balance}
+                                readOnly
+                                style={{
+                                  background: "#f9fafb",
+                                  cursor: "not-allowed",
+                                  color: "#666"
+                                }}
+                              />
+                            </label>
 
                             {!editingMember && (
                               <label>
@@ -7038,22 +7114,46 @@ Indian Muslim Association Hong Kong`;
                             </button>
                           </div>
                         </div>
-                        <Table
-                          columns={[
-                            "Invoice #",
-                            "Year",
-                            "Subscription Type",
-                            "Amount",
-                            "Status",
-                            "Due Date",
-                            "Actions",
-                          ]}
-                          rows={getMemberInvoices(selectedMember.id).map((invoice) => {
+                        {(() => {
+                          // Get all member invoices
+                          const allMemberInvoices = getMemberInvoices(selectedMember.id);
+                          
+                          // Calculate pagination
+                          const totalPages = Math.ceil(allMemberInvoices.length / memberDetailInvoicesPageSize) || 1;
+                          const currentPage = Math.min(memberDetailInvoicesPage, totalPages);
+                          const startIndex = (currentPage - 1) * memberDetailInvoicesPageSize;
+                          const endIndex = startIndex + memberDetailInvoicesPageSize;
+                          const paginatedInvoices = allMemberInvoices.slice(startIndex, endIndex);
+                          
+                          return (
+                            <>
+                              <Table
+                                columns={[
+                                  "Invoice #",
+                                  "Year",
+                                  "Subscription Type",
+                                  "Amount",
+                                  "Status",
+                                  "Due Date",
+                                  "Receiver Name",
+                                  "Actions",
+                                ]}
+                                rows={paginatedInvoices.map((invoice) => {
                             const effectiveStatus = getEffectiveInvoiceStatus(invoice);
                             const isUnpaid = effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
                             const isPaid =
                               effectiveStatus === "Paid" ||
                               effectiveStatus === "Completed";
+                            
+                            // Find related payment to get receiver name
+                            const invoiceId = invoice.id || invoice._id;
+                            const relatedPayment = (paymentHistory || []).find(p => {
+                              const paymentInvoiceId = p.invoiceId?.toString() || "";
+                              return paymentInvoiceId === invoiceId?.toString() || 
+                                     paymentInvoiceId === invoice.id?.toString() ||
+                                     paymentInvoiceId === invoice._id?.toString();
+                            });
+                            const receiverName = relatedPayment?.receiver_name || relatedPayment?.paidToAdminName || invoice.receiver_name || invoice.paidToAdminName || "-";
 
                             // Display invoice's own stored due date (never auto-updated)
                             // Each invoice has its own due_date set at creation time and never changes
@@ -7125,6 +7225,7 @@ Indian Muslim Association Hong Kong`;
                                 ),
                               },
                               "Due Date": getDueDateDisplay(),
+                              "Receiver Name": receiverName,
                               Screenshot: invoice.screenshot ? {
                                 render: () => (
                                   <button
@@ -7158,124 +7259,130 @@ Indian Muslim Association Hong Kong`;
                               Actions: {
                                 render: () => (
                                   <div className="flex gap-sm flex-wrap justify-center">
-                                    {isUnpaid && !isViewer && (
-                                      <button
-                                        className="primary-btn"
-                                        style={{
-                                          padding: "4px 10px",
-                                          fontSize: "0.85rem",
-                                          background: "#10b981",
-                                          border: "none",
-                                          color: "#ffffff",
-                                          fontWeight: "600",
-                                          borderRadius: "4px",
-                                          cursor: "pointer",
-                                          transition: "all 0.2s ease",
-                                          boxShadow: "0 2px 4px rgba(16, 185, 129, 0.3)"
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          e.target.style.background = "#059669";
-                                          e.target.style.boxShadow = "0 4px 8px rgba(16, 185, 129, 0.4)";
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          e.target.style.background = "#10b981";
-                                          e.target.style.boxShadow = "0 2px 4px rgba(16, 185, 129, 0.3)";
-                                        }}
-                                        onClick={() => {
-                                          setPaymentModalInvoice(invoice);
-                                          setPaymentModalData({
-                                            paymentMethod: "",
-                                            imageFile: null,
-                                            imagePreview: null,
-                                            imageUrl: invoice.screenshot || "",
-                                            reference: "",
-                                            selectedAdminId: "",
-                                            adminMobile: "",
-                                          });
-                                          setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
-                                          setCurrentInvalidPaymentModalField(null);
-                                          setShowPaymentModal(true);
-                                        }}
-                                      >
-                                        Pay
-                                      </button>
-                                    )}
-                                    {isPaid && !isViewer && (
+                                    {!isViewer && (
                                       <>
-                                        <button
-                                          className="secondary-btn"
-                                          style={{
-                                            padding: "4px 10px",
-                                            fontSize: "0.85rem",
-                                            display: "inline-flex",
-                                            alignItems: "center",
-                                            gap: "4px"
-                                          }}
-                                          onClick={() => {
-                                            setPaymentConfirmationInvoice(invoice);
-                                            setPaymentConfirmationChannels({ email: false, whatsapp: false });
-                                            setShowPaymentConfirmationModal(true);
-                                          }}
-                                          title="Send payment confirmation"
-                                        >
-                                          <i className="fas fa-paper-plane" style={{ fontSize: "0.75rem" }}></i>
-                                          Send
-                                        </button>
-                                        <button
-                                          className="ghost-btn"
-                                          style={{
-                                            padding: "4px 10px",
-                                            fontSize: "0.85rem",
-                                            display: "inline-flex",
-                                            alignItems: "center",
-                                            gap: "4px",
-                                            border: "1px solid #e5e7eb",
-                                            color: "#374151"
-                                          }}
-                                          onClick={async (e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            try {
-                                              const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-                                              const pdfUrl = `${apiUrl}/api/invoices/${invoice.id}/pdf-receipt/download`;
-                                              
-                                              // Open PDF in new tab for preview
-                                              const link = document.createElement('a');
-                                              link.href = pdfUrl;
-                                              link.target = '_blank';
-                                              link.rel = 'noopener noreferrer';
-                                              document.body.appendChild(link);
-                                              link.click();
-                                              document.body.removeChild(link);
-                                              
-                                              showToast('Opening PDF receipt...', 'success');
-                                            } catch (error) {
-                                              console.error('Error opening PDF:', error);
-                                              showToast('Failed to open PDF receipt', 'error');
-                                            }
-                                          }}
-                                          title="View/Download PDF Receipt"
-                                        >
-                                          <i className="fas fa-file-pdf" style={{ fontSize: "0.75rem", color: "#ef4444" }}></i>
-                                          PDF
-                                        </button>
+                                        {/* Unpaid invoices: Show Pay and Delete buttons */}
+                                        {isUnpaid && (
+                                          <>
+                                            <button
+                                              className="primary-btn"
+                                              style={{
+                                                padding: "4px 10px",
+                                                fontSize: "0.85rem",
+                                                background: "#10b981",
+                                                border: "none",
+                                                color: "#ffffff",
+                                                fontWeight: "600",
+                                                borderRadius: "4px",
+                                                cursor: "pointer",
+                                                transition: "all 0.2s ease",
+                                                boxShadow: "0 2px 4px rgba(16, 185, 129, 0.3)"
+                                              }}
+                                              onMouseEnter={(e) => {
+                                                e.target.style.background = "#059669";
+                                                e.target.style.boxShadow = "0 4px 8px rgba(16, 185, 129, 0.4)";
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                e.target.style.background = "#10b981";
+                                                e.target.style.boxShadow = "0 2px 4px rgba(16, 185, 129, 0.3)";
+                                              }}
+                                              onClick={() => {
+                                                setPaymentModalInvoice(invoice);
+                                                setPaymentModalData({
+                                                  paymentMethod: "",
+                                                  imageFile: null,
+                                                  imagePreview: null,
+                                                  imageUrl: invoice.screenshot || "",
+                                                  reference: "",
+                                                  selectedAdminId: "",
+                                                  adminMobile: "",
+                                                });
+                                                setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                                                setCurrentInvalidPaymentModalField(null);
+                                                setShowPaymentModal(true);
+                                              }}
+                                            >
+                                              Pay
+                                            </button>
+                                            <button
+                                              className="ghost-btn icon-btn icon-btn--delete"
+                                              onClick={() => {
+                                                showConfirmation(
+                                                  `Delete invoice ${invoice.id}? This cannot be undone.`,
+                                                  () => handleDeleteInvoice(invoice.id)
+                                                );
+                                              }}
+                                              aria-label="Delete Invoice"
+                                            >
+                                              <Tooltip text="Delete Invoice" position="top">
+                                                <i className="fas fa-trash" aria-hidden="true"></i>
+                                              </Tooltip>
+                                            </button>
+                                          </>
+                                        )}
+                                        {/* Paid invoices: Show Send and PDF buttons */}
+                                        {isPaid && (
+                                          <>
+                                            <button
+                                              className="secondary-btn"
+                                              style={{
+                                                padding: "4px 10px",
+                                                fontSize: "0.85rem",
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                gap: "4px"
+                                              }}
+                                              onClick={() => {
+                                                setPaymentConfirmationInvoice(invoice);
+                                                setPaymentConfirmationChannels({ email: false, whatsapp: false });
+                                                setShowPaymentConfirmationModal(true);
+                                              }}
+                                              title="Send payment confirmation"
+                                            >
+                                              <i className="fas fa-paper-plane" style={{ fontSize: "0.75rem" }}></i>
+                                              Send
+                                            </button>
+                                            <button
+                                              className="ghost-btn"
+                                              style={{
+                                                padding: "4px 10px",
+                                                fontSize: "0.85rem",
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                gap: "4px",
+                                                border: "1px solid #e5e7eb",
+                                                color: "#374151"
+                                              }}
+                                              onClick={async (e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                try {
+                                                  const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                                                  const pdfUrl = `${apiUrl}/api/invoices/${invoice.id}/pdf-receipt/download`;
+                                                  
+                                                  // Open PDF in new tab for preview
+                                                  const link = document.createElement('a');
+                                                  link.href = pdfUrl;
+                                                  link.target = '_blank';
+                                                  link.rel = 'noopener noreferrer';
+                                                  document.body.appendChild(link);
+                                                  link.click();
+                                                  document.body.removeChild(link);
+                                                  
+                                                  showToast('Opening PDF receipt...', 'success');
+                                                } catch (error) {
+                                                  console.error('Error opening PDF:', error);
+                                                  showToast('Failed to open PDF receipt', 'error');
+                                                }
+                                              }}
+                                              title="View/Download PDF Receipt"
+                                            >
+                                              <i className="fas fa-file-pdf" style={{ fontSize: "0.75rem", color: "#ef4444" }}></i>
+                                              PDF
+                                            </button>
+                                          </>
+                                        )}
                                       </>
-                                    )}
-                                    {!isPaid && !isViewer && (
-                                      <button
-                                        className="ghost-btn icon-btn icon-btn--delete"
-                                        onClick={() => {
-                                          showConfirmation(
-                                            `Delete invoice ${invoice.id}? This cannot be undone.`,
-                                            () => handleDeleteInvoice(invoice.id)
-                                          );
-                                        }}
-                                        aria-label="Delete Invoice"
-                                      >
-                                        <Tooltip text="Delete Invoice" position="top">
-                                        <i className="fas fa-trash" aria-hidden="true"></i>
-                                        </Tooltip>
-                                      </button>
                                     )}
                                   </div>
                                 ),
@@ -7283,6 +7390,19 @@ Indian Muslim Association Hong Kong`;
                             };
                           })}
                         />
+                        {totalPages > 0 && allMemberInvoices.length > 0 && (
+                          <Pagination
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            onPageChange={setMemberDetailInvoicesPage}
+                            pageSize={memberDetailInvoicesPageSize}
+                            onPageSizeChange={setMemberDetailInvoicesPageSize}
+                            totalItems={allMemberInvoices.length}
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
                       </div>
                     )}
 
@@ -9050,7 +9170,7 @@ Indian Muslim Association Hong Kong`;
                                         borderRadius: "6px",
                                 fontWeight: "600",
                                         fontSize: "0.875rem",
-                                display: "flex",
+                                display: "none",
                                 alignItems: "center",
                                 justifyContent: "center",
                                 cursor: (sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner) ? "not-allowed" : "pointer",
@@ -9304,7 +9424,7 @@ Indian Muslim Association Hong Kong`;
                   </div>
 
                   {/* Email Template Section */}
-                  <div style={{ marginTop: "32px" }}>
+                  <div style={{ marginTop: "32px", display: "none" }}>
                     <h4 style={{
                       margin: "0 0 20px 0",
                       fontSize: "1.25rem",
@@ -9440,7 +9560,7 @@ Indian Muslim Association Hong Kong`;
                   </div>
 
                   {/* Email Automation Configuration Section */}
-                  <div id="email-config-section" style={{ marginTop: "32px" }}>
+                  <div id="email-config-section" style={{ marginTop: "32px", display: "none" }}>
                     <h4 style={{
                       margin: "0 0 20px 0",
                       fontSize: "1.25rem",
@@ -10443,7 +10563,7 @@ Indian Muslim Association Hong Kong`;
                                   <table className="table data-table">
                                     <thead>
                                       <tr>
-                                        <th style={{ width: "5%", textAlign: "left", paddingLeft: "16px" }}>
+                                        <th style={{ display: "none" }}>
                                           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                                             <input
                                               type="checkbox"
@@ -10476,7 +10596,7 @@ Indian Muslim Association Hong Kong`;
                                           key={`${item.memberId || item.memberName || "row"}-${start + idx}`}
                                           style={{ backgroundColor: isSelected ? "#f0f9ff" : undefined }}
                                         >
-                                          <td style={{ textAlign: "left", paddingLeft: "16px" }}>
+                                          <td style={{ display: "none" }}>
                                             <input
                                               type="checkbox"
                                               className="reminder-log-checkbox"
@@ -10591,7 +10711,7 @@ Indian Muslim Association Hong Kong`;
                                               checked={isSelected}
                                               onChange={() => handleSelectItem(itemId)}
                                               onClick={(e) => e.stopPropagation()}
-                                              style={{ cursor: "pointer", flexShrink: 0 }}
+                                              style={{ display: "none", cursor: "pointer", flexShrink: 0 }}
                                               aria-label={`Select ${item.memberName || item.member || "item"}`}
                                             />
                                             <div className="mobile-table-card-title-section" style={{ flex: 1 }}>
@@ -12257,7 +12377,7 @@ Indian Muslim Association Hong Kong`;
                                   { value: "All", label: "All" },
                                   { value: "Paid", label: "Paid" },
                                   { value: "Unpaid", label: "Unpaid" },
-                                  { value: "Overdue", label: "Overdue" },
+                                  // { value: "Overdue", label: "Overdue" },
                                   // { value: "Pending", label: "Pending" }
                                 ].map((option) => (
                                   <button
@@ -13311,6 +13431,7 @@ Indian Muslim Association Hong Kong`;
                                 "Invoice ID",
                                 "Amount",
                                 "Method",
+                                "Receiver Name",
                                 "Screenshot",
                                 "Status",
                               ]}
@@ -13358,6 +13479,7 @@ Indian Muslim Association Hong Kong`;
                                     })}`
                                     : "HK$0.00",
                                   Method: getPaymentMethodDisplay(payment),
+                                  "Receiver Name": payment.receiver_name || payment.paidToAdminName || "-",
                                   Screenshot: {
                                     render: () => payment.screenshot ? (
                                       <button
@@ -16074,6 +16196,7 @@ Indian Muslim Association Hong Kong`;
                               "Invoice ID",
                               "Amount",
                               "Method",
+                              "Receiver Name",
                               "Screenshot",
                               "Status",
                               "Actions",
@@ -16100,6 +16223,7 @@ Indian Muslim Association Hong Kong`;
                                   source: p.member || 'Unknown',
                                   amount: p.amount,
                                   method: p.method,
+                                  receiver_name: p.receiver_name || p.paidToAdminName || null,
                                   screenshot: p.screenshot,
                                   status: p.status || 'Completed',
                                   invoiceId: p.invoiceId,
@@ -16117,6 +16241,7 @@ Indian Muslim Association Hong Kong`;
                                   source: d.donorName,
                                   amount: d.amount,
                                   method: d.method || '-',
+                                  receiver_name: d.receiver_name || null,
                                   screenshot: d.screenshot || null,
                                   status: 'Completed',
                                   invoiceId: null,
@@ -16221,6 +16346,7 @@ Indian Muslim Association Hong Kong`;
                                   Method: transaction.type === "Payment"
                                     ? getPaymentMethodDisplay(transaction)
                                     : (transaction.method || "-"),
+                                  "Receiver Name": transaction.receiver_name || "-",
                                   Screenshot: {
                                     render: () => transaction.screenshot ? (
                                       <button
@@ -18584,6 +18710,7 @@ Indian Muslim Association Hong Kong`;
                     <thead>
                       <tr style={{ background: "#f5f5f5", borderBottom: "2px solid #ddd" }}>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>#</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Member ID</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Name</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Email</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Phone</th>
@@ -18597,6 +18724,9 @@ Indian Muslim Association Hong Kong`;
                       {importPreviewData.map((member, index) => (
                         <tr key={index} style={{ borderBottom: "1px solid #e0e0e0" }}>
                           <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#666" }}>{index + 1}</td>
+                          <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
+                            {member.id || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
+                          </td>
                           <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333", fontWeight: "500" }}>
                             {member.name || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                           </td>
@@ -18642,6 +18772,7 @@ Indian Muslim Association Hong Kong`;
                         <thead>
                           <tr style={{ background: "#ffebee", borderBottom: "2px solid #ffcdd2" }}>
                             <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828", borderRight: "1px solid #ffcdd2" }}>Row #</th>
+                            <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828", borderRight: "1px solid #ffcdd2" }}>Member ID</th>
                             <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828", borderRight: "1px solid #ffcdd2" }}>Name</th>
                             <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828", borderRight: "1px solid #ffcdd2" }}>Email</th>
                             <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#c62828", borderRight: "1px solid #ffcdd2" }}>Phone</th>
@@ -18653,6 +18784,9 @@ Indian Muslim Association Hong Kong`;
                           {importErrors.map((errorRow, index) => (
                             <tr key={index} style={{ borderBottom: "1px solid #ffcdd2", background: index % 2 === 0 ? "#fff" : "#fff5f5" }}>
                               <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#666", fontWeight: "600" }}>{errorRow.row}</td>
+                              <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
+                                {errorRow.data.id || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
+                              </td>
                               <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
                                 {errorRow.data.name || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                               </td>
@@ -18867,7 +19001,7 @@ Indian Muslim Association Hong Kong`;
                       background: paymentConfirmationChannels.email ? "#f3f0ff" : "#ffffff",
                       cursor: "pointer",
                       transition: "all 0.2s ease",
-                      display: "flex",
+                      display: "none",
                       flexDirection: "column",
                       alignItems: "center",
                       gap: "8px",
@@ -19239,55 +19373,19 @@ Thank you for supporting the IMA community!${downloadUrl ? `\n\n📎 Download Re
                             
                             console.log('Opening WhatsApp:', { phone: phoneForUrl, urlLength: whatsappUrl.length });
                             
-                            try {
-                              // Always open WhatsApp in a new tab/window (target="_blank")
-                              // Use window.open with _blank to ensure it opens in a new tab
-                              const whatsappWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-                              
-                              // Check if popup was blocked
-                              if (!whatsappWindow || whatsappWindow.closed || typeof whatsappWindow.closed === 'undefined') {
-                                // Popup blocked - show warning but don't navigate in current page
-                                console.warn('Popup blocked by browser');
-                                showToast('Popup blocked. Please allow popups for this site to open WhatsApp in a new tab.', 'warning');
-                                // Don't use window.location.href as it would open in current page
-                                // Instead, create a temporary link and click it programmatically
-                                try {
-                                  const link = document.createElement('a');
-                                  link.href = whatsappUrl;
-                                  link.target = '_blank';
-                                  link.rel = 'noopener noreferrer';
-                                  link.style.display = 'none';
-                                  document.body.appendChild(link);
-                                  link.click();
-                                  document.body.removeChild(link);
-                                  whatsappSuccess = true;
-                                  console.log('WhatsApp opened using programmatic link click');
-                                } catch (linkError) {
-                                  console.error('Programmatic link click failed:', linkError);
-                                  showToast('Please allow popups or click the WhatsApp button again.', 'warning');
-                                }
-                              } else {
-                                whatsappSuccess = true;
-                                console.log('WhatsApp opened successfully in new window');
-                              }
-                            } catch (error) {
-                              console.error('Error opening WhatsApp:', error);
-                              // Try programmatic link click as fallback
-                              try {
-                                const link = document.createElement('a');
-                                link.href = whatsappUrl;
-                                link.target = '_blank';
-                                link.rel = 'noopener noreferrer';
-                                link.style.display = 'none';
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-                                whatsappSuccess = true;
-                                console.log('WhatsApp opened using fallback programmatic link click');
-                              } catch (linkError) {
-                                console.error('Fallback also failed:', linkError);
-                                showToast('Failed to open WhatsApp. Please check the phone number format.', 'error');
-                              }
+                            // Always open WhatsApp in a new tab/window (target="_blank")
+                            // Use window.open with _blank to ensure it opens in a new tab
+                            const whatsappWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+                            
+                            // Check if popup was blocked
+                            if (!whatsappWindow || whatsappWindow.closed || typeof whatsappWindow.closed === 'undefined') {
+                              // Popup blocked - show warning but don't navigate in current page
+                              console.warn('Popup blocked by browser');
+                              showToast('Popup blocked. Please allow popups for this site to open WhatsApp in a new tab.', 'warning');
+                            } else {
+                              // Successfully opened
+                              whatsappSuccess = true;
+                              console.log('WhatsApp opened successfully in new window');
                             }
                             
                             // Log to communication only if successful
