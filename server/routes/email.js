@@ -46,22 +46,67 @@ router.post("/", async (req, res) => {
       
       // Update existing
       settings.emailService = req.body.emailService || settings.emailService;
-      settings.emailUser = req.body.emailUser || settings.emailUser;
-      settings.emailPassword = req.body.emailPassword || settings.emailPassword;
+      // Only update emailUser if provided (don't overwrite with undefined)
+      if (req.body.emailUser !== undefined) {
+        settings.emailUser = req.body.emailUser;
+      }
+      // Preserve password exactly as provided (don't trim - Gmail App-Specific Passwords may have spaces)
+      if (req.body.emailPassword !== undefined) {
+        settings.emailPassword = req.body.emailPassword;
+      }
       settings.scheduleTime = req.body.scheduleTime || settings.scheduleTime;
       settings.automationEnabled = req.body.automationEnabled !== undefined ? req.body.automationEnabled : settings.automationEnabled;
       settings.reminderInterval = req.body.reminderInterval || settings.reminderInterval;
       await settings.save();
 
-      // Update transporter with new settings
-      if (settings.emailUser && settings.emailPassword) {
-        const transporter = createEmailTransporter(
-          settings.emailUser,
-          settings.emailPassword,
-          settings.emailService || 'gmail'
-        );
-        setTransporter(transporter);
-        console.log("✓ Email transporter updated with new settings");
+      // Update transporter with new settings immediately
+      const hasEmailUser = settings.emailUser && String(settings.emailUser).trim() !== '';
+      const hasEmailPassword = settings.emailPassword && String(settings.emailPassword).trim() !== '';
+      
+      if (hasEmailUser && hasEmailPassword) {
+        console.log("📧 Updating email transporter with new settings...");
+        console.log(`   Email User: ${settings.emailUser}`);
+        console.log(`   Email Service: ${settings.emailService || 'gmail'}`);
+        console.log(`   Password length: ${String(settings.emailPassword).length} characters`);
+        try {
+          const transporter = createEmailTransporter(
+            settings.emailUser,
+            settings.emailPassword,
+            settings.emailService || 'gmail'
+          );
+          setTransporter(transporter);
+          console.log("✓ Email transporter updated with new settings");
+          
+          // Verify in background (non-blocking)
+          const { verifyEmailTransporter } = await import("../config/email.js");
+          verifyEmailTransporter(transporter).then((verified) => {
+            if (verified) {
+              console.log("✓ Email transporter verified successfully");
+            } else {
+              console.warn("⚠️ Email transporter verification failed, but will still attempt to send emails");
+            }
+          }).catch((verifyError) => {
+            console.warn("⚠️ Email transporter verification error (non-blocking):", verifyError.message);
+          });
+        } catch (transporterError) {
+          console.error("❌ Error creating email transporter:", transporterError);
+          console.error("   Error details:", {
+            message: transporterError.message,
+            code: transporterError.code,
+            stack: transporterError.stack,
+          });
+          console.error("   Common causes:");
+          console.error("     1. Invalid email credentials");
+          console.error("     2. For Gmail: Need App-Specific Password (not regular password)");
+          console.error("     3. Network/firewall blocking SMTP connection");
+        }
+      } else {
+        console.warn("⚠️ Email settings incomplete - transporter not updated");
+        console.warn(`   Email User: ${hasEmailUser ? '✓ Set' : '✗ Missing or empty'}`);
+        console.warn(`   Email Password: ${hasEmailPassword ? '✓ Set' : '✗ Missing or empty'}`);
+        if (!hasEmailUser || !hasEmailPassword) {
+          console.warn("   → Please provide both emailUser and emailPassword to enable email sending");
+        }
       }
 
       // Reschedule cron job if schedule time or automation status changed
@@ -92,15 +137,42 @@ router.post("/", async (req, res) => {
       settings = new EmailSettingsModel(newSettingsData);
       await settings.save();
       
-      // Update transporter with new settings
+      // Update transporter with new settings immediately
       if (settings.emailUser && settings.emailPassword) {
-        const transporter = createEmailTransporter(
-          settings.emailUser,
-          settings.emailPassword,
-          settings.emailService || 'gmail'
-        );
-        setTransporter(transporter);
-        console.log("✓ Email transporter updated with new settings");
+        console.log("📧 Updating email transporter with new settings...");
+        console.log(`   Email User: ${settings.emailUser}`);
+        console.log(`   Email Service: ${settings.emailService || 'gmail'}`);
+        try {
+          const transporter = createEmailTransporter(
+            settings.emailUser,
+            settings.emailPassword,
+            settings.emailService || 'gmail'
+          );
+          setTransporter(transporter);
+          console.log("✓ Email transporter updated with new settings");
+          
+          // Verify in background (non-blocking)
+          const { verifyEmailTransporter } = await import("../config/email.js");
+          verifyEmailTransporter(transporter).then((verified) => {
+            if (verified) {
+              console.log("✓ Email transporter verified successfully");
+            } else {
+              console.warn("⚠️ Email transporter verification failed, but will still attempt to send emails");
+            }
+          }).catch((verifyError) => {
+            console.warn("⚠️ Email transporter verification error (non-blocking):", verifyError.message);
+          });
+        } catch (transporterError) {
+          console.error("❌ Error creating email transporter:", transporterError);
+          console.error("   Error details:", {
+            message: transporterError.message,
+            code: transporterError.code,
+          });
+        }
+      } else {
+        console.warn("⚠️ Email settings incomplete - transporter not updated");
+        console.warn(`   Email User: ${settings.emailUser ? 'Set' : 'Missing'}`);
+        console.warn(`   Email Password: ${settings.emailPassword ? 'Set' : 'Missing'}`);
       }
       
       // Schedule cron job for new settings
@@ -253,6 +325,94 @@ router.post("/template", async (req, res) => {
     res.json(template);
   } catch (error) {
     console.error("Error saving email template:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST one-time email setup (for quick configuration)
+router.post("/setup", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    const { emailUser, emailPassword, emailService } = req.body;
+    
+    if (!emailUser || !emailPassword) {
+      return res.status(400).json({ 
+        error: "Email user and password are required",
+        example: {
+          emailUser: "your-email@gmail.com",
+          emailPassword: "your-app-specific-password",
+          emailService: "gmail"
+        }
+      });
+    }
+    
+    let settings = await EmailSettingsModel.findOne({});
+    
+    if (settings) {
+      settings.emailUser = emailUser;
+      settings.emailPassword = emailPassword;
+      settings.emailService = emailService || 'gmail';
+      await settings.save();
+    } else {
+      settings = new EmailSettingsModel({
+        emailUser,
+        emailPassword,
+        emailService: emailService || 'gmail',
+        scheduleTime: "09:00",
+        automationEnabled: true,
+        reminderInterval: 7,
+      });
+      await settings.save();
+    }
+    
+    // Update transporter immediately
+    console.log("📧 Setting up email transporter...");
+    console.log(`   Email User: ${emailUser}`);
+    console.log(`   Email Service: ${emailService || 'gmail'}`);
+    
+    try {
+      const transporter = createEmailTransporter(
+        emailUser,
+        emailPassword,
+        emailService || 'gmail'
+      );
+      setTransporter(transporter);
+      console.log("✓ Email transporter created and set");
+      
+      // Test the connection
+      const { verifyEmailTransporter } = await import("../config/email.js");
+      const verified = await verifyEmailTransporter(transporter);
+      
+      if (verified) {
+        console.log("✅ Email transporter verified successfully");
+        res.json({
+          success: true,
+          message: "Email settings configured and verified successfully",
+          emailUser: emailUser,
+          emailService: emailService || 'gmail'
+        });
+      } else {
+        console.warn("⚠️ Email transporter verification failed, but settings are saved");
+        res.json({
+          success: true,
+          warning: true,
+          message: "Email settings saved, but verification failed. Emails may still work.",
+          emailUser: emailUser,
+          emailService: emailService || 'gmail',
+          note: "Verification failures are common on cloud platforms. Try sending a test email."
+        });
+      }
+    } catch (transporterError) {
+      console.error("❌ Error creating email transporter:", transporterError);
+      res.status(500).json({
+        error: "Failed to create email transporter",
+        details: transporterError.message,
+        code: transporterError.code
+      });
+    }
+  } catch (error) {
+    console.error("Error setting up email:", error);
     res.status(500).json({ error: error.message });
   }
 });

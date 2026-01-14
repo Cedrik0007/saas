@@ -883,17 +883,20 @@
     const [paymentStatusFilter, setPaymentStatusFilter] = useState("All"); // All, Pending, Completed, Rejected
     const [paymentSearchTerm, setPaymentSearchTerm] = useState(""); // Search filter for payments
     const [paymentYearFilter, setPaymentYearFilter] = useState("All"); // Year filter for payments
+    const [paymentMethodFilter, setPaymentMethodFilter] = useState("All"); // Payment method filter for payments: All, Cash, Online Payment
     const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("All"); // All, Paid, Unpaid, Overdue, Pending
     const [invoiceSearchTerm, setInvoiceSearchTerm] = useState(""); // Search filter for invoices
     const [invoiceYearFilter, setInvoiceYearFilter] = useState("All"); // Year filter for invoices
     const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
     const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
+    const [transactionMethodFilter, setTransactionMethodFilter] = useState("All"); // Payment method filter for transactions: All, Cash, FPS, Alipay, Bank Deposit, Other
     const [transactionsSearch, setTransactionsSearch] = useState("");
     const [transactionsPage, setTransactionsPage] = useState(1);
     const [transactionsPageSize, setTransactionsPageSize] = useState(10);
     const [memberSearchTerm, setMemberSearchTerm] = useState(""); // Search filter for members
     const [memberStatusFilter, setMemberStatusFilter] = useState("All"); // Status filter for members
     const [memberYearFilter, setMemberYearFilter] = useState("All"); // Year filter for members
+    const [memberTypeFilter, setMemberTypeFilter] = useState("All"); // Member type filter: All, Annual Member, Lifetime Member
     const [memberSortByOutstanding, setMemberSortByOutstanding] = useState("none"); // Sort by outstanding amount
     const [memberNotes, setMemberNotes] = useState(() => {
       try {
@@ -955,6 +958,7 @@
     const [donationsPage, setDonationsPage] = useState(1);
     const [donationsPageSize, setDonationsPageSize] = useState(10);
     const [donationYearFilter, setDonationYearFilter] = useState(new Date().getFullYear().toString()); // Year filter for donations, default to current year
+    const [donationMethodFilter, setDonationMethodFilter] = useState("All"); // Payment method filter for donations: All, Cash, Online Payment
     const [remindersPage, setRemindersPage] = useState(1);
     const [remindersPageSize, setRemindersPageSize] = useState(10);
     const [outstandingMembersPage, setOutstandingMembersPage] = useState(1);
@@ -1376,25 +1380,53 @@
     // Get recent payments from paymentHistory
     // Helper function to format payment method display
     const getPaymentMethodDisplay = (payment) => {
-      // If paidToAdmin exists, it's a cash payment
+      // If paidToAdmin exists, it's a cash payment (only if method is not explicitly set to an online method)
       if (payment.paidToAdmin || payment.paidToAdminName) {
+        // Check if method is explicitly set to an online payment method
+        const onlineMethods = ["FPS", "Alipay", "Bank Transfer", "Bank Deposit", "PayMe", "Credit Card", "Screenshot", "Online Payment"];
+        if (payment.method && onlineMethods.includes(payment.method)) {
+          // If method is explicitly set to an online method, return that method
+          return payment.method;
+        }
+        // Otherwise, it's cash payment
         return "Cash";
       }
 
-      // If method is "Cash to Admin", show as "Cash"
-      if (payment.method === "Cash to Admin") {
+      // If method is "Cash to Admin" or "Cash", show as "Cash"
+      if (payment.method === "Cash to Admin" || payment.method === "Cash") {
         return "Cash";
       }
 
-      // For online payment methods (Screenshot, Bank Transfer, FPS, PayMe, etc.)
-      // Show as "Online Payment"
-      const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment"];
-      if (onlineMethods.includes(payment.method)) {
-        return "Online Payment";
+      // For online payment methods, return the specific method name
+      const onlineMethods = ["FPS", "Alipay", "Bank Transfer", "Bank Deposit", "PayMe", "Credit Card", "Screenshot", "Online Payment"];
+      if (payment.method && onlineMethods.includes(payment.method)) {
+        return payment.method;
       }
 
       // Return method as-is if it doesn't match above
       return payment.method || "-";
+    };
+
+    // Helper function to format donation method display (for filtering)
+    const getDonationMethodDisplay = (donation) => {
+      if (!donation || !donation.method) {
+        return "Other";
+      }
+      const method = String(donation.method).trim();
+      
+      // Cash payment methods
+      if (method.toLowerCase() === "cash" || method.toLowerCase().includes("cash")) {
+        return "Cash";
+      }
+
+      // Online payment methods
+      const onlineMethods = ["Screenshot", "Bank Transfer", "FPS", "PayMe", "Alipay", "Credit Card", "Online Payment", "Online"];
+      if (onlineMethods.some(m => method.toLowerCase().includes(m.toLowerCase()))) {
+        return "Online Payment";
+      }
+
+      // Default to "Other" for unknown methods
+      return "Other";
     };
 
     const getRecentPayments = () => {
@@ -2805,41 +2837,101 @@
           if (memberUnpaidInvoices.length === 0) continue;
 
           const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
-            const amountStr = String(inv.amount).replace(/HK\$|\$|,/g, '').trim();
+            const amountStr = String(inv.amount || '0').replace(/HK\$|\$|,/g, '').trim();
             const amount = parseFloat(amountStr) || 0;
             return sum + amount;
           }, 0);
 
-          const invoiceList = memberUnpaidInvoices
-            .map(
-              (inv, index) =>
-                `${index + 1}. *${inv.period}*: ${inv.amount} (Due: ${inv.due}) - _${inv.status}_`
-            )
-            .join("\n");
+          // Get invoice year from the latest invoice (or current year if not available)
+          let invoiceYear = new Date().getFullYear().toString();
+          if (memberUnpaidInvoices.length > 0) {
+            const latestInvoice = memberUnpaidInvoices[0];
+            if (latestInvoice.period) {
+              const yearMatch = latestInvoice.period.match(/\d{4}/);
+              if (yearMatch) {
+                invoiceYear = yearMatch[0];
+              }
+            }
+          }
+          
+          // Get renewal amount (typically HKD 500, or from invoice amount)
+          let renewalAmount = '500';
+          if (memberUnpaidInvoices.length > 0) {
+            const latestInvoice = memberUnpaidInvoices[0];
+            if (latestInvoice.amount) {
+              const amountStr = String(latestInvoice.amount).replace(/HK\$|\$|,/g, '').trim();
+              renewalAmount = (parseFloat(amountStr) || 500).toString();
+            }
+          }
+          
+          // Get membership category from member's subscription type
+          const membershipCategory = member.subscriptionType || 'Annual Member';
+          
+          // Determine if member is a lifetime member
+          const isLifetimeMember = membershipCategory === 'Lifetime Membership' || 
+                                   membershipCategory === 'Lifetime Janaza Fund Member';
 
-          const message = `Hi *${member.name}* 👋
+          const message = isLifetimeMember
+            ? `🕌 Indian Muslim Association – Janazah Fund Reminder (Life Member)
 
-Payment Reminder
+Dear *${member.name}*,
 
-*Total Outstanding:* ${formatCurrency(totalDue)}
+Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
 
-*Invoices (${memberUnpaidInvoices.length}):*
-${invoiceList}
+This is to formally remind you of the IMA Janazah Fund contribution for the year ${invoiceYear}.
 
-*Payment Options:*
-• FPS: ID 1234567
-• PayMe: Scan QR in portal
-• Bank Transfer: HSBC 123-456789-001
+*Contribution Details:*
+• Membership ID: IMA/${member.id || 'N/A'}
+• Member Category: Life Member
+• Contribution Amount: HKD ${renewalAmount}
+• Year: ${invoiceYear}
 
-*Pay Online:*
-${window.location.origin}/member
+We kindly request you to make the contribution at your earliest convenience.
 
-Please settle your balance at your earliest convenience.
+*Payment Details:*
+FPS: +852 9545 4447
 
-Thank you! 🙏
+Bank Transfer:
+Bank: Bank of China
+Account No: 012-968-2-013423-1
+Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
 
-_Finance Team_
-IMA Subscription Manager`;
+*Payment Confirmation:*
+After completing the payment, kindly share the payment reference or screenshot via WhatsApp for our records.
+
+May Allah reward you for your continued support and generosity.
+
+Indian Muslim Association, Hong Kong`
+            : `🕌 Indian Muslim Association – Membership Renewal 
+
+Dear *${member.name}*,
+
+Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+
+This is to formally remind you that the renewal of your Indian Muslim Association (IMA) membership for the year ${invoiceYear} is due.
+
+*Membership Details:*
+• Membership ID: IMA/${member.id || 'N/A'}
+• Membership Category: ${membershipCategory}
+• Renewal Amount: HKD ${renewalAmount}
+• Year: ${invoiceYear}
+
+We kindly request you to complete the renewal at your earliest convenience.
+
+*Payment Details:*
+💳 FPS: +852 9545 4447
+
+🏦 Bank Transfer:
+Bank: Bank of China
+Account No: 012-968-2-013423-1
+Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+
+*Payment Confirmation:*
+After making the payment, kindly send the payment reference or screenshot, via WhatsApp for our records.
+
+May Allah reward you for your continued support of the community.
+
+Indian Muslim Association Hong Kong`;
 
           const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
           const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
@@ -2915,38 +3007,97 @@ IMA Subscription Manager`;
             return sum + amount;
           }, 0);
 
-          // Create invoice list for WhatsApp
-          const invoiceList = memberUnpaidInvoices
-            .map(
-              (inv, index) =>
-                `${index + 1}. *${inv.period}*: ${inv.amount} (Due: ${inv.due}) - _${inv.status}_`
-            )
-            .join("\n");
+          // Get invoice year from the latest invoice (or current year if not available)
+          let invoiceYear = new Date().getFullYear().toString();
+          if (memberUnpaidInvoices.length > 0) {
+            const latestInvoice = memberUnpaidInvoices[0];
+            if (latestInvoice.period) {
+              const yearMatch = latestInvoice.period.match(/\d{4}/);
+              if (yearMatch) {
+                invoiceYear = yearMatch[0];
+              }
+            }
+          }
+          
+          // Get renewal amount (typically HKD 500, or from invoice amount)
+          let renewalAmount = '500';
+          if (memberUnpaidInvoices.length > 0) {
+            const latestInvoice = memberUnpaidInvoices[0];
+            if (latestInvoice.amount) {
+              const amountStr = String(latestInvoice.amount).replace(/HK\$|\$|,/g, '').trim();
+              renewalAmount = (parseFloat(amountStr) || 500).toString();
+            }
+          }
+          
+          // Get membership category from member's subscription type
+          const membershipCategory = member.subscriptionType || 'Annual Member';
+          
+          // Determine if member is a lifetime member
+          const isLifetimeMember = membershipCategory === 'Lifetime Membership' || 
+                                   membershipCategory === 'Lifetime Janaza Fund Member';
 
-          // Create WhatsApp-friendly message (English only)
-          const message = `Hi *${member.name}* 👋
+          // Create WhatsApp-friendly message (English only) - different template based on member type
+          const message = isLifetimeMember
+            ? `🕌 Indian Muslim Association – Janazah Fund Reminder (Life Member)
 
-  Payment Reminder
+Dear *${member.name}*,
 
-  *Total Outstanding:* ${formatCurrency(totalDue)}
+Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
 
-  *Invoices (${memberUnpaidInvoices.length}):*
-  ${invoiceList}
+This is to formally remind you of the IMA Janazah Fund contribution for the year ${invoiceYear}.
 
-  *Payment Options:*
-  • FPS: ID 1234567
-  • PayMe: Scan QR in portal
-  • Bank Transfer: HSBC 123-456789-001
+*Contribution Details:*
+• Membership ID: IMA/${member.id || 'N/A'}
+• Member Category: Life Member
+• Contribution Amount: HKD ${renewalAmount}
+• Year: ${invoiceYear}
 
-  *Pay Online:*
-  ${window.location.origin}/member
+We kindly request you to make the contribution at your earliest convenience.
 
-  Please settle your balance at your earliest convenience.
+*Payment Details:*
+FPS: +852 9545 4447
 
-  Thank you! 🙏
+Bank Transfer:
+Bank: Bank of China
+Account No: 012-968-2-013423-1
+Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
 
-  _Finance Team_
-  IMA Subscription Manager`;
+*Payment Confirmation:*
+After completing the payment, kindly share the payment reference or screenshot via WhatsApp for our records.
+
+May Allah reward you for your continued support and generosity.
+
+Indian Muslim Association, Hong Kong`
+            : `🕌 Indian Muslim Association – Membership Renewal 
+
+Dear *${member.name}*,
+
+Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+
+This is to formally remind you that the renewal of your Indian Muslim Association (IMA) membership for the year ${invoiceYear} is due.
+
+*Membership Details:*
+• Membership ID: IMA/${member.id || 'N/A'}
+• Membership Category: ${membershipCategory}
+• Renewal Amount: HKD ${renewalAmount}
+• Year: ${invoiceYear}
+
+We kindly request you to complete the renewal at your earliest convenience.
+
+*Payment Details:*
+💳 FPS: +852 9545 4447
+
+🏦 Bank Transfer:
+Bank: Bank of China
+Account No: 012-968-2-013423-1
+Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+
+*Payment Confirmation:*
+After making the payment, kindly send the payment reference or screenshot, via WhatsApp for our records.
+
+May Allah reward you for your continued support of the community.
+
+Indian Muslim Association Hong Kong`;
 
           // Clean phone number
           const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
@@ -2997,7 +3148,7 @@ IMA Subscription Manager`;
     // Reset pagination when filters change
     useEffect(() => {
       setMembersPage(1);
-    }, [memberSearchTerm]);
+    }, [memberSearchTerm, memberTypeFilter]);
 
     useEffect(() => {
       setPaymentsPage(1);
@@ -3019,7 +3170,7 @@ IMA Subscription Manager`;
     // Reset transactions pagination when search or filters change
     useEffect(() => {
       setTransactionsPage(1);
-    }, [transactionsSearch, reportFilter, donorTypeFilter]);
+    }, [transactionsSearch, reportFilter, donorTypeFilter, transactionMethodFilter]);
 
     // Handle pagination bounds checking for members
     useEffect(() => {
@@ -3984,41 +4135,101 @@ IMA Subscription Manager`;
 
       // Calculate total due
       const totalDue = memberUnpaidInvoices.reduce((sum, inv) => {
-        return sum + parseFloat(inv.amount.replace("$", ""));
+        const amountStr = String(inv.amount || '0').replace(/HK\$|\$|,/g, '').trim();
+        return sum + (parseFloat(amountStr) || 0);
       }, 0);
 
-      // Create invoice list for WhatsApp
-      const invoiceList = memberUnpaidInvoices
-        .map(
-          (inv, index) =>
-            `${index + 1}. *${inv.period}*: ${inv.amount} (Due: ${inv.due}) - _${inv.status}_`
-        )
-        .join("\n");
+      // Get invoice year from the latest invoice (or current year if not available)
+      let invoiceYear = new Date().getFullYear().toString();
+      if (memberUnpaidInvoices.length > 0) {
+        const latestInvoice = memberUnpaidInvoices[0];
+        if (latestInvoice.period) {
+          const yearMatch = latestInvoice.period.match(/\d{4}/);
+          if (yearMatch) {
+            invoiceYear = yearMatch[0];
+          }
+        }
+      }
+      
+      // Get renewal amount (typically HKD 500, or from invoice amount)
+      let renewalAmount = '500';
+      if (memberUnpaidInvoices.length > 0) {
+        const latestInvoice = memberUnpaidInvoices[0];
+        if (latestInvoice.amount) {
+          const amountStr = String(latestInvoice.amount).replace(/HK\$|\$|,/g, '').trim();
+          renewalAmount = (parseFloat(amountStr) || 500).toString();
+        }
+      }
+      
+      // Get membership category from member's subscription type
+      const membershipCategory = memberData.subscriptionType || 'Annual Member';
+      
+      // Determine if member is a lifetime member
+      const isLifetimeMember = membershipCategory === 'Lifetime Membership' || 
+                               membershipCategory === 'Lifetime Janaza Fund Member';
 
-      // Create WhatsApp-friendly message (English only)
-      const message = `Hi *${memberData.name}* 👋
+      // Create WhatsApp-friendly message (English only) - different template based on member type
+      const message = isLifetimeMember
+        ? `🕌 Indian Muslim Association – Janazah Fund Reminder (Life Member)
 
-  Payment Reminder
+Dear *${memberData.name}*,
 
-  *Total Outstanding:* ${formatCurrency(totalDue)}
+Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
 
-  *Invoices (${memberUnpaidInvoices.length}):*
-  ${invoiceList}
+This is to formally remind you of the IMA Janazah Fund contribution for the year ${invoiceYear}.
 
-  *Payment Options:*
-  • FPS: ID 1234567
-  • PayMe: Scan QR in portal
-  • Bank Transfer: HSBC 123-456789-001
+*Contribution Details:*
+• Membership ID: IMA/${memberData.id || 'N/A'}
+• Member Category: Life Member
+• Contribution Amount: HKD ${renewalAmount}
+• Year: ${invoiceYear}
 
-  *Pay Online:*
-  ${window.location.origin}/member
+We kindly request you to make the contribution at your earliest convenience.
 
-  Please settle your balance at your earliest convenience.
+*Payment Details:*
+FPS: +852 9545 4447
 
-  Thank you! 🙏
+Bank Transfer:
+Bank: Bank of China
+Account No: 012-968-2-013423-1
+Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
 
-  _Finance Team_
-  IMA Subscription Manager`;
+*Payment Confirmation:*
+After completing the payment, kindly share the payment reference or screenshot via WhatsApp for our records.
+
+May Allah reward you for your continued support and generosity.
+
+Indian Muslim Association, Hong Kong`
+        : `🕌 Indian Muslim Association – Membership Renewal 
+
+Dear *${memberData.name}*,
+
+Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+
+This is to formally remind you that the renewal of your Indian Muslim Association (IMA) membership for the year ${invoiceYear} is due.
+
+*Membership Details:*
+• Membership ID: IMA/${memberData.id || 'N/A'}
+• Membership Category: ${membershipCategory}
+• Renewal Amount: HKD ${renewalAmount}
+• Year: ${invoiceYear}
+
+We kindly request you to complete the renewal at your earliest convenience.
+
+*Payment Details:*
+💳 FPS: +852 9545 4447
+
+🏦 Bank Transfer:
+Bank: Bank of China
+Account No: 012-968-2-013423-1
+Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+
+*Payment Confirmation:*
+After making the payment, kindly send the payment reference or screenshot, via WhatsApp for our records.
+
+May Allah reward you for your continued support of the community.
+
+Indian Muslim Association Hong Kong`;
 
       // Clean phone number (remove all non-numeric except +)
       const cleanPhone = memberData.phone.replace(/[^0-9+]/g, "");
@@ -5505,7 +5716,7 @@ IMA Subscription Manager`;
                                   >
                                     <option value="Annual Member">Annual Member - HK$500/year</option>
                                     <option value="Lifetime Janaza Fund Member">Lifetime Janaza Fund - HK$250/year</option>
-                                    <option value="Lifetime Membership">Lifetime Membership - HK$5,250 first year</option>
+                                    <option value="Lifetime Membership">Lifetime Membership - HK$5,000 + HK$250 first year</option>
                                 </select>
                                   <div style={{
                                     position: "absolute",
@@ -5900,6 +6111,21 @@ IMA Subscription Manager`;
                             if (!subscriptionYear) return false;
                             
                             return subscriptionYear === memberYearFilter;
+                          })
+                          .filter((member) => {
+                            if (memberTypeFilter === "All") return true;
+                            
+                            const subscriptionType = member.subscriptionType || "";
+                            
+                            if (memberTypeFilter === "Annual Member") {
+                              return subscriptionType === "Annual Member";
+                            } else if (memberTypeFilter === "Lifetime Member") {
+                              // Lifetime members include both "Lifetime Membership" and "Lifetime Janaza Fund Member"
+                              return subscriptionType === "Lifetime Membership" || 
+                                     subscriptionType === "Lifetime Janaza Fund Member";
+                            }
+                            
+                            return false;
                           });
 
                         // No sorting - use filtered members as-is
@@ -5919,7 +6145,61 @@ IMA Subscription Manager`;
                             {/* Filters above table */}
                             <div className="mb-lg flex gap-md flex-wrap items-center justify-between">
                               <div className="flex gap-md flex-wrap items-center">
-                                <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Status:</label>
+                                <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Type:</label>
+                                <div style={{
+                                  display: "flex",
+                                  gap: "4px",
+                                  background: "#f3f4f6",
+                                  padding: "4px",
+                                  borderRadius: "4px",
+                                  flexWrap: "wrap"
+                                }}>
+                                  {[
+                                    { value: "All", label: "All" },
+                                    { value: "Annual Member", label: "Annual Member" },
+                                    { value: "Lifetime Member", label: "Lifetime Member" },
+                                  ].map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => {
+                                        setMemberTypeFilter(option.value);
+                                        setMembersPage(1);
+                                      }}
+                                      style={{
+                                        padding: "8px 16px",
+                                        borderRadius: "4px",
+                                        border: "none",
+                                        fontSize: "0.875rem",
+                                        fontWeight: "500",
+                                        cursor: "pointer",
+                                        transition: "all 0.2s ease",
+                                        background: memberTypeFilter === option.value
+                                          ? "#5a31ea"
+                                          : "transparent",
+                                        color: memberTypeFilter === option.value ? "#ffffff" : "#6b7280",
+                                        boxShadow: memberTypeFilter === option.value
+                                          ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                          : "none",
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (memberTypeFilter !== option.value) {
+                                          e.target.style.background = "#e5e7eb";
+                                          e.target.style.color = "#374151";
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (memberTypeFilter !== option.value) {
+                                          e.target.style.background = "transparent";
+                                          e.target.style.color = "#6b7280";
+                                        }
+                                      }}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  ))}
+                                </div>
+                                <label className="font-semibold" style={{ color: "#1a1a1a", marginLeft: "16px" }}>Filter by Status:</label>
                                 <div style={{
                                   display: "flex",
                                   gap: "4px",
@@ -6919,6 +7199,67 @@ IMA Subscription Manager`;
                                       >
                                         Pay
                                       </button>
+                                    )}
+                                    {isPaid && !isViewer && (
+                                      <>
+                                        <button
+                                          className="secondary-btn"
+                                          style={{
+                                            padding: "4px 10px",
+                                            fontSize: "0.85rem",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: "4px"
+                                          }}
+                                          onClick={() => {
+                                            setPaymentConfirmationInvoice(invoice);
+                                            setPaymentConfirmationChannels({ email: false, whatsapp: false });
+                                            setShowPaymentConfirmationModal(true);
+                                          }}
+                                          title="Send payment confirmation"
+                                        >
+                                          <i className="fas fa-paper-plane" style={{ fontSize: "0.75rem" }}></i>
+                                          Send
+                                        </button>
+                                        <button
+                                          className="ghost-btn"
+                                          style={{
+                                            padding: "4px 10px",
+                                            fontSize: "0.85rem",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: "4px",
+                                            border: "1px solid #e5e7eb",
+                                            color: "#374151"
+                                          }}
+                                          onClick={async (e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            try {
+                                              const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                                              const pdfUrl = `${apiUrl}/api/invoices/${invoice.id}/pdf-receipt/download`;
+                                              
+                                              // Open PDF in new tab for preview
+                                              const link = document.createElement('a');
+                                              link.href = pdfUrl;
+                                              link.target = '_blank';
+                                              link.rel = 'noopener noreferrer';
+                                              document.body.appendChild(link);
+                                              link.click();
+                                              document.body.removeChild(link);
+                                              
+                                              showToast('Opening PDF receipt...', 'success');
+                                            } catch (error) {
+                                              console.error('Error opening PDF:', error);
+                                              showToast('Failed to open PDF receipt', 'error');
+                                            }
+                                          }}
+                                          title="View/Download PDF Receipt"
+                                        >
+                                          <i className="fas fa-file-pdf" style={{ fontSize: "0.75rem", color: "#ef4444" }}></i>
+                                          PDF
+                                        </button>
+                                      </>
                                     )}
                                     {!isPaid && !isViewer && (
                                       <button
@@ -12775,6 +13116,43 @@ IMA Subscription Manager`;
                               </div>
                             </div>
                           </div>
+                          <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "12px" }}>
+                            <label className="font-semibold" style={{ color: "#1a1a1a" }}>Payment Method:</label>
+                            <select
+                              value={paymentMethodFilter}
+                              onChange={(e) => {
+                                setPaymentMethodFilter(e.target.value);
+                                setPaymentsPage(1);
+                              }}
+                              style={{
+                                padding: "8px 32px 8px 12px",
+                                borderRadius: "4px",
+                                border: "1px solid #e5e7eb",
+                                background: "#ffffff",
+                                fontSize: "0.875rem",
+                                fontWeight: "500",
+                                color: "#1a1a1a",
+                                outline: "none",
+                                transition: "border-color 0.2s",
+                                cursor: "pointer"
+                              }}
+                              onFocus={(e) => {
+                                e.target.style.borderColor = "#5a31ea";
+                                e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                              }}
+                              onBlur={(e) => {
+                                e.target.style.borderColor = "#e5e7eb";
+                                e.target.style.boxShadow = "none";
+                              }}
+                            >
+                              <option value="All">All</option>
+                              <option value="Cash">Cash</option>
+                              <option value="FPS">FPS</option>
+                              <option value="Alipay">Alipay</option>
+                              <option value="Bank Deposit">Bank Deposit</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "nowrap" }}>
                           <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Search:</label>
@@ -12847,6 +13225,32 @@ IMA Subscription Manager`;
                             } catch (e) {
                               return false;
                             }
+                          });
+                        }
+
+                        // Filter payments by payment method
+                        if (paymentMethodFilter !== "All") {
+                          filteredPayments = filteredPayments.filter((payment) => {
+                            // Handle Cash - check paidToAdmin, paidToAdminName, or method
+                            if (paymentMethodFilter === "Cash") {
+                              return payment.paidToAdmin || payment.paidToAdminName || 
+                                     payment.method === "Cash" || payment.method === "Cash to Admin" ||
+                                     (payment.method && payment.method.toLowerCase().includes("cash"));
+                            }
+                            
+                            // Handle Other - match all methods that are not Cash, FPS, Alipay, or Bank Deposit
+                            if (paymentMethodFilter === "Other") {
+                              const method = String(payment.method || "").trim();
+                              const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
+                              const isCash = payment.paidToAdmin || payment.paidToAdminName || 
+                                            payment.method === "Cash" || payment.method === "Cash to Admin" ||
+                                            (payment.method && payment.method.toLowerCase().includes("cash"));
+                              return !isCash && !specificMethods.includes(method) && method !== "";
+                            }
+                            
+                            // Handle specific payment methods (FPS, Alipay, Bank Deposit)
+                            const method = String(payment.method || "").trim();
+                            return method === paymentMethodFilter;
                           });
                         }
                         
@@ -13912,207 +14316,8 @@ IMA Subscription Manager`;
                             )}
                           </div>
 
-                          {donationForm.isMember && (
-                            <div style={{ marginBottom: "20px" }}>
-                              <label>
-                                Select Member <span style={{ color: "#ef4444" }}>*</span>
-                                <div style={{ position: "relative" }} data-donation-member-dropdown>
-                                  <div
-                                    onClick={() => setShowDonationMemberDropdown(!showDonationMemberDropdown)}
-                                  style={{
-                                    padding: "10px 16px",
-                                      border: "1px solid #e0e0e0",
-                                    borderRadius: "4px",
-                                    background: "#fff",
-                                    cursor: "pointer",
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                      color: donationForm.memberId ? "#000" : "#999",
-                                    minHeight: "42px"
-                                  }}
-                                >
-                                  <span>
-                                      {donationForm.memberId
-                                        ? (() => {
-                                          const selected = members.find(m => m.id === donationForm.memberId);
-                                          return selected ? `${selected.name} (${selected.id})` : "Select Member";
-                                        })()
-                                        : "Select Member"}
-                                  </span>
-                                  <span style={{
-                                    fontSize: "0.75rem",
-                                    color: "#5a31ea",
-                                    transition: "transform 0.2s ease",
-                                      transform: showDonationMemberDropdown ? "rotate(180deg)" : "rotate(0deg)",
-                                    display: "inline-block"
-                                  }}>▼</span>
-                                </div>
+                          
 
-                                  {showDonationMemberDropdown && (
-                                  <div
-                                    style={{
-                                      position: "absolute",
-                                      top: "100%",
-                                      left: 0,
-                                      right: 0,
-                                      background: "#fff",
-                                      border: "1px solid #e0e0e0",
-                                      borderRadius: "4px",
-                                      marginTop: "4px",
-                                        maxHeight: "300px",
-                                        overflow: "hidden",
-                                      zIndex: 1000,
-                                      boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
-                                    }}
-                                    >
-                                      {/* Search Input */}
-                                      <div style={{
-                                        padding: "12px",
-                                        borderBottom: "1px solid #e0e0e0",
-                                        background: "#f9fafb"
-                                      }}>
-                                        <div style={{ position: "relative" }}>
-                                          <input
-                                            type="text"
-                                            placeholder=" Search member by name or ID..."
-                                            value={donationMemberSearch}
-                                            onChange={(e) => setDonationMemberSearch(e.target.value)}
-                                    onClick={(e) => e.stopPropagation()}
-                                            onKeyDown={(e) => e.stopPropagation()}
-                                            autoFocus
-                                            style={{
-                                              width: "100%",
-                                              padding: "10px 36px 10px 12px",
-                                              border: "1px solid #e0e0e0",
-                                              borderRadius: "4px",
-                                              fontSize: "0.875rem",
-                                              outline: "none",
-                                              background: "#fff",
-                                              transition: "border-color 0.2s"
-                                            }}
-                                            onFocus={(e) => {
-                                              e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1), 0 4px 12px rgba(90, 49, 234, 0.12)";
-                                              e.target.style.boxShadow = "0 0 0 2px rgba(0,0,0,0.05)";
-                                            }}
-                                            onBlur={(e) => {
-                                              e.target.style.borderColor = "#e0e0e0";
-                                              e.target.style.boxShadow = "none";
-                                            }}
-                                          />
-                                          {donationMemberSearch && (
-                                            <button
-                                              type="button"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                setDonationMemberSearch("");
-                                              }}
-                                              style={{
-                                                position: "absolute",
-                                                right: "8px",
-                                                top: "50%",
-                                                transform: "translateY(-50%)",
-                                                background: "none",
-                                                border: "none",
-                                                cursor: "pointer",
-                                                padding: "4px",
-                                                color: "#666",
-                                                fontSize: "0.875rem",
-                                                display: "flex",
-                                                alignItems: "center",
-                                                justifyContent: "center"
-                                              }}
-                                              title="Clear search"
-                                            >
-                                              ✕
-                                            </button>
-                                          )}
-                                        </div>
-                                        {donationMemberSearch && (
-                                          <div style={{
-                                            marginTop: "8px",
-                                            fontSize: "0.75rem",
-                                            color: "#666"
-                                          }}>
-                                            {members.filter(member =>
-                                              !donationMemberSearch ||
-                                              member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                              member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
-                                            ).length} member{members.filter(member =>
-                                              !donationMemberSearch ||
-                                              member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                              member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
-                                            ).length !== 1 ? 's' : ''} found
-                                          </div>
-                                        )}
-                                      </div>
-
-                                      {/* Member List */}
-                                      <div style={{ maxHeight: "250px", overflowY: "auto" }}>
-                                        {members
-                                          .filter(member =>
-                                            !donationMemberSearch ||
-                                            member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                            member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
-                                          )
-                                          .map((member) => (
-                                            <div
-                                              key={member.id}
-                                      onClick={() => {
-                                                setDonationForm({
-                                                  ...donationForm,
-                                                  memberId: member.id,
-                                                  donorName: member.name || ""
-                                                });
-                                                setShowDonationMemberDropdown(false);
-                                                setDonationMemberSearch("");
-                                      }}
-                                      style={{
-                                        padding: "12px 16px",
-                                        cursor: "pointer",
-                                        borderBottom: "1px solid #e5e7eb",
-                                                background: donationForm.memberId === member.id ? "#f9fafb" : "#fff",
-                                                transition: "background 0.2s"
-                                      }}
-                                      onMouseEnter={(e) => {
-                                                if (donationForm.memberId !== member.id) {
-                                                  e.target.style.background = "#f9f9f9";
-                                        }
-                                      }}
-                                      onMouseLeave={(e) => {
-                                                if (donationForm.memberId !== member.id) {
-                                                  e.target.style.background = "#fff";
-                                        }
-                                      }}
-                                    >
-                                              <div style={{ fontWeight: "500", color: "#000" }}>{member.name}</div>
-                                              <div style={{ fontSize: "0.75rem", color: "#666", marginTop: "2px" }}>
-                                                {member.id} {member.email ? `• ${member.email}` : ""}
-                                    </div>
-                                            </div>
-                                          ))}
-
-                                        {members.filter(member =>
-                                          !donationMemberSearch ||
-                                          member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                          member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
-                                        ).length === 0 && (
-                                            <div style={{ padding: "16px", textAlign: "center", color: "#999", fontSize: "0.875rem" }}>
-                                              No members found
-                                            </div>
-                                          )}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                                {!donationForm.memberId && (
-                                  <span style={{ fontSize: "0.75rem", color: "#ef4444", marginTop: "4px", display: "none" }}>
-                                    Please select a member
-                                  </span>
-                                )}
-                              </label>
-                            </div>
-                          )}
                           {/* Payment Type Selection: Online or Cash */}
                           <div style={{ gridColumn: "1 / -1", marginBottom: "20px" }}>
                             <label>
@@ -14633,6 +14838,29 @@ IMA Subscription Manager`;
                             });
                           }
 
+                          // Filter by payment method
+                          if (donationMethodFilter && donationMethodFilter !== "All") {
+                            filteredDonations = filteredDonations.filter((donation) => {
+                              if (!donation) return false;
+                              const method = String(donation.method || "").trim();
+                              
+                              // Handle Cash
+                              if (donationMethodFilter === "Cash") {
+                                return method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
+                              }
+                              
+                              // Handle Other - match all methods that are not Cash, FPS, Alipay, or Bank Deposit
+                              if (donationMethodFilter === "Other") {
+                                const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
+                                const isCash = method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
+                                return !isCash && !specificMethods.includes(method) && method !== "";
+                              }
+                              
+                              // Handle specific payment methods (FPS, Alipay, Bank Deposit)
+                              return method === donationMethodFilter;
+                            });
+                          }
+
                           // Calculate pagination
                           const totalPages = Math.ceil(filteredDonations.length / donationsPageSize) || 1;
                           const currentPage = Math.min(donationsPage, totalPages);
@@ -14815,6 +15043,43 @@ IMA Subscription Manager`;
                                         </button>
                                       </div>
                                     </div>
+                                  </div>
+                                  <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "12px" }}>
+                                    <label className="font-semibold" style={{ color: "#1a1a1a" }}>Payment Method:</label>
+                                    <select
+                                      value={donationMethodFilter}
+                                      onChange={(e) => {
+                                        setDonationMethodFilter(e.target.value);
+                                        setDonationsPage(1);
+                                      }}
+                                      style={{
+                                        padding: "8px 32px 8px 12px",
+                                        borderRadius: "4px",
+                                        border: "1px solid #e5e7eb",
+                                        background: "#ffffff",
+                                        fontSize: "0.875rem",
+                                        fontWeight: "500",
+                                        color: "#1a1a1a",
+                                        outline: "none",
+                                        transition: "border-color 0.2s",
+                                        cursor: "pointer"
+                                      }}
+                                      onFocus={(e) => {
+                                        e.target.style.borderColor = "#5a31ea";
+                                        e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                      }}
+                                      onBlur={(e) => {
+                                        e.target.style.borderColor = "#e5e7eb";
+                                        e.target.style.boxShadow = "none";
+                                      }}
+                                    >
+                                      <option value="All">All</option>
+                                      <option value="Cash">Cash</option>
+                                      <option value="FPS">FPS</option>
+                                      <option value="Alipay">Alipay</option>
+                                      <option value="Bank Deposit">Bank Deposit</option>
+                                      <option value="Other">Other</option>
+                                    </select>
                                   </div>
                                 </div>
                                 <button
@@ -15600,6 +15865,135 @@ IMA Subscription Manager`;
                       )}
                     </div>
 
+                    {/* Payment Method Summary Cards */}
+                    {(() => {
+                      // Calculate totals by payment method from all transactions
+                      const paymentsFromMembers = (reportStats.paymentsInRange || []).filter(p => 
+                        isPaymentMemberInList(p)
+                      );
+                      const donationsFromMembers = (Array.isArray(donations) ? donations : []).filter(donation => {
+                        if (!donation) return false;
+                        return true;
+                      });
+                      
+                      const allTransactions = [
+                        ...paymentsFromMembers.map(p => ({
+                          ...p,
+                          type: 'Payment',
+                          amount: p.amount,
+                          method: p.method,
+                          paidToAdmin: p.paidToAdmin,
+                          paidToAdminName: p.paidToAdminName,
+                        })),
+                        ...donationsFromMembers.map(d => ({
+                          ...d,
+                          type: 'Donation',
+                          amount: d.amount,
+                          method: d.method || '-',
+                        }))
+                      ];
+                      
+                      // Helper function to get payment method for calculation
+                      const getMethodForCalculation = (t) => {
+                        if (t.type === "Payment") {
+                          // Check if it's cash payment
+                          if (t.paidToAdmin || t.paidToAdminName) {
+                            const onlineMethods = ["FPS", "Alipay", "Bank Transfer", "Bank Deposit", "PayMe", "Credit Card", "Screenshot", "Online Payment"];
+                            if (t.method && onlineMethods.includes(t.method)) {
+                              return t.method;
+                            }
+                            return "Cash";
+                          }
+                          if (t.method === "Cash to Admin" || t.method === "Cash") {
+                            return "Cash";
+                          }
+                          return t.method || "Other";
+                        } else {
+                          // For donations
+                          const method = String(t.method || "").trim();
+                          if (method.toLowerCase() === "cash" || method.toLowerCase().includes("cash")) {
+                            return "Cash";
+                          }
+                          const specificMethods = ["FPS", "Alipay", "Bank Deposit"];
+                          if (specificMethods.includes(method)) {
+                            return method;
+                          }
+                          return method || "Other";
+                        }
+                      };
+                      
+                      // Calculate totals by method
+                      const methodTotals = {
+                        Cash: 0,
+                        FPS: 0,
+                        Alipay: 0,
+                        "Bank Deposit": 0,
+                        Other: 0
+                      };
+                      
+                      allTransactions.forEach(t => {
+                        const method = getMethodForCalculation(t);
+                        const amount = parseFloat(String(t.amount || "0").replace(/[^0-9.]/g, '') || 0);
+                        
+                        if (method === "Cash") {
+                          methodTotals.Cash += amount;
+                        } else if (method === "FPS") {
+                          methodTotals.FPS += amount;
+                        } else if (method === "Alipay") {
+                          methodTotals.Alipay += amount;
+                        } else if (method === "Bank Deposit") {
+                          methodTotals["Bank Deposit"] += amount;
+                        } else {
+                          methodTotals.Other += amount;
+                        }
+                      });
+                      
+                      return (
+                        <div className="kpi-grid" style={{ marginBottom: "24px" }}>
+                          <div className="card kpi">
+                            <p>
+                              <i className="fas fa-money-bill" style={{ marginRight: "8px", color: "#10b981" }}></i>
+                              Total Collected Cash
+                            </p>
+                            <h4>{formatCurrency(methodTotals.Cash)}</h4>
+                            <small>Cash payments</small>
+                          </div>
+                          <div className="card kpi">
+                            <p>
+                              <i className="fas fa-mobile-alt" style={{ marginRight: "8px", color: "#3b82f6" }}></i>
+                              Total Collected FPS
+                            </p>
+                            <h4>{formatCurrency(methodTotals.FPS)}</h4>
+                            <small>FPS payments</small>
+                          </div>
+                          <div className="card kpi">
+                            <p>
+                              <i className="fas fa-wallet" style={{ marginRight: "8px", color: "#f59e0b" }}></i>
+                              Total Collected Alipay
+                            </p>
+                            <h4>{formatCurrency(methodTotals.Alipay)}</h4>
+                            <small>Alipay payments</small>
+                          </div>
+                          <div className="card kpi">
+                            <p>
+                              <i className="fas fa-university" style={{ marginRight: "8px", color: "#8b5cf6" }}></i>
+                              Total Collected Bank Deposit
+                            </p>
+                            <h4>{formatCurrency(methodTotals["Bank Deposit"])}</h4>
+                            <small>Bank Deposit payments</small>
+                          </div>
+                          <div className="card kpi">
+                            <p>
+                              <i className="fas fa-ellipsis-h" style={{ marginRight: "8px", color: "#6b7280" }}></i>
+                              Total Collected Other
+                            </p>
+                            <h4>{formatCurrency(methodTotals.Other)}</h4>
+                            <small>Other payment methods</small>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Transactions Table */}
                     <div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
@@ -15607,8 +16001,44 @@ IMA Subscription Manager`;
                           <i className="fas fa-list" style={{ marginRight: "10px", color: "#5a31ea" }}></i>
                           Transactions
                         </h4>
-                        <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-                        
+                        <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "nowrap" }}>
+                          <div className="flex gap-md flex-nowrap items-center">
+                            <label className="font-semibold" style={{ color: "#1a1a1a" }}>Payment Method:</label>
+                            <select
+                              value={transactionMethodFilter}
+                              onChange={(e) => {
+                                setTransactionMethodFilter(e.target.value);
+                                setTransactionsPage(1);
+                              }}
+                              style={{
+                                padding: "8px 32px 8px 12px",
+                                borderRadius: "4px",
+                                border: "1px solid #e5e7eb",
+                                background: "#ffffff",
+                                fontSize: "0.875rem",
+                                fontWeight: "500",
+                                color: "#1a1a1a",
+                                outline: "none",
+                                transition: "border-color 0.2s",
+                                cursor: "pointer"
+                              }}
+                              onFocus={(e) => {
+                                e.target.style.borderColor = "#5a31ea";
+                                e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                              }}
+                              onBlur={(e) => {
+                                e.target.style.borderColor = "#e5e7eb";
+                                e.target.style.boxShadow = "none";
+                              }}
+                            >
+                              <option value="All">All</option>
+                              <option value="Cash">Cash</option>
+                              <option value="FPS">FPS</option>
+                              <option value="Alipay">Alipay</option>
+                              <option value="Bank Deposit">Bank Deposit</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
                           <input
                             type="text"
                             placeholder="Search transactions..."
@@ -15707,6 +16137,34 @@ IMA Subscription Manager`;
                                   if (donorTypeFilter === "member" && !t.isMember) return false;
                                   if (donorTypeFilter === "non-member" && t.isMember) return false;
                                 }
+                                
+                                // Filter by payment method
+                                if (transactionMethodFilter !== "All") {
+                                  const method = String(t.method || "").trim();
+                                  
+                                  // Handle Cash
+                                  if (transactionMethodFilter === "Cash") {
+                                    const isCash = (t.type === "Payment" && (t.paidToAdmin || t.paidToAdminName)) ||
+                                                   method.toLowerCase() === "cash" || 
+                                                   method.toLowerCase().includes("cash") ||
+                                                   method === "Cash to Admin";
+                                    if (!isCash) return false;
+                                  }
+                                  // Handle Other - match all methods that are not Cash, FPS, Alipay, or Bank Deposit
+                                  else if (transactionMethodFilter === "Other") {
+                                    const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
+                                    const isCash = (t.type === "Payment" && (t.paidToAdmin || t.paidToAdminName)) ||
+                                                   method.toLowerCase() === "cash" || 
+                                                   method.toLowerCase().includes("cash") ||
+                                                   method === "Cash to Admin";
+                                    if (isCash || specificMethods.includes(method) || method === "") return false;
+                                  }
+                                  // Handle specific payment methods (FPS, Alipay, Bank Deposit)
+                                  else {
+                                    if (method !== transactionMethodFilter) return false;
+                                  }
+                                }
+                                
                                 return true;
                               });
 
@@ -15908,6 +16366,34 @@ IMA Subscription Manager`;
                               if (donorTypeFilter === "member" && !t.isMember) return false;
                               if (donorTypeFilter === "non-member" && t.isMember) return false;
                             }
+                            
+                            // Filter by payment method
+                            if (transactionMethodFilter !== "All") {
+                              const method = String(t.method || "").trim();
+                              
+                              // Handle Cash
+                              if (transactionMethodFilter === "Cash") {
+                                const isCash = (t.type === "Payment" && (t.paidToAdmin || t.paidToAdminName)) ||
+                                               method.toLowerCase() === "cash" || 
+                                               method.toLowerCase().includes("cash") ||
+                                               method === "Cash to Admin";
+                                if (!isCash) return false;
+                              }
+                              // Handle Other - match all methods that are not Cash, FPS, Alipay, or Bank Deposit
+                              else if (transactionMethodFilter === "Other") {
+                                const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
+                                const isCash = (t.type === "Payment" && (t.paidToAdmin || t.paidToAdminName)) ||
+                                               method.toLowerCase() === "cash" || 
+                                               method.toLowerCase().includes("cash") ||
+                                               method === "Cash to Admin";
+                                if (isCash || specificMethods.includes(method) || method === "") return false;
+                              }
+                              // Handle specific payment methods (FPS, Alipay, Bank Deposit)
+                              else {
+                                if (method !== transactionMethodFilter) return false;
+                              }
+                            }
+                            
                             return true;
                           });
 
@@ -18530,9 +19016,10 @@ IMA Subscription Manager`;
                       let whatsappSuccess = false;
                       const errors = [];
 
-                      // Send Email
+                      // Send Email first (if selected)
                       if (paymentConfirmationChannels.email) {
                         try {
+                          console.log('📧 Sending payment confirmation email...');
                           const emailResponse = await fetch(`${apiUrl}/api/invoices/${paymentConfirmationInvoice.id}/send-payment-confirmation`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -18543,21 +19030,43 @@ IMA Subscription Manager`;
                             if (emailData.success) {
                               emailSuccess = true;
                               console.log('✅ Payment confirmation email sent:', emailData.message);
+                              showToast('✅ Email sent successfully!', 'success');
                             } else {
-                              errors.push(`Email: ${emailData.message || 'Failed to send'}`);
+                              // Check if it's a warning (email not configured) vs actual error
+                              if (emailData.warning) {
+                                console.warn('⚠️ Email warning:', emailData.message, emailData.details);
+                                errors.push(`Email: ${emailData.message || 'Email not configured'}`);
+                                showToast(`⚠️ ${emailData.message || 'Email not configured'}. ${emailData.details || ''}`, 'error');
+                              } else {
+                                errors.push(`Email: ${emailData.message || emailData.error || 'Failed to send'}`);
+                                showToast(`Email: ${emailData.message || emailData.error || 'Failed to send'}`, 'error');
+                              }
                             }
                           } else {
                             const errorData = await emailResponse.json().catch(() => ({}));
-                            errors.push(`Email: ${errorData.error || 'Failed to send'}`);
+                            const errorMessage = errorData.error || errorData.message || `HTTP ${emailResponse.status}: Failed to send email`;
+                            errors.push(`Email: ${errorMessage}`);
+                            console.error('❌ Email sending failed:', errorData);
+                            showToast(`Email: ${errorMessage}`, 'error');
                           }
                         } catch (error) {
                           console.error('Error sending payment confirmation email:', error);
                           errors.push(`Email: ${error.message || 'Failed to send'}`);
+                          showToast(`Email: ${error.message || 'Failed to send'}`, 'error');
                         }
                       }
 
-                      // Send WhatsApp
+                      // Wait a moment after email is sent before opening WhatsApp
+                      // This ensures email is sent first, then WhatsApp opens
+                      if (paymentConfirmationChannels.email) {
+                        // Wait for email to complete (success or failure)
+                        await new Promise(resolve => setTimeout(resolve, 800)); // Small delay to ensure email is processed
+                        console.log('📧 Email process completed, proceeding to WhatsApp...');
+                      }
+
+                      // Open WhatsApp after email is sent (if selected)
                       if (paymentConfirmationChannels.whatsapp) {
+                        console.log('📱 Opening WhatsApp...');
                         try {
                           const member = members.find(m => m.id === paymentConfirmationInvoice.memberId);
                           if (member && member.phone) {
@@ -18582,60 +19091,213 @@ IMA Subscription Manager`;
                               // Continue without PDF URL
                             }
                             
-                            // Create WhatsApp message
-                            const paymentDate = paymentConfirmationInvoice.last_payment_date 
-                              ? new Date(paymentConfirmationInvoice.last_payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                              : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-                            
-                            let message = `Hi *${member.name}* 👋
-
-Payment Confirmation ✅
-
-*Invoice #${paymentConfirmationInvoice.id}*
-*Amount:* ${paymentConfirmationInvoice.amount}
-*Payment Method:* ${paymentConfirmationInvoice.method || 'Payment'}
-*Date:* ${paymentDate}
-${paymentConfirmationInvoice.reference ? `*Reference:* ${paymentConfirmationInvoice.reference}` : ''}
-
-Your payment has been confirmed.`;
-
-                            // Add PDF link if available
-                            if (pdfUrl) {
-                              // If it's a Cloudinary URL, use it directly
-                              // If it's a data URL, we can't use it in WhatsApp, so we'll mention it
-                              if (pdfUrl.startsWith('http://') || pdfUrl.startsWith('https://')) {
-                                message += `\n\n📎 Download your receipt:\n${pdfUrl}`;
-                              } else {
-                                message += `\n\n📎 Your payment receipt PDF is available. Please check your email for the PDF attachment.`;
+                            // Helper function to convert number to words
+                            const numberToWords = (num) => {
+                              const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+                                'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+                              const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+                              
+                              if (num === 0) return 'Zero';
+                              if (num < 20) return ones[num];
+                              if (num < 100) {
+                                const ten = Math.floor(num / 10);
+                                const one = num % 10;
+                                return tens[ten] + (one > 0 ? ' ' + ones[one] : '');
                               }
+                              if (num < 1000) {
+                                const hundred = Math.floor(num / 100);
+                                const remainder = num % 100;
+                                return ones[hundred] + ' Hundred' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
+                              }
+                              if (num < 100000) {
+                                const thousand = Math.floor(num / 1000);
+                                const remainder = num % 1000;
+                                return numberToWords(thousand) + ' Thousand' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
+                              }
+                              if (num < 10000000) {
+                                const lakh = Math.floor(num / 100000);
+                                const remainder = num % 100000;
+                                return numberToWords(lakh) + ' Lakh' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
+                              }
+                              const crore = Math.floor(num / 10000000);
+                              const remainder = num % 10000000;
+                              return numberToWords(crore) + ' Crore' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
+                            };
+
+                            // Prepare receipt data
+                            const receiptNo = payment?.id || payment?.reference || paymentConfirmationInvoice.id || `REC-${Date.now()}`;
+                            const receiptDate = new Date().toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric'
+                            }).replace(/\//g, ' / ');
+                            const amountStr = paymentConfirmationInvoice.amount || 'HK$0';
+                            const amountNum = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
+                            const amountInWords = amountNum > 0 ? numberToWords(Math.floor(amountNum)) + ' Only' : '';
+                            const invoiceYear = paymentConfirmationInvoice.period ? (paymentConfirmationInvoice.period.match(/\d{4}/)?.[0] || '') : '';
+                            
+                            // Determine payment mode: Cash / Transfer / Online
+                            let paymentMode = 'Online';
+                            const method = String(payment?.method || paymentConfirmationInvoice.method || '').trim();
+                            const isCash = payment?.paidToAdmin || payment?.paidToAdminName || 
+                                          method.toLowerCase() === 'cash' || method.toLowerCase().includes('cash') ||
+                                          payment?.payment_type === 'cash' || payment?.payment_mode === 'cash';
+                            const isTransfer = ['FPS', 'PayMe', 'Bank Transfer', 'Bank Deposit'].includes(method);
+                            
+                            if (isCash) {
+                              paymentMode = 'Cash';
+                            } else if (isTransfer) {
+                              paymentMode = 'Transfer';
+                            } else {
+                              paymentMode = 'Online';
+                            }
+                            
+                            // Format date for display
+                            const displayDate = new Date().toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            });
+                            
+                            // Create WhatsApp message
+                            let message = `🕌 Indian Muslim Association – Hong Kong
+Membership Renewal Receipt
+
+📅 Date: ${displayDate}
+👤 Member: ${member.name}
+🆔 Receipt No: ${receiptNo}
+💳 Amount: ${amountStr}
+Payment Mode: ${paymentMode}
+
+✅ Renewal confirmed for Year ${invoiceYear || '____'}
+
+Thank you for supporting the IMA community!`;
+
+                            // Prepare PDF download URL if available
+                            let downloadUrl = null;
+                            if (pdfUrl) {
+                              // Use the direct download endpoint to bypass Cloudinary authentication issues
+                              // Always use VITE_API_URL if available, otherwise use current origin
+                              const apiBaseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+                              downloadUrl = `${apiBaseUrl}/api/invoices/${paymentConfirmationInvoice.id}/pdf-receipt/download`;
+                              
+                              // For WhatsApp, provide the PDF link as a direct download link
+                              message += `\n\n📎 Download Receipt PDF:\n${downloadUrl}`;
                             } else {
                               message += `\n\n📎 Your payment receipt PDF has been sent to your email.`;
                             }
 
-                            message += `\n\nThank you for your payment! 🙏
-
-_Finance Team_
-IMA Subscription Manager`;
-
-                            // Clean phone number
-                            const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
-                            const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+                            // Clean phone number - ensure it starts with country code
+                            let cleanPhone = member.phone.replace(/[^0-9+]/g, "");
                             
-                            // Open WhatsApp
-                            window.open(whatsappUrl, '_blank');
-                            whatsappSuccess = true;
+                            // Validate phone number
+                            if (!cleanPhone || cleanPhone.length < 8) {
+                              errors.push("WhatsApp: Invalid phone number format");
+                              // Skip WhatsApp if phone is invalid
+                              console.error('Invalid phone number:', member.phone);
+                            } else {
                             
-                            // Log to communication
-                            const comm = {
-                              channel: "WhatsApp",
-                              type: "Payment Confirmation",
-                              memberId: member.id,
-                              memberEmail: member.email,
-                              memberName: member.name,
-                              message: `Payment confirmation sent to ${member.name} (${member.phone}) - Invoice #${paymentConfirmationInvoice.id}${pdfUrl ? ' (with PDF)' : ''}`,
-                              status: "Delivered",
-                            };
-                            addCommunication(comm);
+                            // Ensure phone number has country code
+                            if (!cleanPhone.startsWith('+')) {
+                              // If no +, assume it needs country code (default to +852 for Hong Kong)
+                              cleanPhone = '+852' + cleanPhone.replace(/^\+?/, '');
+                            }
+                            
+                            // Remove the + from the URL (wa.me format doesn't need it)
+                            const phoneForUrl = cleanPhone.replace(/^\+/, '');
+                            
+                            // Check if message is too long (WhatsApp has URL length limits ~2000 chars)
+                            // If message is too long, use a shorter version
+                            const maxUrlLength = 2000; // Safe limit for URLs
+                            let finalMessage = message;
+                            let whatsappUrl = `https://wa.me/${phoneForUrl}?text=${encodeURIComponent(finalMessage)}`;
+                            
+                            // If URL is too long, use a shorter message
+                            if (whatsappUrl.length > maxUrlLength) {
+                              console.warn('WhatsApp message too long, using shortened version');
+                              // Create a shorter message
+                              finalMessage = `🕌 Indian Muslim Association – Hong Kong
+Membership Renewal Receipt
+
+📅 Date: ${displayDate}
+👤 Member: ${member.name}
+🆔 Receipt No: ${receiptNo}
+💳 Amount: ${amountStr}
+Payment Mode: ${paymentMode}
+
+✅ Renewal confirmed for Year ${invoiceYear || '____'}
+
+Thank you for supporting the IMA community!${downloadUrl ? `\n\n📎 Download Receipt PDF:\n${downloadUrl}` : '\n\n📎 Receipt PDF sent to your email.'}`;
+                              whatsappUrl = `https://wa.me/${phoneForUrl}?text=${encodeURIComponent(finalMessage)}`;
+                            }
+                            
+                            console.log('Opening WhatsApp:', { phone: phoneForUrl, urlLength: whatsappUrl.length });
+                            
+                            try {
+                              // Always open WhatsApp in a new tab/window (target="_blank")
+                              // Use window.open with _blank to ensure it opens in a new tab
+                              const whatsappWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+                              
+                              // Check if popup was blocked
+                              if (!whatsappWindow || whatsappWindow.closed || typeof whatsappWindow.closed === 'undefined') {
+                                // Popup blocked - show warning but don't navigate in current page
+                                console.warn('Popup blocked by browser');
+                                showToast('Popup blocked. Please allow popups for this site to open WhatsApp in a new tab.', 'warning');
+                                // Don't use window.location.href as it would open in current page
+                                // Instead, create a temporary link and click it programmatically
+                                try {
+                                  const link = document.createElement('a');
+                                  link.href = whatsappUrl;
+                                  link.target = '_blank';
+                                  link.rel = 'noopener noreferrer';
+                                  link.style.display = 'none';
+                                  document.body.appendChild(link);
+                                  link.click();
+                                  document.body.removeChild(link);
+                                  whatsappSuccess = true;
+                                  console.log('WhatsApp opened using programmatic link click');
+                                } catch (linkError) {
+                                  console.error('Programmatic link click failed:', linkError);
+                                  showToast('Please allow popups or click the WhatsApp button again.', 'warning');
+                                }
+                              } else {
+                                whatsappSuccess = true;
+                                console.log('WhatsApp opened successfully in new window');
+                              }
+                            } catch (error) {
+                              console.error('Error opening WhatsApp:', error);
+                              // Try programmatic link click as fallback
+                              try {
+                                const link = document.createElement('a');
+                                link.href = whatsappUrl;
+                                link.target = '_blank';
+                                link.rel = 'noopener noreferrer';
+                                link.style.display = 'none';
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                whatsappSuccess = true;
+                                console.log('WhatsApp opened using fallback programmatic link click');
+                              } catch (linkError) {
+                                console.error('Fallback also failed:', linkError);
+                                showToast('Failed to open WhatsApp. Please check the phone number format.', 'error');
+                              }
+                            }
+                            
+                            // Log to communication only if successful
+                            if (whatsappSuccess) {
+                              const comm = {
+                                channel: "WhatsApp",
+                                type: "Payment Confirmation",
+                                memberId: member.id,
+                                memberEmail: member.email,
+                                memberName: member.name,
+                                message: `Payment confirmation sent to ${member.name} (${member.phone}) - Invoice #${paymentConfirmationInvoice.id}${pdfUrl ? ' (with PDF)' : ''}`,
+                                status: "Delivered",
+                              };
+                              addCommunication(comm);
+                            }
+                            } // End of else block for valid phone
                           } else {
                             errors.push("WhatsApp: Member phone number not found");
                           }
@@ -18652,11 +19314,20 @@ IMA Subscription Manager`;
                       if (emailSuccess) successMessages.push("Email sent");
                       if (whatsappSuccess) successMessages.push("WhatsApp opened");
 
-                      if (successMessages.length > 0) {
+                      // Only show combined message if both were attempted
+                      if (paymentConfirmationChannels.email && paymentConfirmationChannels.whatsapp) {
+                        if (emailSuccess && whatsappSuccess) {
+                          showToast(`✅ Email sent successfully! WhatsApp opened.`, "success");
+                        } else if (emailSuccess && !whatsappSuccess) {
+                          showToast(`✅ Email sent successfully! ${errors.filter(e => e.includes('WhatsApp')).join('; ') || 'WhatsApp could not be opened'}`, "warning");
+                        } else if (!emailSuccess && whatsappSuccess) {
+                          showToast(`⚠️ Email failed, but WhatsApp opened. ${errors.filter(e => e.includes('Email')).join('; ')}`, "warning");
+                        }
+                      } else if (successMessages.length > 0) {
                         showToast(`Payment confirmation sent: ${successMessages.join(", ")}`, "success");
                       }
 
-                      if (errors.length > 0) {
+                      if (errors.length > 0 && !(paymentConfirmationChannels.email && paymentConfirmationChannels.whatsapp)) {
                         showToast(`Some errors: ${errors.join("; ")}`, "error");
                       }
 

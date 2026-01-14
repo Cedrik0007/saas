@@ -487,8 +487,10 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
       return res.status(404).json({ message: "Invoice not found" });
     }
 
-    if (invoice.status !== "Paid") {
-      return res.status(400).json({ message: "Invoice is not marked as paid" });
+    // Check if invoice is paid (accept both "Paid" and "Completed" status)
+    const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
+    if (!isPaid) {
+      return res.status(400).json({ message: "Invoice is not marked as paid. Current status: " + invoice.status });
     }
 
     const member = await UserModel.findOne({ id: invoice.memberId });
@@ -515,7 +517,15 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
     };
 
     // Send email with PDF receipt (optional - don't fail if email sending fails)
-    console.log(`📧 Attempting to send payment confirmation email for invoice ${invoice.id} to member ${member.email}...`);
+    console.log(`📧 Attempting to send payment confirmation email for invoice ${invoice.id} to member ${member.email || member.memberEmail || 'N/A'}...`);
+    console.log(`   Invoice status: ${invoice.status}`);
+    console.log(`   Member ID: ${member.id}, Member Name: ${member.name || member.memberName || 'N/A'}`);
+    console.log(`   Payment data:`, {
+      paymentId: payment?.id || 'N/A',
+      amount: paymentData.amount || invoice.amount,
+      method: paymentData.method || 'N/A'
+    });
+    
     try {
       const emailSent = await sendPaymentApprovalEmail(
         member,
@@ -524,33 +534,97 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
       );
 
       if (emailSent) {
-        console.log(`✅ Payment confirmation email sent successfully to ${member.email}`);
+        console.log(`✅ Payment confirmation email sent successfully to ${member.email || member.memberEmail}`);
         res.json({
           success: true,
-          message: `Payment confirmation email with PDF receipt sent to ${member.email}`
+          message: `Payment confirmation email with PDF receipt sent to ${member.email || member.memberEmail}`
         });
       } else {
-        console.warn(`⚠️ Failed to send payment confirmation email to ${member.email} - email may not be configured`);
+        console.warn(`⚠️ Failed to send payment confirmation email to ${member.email || member.memberEmail} - email may not be configured`);
+        console.warn(`   Please check:`);
+        console.warn(`   1. Email settings are configured in admin panel`);
+        console.warn(`   2. EMAIL_USER and EMAIL_PASSWORD environment variables are set`);
+        console.warn(`   3. For Gmail, using App-Specific Password (not regular password)`);
         // Return success with warning instead of error - payment is still processed
         res.json({
           success: false,
           warning: true,
-          message: "Payment processed successfully, but email confirmation could not be sent.",
-          details: "Email may not be configured. Please check email settings in the admin panel."
+          message: "Payment confirmation email could not be sent.",
+          details: "Email may not be configured. Please check email settings in the admin panel or environment variables."
         });
       }
     } catch (emailError) {
       console.error(`❌ Error attempting to send payment confirmation email:`, emailError);
+      console.error(`   Error stack:`, emailError.stack);
+      console.error(`   Error code:`, emailError.code);
+      console.error(`   Error message:`, emailError.message);
       // Return success with warning - payment is still processed even if email fails
       res.json({
         success: false,
         warning: true,
-        message: "Payment processed successfully, but email confirmation could not be sent.",
-        details: emailError.message || "Email sending failed. Please check email configuration in settings."
+        message: "Payment confirmation email could not be sent.",
+        details: emailError.message || "Email sending failed. Please check email configuration in settings.",
+        error: emailError.code || 'UNKNOWN_ERROR'
       });
     }
   } catch (error) {
     console.error("Error sending payment confirmation email:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET download PDF receipt directly (proxy endpoint to bypass Cloudinary auth)
+router.get("/:id/pdf-receipt/download", async (req, res) => {
+  try {
+    await ensureConnection();
+
+    const invoice = await InvoiceModel.findOne({ id: req.params.id });
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    // Allow both "Paid" and "Completed" statuses
+    const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
+    if (!isPaid) {
+      return res.status(400).json({ error: "Invoice is not marked as paid. Current status: " + invoice.status });
+    }
+
+    const member = await UserModel.findOne({ id: invoice.memberId });
+    if (!member) {
+      return res.status(404).json({ error: "Member not found" });
+    }
+
+    // Find the most recent payment for this invoice
+    const payment = await PaymentModel.findOne({
+      invoiceId: invoice.id
+    }).sort({ createdAt: -1 });
+
+    // Prepare payment object with screenshot from payment or invoice
+    const paymentData = payment ? {
+      ...payment.toObject(),
+      screenshot: payment.screenshot || invoice.screenshot || invoice.payment_proof || null,
+    } : {
+      invoiceId: invoice.id,
+      amount: invoice.amount,
+      method: invoice.method || 'Payment',
+      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      reference: invoice.reference || invoice.id,
+      screenshot: invoice.screenshot || invoice.payment_proof || null,
+    };
+
+    // Generate PDF receipt
+    const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
+    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData);
+
+    // Set headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Receipt_${invoice.id}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    // Send PDF buffer directly
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Error downloading PDF receipt:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -565,8 +639,10 @@ router.get("/:id/pdf-receipt", async (req, res) => {
       return res.status(404).json({ error: "Invoice not found" });
     }
 
-    if (invoice.status !== "Paid") {
-      return res.status(400).json({ error: "Invoice is not marked as paid" });
+    // Allow both "Paid" and "Completed" statuses
+    const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
+    if (!isPaid) {
+      return res.status(400).json({ error: "Invoice is not marked as paid. Current status: " + invoice.status });
     }
 
     const member = await UserModel.findOne({ id: invoice.memberId });
@@ -608,11 +684,25 @@ router.get("/:id/pdf-receipt", async (req, res) => {
           resource_type: "raw",
           format: "pdf",
           public_id: `receipt_${invoice.id}_${Date.now()}`,
+          access_mode: "public", // Ensure the resource is publicly accessible
+          type: "upload", // Explicitly set type to upload (public)
+          invalidate: false, // Don't invalidate CDN cache
         });
+
+        // Use secure_url which is always HTTPS and publicly accessible
+        const pdfUrl = uploadResult.secure_url;
+        
+        // For raw files (PDFs), ensure the URL is correct
+        // Cloudinary raw files might need the format in the URL
+        let finalPdfUrl = pdfUrl;
+        if (!pdfUrl.endsWith('.pdf')) {
+          // Add .pdf extension if not present for better browser recognition
+          finalPdfUrl = pdfUrl + '.pdf';
+        }
 
         res.json({
           success: true,
-          pdfUrl: uploadResult.secure_url,
+          pdfUrl: finalPdfUrl,
           message: "PDF receipt generated and uploaded successfully"
         });
       } catch (uploadError) {
