@@ -957,7 +957,7 @@
     const [paymentsSearchTerm, setPaymentsSearchTerm] = useState(""); // search filter for payments
     const [donationsPage, setDonationsPage] = useState(1);
     const [donationsPageSize, setDonationsPageSize] = useState(10);
-    const [donationYearFilter, setDonationYearFilter] = useState(new Date().getFullYear().toString()); // Year filter for donations, default to current year
+    const [donationYearFilter, setDonationYearFilter] = useState("All"); // Year filter for donations, default to All
     const [donationMethodFilter, setDonationMethodFilter] = useState("All"); // Payment method filter for donations: All, Cash, Online Payment
     const [remindersPage, setRemindersPage] = useState(1);
     const [remindersPageSize, setRemindersPageSize] = useState(10);
@@ -14877,7 +14877,7 @@ Indian Muslim Association Hong Kong`;
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        setDonationYearFilter(new Date().getFullYear().toString());
+                                        setDonationYearFilter("All");
                                         setDonationsPage(1);
                                       }}
                                       style={{
@@ -14885,8 +14885,8 @@ Indian Muslim Association Hong Kong`;
                                         borderRadius: "4px 0 0 4px",
                                         border: "1px solid #e5e7eb",
                                         borderRight: "none",
-                                        background: donationYearFilter === new Date().getFullYear().toString() ? "#5a31ea" : "#ffffff",
-                                        color: donationYearFilter === new Date().getFullYear().toString() ? "#ffffff" : "#6b7280",
+                                        background: donationYearFilter === "All" ? "#5a31ea" : "#ffffff",
+                                        color: donationYearFilter === "All" ? "#ffffff" : "#6b7280",
                                         fontSize: "0.875rem",
                                         fontWeight: "500",
                                         cursor: "pointer",
@@ -14895,12 +14895,12 @@ Indian Muslim Association Hong Kong`;
                                         whiteSpace: "nowrap"
                                       }}
                                       onMouseEnter={(e) => {
-                                        if (donationYearFilter !== new Date().getFullYear().toString()) {
+                                        if (donationYearFilter !== "All") {
                                           e.target.style.background = "#f3f4f6";
                                         }
                                       }}
                                       onMouseLeave={(e) => {
-                                        if (donationYearFilter !== new Date().getFullYear().toString()) {
+                                        if (donationYearFilter !== "All") {
                                           e.target.style.background = "#ffffff";
                                         }
                                       }}
@@ -14910,26 +14910,26 @@ Indian Muslim Association Hong Kong`;
                                     <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
                                       <input
                                         type="text"
-                                        value={donationYearFilter}
+                                        value={donationYearFilter === "All" ? "" : donationYearFilter}
                                         placeholder="Year"
                                         onChange={(e) => {
                                           const value = e.target.value;
                                           if (value === "" || /^\d{0,4}$/.test(value)) {
-                                            setDonationYearFilter(value || new Date().getFullYear().toString());
+                                            setDonationYearFilter(value || "All");
                                             setDonationsPage(1);
                                           }
                                         }}
                                         onKeyDown={(e) => {
                                           if (e.key === "ArrowUp") {
                                             e.preventDefault();
-                                            const currentYear = donationYearFilter === "" ? new Date().getFullYear() : parseInt(donationYearFilter);
+                                            const currentYear = (donationYearFilter === "All" || donationYearFilter === "") ? new Date().getFullYear() : parseInt(donationYearFilter);
                                             if (!isNaN(currentYear)) {
                                               setDonationYearFilter(String(currentYear + 1));
                                               setDonationsPage(1);
                                             }
                                           } else if (e.key === "ArrowDown") {
                                             e.preventDefault();
-                                            const currentYear = donationYearFilter === "" ? new Date().getFullYear() : parseInt(donationYearFilter);
+                                            const currentYear = (donationYearFilter === "All" || donationYearFilter === "") ? new Date().getFullYear() : parseInt(donationYearFilter);
                                             if (!isNaN(currentYear) && currentYear > 1900) {
                                               setDonationYearFilter(String(currentYear - 1));
                                               setDonationsPage(1);
@@ -14958,13 +14958,17 @@ Indian Muslim Association Hong Kong`;
                                         onBlur={(e) => {
                                           e.target.style.borderColor = "#e5e7eb";
                                           e.target.style.boxShadow = "none";
-                                          if (e.target.value) {
-                                            const year = parseInt(e.target.value);
+                                          const inputValue = e.target.value.trim();
+                                          if (inputValue) {
+                                            const year = parseInt(inputValue);
                                             if (isNaN(year) || year < 1900 || year > 2100) {
-                                              setDonationYearFilter(new Date().getFullYear().toString());
+                                              setDonationYearFilter("All");
+                                            } else {
+                                              // Keep the valid year
+                                              setDonationYearFilter(String(year));
                                             }
                                           } else {
-                                            setDonationYearFilter(new Date().getFullYear().toString());
+                                            setDonationYearFilter("All");
                                           }
                                         }}
                                       />
@@ -14979,7 +14983,8 @@ Indian Muslim Association Hong Kong`;
                                           type="button"
                                           onClick={(e) => {
                                             e.preventDefault();
-                                            const currentYear = donationYearFilter === "" ? new Date().getFullYear() : parseInt(donationYearFilter);
+                                            e.stopPropagation();
+                                            const currentYear = (donationYearFilter === "All" || donationYearFilter === "") ? new Date().getFullYear() : parseInt(donationYearFilter);
                                             if (!isNaN(currentYear)) {
                                               setDonationYearFilter(String(currentYear + 1));
                                               setDonationsPage(1);
@@ -15012,7 +15017,8 @@ Indian Muslim Association Hong Kong`;
                                           type="button"
                                           onClick={(e) => {
                                             e.preventDefault();
-                                            const currentYear = donationYearFilter === "" ? new Date().getFullYear() : parseInt(donationYearFilter);
+                                            e.stopPropagation();
+                                            const currentYear = (donationYearFilter === "All" || donationYearFilter === "") ? new Date().getFullYear() : parseInt(donationYearFilter);
                                             if (!isNaN(currentYear) && currentYear > 1900) {
                                               setDonationYearFilter(String(currentYear - 1));
                                               setDonationsPage(1);
