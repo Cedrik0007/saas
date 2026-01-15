@@ -4163,12 +4163,25 @@ Indian Muslim Association Hong Kong`;
       // Set sending state
       setSendingWhatsApp(prev => ({ ...prev, [memberData.id]: true }));
 
-      // Get member's unpaid/overdue invoices
-      const memberUnpaidInvoices = invoices.filter(
+      // Get member's unpaid/overdue invoices from state
+      let memberUnpaidInvoices = invoices.filter(
         (inv) =>
           inv.memberId === memberData.id &&
           (inv.status === "Unpaid" || inv.status === "Overdue")
       );
+
+      // Include newly created invoice if it exists and matches this member
+      if (lastCreatedInvoice && 
+          lastCreatedInvoice.memberId === memberData.id &&
+          (lastCreatedInvoice.status === "Unpaid" || lastCreatedInvoice.status === "Overdue")) {
+        // Check if it's not already in the list (avoid duplicates)
+        const alreadyIncluded = memberUnpaidInvoices.some(
+          inv => inv.id === lastCreatedInvoice.id
+        );
+        if (!alreadyIncluded) {
+          memberUnpaidInvoices = [lastCreatedInvoice, ...memberUnpaidInvoices];
+        }
+      }
 
       if (memberUnpaidInvoices.length === 0) {
         showToast("This member has no outstanding payments", "error");
@@ -4422,12 +4435,25 @@ Indian Muslim Association Hong Kong`;
         return;
       }
 
-      // Get member's unpaid/overdue invoices
-      const memberUnpaidInvoices = invoices.filter(
+      // Get member's unpaid/overdue invoices from state
+      let memberUnpaidInvoices = invoices.filter(
         (inv) =>
           inv.memberId === memberData.id &&
           (inv.status === "Unpaid" || inv.status === "Overdue")
       );
+
+      // Include newly created invoice if it exists and matches this member
+      if (lastCreatedInvoice && 
+          lastCreatedInvoice.memberId === memberData.id &&
+          (lastCreatedInvoice.status === "Unpaid" || lastCreatedInvoice.status === "Overdue")) {
+        // Check if it's not already in the list (avoid duplicates)
+        const alreadyIncluded = memberUnpaidInvoices.some(
+          inv => inv.id === lastCreatedInvoice.id
+        );
+        if (!alreadyIncluded) {
+          memberUnpaidInvoices = [lastCreatedInvoice, ...memberUnpaidInvoices];
+        }
+      }
 
       if (memberUnpaidInvoices.length === 0) {
         showToast("This member has no outstanding payments", "error");
@@ -4788,10 +4814,10 @@ Indian Muslim Association Hong Kong`;
                   {emailTemplate.htmlTemplate || "No template available"}
                 </div>
               ) : (
-                <div
-                  className="admin-template-preview-content"
-                  dangerouslySetInnerHTML={{ __html: getPreviewTemplate() }}
-                />
+              <div
+                className="admin-template-preview-content"
+                dangerouslySetInnerHTML={{ __html: getPreviewTemplate() }}
+              />
               )}
               <div className="mt-2xl pt-xl border-t flex justify-end">
                 <button
@@ -5745,11 +5771,11 @@ Indian Muslim Association Hong Kong`;
                               </select>
                             </label>
 
-                            <label>
-                              <span>
-                                <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                                Subscription Type
-                              </span>
+                              <label>
+                                <span>
+                                  <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                  Subscription Type
+                                </span>
                                 <div 
                                   style={{ position: "relative" }}
                                   onMouseEnter={(e) => {
@@ -5818,7 +5844,7 @@ Indian Muslim Association Hong Kong`;
                                   }} className="subscription-details-tooltip">
                                     {memberForm.subscriptionType === "Annual Member" && (
                                       <div>Membership: HK$250/year + Janaza: HK$250/year</div>
-                                    )}
+                            )}
                                     {memberForm.subscriptionType === "Lifetime Janaza Fund Member" && (
                                       <div>Membership: HK$0 + Janaza: HK$250/year</div>
                                     )}
@@ -5829,38 +5855,38 @@ Indian Muslim Association Hong Kong`;
                                 </div>
                             </label>
 
-                            <label>
-                              <span>
-                                <i className="fas fa-calendar" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                                Subscription Year
-                              </span>
-                              <input
-                                type="number"
-                                min="2000"
-                                max="2100"
-                                value={memberForm.subscriptionYear}
-                                onChange={(e) => handleMemberFieldChange("subscriptionYear", e.target.value)}
-                                placeholder="YYYY"
-                              />
-                            </label>
+                              <label>
+                                <span>
+                                  <i className="fas fa-calendar" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                  Subscription Year
+                                </span>
+                                <input
+                                  type="number"
+                                  min="2000"
+                                  max="2100"
+                                  value={memberForm.subscriptionYear}
+                                  onChange={(e) => handleMemberFieldChange("subscriptionYear", e.target.value)}
+                                  placeholder="YYYY"
+                                />
+                              </label>
 
-                            <label>
-                              <span>
-                                <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                                Balance
-                              </span>
-                              <input
-                                type="number"
-                                inputMode="numeric"
-                                value={memberForm.balance}
-                                readOnly
-                                style={{
-                                  background: "#f9fafb",
-                                  cursor: "not-allowed",
-                                  color: "#666"
-                                }}
-                              />
-                            </label>
+                              <label>
+                                <span>
+                                  <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                  Balance
+                                </span>
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  value={memberForm.balance}
+                                  readOnly
+                                  style={{
+                                    background: "#f9fafb",
+                                    cursor: "not-allowed",
+                                    color: "#666"
+                                  }}
+                                />
+                              </label>
 
                             {!editingMember && (
                               <label>
@@ -7127,17 +7153,17 @@ Indian Muslim Association Hong Kong`;
                           
                           return (
                             <>
-                              <Table
-                                columns={[
-                                  "Invoice #",
-                                  "Year",
-                                  "Subscription Type",
-                                  "Amount",
-                                  "Status",
-                                  "Due Date",
+                        <Table
+                          columns={[
+                            "Invoice #",
+                            "Year",
+                            "Subscription Type",
+                            "Amount",
+                            "Status",
+                            "Due Date",
                                   "Receiver Name",
-                                  "Actions",
-                                ]}
+                            "Actions",
+                          ]}
                                 rows={paginatedInvoices.map((invoice) => {
                             const effectiveStatus = getEffectiveInvoiceStatus(invoice);
                             const isUnpaid = effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
@@ -7264,60 +7290,60 @@ Indian Muslim Association Hong Kong`;
                                         {/* Unpaid invoices: Show Pay and Delete buttons */}
                                         {isUnpaid && (
                                           <>
-                                            <button
-                                              className="primary-btn"
-                                              style={{
-                                                padding: "4px 10px",
-                                                fontSize: "0.85rem",
-                                                background: "#10b981",
-                                                border: "none",
-                                                color: "#ffffff",
-                                                fontWeight: "600",
-                                                borderRadius: "4px",
-                                                cursor: "pointer",
-                                                transition: "all 0.2s ease",
-                                                boxShadow: "0 2px 4px rgba(16, 185, 129, 0.3)"
-                                              }}
-                                              onMouseEnter={(e) => {
-                                                e.target.style.background = "#059669";
-                                                e.target.style.boxShadow = "0 4px 8px rgba(16, 185, 129, 0.4)";
-                                              }}
-                                              onMouseLeave={(e) => {
-                                                e.target.style.background = "#10b981";
-                                                e.target.style.boxShadow = "0 2px 4px rgba(16, 185, 129, 0.3)";
-                                              }}
-                                              onClick={() => {
-                                                setPaymentModalInvoice(invoice);
-                                                setPaymentModalData({
-                                                  paymentMethod: "",
-                                                  imageFile: null,
-                                                  imagePreview: null,
-                                                  imageUrl: invoice.screenshot || "",
-                                                  reference: "",
-                                                  selectedAdminId: "",
-                                                  adminMobile: "",
-                                                });
+                                      <button
+                                        className="primary-btn"
+                                        style={{
+                                          padding: "4px 10px",
+                                          fontSize: "0.85rem",
+                                          background: "#10b981",
+                                          border: "none",
+                                          color: "#ffffff",
+                                          fontWeight: "600",
+                                          borderRadius: "4px",
+                                          cursor: "pointer",
+                                          transition: "all 0.2s ease",
+                                          boxShadow: "0 2px 4px rgba(16, 185, 129, 0.3)"
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.target.style.background = "#059669";
+                                          e.target.style.boxShadow = "0 4px 8px rgba(16, 185, 129, 0.4)";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.target.style.background = "#10b981";
+                                          e.target.style.boxShadow = "0 2px 4px rgba(16, 185, 129, 0.3)";
+                                        }}
+                                        onClick={() => {
+                                          setPaymentModalInvoice(invoice);
+                                          setPaymentModalData({
+                                            paymentMethod: "",
+                                            imageFile: null,
+                                            imagePreview: null,
+                                            imageUrl: invoice.screenshot || "",
+                                            reference: "",
+                                            selectedAdminId: "",
+                                            adminMobile: "",
+                                          });
                                                 setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
-                                                setCurrentInvalidPaymentModalField(null);
-                                                setShowPaymentModal(true);
-                                              }}
-                                            >
-                                              Pay
-                                            </button>
-                                            <button
-                                              className="ghost-btn icon-btn icon-btn--delete"
-                                              onClick={() => {
-                                                showConfirmation(
-                                                  `Delete invoice ${invoice.id}? This cannot be undone.`,
-                                                  () => handleDeleteInvoice(invoice.id)
-                                                );
-                                              }}
-                                              aria-label="Delete Invoice"
-                                            >
-                                              <Tooltip text="Delete Invoice" position="top">
-                                                <i className="fas fa-trash" aria-hidden="true"></i>
-                                              </Tooltip>
-                                            </button>
+                                          setCurrentInvalidPaymentModalField(null);
+                                          setShowPaymentModal(true);
+                                        }}
+                                      >
+                                        Pay
+                                      </button>
+                                      <button
+                                        className="ghost-btn icon-btn icon-btn--delete"
+                                        onClick={() => {
+                                          showConfirmation(
+                                            `Delete invoice ${invoice.id}? This cannot be undone.`,
+                                            () => handleDeleteInvoice(invoice.id)
+                                          );
+                                        }}
+                                        aria-label="Delete Invoice"
+                                      >
+                                        <Tooltip text="Delete Invoice" position="top">
+                                        <i className="fas fa-trash" aria-hidden="true"></i>
+                                        </Tooltip>
+                                      </button>
                                           </>
                                         )}
                                         {/* Paid invoices: Show Send and PDF buttons */}
@@ -7968,15 +7994,21 @@ Indian Muslim Association Hong Kong`;
 
                         <button
                           className="secondary-btn"
-                          onClick={async () => {
+                          onClick={() => {
                             if (lastCreatedInvoice.member) {
-                              await handleSendReminder(lastCreatedInvoice.member);
+                              setPendingReminderAction({
+                                type: 'single',
+                                memberData: lastCreatedInvoice.member,
+                                memberId: null
+                              });
+                              setSelectedChannels([]); // Reset selected channels
+                              setShowChannelSelection(true);
                             }
                           }}
                           style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                            <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor" />
+                            <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="currentColor" />
                           </svg>
                           Send Reminder
                         </button>
@@ -14330,13 +14362,13 @@ Indian Muslim Association Hong Kong`;
                                 }}
                                 placeholder="100"
                                 required
-                                style={{
+                                  style={{
                                   border: donationFieldErrors.amount ? "2px solid #ef4444" : undefined
                                 }}
                               />
                             </label>
-                          </div>
-                          
+                                </div>
+
                           {/* Donation Type Selector */}
                           <div style={{ marginBottom: "20px" }}>
                             <label>
@@ -14352,19 +14384,19 @@ Indian Muslim Association Hong Kong`;
                                   if (donationFieldErrors.donationType) {
                                     setDonationFieldErrors(prev => ({ ...prev, donationType: false }));
                                     if (currentInvalidDonationField === "donationType") {
-                                      setCurrentInvalidDonationField(null);
-                                    }
-                                  }
-                                }}
+                                            setCurrentInvalidDonationField(null);
+                                          }
+                                        }
+                                      }}
                                 required
-                                style={{
+                                      style={{
                                   width: "100%",
-                                  padding: "12px 16px",
+                                        padding: "12px 16px",
                                   borderRadius: "8px",
                                   border: donationFieldErrors.donationType ? "2px solid #ef4444" : "2px solid #e5e7eb",
                                   fontSize: "0.9375rem",
                                   background: "#ffffff",
-                                  cursor: "pointer",
+                                        cursor: "pointer",
                                   transition: "all 0.2s ease"
                                 }}
                                 onFocus={(e) => {
@@ -14378,8 +14410,8 @@ Indian Muslim Association Hong Kong`;
                                   } else {
                                     e.target.style.borderColor = "#e5e7eb";
                                     e.target.style.boxShadow = "none";
-                                  }
-                                }}
+                                        }
+                                      }}
                               >
                                 <option value="">Select Type</option>
                                 <option value="Janaza">Janaza</option>
@@ -14404,26 +14436,26 @@ Indian Muslim Association Hong Kong`;
                                     if (donationFieldErrors.donationType) {
                                       setDonationFieldErrors(prev => ({ ...prev, donationType: false }));
                                       if (currentInvalidDonationField === "donationType") {
-                                        setCurrentInvalidDonationField(null);
-                                      }
-                                    }
-                                  }}
+                                            setCurrentInvalidDonationField(null);
+                                          }
+                                        }
+                                      }}
                                   placeholder="Enter donation type (text only, not numbers)"
                                   required
-                                  style={{
+                                      style={{
                                     width: "100%",
-                                    padding: "12px 16px",
+                                        padding: "12px 16px",
                                     borderRadius: "8px",
                                     border: donationFieldErrors.donationType && currentInvalidDonationField === "donationType" ? "2px solid #ef4444" : "2px solid #e5e7eb",
                                     fontSize: "0.9375rem",
                                     marginTop: "8px"
-                                  }}
+                                      }}
                                   onFocus={(e) => {
                                     if (!donationFieldErrors.donationType || currentInvalidDonationField !== "donationType") {
                                       e.target.style.borderColor = "#5a31ea";
                                       e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                                    }
-                                  }}
+                                        }
+                                      }}
                                   onBlur={(e) => {
                                     if (donationFieldErrors.donationType && currentInvalidDonationField === "donationType") {
                                       e.target.style.borderColor = "#ef4444";
@@ -14435,8 +14467,8 @@ Indian Muslim Association Hong Kong`;
                                   }}
                                 />
                               </label>
-                            )}
-                          </div>
+                                )}
+                              </div>
 
                           
 
@@ -14461,7 +14493,7 @@ Indian Muslim Association Hong Kong`;
                                       setDonationFieldErrors(prev => ({ ...prev, payment_type: false }));
                                         }
                                       }}
-                                      style={{
+                                style={{
                                     flex: 1,
                                     padding: "14px 20px",
                                     borderRadius: "8px",
@@ -14471,8 +14503,8 @@ Indian Muslim Association Hong Kong`;
                                     color: donationForm.payment_type === "online" ? "#ffffff" : "#333",
                                     fontWeight: "600",
                                     fontSize: "0.9375rem",
-                                        cursor: "pointer",
-                                    transition: "all 0.2s ease",
+                                  cursor: "pointer",
+                                  transition: "all 0.2s ease",
                                   }}
                                 >
                                   <i className="fas fa-globe" style={{ marginRight: "8px" }}></i>
@@ -14531,18 +14563,18 @@ Indian Muslim Association Hong Kong`;
                                     if (donationFieldErrors.method) {
                                       setDonationFieldErrors(prev => ({ ...prev, method: false }));
                                       if (currentInvalidDonationField === "method") {
-                                        setCurrentInvalidDonationField(null);
+                                          setCurrentInvalidDonationField(null);
+                                        }
                                       }
-                                    }
                                   }}
                                   required
-                                  style={{
+                                      style={{
                                     width: "100%",
                                     padding: "12px 16px",
                                     borderRadius: "8px",
                                     border: donationFieldErrors.method ? "2px solid #ef4444" : "2px solid #e5e7eb",
                                     fontSize: "0.9375rem",
-                                  }}
+                                      }}
                                 >
                                   <option value="">Select Method</option>
                                   <option value="FPS">FPS</option>
@@ -14563,10 +14595,10 @@ Indian Muslim Association Hong Kong`;
                                       if (donationFieldErrors.method) {
                                         setDonationFieldErrors(prev => ({ ...prev, method: false }));
                                         if (currentInvalidDonationField === "method") {
-                                          setCurrentInvalidDonationField(null);
+                                            setCurrentInvalidDonationField(null);
+                                          }
                                         }
-                                      }
-                                    }}
+                                      }}
                                     placeholder="Enter payment method"
                                     required
                                       style={{
@@ -14592,8 +14624,8 @@ Indian Muslim Association Hong Kong`;
                                     }}
                                   />
                                 </label>
-                              )}
-                            </div>
+                                )}
+                              </div>
                           )}
 
                           {/* Receiver Name - Required for both Cash and Online payments */}
