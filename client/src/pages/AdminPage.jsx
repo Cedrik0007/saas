@@ -766,7 +766,7 @@
       {{invoice_list}}
     </ul>
     <div style="background: #f8f9ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
-      <p><strong>💳 Payment Methods Available:</strong></p>
+      <p><strong>Payment Methods Available:</strong></p>
       <ul>
         {{payment_methods}}
       </ul>
@@ -2176,7 +2176,7 @@
       {{invoice_list}}
     </ul>
     <div style="background: #f8f9ff; padding: 15px; border-radius: 5px; margin: 20px 0;">
-      <p><strong>💳 Payment Methods Available:</strong></p>
+      <p><strong>Payment Methods Available:</strong></p>
       <ul>
         {{payment_methods}}
       </ul>
@@ -2867,27 +2867,40 @@
             }
           }
           
-          // Get membership category from member's subscription type
-          const membershipCategory = member.subscriptionType || 'Annual Member';
-          
-          // Determine if member is a lifetime member
-          const isLifetimeMember = membershipCategory === 'Lifetime Membership' || 
-                                   membershipCategory === 'Lifetime Janaza Fund Member';
+          // Generate invoice list
+          const invoiceListText = generateInvoiceListText(memberUnpaidInvoices);
+          const totalDueFormatted = formatCurrency(totalDue);
 
-          const message = isLifetimeMember
-            ? `🕌 Indian Muslim Association – Janazah Fund Reminder (Life Member)
+          // Determine member category based on invoice amount
+          // If amount is 250 = Lifetime Janaza Fund, if 500 = Annual Member
+          let memberCategory = 'Annual Member';
+          if (memberUnpaidInvoices.length > 0) {
+            const firstInvoice = memberUnpaidInvoices[0];
+            if (firstInvoice.amount) {
+              const amountStr = String(firstInvoice.amount).replace(/HK\$|\$|,/g, '').trim();
+              const amountNum = parseFloat(amountStr) || 0;
+              if (amountNum === 250) {
+                memberCategory = 'Lifetime Janaza Fund';
+              } else if (amountNum === 500) {
+                memberCategory = 'Annual Member';
+              }
+            }
+          }
+
+          // Create WhatsApp-friendly message (English only) - single template
+          const message = `Indian Muslim Association – Janazah Fund Reminder
 
 Dear *${member.name}*,
 
 Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
 
-This is to formally remind you of the IMA Janazah Fund contribution for the year ${invoiceYear}.
+This is to formally remind you of your outstanding IMA Janazah Fund contributions.
 
-*Contribution Details:*
+*Member Details:*
 • Membership ID: IMA/${member.id || 'N/A'}
-• Member Category: Life Member
-• Contribution Amount: HKD ${renewalAmount}
-• Year: ${invoiceYear}
+• Member Category: ${memberCategory}
+• Total Outstanding: ${totalDueFormatted}
+• Number of Invoices: ${memberUnpaidInvoices.length}${invoiceListText}
 
 We kindly request you to make the contribution at your earliest convenience.
 
@@ -2904,37 +2917,7 @@ After completing the payment, kindly share the payment reference or screenshot v
 
 May Allah reward you for your continued support and generosity.
 
-Indian Muslim Association, Hong Kong`
-            : `🕌 Indian Muslim Association – Membership Renewal 
-
-Dear *${member.name}*,
-
-Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
-
-This is to formally remind you that the renewal of your Indian Muslim Association (IMA) membership for the year ${invoiceYear} is due.
-
-*Membership Details:*
-• Membership ID: IMA/${member.id || 'N/A'}
-• Membership Category: ${membershipCategory}
-• Renewal Amount: HKD ${renewalAmount}
-• Year: ${invoiceYear}
-
-We kindly request you to complete the renewal at your earliest convenience.
-
-*Payment Details:*
-💳 FPS: +852 9545 4447
-
-🏦 Bank Transfer:
-Bank: Bank of China
-Account No: 012-968-2-013423-1
-Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
-
-*Payment Confirmation:*
-After making the payment, kindly send the payment reference or screenshot, via WhatsApp for our records.
-
-May Allah reward you for your continued support of the community.
-
-Indian Muslim Association Hong Kong`;
+Indian Muslim Association, Hong Kong`;
 
           const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
           const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
@@ -3032,28 +3015,40 @@ Indian Muslim Association Hong Kong`;
             }
           }
           
-          // Get membership category from member's subscription type
-          const membershipCategory = member.subscriptionType || 'Annual Member';
-          
-          // Determine if member is a lifetime member
-          const isLifetimeMember = membershipCategory === 'Lifetime Membership' || 
-                                   membershipCategory === 'Lifetime Janaza Fund Member';
+          // Generate invoice list
+          const invoiceListText = generateInvoiceListText(memberUnpaidInvoices);
+          const totalDueFormatted = formatCurrency(totalDue);
 
-          // Create WhatsApp-friendly message (English only) - different template based on member type
-          const message = isLifetimeMember
-            ? `🕌 Indian Muslim Association – Janazah Fund Reminder (Life Member)
+          // Determine member category based on invoice amount
+          // If amount is 250 = Lifetime Janaza Fund, if 500 = Annual Member
+          let memberCategory = 'Annual Member';
+          if (memberUnpaidInvoices.length > 0) {
+            const firstInvoice = memberUnpaidInvoices[0];
+            if (firstInvoice.amount) {
+              const amountStr = String(firstInvoice.amount).replace(/HK\$|\$|,/g, '').trim();
+              const amountNum = parseFloat(amountStr) || 0;
+              if (amountNum === 250) {
+                memberCategory = 'Lifetime Janaza Fund';
+              } else if (amountNum === 500) {
+                memberCategory = 'Annual Member';
+              }
+            }
+          }
+
+          // Create WhatsApp-friendly message (English only) - single template
+          const message = `Indian Muslim Association – Janazah Fund Reminder
 
 Dear *${member.name}*,
 
 Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
 
-This is to formally remind you of the IMA Janazah Fund contribution for the year ${invoiceYear}.
+This is to formally remind you of your outstanding IMA Janazah Fund contributions.
 
-*Contribution Details:*
+*Member Details:*
 • Membership ID: IMA/${member.id || 'N/A'}
-• Member Category: Life Member
-• Contribution Amount: HKD ${renewalAmount}
-• Year: ${invoiceYear}
+• Member Category: ${memberCategory}
+• Total Outstanding: ${totalDueFormatted}
+• Number of Invoices: ${memberUnpaidInvoices.length}${invoiceListText}
 
 We kindly request you to make the contribution at your earliest convenience.
 
@@ -3070,37 +3065,7 @@ After completing the payment, kindly share the payment reference or screenshot v
 
 May Allah reward you for your continued support and generosity.
 
-Indian Muslim Association, Hong Kong`
-            : `🕌 Indian Muslim Association – Membership Renewal 
-
-Dear *${member.name}*,
-
-Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
-
-This is to formally remind you that the renewal of your Indian Muslim Association (IMA) membership for the year ${invoiceYear} is due.
-
-*Membership Details:*
-• Membership ID: IMA/${member.id || 'N/A'}
-• Membership Category: ${membershipCategory}
-• Renewal Amount: HKD ${renewalAmount}
-• Year: ${invoiceYear}
-
-We kindly request you to complete the renewal at your earliest convenience.
-
-*Payment Details:*
-💳 FPS: +852 9545 4447
-
-🏦 Bank Transfer:
-Bank: Bank of China
-Account No: 012-968-2-013423-1
-Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
-
-*Payment Confirmation:*
-After making the payment, kindly send the payment reference or screenshot, via WhatsApp for our records.
-
-May Allah reward you for your continued support of the community.
-
-Indian Muslim Association Hong Kong`;
+Indian Muslim Association, Hong Kong`;
 
           // Clean phone number
           const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
@@ -4148,6 +4113,31 @@ Indian Muslim Association Hong Kong`;
       );
     };
 
+    // Helper function to generate invoice list text for WhatsApp
+    const generateInvoiceListText = (memberUnpaidInvoices) => {
+      if (memberUnpaidInvoices.length === 0) return '';
+      
+      let invoiceList = '\n*Invoices:*\n';
+      memberUnpaidInvoices.forEach((inv, index) => {
+        // Format amount (ensure HK$ prefix)
+        let formattedAmount = inv.amount || 'HK$0';
+        formattedAmount = String(formattedAmount).trim();
+        if (formattedAmount.includes('$') && !formattedAmount.includes('HK$')) {
+          formattedAmount = formattedAmount.replace(/\$/g, 'HK$');
+        } else if (!formattedAmount.startsWith('HK$') && !formattedAmount.startsWith('$')) {
+          formattedAmount = `HK$${formattedAmount}`;
+        }
+        
+        const period = inv.period || 'N/A';
+        const due = inv.due || 'N/A';
+        const status = inv.status === 'Overdue' ? 'Overdue' : 'Unpaid';
+        
+        invoiceList += `${index + 1}. ${period}: ${formattedAmount}\n   Due: ${due} - ${status}\n`;
+      });
+      
+      return invoiceList;
+    };
+
     // WhatsApp Reminder (Click-to-Chat)
     const handleSendWhatsAppReminder = (memberData) => {
       if (!memberData) {
@@ -4217,28 +4207,40 @@ Indian Muslim Association Hong Kong`;
         }
       }
       
-      // Get membership category from member's subscription type
-      const membershipCategory = memberData.subscriptionType || 'Annual Member';
-      
-      // Determine if member is a lifetime member
-      const isLifetimeMember = membershipCategory === 'Lifetime Membership' || 
-                               membershipCategory === 'Lifetime Janaza Fund Member';
+      // Generate invoice list
+      const invoiceListText = generateInvoiceListText(memberUnpaidInvoices);
+      const totalDueFormatted = formatCurrency(totalDue);
 
-      // Create WhatsApp-friendly message (English only) - different template based on member type
-      const message = isLifetimeMember
-        ? `🕌 Indian Muslim Association – Janazah Fund Reminder (Life Member)
+      // Determine member category based on invoice amount
+      // If amount is 250 = Lifetime Janaza Fund, if 500 = Annual Member
+      let memberCategory = 'Annual Member';
+      if (memberUnpaidInvoices.length > 0) {
+        const firstInvoice = memberUnpaidInvoices[0];
+        if (firstInvoice.amount) {
+          const amountStr = String(firstInvoice.amount).replace(/HK\$|\$|,/g, '').trim();
+          const amountNum = parseFloat(amountStr) || 0;
+          if (amountNum === 250) {
+            memberCategory = 'Lifetime Janaza Fund';
+          } else if (amountNum === 500) {
+            memberCategory = 'Annual Member';
+          }
+        }
+      }
+
+      // Create WhatsApp-friendly message (English only) - single template
+      const message = `Indian Muslim Association – Janazah Fund Reminder
 
 Dear *${memberData.name}*,
 
 Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
 
-This is to formally remind you of the IMA Janazah Fund contribution for the year ${invoiceYear}.
+This is to formally remind you of your outstanding IMA Janazah Fund contributions.
 
-*Contribution Details:*
+*Member Details:*
 • Membership ID: IMA/${memberData.id || 'N/A'}
-• Member Category: Life Member
-• Contribution Amount: HKD ${renewalAmount}
-• Year: ${invoiceYear}
+• Member Category: ${memberCategory}
+• Total Outstanding: ${totalDueFormatted}
+• Number of Invoices: ${memberUnpaidInvoices.length}${invoiceListText}
 
 We kindly request you to make the contribution at your earliest convenience.
 
@@ -4255,37 +4257,7 @@ After completing the payment, kindly share the payment reference or screenshot v
 
 May Allah reward you for your continued support and generosity.
 
-Indian Muslim Association, Hong Kong`
-        : `🕌 Indian Muslim Association – Membership Renewal 
-
-Dear *${memberData.name}*,
-
-Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
-
-This is to formally remind you that the renewal of your Indian Muslim Association (IMA) membership for the year ${invoiceYear} is due.
-
-*Membership Details:*
-• Membership ID: IMA/${memberData.id || 'N/A'}
-• Membership Category: ${membershipCategory}
-• Renewal Amount: HKD ${renewalAmount}
-• Year: ${invoiceYear}
-
-We kindly request you to complete the renewal at your earliest convenience.
-
-*Payment Details:*
-💳 FPS: +852 9545 4447
-
-🏦 Bank Transfer:
-Bank: Bank of China
-Account No: 012-968-2-013423-1
-Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
-
-*Payment Confirmation:*
-After making the payment, kindly send the payment reference or screenshot, via WhatsApp for our records.
-
-May Allah reward you for your continued support of the community.
-
-Indian Muslim Association Hong Kong`;
+Indian Muslim Association, Hong Kong`;
 
       // Clean phone number (remove all non-numeric except +)
       const cleanPhone = memberData.phone.replace(/[^0-9+]/g, "");
@@ -6047,10 +6019,10 @@ Indian Muslim Association Hong Kong`;
                                   {member.email}
                                 </div>
                                 <div className="text-sm text-muted mb-xs">
-                                  📱 {member.phone || "No phone"}
+                                  {member.phone || "No phone"}
                                 </div>
                                 <div className="text-xs text-danger" style={{ marginTop: "8px" }}>
-                                  📅 Subscription: {member.subscriptionType || 'Lifetime'}
+                                  Subscription: {member.subscriptionType || 'Lifetime'}
                                 </div>
                               </div>
                               <div className="flex gap-sm flex-shrink-0">
@@ -19201,8 +19173,8 @@ Indian Muslim Association Hong Kong`;
                             const emailData = await emailResponse.json();
                             if (emailData.success) {
                               emailSuccess = true;
-                              console.log('✅ Payment confirmation email sent:', emailData.message);
-                              showToast('✅ Email sent successfully!', 'success');
+                              console.log('Payment confirmation email sent:', emailData.message);
+                              showToast('Email sent successfully!', 'success');
                             } else {
                               // Check if it's a warning (email not configured) vs actual error
                               if (emailData.warning) {
@@ -19296,8 +19268,25 @@ Indian Muslim Association Hong Kong`;
                               return numberToWords(crore) + ' Crore' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
                             };
 
-                            // Prepare receipt data
-                            const receiptNo = payment?.id || payment?.reference || paymentConfirmationInvoice.id || `REC-${Date.now()}`;
+                            // Get next sequential 4-digit receipt number from server
+                            let receiptNo = '0000';
+                            try {
+                              const receiptResponse = await fetch(`${apiUrl}/api/invoices/next-receipt-number`, {
+                                method: 'GET',
+                                headers: { 'Content-Type': 'application/json' },
+                              });
+                              if (receiptResponse.ok) {
+                                const receiptData = await receiptResponse.json();
+                                receiptNo = receiptData.receiptNumber || '0000';
+                              } else {
+                                // Fallback to timestamp if API fails
+                                receiptNo = String(Date.now()).slice(-4).padStart(4, '0');
+                              }
+                            } catch (error) {
+                              console.error('Error getting receipt number:', error);
+                              // Fallback to timestamp if API fails
+                              receiptNo = String(Date.now()).slice(-4).padStart(4, '0');
+                            }
                             const receiptDate = new Date().toLocaleDateString('en-GB', {
                               day: '2-digit',
                               month: '2-digit',
@@ -19308,20 +19297,60 @@ Indian Muslim Association Hong Kong`;
                             const amountInWords = amountNum > 0 ? numberToWords(Math.floor(amountNum)) + ' Only' : '';
                             const invoiceYear = paymentConfirmationInvoice.period ? (paymentConfirmationInvoice.period.match(/\d{4}/)?.[0] || '') : '';
                             
-                            // Determine payment mode: Cash / Transfer / Online
+                            // Determine payment mode: Priority is to use the actual method if specified
                             let paymentMode = 'Online';
                             const method = String(payment?.method || paymentConfirmationInvoice.method || '').trim();
-                            const isCash = payment?.paidToAdmin || payment?.paidToAdminName || 
-                                          method.toLowerCase() === 'cash' || method.toLowerCase().includes('cash') ||
-                                          payment?.payment_type === 'cash' || payment?.payment_mode === 'cash';
-                            const isTransfer = ['FPS', 'PayMe', 'Bank Transfer', 'Bank Deposit'].includes(method);
+                            const methodLower = method.toLowerCase();
                             
-                            if (isCash) {
-                              paymentMode = 'Cash';
-                            } else if (isTransfer) {
-                              paymentMode = 'Transfer';
-                            } else {
-                              paymentMode = 'Online';
+                            // Known online payment methods - check these FIRST before checking for cash
+                            const onlineMethods = ['FPS', 'PayMe', 'Bank Transfer', 'Bank Deposit', 'Alipay', 
+                                                  'Credit Card', 'Credit/Debit Cards', 'Direct Bank Transfer',
+                                                  'Online Payment', 'Screenshot', 'Bank Deposit', 'Bank Transfer'];
+                            
+                            // Priority 1: If method is explicitly set and matches a known online method, use it
+                            if (method) {
+                              // Check for exact match or case-insensitive match with known online methods
+                              const matchedMethod = onlineMethods.find(m => 
+                                method === m || methodLower === m.toLowerCase() || methodLower.includes(m.toLowerCase())
+                              );
+                              
+                              if (matchedMethod) {
+                                paymentMode = matchedMethod;
+                              } 
+                              // Check for Cheque payment
+                              else if (methodLower === 'cheque' || methodLower === 'check' ||
+                                      methodLower.includes('cheque') || methodLower.includes('check')) {
+                                paymentMode = 'Cheque';
+                              }
+                              // Check for Cash in method name
+                              else if (methodLower === 'cash' || methodLower.includes('cash') ||
+                                      method === 'Cash' || method === 'Cash to Admin') {
+                                paymentMode = 'Cash';
+                              }
+                              // Check for generic online indicators
+                              else if (methodLower.includes('bank') || methodLower.includes('transfer') || 
+                                      methodLower.includes('fps') || methodLower.includes('alipay') || 
+                                      methodLower.includes('payme') || methodLower.includes('online')) {
+                                paymentMode = method; // Use the method as-is
+                              }
+                              // If method exists but doesn't match above, use it as-is
+                              else {
+                                paymentMode = method;
+                              }
+                            }
+                            // Priority 2: If no method specified, check payment_type and paidToAdmin flags
+                            else {
+                              // Check for Cash payment via flags (only if method is not specified)
+                              const isCash = payment?.paidToAdmin || payment?.paidToAdminName || 
+                                            paymentConfirmationInvoice?.paidToAdmin ||
+                                            payment?.payment_type === 'cash' || payment?.payment_mode === 'cash' ||
+                                            paymentConfirmationInvoice?.payment_type === 'cash';
+                              
+                              if (isCash) {
+                                paymentMode = 'Cash';
+                              } else {
+                                paymentMode = 'Online';
+                              }
                             }
                             
                             // Format date for display
@@ -19332,16 +19361,16 @@ Indian Muslim Association Hong Kong`;
                             });
                             
                             // Create WhatsApp message
-                            let message = `🕌 Indian Muslim Association – Hong Kong
+                            let message = `Indian Muslim Association – Hong Kong
 Membership Renewal Receipt
 
-📅 Date: ${displayDate}
-👤 Member: ${member.name}
-🆔 Receipt No: ${receiptNo}
-💳 Amount: ${amountStr}
+Date: ${displayDate}
+Member: ${member.name}
+Receipt No: ${receiptNo}
+Amount: ${amountStr}
 Payment Mode: ${paymentMode}
 
-✅ Renewal confirmed for Year ${invoiceYear || '____'}
+Renewal confirmed for Year ${invoiceYear || '____'}
 
 Thank you for supporting the IMA community!`;
 
@@ -19354,9 +19383,9 @@ Thank you for supporting the IMA community!`;
                               downloadUrl = `${apiBaseUrl}/api/invoices/${paymentConfirmationInvoice.id}/pdf-receipt/download`;
                               
                               // For WhatsApp, provide the PDF link as a direct download link
-                              message += `\n\n📎 Download Receipt PDF:\n${downloadUrl}`;
+                              message += `\n\nDownload Receipt PDF:\n${downloadUrl}`;
                             } else {
-                              message += `\n\n📎 Your payment receipt PDF has been sent to your email.`;
+                              message += `\n\nYour payment receipt PDF has been sent to your email.`;
                             }
 
                             // Clean phone number - ensure it starts with country code
@@ -19388,18 +19417,18 @@ Thank you for supporting the IMA community!`;
                             if (whatsappUrl.length > maxUrlLength) {
                               console.warn('WhatsApp message too long, using shortened version');
                               // Create a shorter message
-                              finalMessage = `🕌 Indian Muslim Association – Hong Kong
+                              finalMessage = `Indian Muslim Association – Hong Kong
 Membership Renewal Receipt
 
-📅 Date: ${displayDate}
-👤 Member: ${member.name}
-🆔 Receipt No: ${receiptNo}
-💳 Amount: ${amountStr}
+Date: ${displayDate}
+Member: ${member.name}
+Receipt No: ${receiptNo}
+Amount: ${amountStr}
 Payment Mode: ${paymentMode}
 
-✅ Renewal confirmed for Year ${invoiceYear || '____'}
+Renewal confirmed for Year ${invoiceYear || '____'}
 
-Thank you for supporting the IMA community!${downloadUrl ? `\n\n📎 Download Receipt PDF:\n${downloadUrl}` : '\n\n📎 Receipt PDF sent to your email.'}`;
+Thank you for supporting the IMA community!${downloadUrl ? `\n\nDownload Receipt PDF:\n${downloadUrl}` : '\n\nReceipt PDF sent to your email.'}`;
                               whatsappUrl = `https://wa.me/${phoneForUrl}?text=${encodeURIComponent(finalMessage)}`;
                             }
                             
@@ -19453,9 +19482,9 @@ Thank you for supporting the IMA community!${downloadUrl ? `\n\n📎 Download Re
                       // Only show combined message if both were attempted
                       if (paymentConfirmationChannels.email && paymentConfirmationChannels.whatsapp) {
                         if (emailSuccess && whatsappSuccess) {
-                          showToast(`✅ Email sent successfully! WhatsApp opened.`, "success");
+                          showToast(`Email sent successfully! WhatsApp opened.`, "success");
                         } else if (emailSuccess && !whatsappSuccess) {
-                          showToast(`✅ Email sent successfully! ${errors.filter(e => e.includes('WhatsApp')).join('; ') || 'WhatsApp could not be opened'}`, "warning");
+                          showToast(`Email sent successfully! ${errors.filter(e => e.includes('WhatsApp')).join('; ') || 'WhatsApp could not be opened'}`, "warning");
                         } else if (!emailSuccess && whatsappSuccess) {
                           showToast(`⚠️ Email failed, but WhatsApp opened. ${errors.filter(e => e.includes('Email')).join('; ')}`, "warning");
                         }

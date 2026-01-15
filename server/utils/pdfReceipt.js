@@ -4,6 +4,7 @@ import UserModel from '../models/User.js';
 import InvoiceModel from '../models/Invoice.js';
 import https from 'https';
 import http from 'http';
+import { getNextReceiptNumber } from './receiptCounter.js';
 
 /**
  * Convert number to words (simple version for amounts)
@@ -180,7 +181,8 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
          .text('Estd.1979', orgNameX, locationY + (responsiveHeightUnit * 1.3), { width: getResponsiveWidth(40) });
 
       // Receipt No (top right, in red) - responsive positioning
-      const receiptNoValue = payment?.id || payment?.reference || invoice?.id || `REC-${Date.now()}`;
+      // Get next sequential 4-digit receipt number
+      const receiptNoValue = await getNextReceiptNumber();
       const receiptNoWidth = getResponsiveWidth(13.5); // ~13.5% of content width
       const receiptNoX = rightMargin - receiptNoWidth;
       const receiptNoY = headerY + 2;

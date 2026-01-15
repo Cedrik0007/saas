@@ -11,6 +11,7 @@ import EmailSettingsModel from "../models/EmailSettings.js";
 import EmailTemplateModel from "../models/EmailTemplate.js";
 import { generateUniqueMessageId, createEmailTransporter } from "../config/email.js";
 import { sendPaymentApprovalEmail } from "../utils/emailHelpers.js";
+import { getNextReceiptNumber } from "../utils/receiptCounter.js";
 import nodemailer from "nodemailer";
 
 const router = express.Router();
@@ -148,6 +149,18 @@ router.post("/generate", async (req, res) => {
   }
 });
 
+// GET next receipt number (sequential 4-digit number)
+router.get("/next-receipt-number", async (req, res) => {
+  try {
+    await ensureConnection();
+    const receiptNumber = await getNextReceiptNumber();
+    res.json({ receiptNumber });
+  } catch (error) {
+    console.error("Error getting next receipt number:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST send invoice reminder email (for invoice creation and manual sending)
 router.post("/send-reminder", async (req, res) => {
   try {
@@ -195,7 +208,7 @@ router.post("/send-reminder", async (req, res) => {
           {{invoice_list}}
         </ul>
         <div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0;">
-          <p><strong>💳 Payment Methods Available:</strong></p>
+          <p><strong>Payment Methods Available:</strong></p>
           <ul>
             {{payment_methods}}
           </ul>

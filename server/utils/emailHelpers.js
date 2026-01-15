@@ -4,6 +4,7 @@ import EmailTemplateModel from "../models/EmailTemplate.js";
 import EmailSettingsModel from "../models/EmailSettings.js";
 import nodemailer from "nodemailer";
 import { generatePaymentReceiptPDF, numberToWords } from "./pdfReceipt.js";
+import { getNextReceiptNumber } from "./receiptCounter.js";
 
 // Function to send account approval email
 export async function sendAccountApprovalEmail(member) {
@@ -267,7 +268,8 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
     let receiptNo, receiptDate, memberName, amountStr, amountNum, amountInWords, invoiceYear, isAnnualMember, isCash, isOnline, paymentMode;
     
     try {
-      receiptNo = payment?.id || payment?.reference || invoice?.id || `REC-${Date.now()}`;
+      // Get next sequential 4-digit receipt number
+      receiptNo = await getNextReceiptNumber();
       receiptDate = new Date().toLocaleDateString('en-GB', {
         day: '2-digit',
         month: '2-digit',
@@ -507,7 +509,7 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
         htmlTemplate: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; line-height: 1.8;">
   <div style="text-align: center; margin-bottom: 30px;">
     <h1 style="color: #1a1a1a; font-size: 24px; font-weight: bold; margin: 0; padding: 0;">
-      🕌 Indian Muslim Association – Membership Renewal
+       Indian Muslim Association – Membership Renewal
     </h1>
   </div>
   
@@ -529,8 +531,8 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
   
   <div style="background: #e8f5e9; padding: 20px; border-radius: 8px; margin: 20px 0;">
     <h3 style="color: #333; margin-top: 0; margin-bottom: 15px;">Payment Details:</h3>
-    <p style="margin: 8px 0;">💳 <strong>FPS:</strong> +852 9545 4447</p>
-    <p style="margin: 8px 0;">🏦 <strong>Bank Transfer:</strong></p>
+    <p style="margin: 8px 0;"><strong>FPS:</strong> +852 9545 4447</p>
+    <p style="margin: 8px 0;"><strong>Bank Transfer:</strong></p>
     <p style="margin: 4px 0; padding-left: 20px;">Bank: Bank of China</p>
     <p style="margin: 4px 0; padding-left: 20px;">Account No: 012-968-2-013423-1</p>
     <p style="margin: 4px 0; padding-left: 20px;">Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED</p>
@@ -611,7 +613,7 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
       emailHTML = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; line-height: 1.8;">
   <div style="text-align: center; margin-bottom: 30px;">
     <h1 style="color: #1a1a1a; font-size: 24px; font-weight: bold; margin: 0; padding: 0;">
-      🕌 Indian Muslim Association – Janazah Fund Reminder (Life Member)
+      Indian Muslim Association – Janazah Fund Reminder (Life Member)
     </h1>
   </div>
   
@@ -689,7 +691,7 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
       subject: uniqueSubject,
       html: emailHTML,
       text: isLifetimeMember 
-        ? `🕌 Indian Muslim Association – Janazah Fund Reminder (Life Member)
+        ? `Indian Muslim Association – Janazah Fund Reminder (Life Member)
 
 Dear ${member.name || 'Member'},
 
@@ -719,7 +721,7 @@ After completing the payment, kindly share the payment reference or screenshot v
 May Allah reward you for your continued support and generosity.
 
 Indian Muslim Association, Hong Kong`
-        : `🕌 Indian Muslim Association – Membership Renewal 
+        : ` Indian Muslim Association – Membership Renewal 
 
 Dear ${member.name || 'Member'},
 
@@ -736,9 +738,9 @@ Membership Details:
 We kindly request you to complete the renewal at your earliest convenience.
 
 Payment Details:
-💳 FPS: +852 9545 4447
+FPS: +852 9545 4447
 
-🏦 Bank Transfer:
+Bank Transfer:
 Bank: Bank of China
 Account No: 012-968-2-013423-1
 Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
