@@ -69,13 +69,13 @@ router.post("/", async (req, res) => {
         console.log(`   Email Service: ${settings.emailService || 'gmail'}`);
         console.log(`   Password length: ${String(settings.emailPassword).length} characters`);
         try {
-          const transporter = createEmailTransporter(
-            settings.emailUser,
-            settings.emailPassword,
-            settings.emailService || 'gmail'
-          );
-          setTransporter(transporter);
-          console.log("✓ Email transporter updated with new settings");
+        const transporter = createEmailTransporter(
+          settings.emailUser,
+          settings.emailPassword,
+          settings.emailService || 'gmail'
+        );
+        setTransporter(transporter);
+        console.log("✓ Email transporter updated with new settings");
           
           // Verify in background (non-blocking)
           const { verifyEmailTransporter } = await import("../config/email.js");
@@ -143,13 +143,13 @@ router.post("/", async (req, res) => {
         console.log(`   Email User: ${settings.emailUser}`);
         console.log(`   Email Service: ${settings.emailService || 'gmail'}`);
         try {
-          const transporter = createEmailTransporter(
-            settings.emailUser,
-            settings.emailPassword,
-            settings.emailService || 'gmail'
-          );
-          setTransporter(transporter);
-          console.log("✓ Email transporter updated with new settings");
+        const transporter = createEmailTransporter(
+          settings.emailUser,
+          settings.emailPassword,
+          settings.emailService || 'gmail'
+        );
+        setTransporter(transporter);
+        console.log("✓ Email transporter updated with new settings");
           
           // Verify in background (non-blocking)
           const { verifyEmailTransporter } = await import("../config/email.js");

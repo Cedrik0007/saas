@@ -562,7 +562,22 @@ export function AppProvider({ children }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(member),
       });
-      if (!response.ok) throw new Error('Failed to add member');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        // Extract detailed error message - prioritize errors array over message
+        let errorMessage = 'Failed to add member';
+        
+        // Always prefer errors array if it exists (contains detailed validation errors)
+        if (errorData.errors && Array.isArray(errorData.errors) && errorData.errors.length > 0) {
+          errorMessage = errorData.errors.join(', ');
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+        
+        throw new Error(errorMessage);
+      }
         return await response.json();
       });
       

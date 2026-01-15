@@ -19,8 +19,8 @@ ReceiptCounterSchema.statics.getNextReceiptNumber = async function() {
   const counter = await this.getCounter();
   counter.lastReceiptNumber += 1;
   await counter.save();
-  // Format as 4-digit string with leading zeros
-  return String(counter.lastReceiptNumber).padStart(4, '0');
+  // Return as string (no fixed digit limit, allows natural incrementing)
+  return String(counter.lastReceiptNumber);
 };
 
 const ReceiptCounterModel = mongoose.model("receiptCounter", ReceiptCounterSchema);

@@ -1510,6 +1510,28 @@ button {
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
 
+.server-action-btn--whatsapp {
+  background: transparent;
+  color: #25D366;
+}
+
+.server-action-btn--whatsapp:hover {
+  background: #25D366;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+}
+
+.server-action-btn--pdf {
+  background: transparent;
+  color: #dc3545;
+}
+
+.server-action-btn--pdf:hover {
+  background: #dc3545;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+}
+
 /* Server Badge Styles */
 .server-badge {
   display: inline-block;
@@ -2612,6 +2634,28 @@ button {
   background: var(--danger);
   color: #ffffff;
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.server-action-btn--whatsapp {
+  background: transparent;
+  color: #25D366;
+}
+
+.server-action-btn--whatsapp:hover {
+  background: #25D366;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+}
+
+.server-action-btn--pdf {
+  background: transparent;
+  color: #dc3545;
+}
+
+.server-action-btn--pdf:hover {
+  background: #dc3545;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
 }
 
 /* Server Badge Styles */
@@ -7876,6 +7920,28 @@ button {
   background: var(--danger);
   color: #ffffff;
   box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.server-action-btn--whatsapp {
+  background: transparent;
+  color: #25D366;
+}
+
+.server-action-btn--whatsapp:hover {
+  background: #25D366;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+}
+
+.server-action-btn--pdf {
+  background: transparent;
+  color: #dc3545;
+}
+
+.server-action-btn--pdf:hover {
+  background: #dc3545;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
 }
 
 /* Server Badge Styles */

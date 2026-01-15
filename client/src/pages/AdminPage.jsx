@@ -3449,8 +3449,10 @@ Indian Muslim Association, Hong Kong`;
             successCount++;
           } catch (error) {
             errorCount++;
-            errors.push(`${memberData.name || memberData.email}: ${error.message || 'Failed'}`);
-            console.error(`Failed to add member ${memberData.name}:`, error);
+            // Use detailed error message from backend
+            const errorMessage = error.message || 'Failed to add member';
+            errors.push(`${memberData.name || memberData.email || 'Unknown'}: ${errorMessage}`);
+            console.error(`Failed to add member ${memberData.name || memberData.email}:`, error);
           }
         }
 
@@ -15287,7 +15289,7 @@ Indian Muslim Association, Hong Kong`;
                               </div>
 
                               <Table
-                                columns={["Date", "Donor Name", "Donor Type", "Donation Type", "Amount", "Method", "Screenshot", "Notes"]}
+                                columns={["Date", "Donor Name", "Donor Type", "Donation Type", "Amount", "Method", "Screenshot", "Notes", "Actions"]}
                                 rows={paginatedDonations.map((donation) => {
                                   if (!donation) return null;
                                   const donationDate =
@@ -15311,6 +15313,17 @@ Indian Muslim Association, Hong Kong`;
                                     };
                                     return <span className={`badge ${badgeColors[type] || "badge-secondary"}`}>{type || "Other"}</span>;
                                   };
+
+                                  // Get donor phone number (if member, get from members list)
+                                  const getDonorPhone = () => {
+                                    if (donation.isMember && donation.memberId) {
+                                      const member = members.find(m => m.id === donation.memberId);
+                                      return member?.phone || null;
+                                    }
+                                    return null;
+                                  };
+
+                                  const donorPhone = getDonorPhone();
 
                                   return {
                                     Date: donationDate,
@@ -15359,6 +15372,50 @@ Indian Muslim Association, Hong Kong`;
                                       ) : "-"
                                     },
                                     Notes: donation.notes || "-",
+                                    Actions: {
+                                      render: () => (
+                                        <div className="server-action-buttons">
+                                          <button
+                                            className="ghost-btn"
+                                            style={{
+                                              padding: "4px 10px",
+                                              fontSize: "0.85rem",
+                                              display: "inline-flex",
+                                              alignItems: "center",
+                                              gap: "4px",
+                                              border: "1px solid #e5e7eb",
+                                              color: "#374151"
+                                            }}
+                                            onClick={async (e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              try {
+                                                const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                                                const pdfUrl = `${apiUrl}/api/donations/${donation._id || donation.id}/pdf-receipt/download`;
+                                                
+                                                // Open PDF in new tab for preview
+                                                const link = document.createElement('a');
+                                                link.href = pdfUrl;
+                                                link.target = '_blank';
+                                                link.rel = 'noopener noreferrer';
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                                
+                                                showToast('Opening PDF receipt...', 'success');
+                                              } catch (error) {
+                                                console.error('Error opening PDF:', error);
+                                                showToast('Failed to open PDF receipt', 'error');
+                                              }
+                                            }}
+                                            title="View/Download PDF Receipt"
+                                          >
+                                            <i className="fas fa-file-pdf" style={{ fontSize: "0.75rem", color: "#ef4444" }}></i>
+                                            PDF
+                                          </button>
+                                        </div>
+                                      )
+                                    },
                                   };
                                 }).filter((row) => row !== null)}
                               />

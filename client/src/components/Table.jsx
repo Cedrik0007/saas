@@ -377,7 +377,7 @@ export function Table({ columns, rows }) {
                 key={col}
                 style={{ textAlign: align, cursor: "default", whiteSpace: "nowrap" }}
               >
-                <span>{col}</span>
+                  <span>{col}</span>
               </th>
             );
           })}

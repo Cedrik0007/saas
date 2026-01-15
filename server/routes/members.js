@@ -77,7 +77,7 @@ router.post("/", async (req, res) => {
       }
     }
     
-    // Validate phone
+    // Validate phone - flexible validation for worldwide country codes
     if (!req.body.phone || !req.body.phone.trim()) {
       errors.push("WhatsApp number is required.");
     } else {
@@ -85,47 +85,28 @@ router.post("/", async (req, res) => {
       const cleaned = phoneStr.replace(/[^\d+]/g, "");
       
       if (!cleaned.startsWith("+")) {
-        errors.push("Phone number must include country code (e.g., +91 for India).");
+        errors.push("Phone number must include country code (e.g., +852 for Hong Kong, +91 for India, +1 for US/Canada).");
       } else {
-        const digitsOnly = cleaned.substring(1);
+        const digitsOnly = cleaned.substring(1); // Remove the +
         
-        // Common country codes and their min/max lengths
-        const countryRules = [
-          { dialCode: "+852", minLength: 8, maxLength: 8, name: "Hong Kong" },
-          { dialCode: "+86", minLength: 11, maxLength: 11, name: "China" },
-          { dialCode: "+1", minLength: 10, maxLength: 10, name: "US/Canada" },
-          { dialCode: "+44", minLength: 10, maxLength: 10, name: "UK" },
-          { dialCode: "+91", minLength: 10, maxLength: 10, name: "India" },
-          { dialCode: "+65", minLength: 8, maxLength: 8, name: "Singapore" },
-          { dialCode: "+60", minLength: 9, maxLength: 10, name: "Malaysia" },
-          { dialCode: "+66", minLength: 9, maxLength: 9, name: "Thailand" },
-          { dialCode: "+63", minLength: 10, maxLength: 10, name: "Philippines" },
-          { dialCode: "+62", minLength: 9, maxLength: 12, name: "Indonesia" },
-        ];
+        // Validate country code (1-3 digits) followed by phone number
+        // Country codes range from 1 digit (+1) to 3 digits (+852, +962, etc.)
+        // Total phone number length should be 8-15 digits (ITU-T E.164 standard)
         
-        let matchedCountry = null;
-        for (const country of countryRules) {
-          if (cleaned.startsWith(country.dialCode)) {
-            matchedCountry = country;
-            break;
-          }
+        if (digitsOnly.length < 9) {
+          // Minimum: 1 digit country code + 8 digits = 9 total digits
+          errors.push("Phone number is too short. Must include country code and at least 8 digits (e.g., +85212345678, +911234567890).");
+        } else if (digitsOnly.length > 15) {
+          // Maximum: ITU-T E.164 standard allows max 15 digits total
+          errors.push("Phone number is too long. Maximum 15 digits allowed (including country code).");
+        } else if (digitsOnly.length < 10) {
+          // Warn if very short but allow it (some countries have short numbers)
+          // This is just a warning, not blocking
         }
         
-        if (matchedCountry) {
-          const numberPart = digitsOnly.substring(matchedCountry.dialCode.length - 1);
-          if (numberPart.length < matchedCountry.minLength) {
-            errors.push(`Phone number must be at least ${matchedCountry.minLength} digits for ${matchedCountry.name}.`);
-          } else if (numberPart.length > matchedCountry.maxLength) {
-            errors.push(`Phone number must be at most ${matchedCountry.maxLength} digits for ${matchedCountry.name}.`);
-          }
-        } else {
-          // Generic validation - at least 8 digits after country code
-          const numberPart = digitsOnly.length > 3 ? digitsOnly.substring(3) : digitsOnly;
-          if (numberPart.length < 8) {
-            errors.push("Phone number must be at least 8 digits.");
-          } else if (numberPart.length > 15) {
-            errors.push("Phone number is too long (maximum 15 digits).");
-          }
+        // Basic format validation - ensure it's all digits after the +
+        if (!/^\d+$/.test(digitsOnly)) {
+          errors.push("Phone number can only contain digits after the country code (+).");
         }
       }
     }
@@ -648,11 +629,21 @@ router.post("/import", upload.single("file"), async (req, res) => {
             }
           });
         } else {
+          // If phone is empty, provide a default placeholder to avoid validation errors
+          let phoneValue = phoneIndex !== -1 ? (values[phoneIndex]?.trim() || '') : '';
+          
+          // Automatically add "+" prefix if missing and phone is not empty
+          if (phoneValue && !phoneValue.startsWith('+')) {
+            phoneValue = '+' + phoneValue;
+          }
+          
+          const finalPhone = phoneValue || '+85200000000'; // Default placeholder for import if empty
+          
           membersData.push({
             id: memberId || undefined, // Only include if provided
             name: name,
             email: email.toLowerCase(),
-            phone: phoneIndex !== -1 ? (values[phoneIndex]?.trim() || '') : '',
+            phone: finalPhone,
             native: nativeIndex !== -1 ? (values[nativeIndex]?.trim().replace(/[^a-zA-Z\s]/g, '') || '') : '',
             status: statusIndex !== -1 ? (values[statusIndex]?.trim() || 'Active') : 'Active',
             subscriptionType: subscriptionTypeIndex !== -1 ? (values[subscriptionTypeIndex]?.trim() || 'Lifetime') : 'Lifetime',
@@ -816,11 +807,21 @@ router.post("/import", upload.single("file"), async (req, res) => {
             }
           });
         } else {
+          // If phone is empty, provide a default placeholder to avoid validation errors
+          let phoneValue = phoneIndex !== -1 ? String(row[phoneIndex] || '').trim() : '';
+          
+          // Automatically add "+" prefix if missing and phone is not empty
+          if (phoneValue && !phoneValue.startsWith('+')) {
+            phoneValue = '+' + phoneValue;
+          }
+          
+          const finalPhone = phoneValue || '+85200000000'; // Default placeholder for import if empty
+          
           membersData.push({
             id: memberId || undefined, // Only include if provided
             name: name,
             email: email.toLowerCase(),
-            phone: phoneIndex !== -1 ? String(row[phoneIndex] || '').trim() : '',
+            phone: finalPhone,
             native: nativeIndex !== -1 ? String(row[nativeIndex] || '').trim().replace(/[^a-zA-Z\s]/g, '') : '',
             status: statusIndex !== -1 ? String(row[statusIndex] || 'Active').trim() : 'Active',
             subscriptionType: subscriptionTypeIndex !== -1 ? String(row[subscriptionTypeIndex] || 'Lifetime').trim() : 'Lifetime',
