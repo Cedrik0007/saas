@@ -7199,7 +7199,7 @@ Indian Muslim Association, Hong Kong`;
                           </p>
                         </div>
                       </div>
-                      <div className="admin-members-detail-header-actions">
+                      {/* <div className="admin-members-detail-header-actions">
                         {!isViewer && (
                           <>
                             <button
@@ -7223,7 +7223,7 @@ Indian Muslim Association, Hong Kong`;
                             </button>
                           </>
                         )}
-                      </div>
+                      </div> */}
                     </div>
 
                     <div className="kpi-grid">
@@ -8951,13 +8951,13 @@ Indian Muslim Association, Hong Kong`;
                   <header className="screen-card__header">
                     <div>
                       {renderBreadcrumb("automation")}
-                      <h3>Reminders &amp; Automation</h3>
+                      <h3>Reminders </h3>
                       <p>Configure automated payment reminders and email templates.</p>
                     </div>
                   </header>
 
                   {/* Automation Toggle Section */}
-                  <div style={{
+                  {/* <div style={{
                     background: "#ffffff",
                     borderRadius: "12px",
                     padding: "clamp(24px, 4vw, 32px)",
@@ -9085,7 +9085,7 @@ Indian Muslim Association, Hong Kong`;
                         </button>
                       </div>
                     </div>
-                  </div>
+                  </div> */}
 
                   {/* Outstanding Members with Manual Send Section */}
                   <div style={{
