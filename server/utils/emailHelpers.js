@@ -105,17 +105,17 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
         );
         
         // Set transporter immediately (don't wait for verification)
-        setTransporter(newTransporter);
-        transporter = newTransporter;
+          setTransporter(newTransporter);
+          transporter = newTransporter;
         console.log("✓ Email transporter created from database settings");
         
         // Verify connection in background (non-blocking)
         verifyEmailTransporter(newTransporter).then((verified) => {
           if (verified) {
             console.log("✓ Email transporter verified successfully");
-          } else {
+        } else {
             console.warn("⚠️ Email transporter verification failed, but will still attempt to send emails");
-          }
+        }
         }).catch((verifyError) => {
           console.warn("⚠️ Email transporter verification error (non-blocking):", verifyError.message);
           console.warn("   Will still attempt to send emails - verification failures are common on cloud platforms");
@@ -162,17 +162,17 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
         );
         
         // Set transporter immediately (don't wait for verification)
-        setTransporter(newTransporter);
-        transporter = newTransporter;
+          setTransporter(newTransporter);
+          transporter = newTransporter;
         console.log("✓ Email transporter created from environment variables");
         
         // Verify connection in background (non-blocking)
         verifyEmailTransporter(newTransporter).then((verified) => {
           if (verified) {
             console.log("✓ Email transporter verified successfully");
-          } else {
+        } else {
             console.warn("⚠️ Email transporter verification failed, but will still attempt to send emails");
-          }
+        }
         }).catch((verifyError) => {
           console.warn("⚠️ Email transporter verification error (non-blocking):", verifyError.message);
           console.warn("   Will still attempt to send emails - verification failures are common on cloud platforms");
@@ -397,51 +397,51 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
     }
 
     try {
-      const emailResult = await transporter.sendMail(mailOptions);
+    const emailResult = await transporter.sendMail(mailOptions);
       console.log(`✅ Payment confirmation email with PDF receipt sent successfully to ${toEmail}`);
-      console.log(`   Message ID: ${emailResult.messageId}`);
+    console.log(`   Message ID: ${emailResult.messageId}`);
       console.log(`   Response: ${emailResult.response || 'N/A'}`);
-      return true;
+    return true;
     } catch (sendError) {
       console.error(`❌ Error during email send:`, sendError);
       console.error(`   Error code: ${sendError.code}`);
       console.error(`   Error message: ${sendError.message}`);
       throw sendError; // Re-throw to be caught by outer try-catch
     }
-    } catch (error) {
-      console.error(`❌ Error sending payment approval email:`, error);
-      console.error(`   Error details:`, {
-        message: error.message,
-        code: error.code,
-        command: error.command,
-        response: error.response,
-        responseCode: error.responseCode,
-        stack: error.stack,
-      });
-      
-      // Provide helpful error messages based on error code
-      if (error.code === 'EAUTH') {
-        console.error(`   ⚠️ Authentication failed. Common causes:`);
-        console.error(`      - Using regular Gmail password instead of App-Specific Password`);
-        console.error(`      - 2-Step Verification not enabled`);
-        console.error(`      - Incorrect email or password`);
+  } catch (error) {
+    console.error(`❌ Error sending payment approval email:`, error);
+    console.error(`   Error details:`, {
+      message: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      responseCode: error.responseCode,
+      stack: error.stack,
+    });
+    
+    // Provide helpful error messages based on error code
+    if (error.code === 'EAUTH') {
+      console.error(`   ⚠️ Authentication failed. Common causes:`);
+      console.error(`      - Using regular Gmail password instead of App-Specific Password`);
+      console.error(`      - 2-Step Verification not enabled`);
+      console.error(`      - Incorrect email or password`);
         console.error(`   → Solution: Use App-Specific Password from https://myaccount.google.com/apppasswords`);
-      } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
-        console.error(`   ⚠️ Connection failed. Common causes:`);
+    } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+      console.error(`   ⚠️ Connection failed. Common causes:`);
         console.error(`      - Network/firewall blocking SMTP port 465`);
-        console.error(`      - Server cannot reach Gmail SMTP servers`);
+      console.error(`      - Server cannot reach Gmail SMTP servers`);
         console.error(`   → Solution: Check network/firewall settings, or use a different email service`);
-      } else if (error.code === 'EENVELOPE') {
-        console.error(`   ⚠️ Invalid email address. Check recipient email: ${member?.email || member?.memberEmail}`);
+    } else if (error.code === 'EENVELOPE') {
+      console.error(`   ⚠️ Invalid email address. Check recipient email: ${member?.email || member?.memberEmail}`);
         console.error(`   → Solution: Ensure member has a valid email address`);
       } else {
         console.error(`   ⚠️ Unknown error: ${error.message}`);
         console.error(`   → Full error:`, error);
-      }
-      
+    }
+    
       // Re-throw the error so the route handler can see the actual error
       throw error;
-    }
+  }
 }
 
 // Function to send payment rejection email
@@ -660,9 +660,9 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
         .replace(/\{\{member_name\}\}/g, member.name || 'Member')
         .replace(/\{\{member_id\}\}/g, member.id || 'N/A')
         .replace(/\{\{member_email\}\}/g, member.email || '')
-        .replace(/\{\{total_due\}\}/g, totalDue.toFixed(2))
-        .replace(/\{\{invoice_count\}\}/g, unpaidInvoices.length)
-        .replace(/\{\{invoice_list\}\}/g, invoiceListHTML)
+      .replace(/\{\{total_due\}\}/g, totalDue.toFixed(2))
+      .replace(/\{\{invoice_count\}\}/g, unpaidInvoices.length)
+      .replace(/\{\{invoice_list\}\}/g, invoiceListHTML)
         .replace(/\{\{payment_methods\}\}/g, '')
         .replace(/\{\{portal_link\}\}/g, `${process.env.FRONTEND_URL || 'http://localhost:5173'}/member`)
         .replace(/\{\{invoice_year\}\}/g, invoiceYear)
@@ -673,9 +673,9 @@ export async function sendReminderEmail(member, unpaidInvoices, totalDue) {
     // Replace placeholders in subject (if using template subject)
     if (!isLifetimeMember) {
       emailSubject = emailTemplate.subject
-        .replace(/\{\{member_name\}\}/g, member.name)
-        .replace(/\{\{total_due\}\}/g, totalDue.toFixed(2))
-        .replace(/\{\{invoice_count\}\}/g, unpaidInvoices.length);
+      .replace(/\{\{member_name\}\}/g, member.name)
+      .replace(/\{\{total_due\}\}/g, totalDue.toFixed(2))
+      .replace(/\{\{invoice_count\}\}/g, unpaidInvoices.length);
     }
 
     // Get email settings to use the configured email address

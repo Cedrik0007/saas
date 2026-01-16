@@ -13,6 +13,18 @@
   import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
 
 
+  // Format subscription type for display (remove amount for table display)
+  function formatSubscriptionType(subscriptionType) {
+    if (!subscriptionType) return 'Lifetime';
+    if (subscriptionType === 'Lifetime Janaza Fund Member') {
+      return 'Lifetime Member Janaza fund';
+    }
+    if (subscriptionType === 'Lifetime Membership') {
+      return 'Lifetime membership Janaza fund';
+    }
+    return subscriptionType; // Annual Member or other types stay as is
+  }
+
   function AdminPage() {
     const {
       members,
@@ -914,6 +926,12 @@
     const [showDonationPaymentMethodDropdown, setShowDonationPaymentMethodDropdown] = useState(false); // Show/hide donation payment method dropdown
     const [showImagePopup, setShowImagePopup] = useState(false); // Show/hide image popup
     const [selectedImageUrl, setSelectedImageUrl] = useState(""); // Selected image URL for popup
+    const [showPdfModal, setShowPdfModal] = useState(false); // Show/hide PDF viewer popup
+    const [selectedPdfUrl, setSelectedPdfUrl] = useState(""); // Selected PDF URL for popup
+    const [showPdfOptionsModal, setShowPdfOptionsModal] = useState(false); // Show/hide PDF options popup
+    const [selectedPdfInvoice, setSelectedPdfInvoice] = useState(null); // Selected invoice for PDF options
+    const [selectedPdfDonation, setSelectedPdfDonation] = useState(null); // Selected donation for PDF options
+    const [pdfLoading, setPdfLoading] = useState(true); // PDF loading state
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
 
     // Payment form state
@@ -1553,6 +1571,18 @@
         setMemberNoteDraft(memberNotes[selectedMember.id] || "");
       }
     }, [selectedMember, memberNotes]);
+
+    // Auto-hide PDF loading after timeout if onLoad doesn't fire
+    useEffect(() => {
+      if (selectedPdfUrl && pdfLoading) {
+        const timeout = setTimeout(() => {
+          setPdfLoading(false);
+        }, 5000); // Hide loading after 5 seconds max
+        
+        return () => clearTimeout(timeout);
+      }
+    }, [selectedPdfUrl, pdfLoading]);
+
 
     // Auto-expand parent group when activeSection changes (e.g., from URL)
     useEffect(() => {
@@ -2871,24 +2901,92 @@
           const invoiceListText = generateInvoiceListText(memberUnpaidInvoices);
           const totalDueFormatted = formatCurrency(totalDue);
 
-          // Determine member category based on invoice amount
-          // If amount is 250 = Lifetime Janaza Fund, if 500 = Annual Member
-          let memberCategory = 'Annual Member';
+          // Determine template based on invoice amount and get year
+          let amountNum = 0;
+          let year = new Date().getFullYear().toString();
+          
           if (memberUnpaidInvoices.length > 0) {
             const firstInvoice = memberUnpaidInvoices[0];
             if (firstInvoice.amount) {
               const amountStr = String(firstInvoice.amount).replace(/HK\$|\$|,/g, '').trim();
-              const amountNum = parseFloat(amountStr) || 0;
-              if (amountNum === 250) {
-                memberCategory = 'Lifetime Janaza Fund';
-              } else if (amountNum === 500) {
-                memberCategory = 'Annual Member';
+              amountNum = parseFloat(amountStr) || 0;
+            }
+            // Extract year from invoice period if available
+            if (firstInvoice.period) {
+              const yearMatch = firstInvoice.period.match(/\d{4}/);
+              if (yearMatch) {
+                year = yearMatch[0];
               }
             }
           }
 
-          // Create WhatsApp-friendly message (English only) - single template
-          const message = `Indian Muslim Association – Janazah Fund Reminder
+          // Generate message based on amount
+          let message;
+          if (amountNum === 250) {
+            // Life Member template (HK$250)
+            message = `Indian Muslim Association – Janazah Fund Reminder (Life Member)
+
+Dear *${member.name}*,
+
+Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+
+This is to formally remind you of the IMA Janazah Fund contribution for the year ${year}.
+
+*Contribution Details:*
+• Member Category: Life Member
+• Contribution Amount: HKD 250
+• Year: ${year}
+
+We kindly request you to make the contribution at your earliest convenience.
+
+*Payment Details:*
+FPS: +852 9545 4447
+
+Bank Transfer:
+Bank: Bank of China
+Account No: 012-968-2-013423-1
+Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+
+*Payment Confirmation:*
+After completing the payment, kindly share the payment reference or screenshot via WhatsApp for our records.
+
+May Allah reward you for your continued support and generosity.
+
+Indian Muslim Association, Hong Kong`;
+          } else if (amountNum === 500) {
+            // Annual Member template (HK$500)
+            message = `Indian Muslim Association – Annual Membership Renewal 
+
+Dear *${member.name}*,
+
+Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+
+This is to formally remind you that the renewal of your Indian Muslim Association (IMA) membership for the year ${year} is due.
+
+*Membership Details:*
+• Membership Category: Annual Member 
+• Renewal Amount: HKD 500
+• Year: ${year}
+
+We kindly request you to complete the renewal at your earliest convenience.
+
+*Payment Details:*
+FPS: +852 9545 4447
+
+Bank Transfer:
+Bank: Bank of China
+Account No: 012-968-2-013423-1
+Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+
+*Payment Confirmation:*
+After making the payment, kindly send the payment reference or screenshot, via WhatsApp for our records.
+
+May Allah reward you for your continued support of the community.
+
+Indian Muslim Association Hong Kong`;
+          } else {
+            // Default template for other amounts
+            message = `Indian Muslim Association – Janazah Fund Reminder
 
 Dear *${member.name}*,
 
@@ -2898,7 +2996,6 @@ This is to formally remind you of your outstanding IMA Janazah Fund contribution
 
 *Member Details:*
 • Membership ID: IMA/${member.id || 'N/A'}
-• Member Category: ${memberCategory}
 • Total Outstanding: ${totalDueFormatted}
 • Number of Invoices: ${memberUnpaidInvoices.length}${invoiceListText}
 
@@ -2918,6 +3015,7 @@ After completing the payment, kindly share the payment reference or screenshot v
 May Allah reward you for your continued support and generosity.
 
 Indian Muslim Association, Hong Kong`;
+          }
 
           const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
           const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
@@ -3020,7 +3118,7 @@ Indian Muslim Association, Hong Kong`;
           const totalDueFormatted = formatCurrency(totalDue);
 
           // Determine member category based on invoice amount
-          // If amount is 250 = Lifetime Janaza Fund, if 500 = Annual Member
+          // If amount is 250 = Lifetime Member Janaza fund - HK$250, if 500 = Annual Member, if 5250 = Lifetime membership Janaza fund - HK$5000+HK$250
           let memberCategory = 'Annual Member';
           if (memberUnpaidInvoices.length > 0) {
             const firstInvoice = memberUnpaidInvoices[0];
@@ -3028,7 +3126,9 @@ Indian Muslim Association, Hong Kong`;
               const amountStr = String(firstInvoice.amount).replace(/HK\$|\$|,/g, '').trim();
               const amountNum = parseFloat(amountStr) || 0;
               if (amountNum === 250) {
-                memberCategory = 'Lifetime Janaza Fund';
+                memberCategory = 'Lifetime Member Janaza fund - HK$250';
+              } else if (amountNum === 5250) {
+                memberCategory = 'Lifetime membership Janaza fund - HK$5000+HK$250';
               } else if (amountNum === 500) {
                 memberCategory = 'Annual Member';
               }
@@ -4213,24 +4313,92 @@ Indian Muslim Association, Hong Kong`;
       const invoiceListText = generateInvoiceListText(memberUnpaidInvoices);
       const totalDueFormatted = formatCurrency(totalDue);
 
-      // Determine member category based on invoice amount
-      // If amount is 250 = Lifetime Janaza Fund, if 500 = Annual Member
-      let memberCategory = 'Annual Member';
+      // Determine template based on invoice amount and get year
+      let amountNum = 0;
+      let year = new Date().getFullYear().toString();
+      
       if (memberUnpaidInvoices.length > 0) {
         const firstInvoice = memberUnpaidInvoices[0];
         if (firstInvoice.amount) {
           const amountStr = String(firstInvoice.amount).replace(/HK\$|\$|,/g, '').trim();
-          const amountNum = parseFloat(amountStr) || 0;
-          if (amountNum === 250) {
-            memberCategory = 'Lifetime Janaza Fund';
-          } else if (amountNum === 500) {
-            memberCategory = 'Annual Member';
+          amountNum = parseFloat(amountStr) || 0;
+        }
+        // Extract year from invoice period if available
+        if (firstInvoice.period) {
+          const yearMatch = firstInvoice.period.match(/\d{4}/);
+          if (yearMatch) {
+            year = yearMatch[0];
           }
         }
       }
 
-      // Create WhatsApp-friendly message (English only) - single template
-      const message = `Indian Muslim Association – Janazah Fund Reminder
+      // Generate message based on amount
+      let message;
+      if (amountNum === 250) {
+        // Life Member template (HK$250)
+        message = `Indian Muslim Association – Janazah Fund Reminder (Life Member)
+
+Dear *${memberData.name}*,
+
+Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+
+This is to formally remind you of the IMA Janazah Fund contribution for the year ${year}.
+
+*Contribution Details:*
+• Member Category: Life Member
+• Contribution Amount: HKD 250
+• Year: ${year}
+
+We kindly request you to make the contribution at your earliest convenience.
+
+*Payment Details:*
+FPS: +852 9545 4447
+
+Bank Transfer:
+Bank: Bank of China
+Account No: 012-968-2-013423-1
+Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+
+*Payment Confirmation:*
+After completing the payment, kindly share the payment reference or screenshot via WhatsApp for our records.
+
+May Allah reward you for your continued support and generosity.
+
+Indian Muslim Association, Hong Kong`;
+      } else if (amountNum === 500) {
+        // Annual Member template (HK$500)
+        message = `Indian Muslim Association – Annual Membership Renewal 
+
+Dear *${memberData.name}*,
+
+Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+
+This is to formally remind you that the renewal of your Indian Muslim Association (IMA) membership for the year ${year} is due.
+
+*Membership Details:*
+• Membership Category: Annual Member 
+• Renewal Amount: HKD 500
+• Year: ${year}
+
+We kindly request you to complete the renewal at your earliest convenience.
+
+*Payment Details:*
+FPS: +852 9545 4447
+
+Bank Transfer:
+Bank: Bank of China
+Account No: 012-968-2-013423-1
+Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+
+*Payment Confirmation:*
+After making the payment, kindly send the payment reference or screenshot, via WhatsApp for our records.
+
+May Allah reward you for your continued support of the community.
+
+Indian Muslim Association Hong Kong`;
+      } else {
+        // Default template for other amounts
+        message = `Indian Muslim Association – Janazah Fund Reminder
 
 Dear *${memberData.name}*,
 
@@ -4240,7 +4408,6 @@ This is to formally remind you of your outstanding IMA Janazah Fund contribution
 
 *Member Details:*
 • Membership ID: IMA/${memberData.id || 'N/A'}
-• Member Category: ${memberCategory}
 • Total Outstanding: ${totalDueFormatted}
 • Number of Invoices: ${memberUnpaidInvoices.length}${invoiceListText}
 
@@ -4260,6 +4427,7 @@ After completing the payment, kindly share the payment reference or screenshot v
 May Allah reward you for your continued support and generosity.
 
 Indian Muslim Association, Hong Kong`;
+      }
 
       // Clean phone number (remove all non-numeric except +)
       const cleanPhone = memberData.phone.replace(/[^0-9+]/g, "");
@@ -5105,7 +5273,7 @@ Indian Muslim Association, Hong Kong`;
                       <div className="card-header">
                         <div>
                           <h4>Monthly Collections · Last 12 Months</h4>
-                          <p>Expected contribution is HK$800 per member per year</p>
+                          {/*<p>Expected contribution is HK$800 per member per year</p>*/}
                         </div>
                       </div>
                       <div
@@ -5796,8 +5964,8 @@ Indian Muslim Association, Hong Kong`;
                                     }}
                                   >
                                     <option value="Annual Member">Annual Member - HK$500/year</option>
-                                    <option value="Lifetime Janaza Fund Member">Lifetime Janaza Fund - HK$250/year</option>
-                                    <option value="Lifetime Membership">Lifetime Membership - HK$5,000 + HK$250 first year</option>
+                                    <option value="Lifetime Janaza Fund Member">Lifetime Member Janaza fund - HK$250</option>
+                                    <option value="Lifetime Membership">Lifetime membership Janaza fund - HK$5000+HK$250</option>
                                 </select>
                                   <div style={{
                                     position: "absolute",
@@ -6024,7 +6192,7 @@ Indian Muslim Association, Hong Kong`;
                                   {member.phone || "No phone"}
                                 </div>
                                 <div className="text-xs text-danger" style={{ marginTop: "8px" }}>
-                                  Subscription: {member.subscriptionType || 'Lifetime'}
+                                  Subscription: {formatSubscriptionType(member.subscriptionType)}
                                 </div>
                               </div>
                               <div className="flex gap-sm flex-shrink-0">
@@ -6662,7 +6830,7 @@ Indian Muslim Association, Hong Kong`;
                                       "Name": member.name,
                                       "Native Place": member.native || "-",
                                       "Year": subYear,
-                                      "Subscription Type": member.subscriptionType || "-",
+                                      "Subscription Type": formatSubscriptionType(member.subscriptionType) || "-",
                                       "Joined Year": joinedYear,
                                       Status: {
                                         render: () => (
@@ -7200,11 +7368,15 @@ Indian Muslim Association, Hong Kong`;
                               : 0;
                             
                             let subscriptionType = selectedMember?.subscriptionType || invoice.subscriptionType || "-";
-                            // If amount is 250, show "Lifetime"; if 500, show "Yearly + Janaza Fund"
+                            // If amount is 250, show "Lifetime Member Janaza fund"; if 500, show "Annual Member"; if 5250, show "Lifetime membership Janaza fund"
                             if (invoiceAmount === 250 || invoiceAmount === 250.00) {
-                              subscriptionType = "Lifetime";
+                              subscriptionType = "Lifetime Member Janaza fund";
                             } else if (invoiceAmount === 500 || invoiceAmount === 500.00) {
-                              subscriptionType = "Yearly + Janaza Fund";
+                              subscriptionType = "Annual Member";
+                            } else if (invoiceAmount === 5250 || invoiceAmount === 5250.00) {
+                              subscriptionType = "Lifetime membership Janaza fund";
+                            } else {
+                              subscriptionType = formatSubscriptionType(subscriptionType);
                             }
 
                             return {
@@ -7353,29 +7525,13 @@ Indian Muslim Association, Hong Kong`;
                                                 border: "1px solid #e5e7eb",
                                                 color: "#374151"
                                               }}
-                                              onClick={async (e) => {
+                                              onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
-                                                try {
-                                                  const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-                                                  const pdfUrl = `${apiUrl}/api/invoices/${invoice.id}/pdf-receipt/download`;
-                                                  
-                                                  // Open PDF in new tab for preview
-                                                  const link = document.createElement('a');
-                                                  link.href = pdfUrl;
-                                                  link.target = '_blank';
-                                                  link.rel = 'noopener noreferrer';
-                                                  document.body.appendChild(link);
-                                                  link.click();
-                                                  document.body.removeChild(link);
-                                                  
-                                                  showToast('Opening PDF receipt...', 'success');
-                                                } catch (error) {
-                                                  console.error('Error opening PDF:', error);
-                                                  showToast('Failed to open PDF receipt', 'error');
-                                                }
+                                                setSelectedPdfInvoice(invoice);
+                                                setShowPdfOptionsModal(true);
                                               }}
-                                              title="View/Download PDF Receipt"
+                                              title="PDF Options"
                                             >
                                               <i className="fas fa-file-pdf" style={{ fontSize: "0.75rem", color: "#ef4444" }}></i>
                                               PDF
@@ -8288,8 +8444,8 @@ Indian Muslim Association, Hong Kong`;
                       >
                         <option value="">Select Invoice Type</option>
                           <option value="Annual Member">Annual Member - HK$500</option>
-                          <option value="Lifetime Janaza Fund Member">Lifetime Janaza Fund - HK$250</option>
-                          {/* <option value="Lifetime Membership">Lifetime Membership - HK$5,250</option> */}
+                          <option value="Lifetime Janaza Fund Member">Lifetime Member Janaza fund - HK$250</option>
+                          {/* <option value="Lifetime Membership">Lifetime membership Janaza fund - HK$5000+HK$250</option> */}
                       </select>
                         {invoiceForm.invoiceType && (
                           <div style={{
@@ -12714,7 +12870,7 @@ Indian Muslim Association, Hong Kong`;
                                         "Name": invoice.memberName || invoice.member || "Unknown",
                                         "Native Place": member?.native || "-",
                                         "Year": subYear,
-                                        "Subscription Type": member?.subscriptionType || invoice.subscriptionType || "-",
+                                        "Subscription Type": formatSubscriptionType(member?.subscriptionType || invoice.subscriptionType) || "-",
                                         "Joined Year": joinedYear,
                                         "Status": {
                                           render: () => (
@@ -15386,29 +15542,13 @@ Indian Muslim Association, Hong Kong`;
                                               border: "1px solid #e5e7eb",
                                               color: "#374151"
                                             }}
-                                            onClick={async (e) => {
+                                            onClick={(e) => {
                                               e.preventDefault();
                                               e.stopPropagation();
-                                              try {
-                                                const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-                                                const pdfUrl = `${apiUrl}/api/donations/${donation._id || donation.id}/pdf-receipt/download`;
-                                                
-                                                // Open PDF in new tab for preview
-                                                const link = document.createElement('a');
-                                                link.href = pdfUrl;
-                                                link.target = '_blank';
-                                                link.rel = 'noopener noreferrer';
-                                                document.body.appendChild(link);
-                                                link.click();
-                                                document.body.removeChild(link);
-                                                
-                                                showToast('Opening PDF receipt...', 'success');
-                                              } catch (error) {
-                                                console.error('Error opening PDF:', error);
-                                                showToast('Failed to open PDF receipt', 'error');
-                                              }
+                                              setSelectedPdfDonation(donation);
+                                              setShowPdfOptionsModal(true);
                                             }}
-                                            title="View/Download PDF Receipt"
+                                            title="PDF Options"
                                           >
                                             <i className="fas fa-file-pdf" style={{ fontSize: "0.75rem", color: "#ef4444" }}></i>
                                             PDF
@@ -18801,7 +18941,7 @@ Indian Muslim Association, Hong Kong`;
                             {member.native || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                           </td>
                           <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
-                            {member.subscriptionType || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}
+                            {formatSubscriptionType(member.subscriptionType) || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}
                           </td>
                           <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
                             {member.subscriptionYear || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
@@ -18858,7 +18998,7 @@ Indian Muslim Association, Hong Kong`;
                                 {errorRow.data.phone || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                               </td>
                               <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
-                                {errorRow.data.subscriptionType || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}
+                                {formatSubscriptionType(errorRow.data.subscriptionType) || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}
                               </td>
                               <td style={{ padding: "12px", color: "#c62828" }}>
                                 <ul style={{ margin: 0, paddingLeft: "20px" }}>
@@ -18997,6 +19137,388 @@ Indian Muslim Association, Hong Kong`;
               >
                 ×
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* PDF Options Modal */}
+        {showPdfOptionsModal && (selectedPdfInvoice || selectedPdfDonation) && (
+          <div
+            className="modal-overlay modal-overlay-high"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowPdfOptionsModal(false);
+                setSelectedPdfInvoice(null);
+                setSelectedPdfDonation(null);
+              }
+            }}
+            style={{
+              background: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 10000,
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              padding: "20px"
+            }}
+          >
+            <div
+              className="card"
+              style={{
+                background: "#fff",
+                borderRadius: "12px",
+                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
+                padding: "24px",
+                minWidth: "300px",
+                maxWidth: "400px",
+                width: "100%"
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <h3 style={{ margin: 0, fontSize: "1.25rem", fontWeight: "600", color: "#333", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <i className="fas fa-file-pdf" style={{ fontSize: "1.2rem", color: "#ef4444" }}></i>
+                  PDF Receipt Options
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPdfOptionsModal(false);
+                    setSelectedPdfInvoice(null);
+                    setSelectedPdfDonation(null);
+                  }}
+                  style={{
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "50%",
+                    background: "#f3f4f6",
+                    border: "none",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "1.2rem",
+                    fontWeight: "bold",
+                    color: "#666",
+                    transition: "all 0.2s ease"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = "#e5e7eb";
+                    e.target.style.transform = "scale(1.1)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = "#f3f4f6";
+                    e.target.style.transform = "scale(1)";
+                  }}
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                      let pdfUrl, downloadName;
+                      if (selectedPdfInvoice) {
+                        pdfUrl = `${apiUrl}/api/invoices/${selectedPdfInvoice.id}/pdf-receipt/download`;
+                        downloadName = `Invoice_Receipt_${selectedPdfInvoice.id}.pdf`;
+                      } else if (selectedPdfDonation) {
+                        pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download`;
+                        downloadName = `Donation_Receipt_${selectedPdfDonation._id || selectedPdfDonation.id}.pdf`;
+                      }
+                      
+                      const link = document.createElement('a');
+                      link.href = pdfUrl;
+                      link.download = downloadName;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      
+                      setShowPdfOptionsModal(false);
+                      setSelectedPdfInvoice(null);
+                      setSelectedPdfDonation(null);
+                      showToast('Downloading PDF receipt...', 'success');
+                    } catch (error) {
+                      console.error('Error downloading PDF:', error);
+                      showToast('Failed to download PDF receipt', 'error');
+                    }
+                  }}
+                  style={{
+                    padding: "14px 20px",
+                    fontSize: "1rem",
+                    background: "#3b82f6",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "10px",
+                    fontWeight: "500",
+                    transition: "all 0.2s ease"
+                  }}
+                  onMouseEnter={(e) => e.target.style.background = "#2563eb"}
+                  onMouseLeave={(e) => e.target.style.background = "#3b82f6"}
+                >
+                  <i className="fas fa-eye" style={{ fontSize: "1rem" }}></i>
+                  View PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                      let pdfUrl, downloadName;
+                      if (selectedPdfInvoice) {
+                        pdfUrl = `${apiUrl}/api/invoices/${selectedPdfInvoice.id}/pdf-receipt/download`;
+                        downloadName = `Invoice_Receipt_${selectedPdfInvoice.id}.pdf`;
+                      } else if (selectedPdfDonation) {
+                        pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download`;
+                        downloadName = `Donation_Receipt_${selectedPdfDonation._id || selectedPdfDonation.id}.pdf`;
+                      }
+                      
+                      const link = document.createElement('a');
+                      link.href = pdfUrl;
+                      link.download = downloadName;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      
+                      setShowPdfOptionsModal(false);
+                      setSelectedPdfInvoice(null);
+                      setSelectedPdfDonation(null);
+                      showToast('Downloading PDF receipt...', 'success');
+                    } catch (error) {
+                      console.error('Error downloading PDF:', error);
+                      showToast('Failed to download PDF receipt', 'error');
+                    }
+                  }}
+                  style={{
+                    padding: "14px 20px",
+                    fontSize: "1rem",
+                    background: "#10b981",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "10px",
+                    fontWeight: "500",
+                    transition: "all 0.2s ease"
+                  }}
+                  onMouseEnter={(e) => e.target.style.background = "#059669"}
+                  onMouseLeave={(e) => e.target.style.background = "#10b981"}
+                >
+                  <i className="fas fa-download" style={{ fontSize: "1rem" }}></i>
+                  Download PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PDF Viewer Modal */}
+        {showPdfModal && selectedPdfUrl && (
+          <div
+            className="modal-overlay modal-overlay-high"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowPdfModal(false);
+                setSelectedPdfUrl("");
+                setPdfLoading(true);
+                // Reset loading state after modal closes
+                setTimeout(() => setPdfLoading(true), 100);
+              }
+            }}
+            style={{
+              background: "rgba(0, 0, 0, 0.8)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 10000,
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              padding: "20px"
+            }}
+          >
+            <div
+              style={{
+                position: "relative",
+                width: "90vw",
+                height: "90vh",
+                background: "#fff",
+                borderRadius: "8px",
+                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.5)",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden"
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderBottom: "1px solid #e5e7eb",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  background: "#f9fafb"
+                }}
+              >
+                <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: "600", color: "#333" }}>
+                  <i className="fas fa-file-pdf" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                  PDF Receipt
+                </h3>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        // Extract filename from URL or use default
+                        const urlParts = selectedPdfUrl.split('/');
+                        const filename = urlParts[urlParts.length - 1] || 'Receipt.pdf';
+                        
+                        const link = document.createElement('a');
+                        link.href = selectedPdfUrl;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        showToast('Downloading PDF receipt...', 'success');
+                      } catch (error) {
+                        console.error('Error downloading PDF:', error);
+                        showToast('Failed to download PDF receipt', 'error');
+                      }
+                    }}
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "0.85rem",
+                      background: "#10b981",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      fontWeight: "500"
+                    }}
+                    onMouseEnter={(e) => e.target.style.background = "#059669"}
+                    onMouseLeave={(e) => e.target.style.background = "#10b981"}
+                  >
+                    <i className="fas fa-download" style={{ fontSize: "0.75rem" }}></i>
+                    Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPdfModal(false);
+                      setSelectedPdfUrl("");
+                      setPdfLoading(true);
+                      // Reset loading state after modal closes
+                      setTimeout(() => setPdfLoading(true), 100);
+                    }}
+                    style={{
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "50%",
+                      background: "#ef4444",
+                      border: "none",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "1.2rem",
+                      fontWeight: "bold",
+                      color: "#fff",
+                      transition: "all 0.2s ease"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.background = "#dc2626";
+                      e.target.style.transform = "scale(1.1)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.background = "#ef4444";
+                      e.target.style.transform = "scale(1)";
+                    }}
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+                {pdfLoading && (
+                  <div style={{
+                    position: "absolute",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%, -50%)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "16px",
+                    zIndex: 10,
+                    pointerEvents: "none"
+                  }}>
+                    <div style={{
+                      width: "48px",
+                      height: "48px",
+                      border: "4px solid #f3f4f6",
+                      borderTop: "4px solid #3b82f6",
+                      borderRadius: "50%",
+                      animation: "spin 1s linear infinite"
+                    }}></div>
+                    <p style={{ margin: 0, color: "#666", fontSize: "0.9rem" }}>Loading PDF preview...</p>
+                  </div>
+                )}
+                {selectedPdfUrl && (
+                  <iframe
+                    key={selectedPdfUrl}
+                    src={selectedPdfUrl.startsWith('data:') 
+                      ? selectedPdfUrl 
+                      : `${selectedPdfUrl}${selectedPdfUrl.includes('#') ? '&' : '#'}toolbar=1&navpanes=1&scrollbar=1&view=FitH`}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      border: "none",
+                      opacity: pdfLoading ? 0 : 1,
+                      transition: "opacity 0.3s ease",
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0
+                    }}
+                    title="PDF Receipt"
+                    allow="fullscreen"
+                    type="application/pdf"
+                    onLoad={() => {
+                      // Hide loading after iframe loads (with slight delay for smooth transition)
+                      setTimeout(() => {
+                        setPdfLoading(false);
+                      }, 800);
+                    }}
+                    onError={() => {
+                      setPdfLoading(false);
+                      showToast('Failed to load PDF preview. Please try downloading instead.', 'error');
+                    }}
+                  />
+                )}
+              </div>
             </div>
           </div>
         )}

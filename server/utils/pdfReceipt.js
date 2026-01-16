@@ -4,7 +4,14 @@ import UserModel from '../models/User.js';
 import InvoiceModel from '../models/Invoice.js';
 import https from 'https';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 import { getNextReceiptNumber } from './receiptCounter.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
  * Convert number to words (simple version for amounts)
@@ -137,7 +144,52 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
            .stroke();
       };
 
-      let currentY = margin + (responsiveHeightUnit * 2);
+      let currentY = margin;
+
+      // Logo at top left
+      try {
+        // Try multiple possible logo paths and formats
+        const logoExtensions = ['png', 'jpg', 'jpeg'];
+        const basePaths = [
+          path.join(__dirname, '../public'),
+          path.join(__dirname, '../assets'),
+          path.join(__dirname, '../../public'),
+          path.join(__dirname, '../../assets'),
+          path.join(process.cwd(), 'server/public'),
+          path.join(process.cwd(), 'server/assets'),
+          path.join(process.cwd(), 'public'),
+          path.join(process.cwd(), 'assets'),
+        ];
+
+        let logoPath = null;
+        for (const basePath of basePaths) {
+          for (const ext of logoExtensions) {
+            const testPath = path.join(basePath, `logo.${ext}`);
+            if (fs.existsSync(testPath)) {
+              logoPath = testPath;
+              break;
+            }
+          }
+          if (logoPath) break;
+        }
+
+        if (logoPath) {
+          // Add logo at top left, size: 60x60 points
+          const logoSize = 60;
+          doc.image(logoPath, leftMargin, currentY, {
+            fit: [logoSize, logoSize],
+            align: 'left'
+          });
+          // Adjust currentY to account for logo height
+          currentY += logoSize + (responsiveHeightUnit * 1);
+        } else {
+          currentY += (responsiveHeightUnit * 2);
+        }
+      } catch (logoError) {
+        // If logo fails to load, continue without it
+        console.log('Logo not found or failed to load, continuing without logo:', logoError.message);
+        currentY += (responsiveHeightUnit * 2);
+      }
 
       // Header - Organization Name
       doc.fontSize(Math.max(14, responsiveUnit * 2.5))
