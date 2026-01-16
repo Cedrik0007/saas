@@ -8,6 +8,7 @@ const ReminderLogSchema = new mongoose.Schema({
   amount: String,
   invoiceCount: Number,
   status: { type: String, default: "Delivered" }, // "Delivered" or "Failed"
+  channel: { type: String, default: "Email" }, // "Email" or "WhatsApp"
 }, {
   timestamps: true
 });

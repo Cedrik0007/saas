@@ -191,6 +191,49 @@ router.get("/logs", async (req, res) => {
   }
 });
 
+// POST endpoint to create a reminder log
+router.post("/log", async (req, res) => {
+  try {
+    await ensureConnection();
+    
+    const {
+      memberId,
+      memberEmail,
+      reminderType,
+      amount,
+      invoiceCount,
+      status,
+      channel
+    } = req.body;
+
+    if (!memberId || !memberEmail) {
+      return res.status(400).json({ error: "memberId and memberEmail are required" });
+    }
+
+    const reminderLog = await ReminderLogModel.create({
+      memberId: memberId,
+      memberEmail: memberEmail,
+      sentAt: new Date(),
+      reminderType: reminderType || 'upcoming',
+      amount: amount || 'HK$0',
+      invoiceCount: invoiceCount || 0,
+      status: status || "Delivered",
+      channel: channel || "WhatsApp"
+    });
+
+    console.log(`✓ Reminder log saved to database for ${memberEmail}`);
+    
+    res.json({
+      success: true,
+      message: "Reminder log created successfully",
+      reminderLog
+    });
+  } catch (error) {
+    console.error("Error creating reminder log:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST endpoint to retry a failed reminder
 router.post("/retry", async (req, res) => {
   try {

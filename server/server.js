@@ -190,6 +190,7 @@ if (!process.env.VERCEL) {
     console.log(`  - POST   /api/reminders/send`);
     console.log(`  - POST   /api/reminders/test-now`);
     console.log(`  - GET    /api/reminders/logs`);
+    console.log(`  - POST   /api/reminders/log`);
     console.log(`  - POST   /api/invoices/send-reminder`);
     console.log(`  - POST   /api/upload/screenshot`);
     console.log(`  - GET    /api/email-settings`);

@@ -429,7 +429,21 @@ router.put("/:id", async (req, res) => {
     const isNowPaid = updatedInvoice.status === "Paid";
     const markedAsPaid = statusChanged && wasUnpaid && isNowPaid;
 
-    // Do NOT automatically generate receipt number - only use if already exists in invoice
+    // Generate receipt number if invoice was marked as paid and doesn't have one
+    if (markedAsPaid && !updatedInvoice.receiptNumber) {
+      try {
+        const receiptNumber = await getNextReceiptNumber();
+        await InvoiceModel.findOneAndUpdate(
+          { id: req.params.id },
+          { $set: { receiptNumber: receiptNumber } }
+        );
+        updatedInvoice.receiptNumber = receiptNumber;
+        console.log(`✓ Generated and stored receipt number ${receiptNumber} for invoice ${req.params.id}`);
+      } catch (receiptError) {
+        console.error("Error generating receipt number:", receiptError);
+        // Continue without receipt number - don't fail the update
+      }
+    }
 
     if (statusChanged || amountChanged || memberChanged) {
       // Always recalculate balance for the old member if:

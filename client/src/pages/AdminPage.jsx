@@ -1074,28 +1074,45 @@
     };
 
     // Helper function to check if a payment belongs to a member in the list
-    // Priority: 1) ID, 2) Email, 3) Name
-    // For total collected amount calculation, this ensures email-based matching is prioritized
+    // Match only by ID or Email (not by name) - member must exist and have phone number
     const isPaymentMemberInList = (payment) => {
-      if (!payment || !payment.member) return false;
-      const paymentMember = String(payment.member).toLowerCase().trim();
+      if (!payment) return false;
       
-      // First try to match by ID
-      const matchedById = members.find(m => 
-        String(m.id || "").toLowerCase() === paymentMember
-      );
-      if (matchedById) return true;
+      // First try to match by memberId
+      if (payment.memberId) {
+        const matchedById = members.find(m => 
+          String(m.id || "").toLowerCase() === String(payment.memberId || "").toLowerCase()
+        );
+        if (matchedById && matchedById.phone) return true;
+      }
       
-      // Then try to match by email (prioritized over name for accurate total collected)
-      const matchedByEmail = members.find(m => 
-        String(m.email || "").toLowerCase() === paymentMember
-      );
-      if (matchedByEmail) return true;
+      // Then try to match by memberEmail
+      if (payment.memberEmail) {
+        const matchedByEmail = members.find(m => 
+          String(m.email || "").toLowerCase() === String(payment.memberEmail || "").toLowerCase()
+        );
+        if (matchedByEmail && matchedByEmail.phone) return true;
+      }
       
-      // Finally try to match by name (fallback)
-      return members.some(m => 
-        String(m.name || "").toLowerCase() === paymentMember
-      );
+      // Try payment.member as ID or email (not name)
+      if (payment.member) {
+        const paymentMember = String(payment.member).toLowerCase().trim();
+        
+        // Try as ID
+        const matchedAsId = members.find(m => 
+          String(m.id || "").toLowerCase() === paymentMember
+        );
+        if (matchedAsId && matchedAsId.phone) return true;
+        
+        // Try as Email
+        const matchedAsEmail = members.find(m => 
+          String(m.email || "").toLowerCase() === paymentMember
+        );
+        if (matchedAsEmail && matchedAsEmail.phone) return true;
+      }
+      
+      // Don't match by name - return false
+      return false;
     };
 
     // Check if donation belongs to a member in the members list
@@ -1566,7 +1583,7 @@
     // Make dashboard metrics reactive to changes in invoices, payments, and members
     const dashboardMetrics = useMemo(() => {
       return calculateDashboardMetrics();
-    }, [invoices, paymentHistory, members]);
+    }, [invoices, paymentHistory, members, donations]);
 
     // Dashboard last updated timestamp (changes when core data changes)
     const dashboardLastUpdated = useMemo(() => {
@@ -3034,8 +3051,32 @@ Indian Muslim Association, Hong Kong`;
           const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
           const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 
-          setTimeout(() => {
+          setTimeout(async () => {
             window.open(whatsappUrl, '_blank');
+            
+            // Save reminder log to backend
+            try {
+              const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+              const reminderType = memberUnpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming';
+              
+              await fetch(`${apiUrl}/api/reminders/log`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  memberId: member.id,
+                  memberEmail: member.email,
+                  reminderType: reminderType,
+                  amount: formatCurrency(totalDue),
+                  invoiceCount: memberUnpaidInvoices.length,
+                  status: "Delivered",
+                  channel: "WhatsApp",
+                }),
+              });
+            } catch (logError) {
+              console.error("Error saving reminder log:", logError);
+              // Continue - don't fail the reminder if logging fails
+            }
+            
             const comm = {
               channel: "WhatsApp",
               type: "Bulk Outstanding Reminder",
@@ -3048,6 +3089,11 @@ Indian Muslim Association, Hong Kong`;
             addCommunication(comm);
           }, i * 1000);
         }
+
+        // Refresh reminder logs after all reminders are sent
+        setTimeout(() => {
+          fetchReminderLogs();
+        }, (selectedMembers.length * 1000) + 1000); // Wait for all reminders to complete
 
         showToast(`✓ Opening WhatsApp for ${selectedMembers.length} selected members. Please review and send each message.`);
       } catch (error) {
@@ -3188,8 +3234,31 @@ Indian Muslim Association, Hong Kong`;
           const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 
           // Open WhatsApp with delay between each
-          setTimeout(() => {
+          setTimeout(async () => {
             window.open(whatsappUrl, '_blank');
+
+            // Save reminder log to backend
+            try {
+              const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+              const reminderType = memberUnpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming';
+              
+              await fetch(`${apiUrl}/api/reminders/log`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  memberId: member.id,
+                  memberEmail: member.email,
+                  reminderType: reminderType,
+                  amount: formatCurrency(totalDue),
+                  invoiceCount: memberUnpaidInvoices.length,
+                  status: "Delivered",
+                  channel: "WhatsApp",
+                }),
+              });
+            } catch (logError) {
+              console.error("Error saving reminder log:", logError);
+              // Continue - don't fail the reminder if logging fails
+            }
 
             // Log to communication with member metadata
             const comm = {
@@ -3204,6 +3273,11 @@ Indian Muslim Association, Hong Kong`;
             addCommunication(comm);
           }, i * 1000); // 1 second delay between each
         }
+
+        // Refresh reminder logs after all reminders are sent
+        setTimeout(() => {
+          fetchReminderLogs();
+        }, (outstandingMembers.length * 1000) + 1000); // Wait for all reminders to complete
 
         showToast(`✓ Opening WhatsApp for ${outstandingMembers.length} members. Please review and send each message.`);
       } catch (error) {
@@ -4256,7 +4330,7 @@ Indian Muslim Association, Hong Kong`;
     };
 
     // WhatsApp Reminder (Click-to-Chat)
-    const handleSendWhatsAppReminder = (memberData) => {
+    const handleSendWhatsAppReminder = async (memberData) => {
       if (!memberData) {
         showToast("No member selected", "error");
         return;
@@ -4452,6 +4526,32 @@ Indian Muslim Association, Hong Kong`;
 
       // Open WhatsApp
       window.open(whatsappUrl, '_blank');
+
+      // Save reminder log to backend
+      try {
+        const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+        const reminderType = memberUnpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming';
+        
+        await fetch(`${apiUrl}/api/reminders/log`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            memberId: memberData.id,
+            memberEmail: memberData.email,
+            reminderType: reminderType,
+            amount: formatCurrency(totalDue),
+            invoiceCount: memberUnpaidInvoices.length,
+            status: "Delivered",
+            channel: "WhatsApp",
+          }),
+        });
+        
+        // Refresh reminder logs to show the new entry
+        fetchReminderLogs();
+      } catch (logError) {
+        console.error("Error saving reminder log:", logError);
+        // Continue - don't fail the reminder if logging fails
+      }
 
       // Log to communication with member metadata
       const comm = {
@@ -5928,6 +6028,61 @@ Indian Muslim Association, Hong Kong`;
                               </select>
                             </label>
 
+                            {editingMember && (
+                              <>
+                              <label>
+                                <span>
+                                  <i className="fas fa-id-card admin-members-form-icon" style={{ marginRight: "8px" }} aria-hidden="true"></i>
+                                  Member ID
+                                </span>
+                                <input
+                                  type="text"
+                                  value={editingMember.id || ""}
+                                  readOnly
+                                  style={{
+                                    background: "#f9fafb",
+                                    cursor: "not-allowed",
+                                    color: "#666"
+                                  }}
+                                />
+                              </label>
+
+                              <label>
+                                <span>
+                                  <i className="fas fa-calendar-day" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                  Joining Date
+                                </span>
+                                <input
+                                  type="date"
+                                  value={memberForm.nextDue}
+                                  onChange={(e) => {
+                                    const selectedDate = e.target.value;
+                                    handleMemberFieldChange("nextDue", selectedDate);
+                                    // Clear error styles immediately when user selects a date
+                                    if (selectedDate) {
+                                      e.target.style.setProperty("border-color", "", "important");
+                                      e.target.style.setProperty("outline", "", "important");
+                                      e.target.style.setProperty("box-shadow", "", "important");
+                                    }
+                                    // Clear error when user starts typing
+                                    if (memberFieldErrors.nextDue || currentInvalidField === "nextDue") {
+                                      setMemberFieldErrors(prev => ({ ...prev, nextDue: false }));
+                                      if (currentInvalidField === "nextDue") {
+                                        setCurrentInvalidField(null);
+                                      }
+                                    }
+                                  }}
+                                  style={{
+                                    borderRadius: "4px",
+                                    width: "100%"
+                                  }}
+                                />
+                              </label>
+                              </>
+                            )}
+
+                            {!editingMember && (
+                              <>
                               <label>
                                 <span>
                                   <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
@@ -6044,6 +6199,8 @@ Indian Muslim Association, Hong Kong`;
                                   }}
                                 />
                               </label>
+                              </>
+                            )}
 
                             {!editingMember && (
                               <label>
@@ -12189,13 +12346,32 @@ Indian Muslim Association, Hong Kong`;
                                 const paymentId = payment._id || payment.id;
                                 const paymentIdString = paymentId?.toString ? paymentId.toString() : paymentId;
 
+                                // Find member from members list to get current data
+                                let member = null;
+                                if (payment.memberId) {
+                                  member = members.find(m => m.id === payment.memberId);
+                                }
+                                if (!member && payment.memberEmail) {
+                                  member = members.find(m => 
+                                    m.email && m.email.toLowerCase() === payment.memberEmail.toLowerCase()
+                                  );
+                                }
+                                if (!member && payment.member) {
+                                  // Try payment.member as ID or email (not name)
+                                  const paymentMember = String(payment.member).toLowerCase().trim();
+                                  member = members.find(m => 
+                                    String(m.id || "").toLowerCase() === paymentMember ||
+                                    (m.email && String(m.email || "").toLowerCase() === paymentMember)
+                                  );
+                                }
+
                                 return {
                                   Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
                                     day: '2-digit',
                                     month: 'short',
                                     year: 'numeric'
                                   }) : "-"),
-                                  Member: payment.member || "Unknown",
+                                  Member: member?.name || payment.member || "Unknown",
                                   "Invoice ID": payment.invoiceId || "-",
                                   Amount: payment.amount
                                     ? `HK$${formatNumber(parseFloat(payment.amount.replace(/[^0-9.]/g, '') || 0), {
@@ -12842,10 +13018,22 @@ Indian Muslim Association, Hong Kong`;
                                   <Table
                                     columns={["Name", "Native Place", "Year", "Subscription Type", "Joined Year", "Status", "Outstanding", "Actions"]}
                                     rows={paginatedInvoices.map((invoice) => {
+                                      // Filter out invoices where member is not found in members list
                                       const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
                                       const isOverdue = invoice.status === "Overdue";
 
-                                      const member = members.find(m => m.id === invoice.memberId);
+                                      // Get member from members list - use only this data, not invoice data
+                                      const member = members.find(m => 
+                                        m.id === invoice.memberId || 
+                                        m.email === invoice.memberEmail || 
+                                        m.name === invoice.memberName
+                                      );
+                                      
+                                      // If member not found in members list, skip this invoice (shouldn't happen due to filter, but double-check)
+                                      if (!member) {
+                                        return null;
+                                      }
+                                      
                                       const joinedYear = member?.start_date
                                         ? new Date(member.start_date).getFullYear()
                                         : (member?.createdAt ? new Date(member.createdAt).getFullYear() : "-");
@@ -12884,10 +13072,10 @@ Indian Muslim Association, Hong Kong`;
                                       const subYear = yearMatch ? yearMatch[0] : "-";
 
                                       return {
-                                        "Name": invoice.memberName || invoice.member || "Unknown",
+                                        "Name": member.name || "Unknown",
                                         "Native Place": member?.native || "-",
                                         "Year": subYear,
-                                        "Subscription Type": formatSubscriptionType(member?.subscriptionType || invoice.subscriptionType) || "-",
+                                        "Subscription Type": formatSubscriptionType(member?.subscriptionType) || "-",
                                         "Joined Year": joinedYear,
                                         "Status": {
                                           render: () => (
@@ -12969,7 +13157,7 @@ Indian Muslim Association, Hong Kong`;
                                           ),
                                         },
                                       };
-                                    })}
+                                    }).filter(row => row !== null)}
                                   />
                                 </div>
                                 {totalPages > 0 && invoices.length > 0 && (
@@ -13630,15 +13818,24 @@ Indian Muslim Association, Hong Kong`;
                                   }
                                 }
 
-                                // Find member to get native place
-                                const member = members.find(m => 
-                                  m.id === payment.memberId || 
-                                  m.email === payment.memberEmail ||
-                                  m.name === payment.member ||
-                                  String(m.id || "").toLowerCase() === String(payment.member || "").toLowerCase() ||
-                                  String(m.email || "").toLowerCase() === String(payment.member || "").toLowerCase() ||
-                                  String(m.name || "").toLowerCase() === String(payment.member || "").toLowerCase()
-                                );
+                                // Find member to get native place - match only by ID or email (not by name)
+                                let member = null;
+                                if (payment.memberId) {
+                                  member = members.find(m => m.id === payment.memberId);
+                                }
+                                if (!member && payment.memberEmail) {
+                                  member = members.find(m => 
+                                    m.email && m.email.toLowerCase() === payment.memberEmail.toLowerCase()
+                                  );
+                                }
+                                if (!member && payment.member) {
+                                  // Try payment.member as ID or email (not name)
+                                  const paymentMember = String(payment.member).toLowerCase().trim();
+                                  member = members.find(m => 
+                                    String(m.id || "").toLowerCase() === paymentMember ||
+                                    (m.email && String(m.email || "").toLowerCase() === paymentMember)
+                                  );
+                                }
                                 const memberNative = member?.native || "-";
 
                                 return {
@@ -13647,7 +13844,7 @@ Indian Muslim Association, Hong Kong`;
                                     month: 'short',
                                     year: 'numeric'
                                   }) : "-"),
-                                  Member: payment.member || "Unknown",
+                                  Member: member?.name || payment.member || "Unknown",
                                   Year: paymentYear,
                                   "Native Place": memberNative,
                                   "Invoice ID": payment.invoiceId || "-",
@@ -19868,13 +20065,32 @@ Indian Muslim Association, Hong Kong`;
                         try {
                           const member = members.find(m => m.id === paymentConfirmationInvoice.memberId);
                           if (member && member.phone) {
+                            // Fetch the latest invoice data to ensure we have the updated receipt number
+                            let latestInvoice = paymentConfirmationInvoice;
+                            try {
+                              const invoiceResponse = await fetch(`${apiUrl}/api/invoices`);
+                              if (invoiceResponse.ok) {
+                                const allInvoices = await invoiceResponse.json();
+                                const updatedInvoice = allInvoices.find(inv => inv.id === paymentConfirmationInvoice.id || inv._id === paymentConfirmationInvoice._id);
+                                if (updatedInvoice) {
+                                  latestInvoice = updatedInvoice;
+                                  // Update the state to reflect the latest invoice data
+                                  setPaymentConfirmationInvoice(updatedInvoice);
+                                }
+                              }
+                            } catch (invoiceError) {
+                              console.warn('Could not fetch latest invoice data, using cached data:', invoiceError);
+                              // Continue with existing invoice data
+                            }
+                            
                             // Find the payment for this invoice
                             const payment = payments.find(p => p.invoiceId === paymentConfirmationInvoice.id);
                             
                             // Generate PDF and get URL
                             let pdfUrl = null;
                             try {
-                              const pdfResponse = await fetch(`${apiUrl}/api/invoices/${paymentConfirmationInvoice.id}/pdf-receipt`, {
+                              const invoiceIdForPdf = latestInvoice.id || paymentConfirmationInvoice.id;
+                              const pdfResponse = await fetch(`${apiUrl}/api/invoices/${invoiceIdForPdf}/pdf-receipt`, {
                                 method: 'GET',
                               });
 
@@ -19922,18 +20138,17 @@ Indian Muslim Association, Hong Kong`;
                               return numberToWords(crore) + ' Crore' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
                             };
 
-                            // Use receipt number from invoice only if it exists - do NOT generate new one if empty
-                            // This ensures consistency with the receipt number shown in member details table
-                            let receiptNo = paymentConfirmationInvoice.receiptNumber || null;
+                            // Use receipt number from latest invoice data (fetched fresh to ensure we have the updated receipt number)
+                            let receiptNo = latestInvoice.receiptNumber || null;
                             const receiptDate = new Date().toLocaleDateString('en-GB', {
                               day: '2-digit',
                               month: '2-digit',
                               year: 'numeric'
                             }).replace(/\//g, ' / ');
-                            const amountStr = paymentConfirmationInvoice.amount || 'HK$0';
+                            const amountStr = latestInvoice.amount || 'HK$0';
                             const amountNum = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
                             const amountInWords = amountNum > 0 ? numberToWords(Math.floor(amountNum)) + ' Only' : '';
-                            const invoiceYear = paymentConfirmationInvoice.period ? (paymentConfirmationInvoice.period.match(/\d{4}/)?.[0] || '') : '';
+                            const invoiceYear = latestInvoice.period ? (latestInvoice.period.match(/\d{4}/)?.[0] || '') : '';
                             
                             // Determine payment mode: Priority is to use the actual method if specified
                             let paymentMode = 'Online';
@@ -20018,7 +20233,7 @@ Thank you for supporting the IMA community!`;
                               // Use the PDF options page endpoint which shows view/download options
                               // Always use VITE_API_URL if available, otherwise use current origin
                               const apiBaseUrl = import.meta.env.VITE_API_URL || window.location.origin;
-                              downloadUrl = `${apiBaseUrl}/api/invoices/${paymentConfirmationInvoice.id}/pdf-receipt/options`;
+                              downloadUrl = `${apiBaseUrl}/api/invoices/${latestInvoice.id || paymentConfirmationInvoice.id}/pdf-receipt/options`;
                               
                               // For WhatsApp, provide the PDF options page link
                               message += `\n\nReceipt PDF:\n${downloadUrl}`;
@@ -20095,7 +20310,7 @@ Thank you for supporting the IMA community!${downloadUrl ? `\n\nReceipt PDF:\n${
                                 memberId: member.id,
                                 memberEmail: member.email,
                                 memberName: member.name,
-                                message: `Payment confirmation sent to ${member.name} (${member.phone}) - Invoice #${paymentConfirmationInvoice.id}${pdfUrl ? ' (with PDF)' : ''}`,
+                                message: `Payment confirmation sent to ${member.name} (${member.phone}) - Invoice #${latestInvoice.id || paymentConfirmationInvoice.id}${pdfUrl ? ' (with PDF)' : ''} - Receipt No: ${receiptNo || 'N/A'}`,
                                 status: "Delivered",
                               };
                               addCommunication(comm);

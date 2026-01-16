@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 import { ensureConnection } from "../config/database.js";
 import UserModel from "../models/User.js";
 import InvoiceModel from "../models/Invoice.js";
+import PaymentModel from "../models/Payment.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { sendAccountApprovalEmail } from "../utils/emailHelpers.js";
 import { emitMemberUpdate } from "../config/socket.js";
@@ -473,6 +474,44 @@ router.put("/:id", async (req, res) => {
 
       if (!member) {
         return res.status(404).json({ message: "Member not found" });
+      }
+
+      // Update related payments if member name, email, or phone changed
+      if (updateData.name || updateData.email || updateData.phone) {
+        try {
+          const paymentUpdates = {};
+          if (updateData.name) {
+            paymentUpdates.member = updateData.name;
+          }
+          if (updateData.email) {
+            paymentUpdates.memberEmail = updateData.email;
+          }
+          
+          // Update all payments for this member and emit socket events for instant update
+          const updatedPayments = await PaymentModel.find({ memberId: req.params.id });
+          
+          if (updatedPayments.length > 0) {
+            await PaymentModel.updateMany(
+              { memberId: req.params.id },
+              { $set: paymentUpdates }
+            );
+            
+            // Emit socket events for each updated payment to trigger instant frontend update
+            const { emitPaymentUpdate } = await import("../config/socket.js");
+            for (const payment of updatedPayments) {
+              const updatedPayment = {
+                ...payment.toObject(),
+                ...paymentUpdates
+              };
+              emitPaymentUpdate('updated', updatedPayment);
+            }
+            
+            console.log(`✓ Updated ${updatedPayments.length} payment(s) for member ${req.params.id} with new data`);
+          }
+        } catch (paymentUpdateError) {
+          console.error("Error updating related payments:", paymentUpdateError);
+          // Don't fail the member update if payment update fails
+        }
       }
 
       // Emit Socket.io event for real-time update
