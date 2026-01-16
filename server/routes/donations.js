@@ -165,7 +165,10 @@ router.get("/:id/pdf-receipt/options", async (req, res) => {
       `);
     }
 
-    const apiBaseUrl = req.protocol + '://' + req.get('host');
+    // Get protocol correctly (handle proxy/load balancer)
+    const protocol = req.get('X-Forwarded-Proto') || req.protocol || 'https';
+    const host = req.get('host');
+    const apiBaseUrl = `${protocol}://${host}`;
     const viewUrl = `${apiBaseUrl}/api/donations/${donation._id || donation.id}/pdf-receipt/view`;
     const downloadUrl = `${apiBaseUrl}/api/donations/${donation._id || donation.id}/pdf-receipt/download`;
 

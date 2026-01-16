@@ -606,7 +606,10 @@ router.get("/:id/pdf-receipt/options", async (req, res) => {
       `);
     }
 
-    const apiBaseUrl = req.protocol + '://' + req.get('host');
+    // Get protocol correctly (handle proxy/load balancer)
+    const protocol = req.get('X-Forwarded-Proto') || req.protocol || 'https';
+    const host = req.get('host');
+    const apiBaseUrl = `${protocol}://${host}`;
     // View PDF - use the same download endpoint but will open in browser instead of downloading
     // We'll add a query parameter to indicate viewing mode
     const viewUrl = `${apiBaseUrl}/api/invoices/${invoice.id}/pdf-receipt/view`;
