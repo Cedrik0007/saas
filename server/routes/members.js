@@ -148,6 +148,18 @@ router.post("/", async (req, res) => {
         return res.status(400).json({ message: "Email already exists" });
       }
     }
+    
+    // Check if phone already exists (only if phone is provided)
+    if (req.body.phone && req.body.phone.trim()) {
+      const phoneStr = req.body.phone.trim();
+      const cleaned = phoneStr.replace(/[^\d+]/g, "");
+      const normalizedPhone = cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
+      
+      const existingPhone = await UserModel.findOne({ phone: normalizedPhone });
+      if (existingPhone) {
+        return res.status(400).json({ message: "Phone number already exists" });
+      }
+    }
 
     // Parse start_date if provided, otherwise use current date
     let startDate = null;
