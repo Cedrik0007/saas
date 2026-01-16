@@ -14720,30 +14720,18 @@ Indian Muslim Association, Hong Kong`;
                             <div style={{ marginBottom: "20px" }}>
                               <label>
                                 <span><i className="fas fa-phone" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Mobile Number</span>
-                                <input
-                                  type="tel"
+                                <PhoneInput
                                   value={donationForm.phone}
                                   onChange={(e) => {
-                                    let value = e.target.value;
-                                    // Auto-add + if missing and starts with number
-                                    if (value && !value.startsWith('+') && /^\d/.test(value)) {
-                                      value = '+' + value;
-                                    }
-                                    setDonationForm({ ...donationForm, phone: value });
+                                    setDonationForm({ ...donationForm, phone: e.target.value });
                                   }}
-                                  placeholder="Enter mobile number (e.g., +85212345678)"
-                                  style={{
-                                    width: "100%",
-                                    padding: "10px 16px",
-                                    border: "1px solid #e0e0e0",
-                                    borderRadius: "4px",
-                                    fontSize: "0.9375rem",
-                                    marginTop: "8px"
-                                  }}
+                                  placeholder="Enter mobile number"
+                                  required={false}
+                                  style={{ marginTop: "8px" }}
                                 />
-                                <span style={{ fontSize: "0.75rem", color: "#666", marginTop: "4px", display: "block" }}>
+                                {/* <span style={{ fontSize: "0.75rem", color: "#666", marginTop: "4px", display: "block" }}>
                                   Optional: Enter mobile number for non-member donor
-                                </span>
+                                </span> */}
                               </label>
                             </div>
                           )}
@@ -16666,7 +16654,7 @@ Indian Muslim Association, Hong Kong`;
                               "Date",
                               "Type",
                               "Member / Donor",
-                              "Invoice ID",
+                              // "Invoice ID",
                               "Amount",
                               "Method",
                               "Receiver Name",
