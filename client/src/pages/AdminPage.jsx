@@ -15434,15 +15434,6 @@ Indian Muslim Association, Hong Kong`;
                                       
                                       // Prepare data for Excel export
                                       const rows = filteredDonations.map((d) => ({
-                                        Date:
-                                          d.date ||
-                                          (d.createdAt
-                                            ? new Date(d.createdAt).toLocaleDateString("en-GB", {
-                                              day: "2-digit",
-                                              month: "short",
-                                              year: "numeric",
-                                            })
-                                            : "-"),
                                         "Donor Name": d.donorName || "",
                                         "Donor Type": d.isMember ? "Member" : "Non-Member",
                                         "Donation Type": d.donationType || "Other",
@@ -15460,7 +15451,6 @@ Indian Muslim Association, Hong Kong`;
 
                                       // Add headers
                                       worksheet.columns = [
-                                        { header: "Date", key: "Date", width: 12 },
                                         { header: "Donor Name", key: "Donor Name", width: 25 },
                                         { header: "Donor Type", key: "Donor Type", width: 12 },
                                         { header: "Donation Type", key: "Donation Type", width: 15 },
@@ -15497,7 +15487,7 @@ Indian Muslim Association, Hong Kong`;
                               </div>
 
                               <Table
-                                columns={["Date", "Donor Name", "Donor Type", "Donation Type", "Amount", "Method", "Screenshot", "Notes", "Actions"]}
+                                columns={["Donor Name", "Donor Type", "Donation Type", "Amount", "Method", "Screenshot", "Notes", "Actions"]}
                                 rows={paginatedDonations.map((donation) => {
                                   if (!donation) return null;
                                   const donationDate =
@@ -15536,7 +15526,6 @@ Indian Muslim Association, Hong Kong`;
                                   const donorPhone = getDonorPhone();
 
                                   return {
-                                    Date: donationDate,
                                     "Donor Name": donation.donorName || "Unknown",
                                     "Donor Type": donation.isMember ? (
                                       <span className="badge badge-active">Member</span>
