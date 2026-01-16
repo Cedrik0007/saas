@@ -243,16 +243,6 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
       }
     }
 
-    // Generate PDF receipt
-    let pdfBuffer = null;
-    try {
-      pdfBuffer = await generatePaymentReceiptPDF(member, invoice, payment);
-      console.log(`✓ PDF receipt generated for payment ${payment?.id || payment?.invoiceId || 'N/A'}`);
-    } catch (pdfError) {
-      console.error(`❌ Error generating PDF receipt:`, pdfError);
-      // Continue without PDF if generation fails
-    }
-
     // Get email settings for from address
     const fromEmail = emailSettings?.emailUser || process.env.EMAIL_USER || 'noreply@subscriptionhk.org';
     const toEmail = member.email || member.memberEmail;
@@ -268,8 +258,9 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
     let receiptNo, receiptDate, memberName, amountStr, amountNum, amountInWords, invoiceYear, isAnnualMember, isCash, isOnline, paymentMode;
     
     try {
-      // Get next sequential 4-digit receipt number
-      receiptNo = await getNextReceiptNumber();
+      // Only use receipt number from invoice if it exists - do NOT generate new one if empty
+      receiptNo = invoice?.receiptNumber || null;
+      
       receiptDate = new Date().toLocaleDateString('en-GB', {
         day: '2-digit',
         month: '2-digit',
@@ -310,8 +301,8 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
       isOnline = !isCashPayment && !isTransfer;
     } catch (dataError) {
       console.error('Error preparing receipt data:', dataError);
-      // Set safe defaults
-      receiptNo = invoice?.id || `REC-${Date.now()}`;
+      // Set safe defaults - use invoice receipt number if available, otherwise null
+      receiptNo = invoice?.receiptNumber || null;
       receiptDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, ' / ');
       memberName = member?.name || 'Member';
       amountStr = invoice?.amount || 'HK$0';
@@ -321,6 +312,16 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
       isCash = false;
       isOnline = false;
       paymentMode = 'Online';
+    }
+    
+    // Generate PDF receipt with the same receipt number (after receiptNo is set)
+    let pdfBuffer = null;
+    try {
+      pdfBuffer = await generatePaymentReceiptPDF(member, invoice, payment, receiptNo);
+      console.log(`✓ PDF receipt generated for payment ${payment?.id || payment?.invoiceId || 'N/A'} with receipt number ${receiptNo}`);
+    } catch (pdfError) {
+      console.error(`❌ Error generating PDF receipt:`, pdfError);
+      // Continue without PDF if generation fails
     }
     
     // Format date for display
@@ -350,7 +351,7 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
       <strong>Member:</strong> ${memberName}
     </p>
     <p style="margin: 12px 0; font-size: 16px; color: #333;">
-     <strong>Receipt No:</strong> ${receiptNo}
+     <strong>Receipt No:</strong> ${receiptNo || '-'}
     </p>
     <p style="margin: 12px 0; font-size: 16px; color: #333;">
        <strong>Amount:</strong> ${amountStr}

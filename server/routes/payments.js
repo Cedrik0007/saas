@@ -196,7 +196,13 @@ router.put("/:id/approve", async (req, res) => {
       }
     }
 
-    // Send approval email
+    // Do NOT automatically generate receipt number - only use if already exists in invoice
+    // Refresh invoice to get latest data
+    if (invoice && payment.invoiceId) {
+      invoice = await InvoiceModel.findOne({ id: payment.invoiceId });
+    }
+
+    // Send approval email (will use the receipt number from invoice if available)
     if (member) {
       await sendPaymentApprovalEmail(member, payment, invoice);
     }

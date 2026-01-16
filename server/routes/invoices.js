@@ -429,6 +429,8 @@ router.put("/:id", async (req, res) => {
     const isNowPaid = updatedInvoice.status === "Paid";
     const markedAsPaid = statusChanged && wasUnpaid && isNowPaid;
 
+    // Do NOT automatically generate receipt number - only use if already exists in invoice
+
     if (statusChanged || amountChanged || memberChanged) {
       // Always recalculate balance for the old member if:
       // - Member changed, OR
@@ -586,6 +588,160 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
   }
 });
 
+// GET PDF options page (view/download options)
+router.get("/:id/pdf-receipt/options", async (req, res) => {
+  try {
+    await ensureConnection();
+
+    const invoice = await InvoiceModel.findOne({ id: req.params.id });
+    if (!invoice) {
+      return res.status(404).send(`
+        <html>
+          <head><title>Invoice Not Found</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h2>Invoice Not Found</h2>
+            <p>The requested invoice could not be found.</p>
+          </body>
+        </html>
+      `);
+    }
+
+    const apiBaseUrl = req.protocol + '://' + req.get('host');
+    // View PDF - use the same download endpoint but will open in browser instead of downloading
+    // We'll add a query parameter to indicate viewing mode
+    const viewUrl = `${apiBaseUrl}/api/invoices/${invoice.id}/pdf-receipt/view`;
+    const downloadUrl = `${apiBaseUrl}/api/invoices/${invoice.id}/pdf-receipt/download`;
+
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Payment Receipt - Options</title>
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+          }
+          .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+          }
+          .header {
+            margin-bottom: 30px;
+          }
+          .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+          }
+          .header p {
+            color: #666;
+            font-size: 16px;
+          }
+          .options {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 30px;
+          }
+          .btn {
+            display: inline-block;
+            padding: 16px 32px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+            cursor: pointer;
+          }
+          .btn-view {
+            background: #10b981;
+            color: white;
+          }
+          .btn-view:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3);
+          }
+          .btn-download {
+            background: #3b82f6;
+            color: white;
+          }
+          .btn-download:hover {
+            background: #2563eb;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
+          }
+          .btn-icon {
+            margin-right: 8px;
+            font-size: 18px;
+          }
+          .info {
+            margin-top: 30px;
+            padding: 15px;
+            background: #f3f4f6;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #666;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>📄 Payment Receipt</h1>
+            <p>Choose an option to access your receipt</p>
+          </div>
+          <div class="options">
+            <a href="${viewUrl}" target="_blank" class="btn btn-view">
+              <span class="btn-icon">👁️</span>
+              View PDF
+            </a>
+            <a href="${downloadUrl}" class="btn btn-download" download>
+              <span class="btn-icon">⬇️</span>
+              Download PDF
+            </a>
+          </div>
+          <div class="info">
+            <strong>Invoice #:</strong> ${invoice.id}<br>
+            <strong>Amount:</strong> ${invoice.amount || 'N/A'}
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error("Error generating PDF options page:", error);
+    res.status(500).send(`
+      <html>
+        <head><title>Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h2>Error</h2>
+          <p>An error occurred while loading the receipt options.</p>
+        </body>
+      </html>
+    `);
+  }
+});
+
 // GET download PDF receipt directly (proxy endpoint to bypass Cloudinary auth)
 router.get("/:id/pdf-receipt/download", async (req, res) => {
   try {
@@ -625,9 +781,9 @@ router.get("/:id/pdf-receipt/download", async (req, res) => {
       screenshot: invoice.screenshot || invoice.payment_proof || null,
     };
 
-    // Generate PDF receipt
+    // Generate PDF receipt - use receipt number from invoice if available
     const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
-    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData);
+    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData, invoice.receiptNumber);
 
     // Set headers for PDF download
     res.setHeader('Content-Type', 'application/pdf');
@@ -681,9 +837,9 @@ router.get("/:id/pdf-receipt", async (req, res) => {
       screenshot: invoice.screenshot || invoice.payment_proof || null,
     };
 
-    // Generate PDF receipt
+    // Generate PDF receipt - use receipt number from invoice if available
     const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
-    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData);
+    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData, invoice.receiptNumber);
 
     // Upload PDF to Cloudinary if configured
     if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
@@ -741,6 +897,62 @@ router.get("/:id/pdf-receipt", async (req, res) => {
     }
   } catch (error) {
     console.error("Error generating PDF receipt:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET view PDF receipt in browser (opens in new tab instead of downloading)
+router.get("/:id/pdf-receipt/view", async (req, res) => {
+  try {
+    await ensureConnection();
+
+    const invoice = await InvoiceModel.findOne({ id: req.params.id });
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    // Allow both "Paid" and "Completed" statuses
+    const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
+    if (!isPaid) {
+      return res.status(400).json({ error: "Invoice is not marked as paid. Current status: " + invoice.status });
+    }
+
+    const member = await UserModel.findOne({ id: invoice.memberId });
+    if (!member) {
+      return res.status(404).json({ error: "Member not found" });
+    }
+
+    // Find the most recent payment for this invoice
+    const payment = await PaymentModel.findOne({
+      invoiceId: invoice.id
+    }).sort({ createdAt: -1 });
+
+    // Prepare payment object with screenshot from payment or invoice
+    const paymentData = payment ? {
+      ...payment.toObject(),
+      screenshot: payment.screenshot || invoice.screenshot || invoice.payment_proof || null,
+    } : {
+      invoiceId: invoice.id,
+      amount: invoice.amount,
+      method: invoice.method || 'Payment',
+      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      reference: invoice.reference || invoice.id,
+      screenshot: invoice.screenshot || invoice.payment_proof || null,
+    };
+
+    // Generate PDF receipt - use receipt number from invoice if available
+    const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
+    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData, invoice.receiptNumber);
+
+    // Set headers for PDF view (inline instead of attachment)
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Receipt_${invoice.id}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    // Send PDF buffer directly
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Error viewing PDF receipt:", error);
     res.status(500).json({ error: error.message });
   }
 });

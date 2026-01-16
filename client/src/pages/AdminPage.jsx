@@ -578,6 +578,7 @@
       donorName: "",
       isMember: false,
       memberId: "",
+      phone: "", // Phone number for non-member donations
       donationType: "", // Empty by default - user must select
       customDonationType: "", // Custom donation type when "Other" is selected
       amount: "",
@@ -843,6 +844,11 @@
     const [paymentConfirmationInvoice, setPaymentConfirmationInvoice] = useState(null);
     const [paymentConfirmationChannels, setPaymentConfirmationChannels] = useState({
       email: false,
+      whatsapp: false,
+    });
+    const [showDonationConfirmationModal, setShowDonationConfirmationModal] = useState(false);
+    const [donationConfirmationDonation, setDonationConfirmationDonation] = useState(null);
+    const [donationConfirmationChannel, setDonationConfirmationChannel] = useState({
       whatsapp: false,
     });
     const [sendingPaymentConfirmation, setSendingPaymentConfirmation] = useState(false);
@@ -3649,8 +3655,9 @@ Indian Muslim Association, Hong Kong`;
         setShowMemberForm(false);
         showToast("Member added successfully!", "success");
       } catch (error) {
-        console.error("Failed to add member:", error);
-        showToast("Failed to add member. Please try again.", "error");
+        // Show actual error message from API (e.g., "Phone number already exists", "Email already exists", "Member ID already exists")
+        const errorMessage = error?.message || "Failed to add member. Please try again.";
+        showToast(errorMessage, "error");
       } finally {
         setIsMemberSubmitting(false);
       }
@@ -7306,6 +7313,7 @@ Indian Muslim Association, Hong Kong`;
                         <Table
                           columns={[
                             "Invoice #",
+                            "Receipt No",
                             "Year",
                             "Subscription Type",
                             "Amount",
@@ -7389,6 +7397,7 @@ Indian Muslim Association, Hong Kong`;
 
                             return {
                               "Invoice #": invoice.id,
+                              "Receipt No": invoice.receiptNumber || "-",
                               "Year": invoice.period || "-",
                               "Subscription Type": subscriptionType,
                               Amount: invoice.amount
@@ -13742,6 +13751,7 @@ Indian Muslim Association, Hong Kong`;
                             donorName: "",
                             isMember: false,
                             memberId: "",
+                            phone: "",
                             donationType: "",
                             amount: "",
                             payment_type: "",
@@ -13791,6 +13801,7 @@ Indian Muslim Association, Hong Kong`;
                                 donorName: "",
                                 isMember: false,
                                 memberId: "",
+                                phone: "",
                                 donationType: "",
                                 customDonationType: "",
                                 amount: "",
@@ -14506,6 +14517,39 @@ Indian Muslim Association, Hong Kong`;
                               />
                             </label>
                                 </div>
+
+                          {/* Phone Number - Shown only for Non-Member */}
+                          {!donationForm.isMember && (
+                            <div style={{ marginBottom: "20px" }}>
+                              <label>
+                                <span><i className="fas fa-phone" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Mobile Number</span>
+                                <input
+                                  type="tel"
+                                  value={donationForm.phone}
+                                  onChange={(e) => {
+                                    let value = e.target.value;
+                                    // Auto-add + if missing and starts with number
+                                    if (value && !value.startsWith('+') && /^\d/.test(value)) {
+                                      value = '+' + value;
+                                    }
+                                    setDonationForm({ ...donationForm, phone: value });
+                                  }}
+                                  placeholder="Enter mobile number (e.g., +85212345678)"
+                                  style={{
+                                    width: "100%",
+                                    padding: "10px 16px",
+                                    border: "1px solid #e0e0e0",
+                                    borderRadius: "4px",
+                                    fontSize: "0.9375rem",
+                                    marginTop: "8px"
+                                  }}
+                                />
+                                <span style={{ fontSize: "0.75rem", color: "#666", marginTop: "4px", display: "block" }}>
+                                  Optional: Enter mobile number for non-member donor
+                                </span>
+                              </label>
+                            </div>
+                          )}
 
                           {/* Donation Type Selector */}
                           <div style={{ marginBottom: "20px" }}>
@@ -15478,11 +15522,13 @@ Indian Muslim Association, Hong Kong`;
                                     return <span className={`badge ${badgeColors[type] || "badge-secondary"}`}>{type || "Other"}</span>;
                                   };
 
-                                  // Get donor phone number (if member, get from members list)
+                                  // Get donor phone number (if member, get from members list; if non-member, get from donation.phone)
                                   const getDonorPhone = () => {
                                     if (donation.isMember && donation.memberId) {
                                       const member = members.find(m => m.id === donation.memberId);
                                       return member?.phone || null;
+                                    } else if (!donation.isMember && donation.phone) {
+                                      return donation.phone;
                                     }
                                     return null;
                                   };
@@ -15538,7 +15584,39 @@ Indian Muslim Association, Hong Kong`;
                                     Notes: donation.notes || "-",
                                     Actions: {
                                       render: () => (
-                                        <div className="server-action-buttons">
+                                        <div className="server-action-buttons" style={{ display: "flex", gap: "8px", justifyContent: "flex-start" }}>
+                                          <button
+                                            className="secondary-btn"
+                                            style={{
+                                              padding: "4px 10px",
+                                              fontSize: "0.85rem",
+                                              display: "inline-flex",
+                                              alignItems: "center",
+                                              gap: "4px"
+                                            }}
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              
+                                              // Get donor phone number
+                                              const phone = getDonorPhone();
+                                              
+                                              if (!phone) {
+                                                showToast("Phone number not available for this donor", "error");
+                                                return;
+                                              }
+                                              
+                                              // Open donation confirmation modal
+                                              setDonationConfirmationDonation(donation);
+                                              setDonationConfirmationChannel({ whatsapp: false });
+                                              setShowDonationConfirmationModal(true);
+                                            }}
+                                            title="Send Donation Confirmation"
+                                            disabled={!donorPhone}
+                                          >
+                                            <i className="fas fa-paper-plane" style={{ fontSize: "0.75rem" }}></i>
+                                            Send
+                                          </button>
                                           <button
                                             className="ghost-btn"
                                             style={{
@@ -19855,25 +19933,9 @@ Indian Muslim Association, Hong Kong`;
                               return numberToWords(crore) + ' Crore' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
                             };
 
-                            // Get next sequential 4-digit receipt number from server
-                            let receiptNo = '0000';
-                            try {
-                              const receiptResponse = await fetch(`${apiUrl}/api/invoices/next-receipt-number`, {
-                                method: 'GET',
-                                headers: { 'Content-Type': 'application/json' },
-                              });
-                              if (receiptResponse.ok) {
-                                const receiptData = await receiptResponse.json();
-                                receiptNo = receiptData.receiptNumber || '0000';
-                              } else {
-                                // Fallback to timestamp if API fails
-                                receiptNo = String(Date.now()).slice(-4).padStart(4, '0');
-                              }
-                            } catch (error) {
-                              console.error('Error getting receipt number:', error);
-                              // Fallback to timestamp if API fails
-                              receiptNo = String(Date.now()).slice(-4).padStart(4, '0');
-                            }
+                            // Use receipt number from invoice only if it exists - do NOT generate new one if empty
+                            // This ensures consistency with the receipt number shown in member details table
+                            let receiptNo = paymentConfirmationInvoice.receiptNumber || null;
                             const receiptDate = new Date().toLocaleDateString('en-GB', {
                               day: '2-digit',
                               month: '2-digit',
@@ -19953,7 +20015,7 @@ Membership Renewal Receipt
 
 Date: ${displayDate}
 Member: ${member.name}
-Receipt No: ${receiptNo}
+Receipt No: ${receiptNo || '-'}
 Amount: ${amountStr}
 Payment Mode: ${paymentMode}
 
@@ -19961,16 +20023,16 @@ Renewal confirmed for Year ${invoiceYear || '____'}
 
 Thank you for supporting the IMA community!`;
 
-                            // Prepare PDF download URL if available
+                            // Prepare PDF options page URL (instead of direct download)
                             let downloadUrl = null;
                             if (pdfUrl) {
-                              // Use the direct download endpoint to bypass Cloudinary authentication issues
+                              // Use the PDF options page endpoint which shows view/download options
                               // Always use VITE_API_URL if available, otherwise use current origin
                               const apiBaseUrl = import.meta.env.VITE_API_URL || window.location.origin;
-                              downloadUrl = `${apiBaseUrl}/api/invoices/${paymentConfirmationInvoice.id}/pdf-receipt/download`;
+                              downloadUrl = `${apiBaseUrl}/api/invoices/${paymentConfirmationInvoice.id}/pdf-receipt/options`;
                               
-                              // For WhatsApp, provide the PDF link as a direct download link
-                              message += `\n\nDownload Receipt PDF:\n${downloadUrl}`;
+                              // For WhatsApp, provide the PDF options page link
+                              message += `\n\nReceipt PDF:\n${downloadUrl}`;
                             } else {
                               message += `\n\nYour payment receipt PDF has been sent to your email.`;
                             }
@@ -20009,13 +20071,13 @@ Membership Renewal Receipt
 
 Date: ${displayDate}
 Member: ${member.name}
-Receipt No: ${receiptNo}
+Receipt No: ${receiptNo || '-'}
 Amount: ${amountStr}
 Payment Mode: ${paymentMode}
 
 Renewal confirmed for Year ${invoiceYear || '____'}
 
-Thank you for supporting the IMA community!${downloadUrl ? `\n\nDownload Receipt PDF:\n${downloadUrl}` : '\n\nReceipt PDF sent to your email.'}`;
+Thank you for supporting the IMA community!${downloadUrl ? `\n\nReceipt PDF:\n${downloadUrl}` : '\n\nReceipt PDF sent to your email.'}`;
                               whatsappUrl = `https://wa.me/${phoneForUrl}?text=${encodeURIComponent(finalMessage)}`;
                             }
                             
@@ -20107,6 +20169,235 @@ Thank you for supporting the IMA community!${downloadUrl ? `\n\nDownload Receipt
             </div>
           </div>
         )}
+
+        {/* Donation Confirmation Modal */}
+        {showDonationConfirmationModal && donationConfirmationDonation && (() => {
+          const phone = (() => {
+            if (donationConfirmationDonation.isMember && donationConfirmationDonation.memberId) {
+              const member = members.find(m => m.id === donationConfirmationDonation.memberId);
+              return member?.phone || null;
+            } else if (!donationConfirmationDonation.isMember && donationConfirmationDonation.phone) {
+              return donationConfirmationDonation.phone;
+            }
+            return null;
+          })();
+
+          return (
+            <div
+              className="admin-members-form-overlay"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setShowDonationConfirmationModal(false);
+                  setDonationConfirmationDonation(null);
+                  setDonationConfirmationChannel({ whatsapp: false });
+                }
+              }}
+            >
+              <div className="admin-members-form-container" style={{ maxWidth: "500px" }}>
+                <div className="admin-members-form-header">
+                  <div className="admin-members-form-header-top">
+                    <h3 className="admin-members-form-title">
+                      <i className="fas fa-paper-plane" style={{ marginRight: "8px" }}></i>
+                      Send Donation Confirmation
+                    </h3>
+                    <button
+                      className="admin-members-form-close"
+                      onClick={() => {
+                        setShowDonationConfirmationModal(false);
+                        setDonationConfirmationDonation(null);
+                        setDonationConfirmationChannel({ whatsapp: false });
+                      }}
+                      aria-label="Close"
+                    >
+                      <i className="fa-solid fa-times" />
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ padding: "0 24px 24px" }}>
+                  <p style={{ marginBottom: "24px", color: "#6b7280", fontSize: "0.875rem" }}>
+                    Donation from <strong>{donationConfirmationDonation.donorName}</strong> has been recorded. Choose how you want to send the donation confirmation:
+                  </p>
+
+                  <div style={{ 
+                    display: "flex", 
+                    gap: "12px", 
+                    marginBottom: "24px",
+                    flexWrap: "wrap"
+                  }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDonationConfirmationChannel(prev => ({
+                          ...prev,
+                          whatsapp: !prev.whatsapp
+                        }));
+                      }}
+                      style={{
+                        flex: 1,
+                        minWidth: "200px",
+                        padding: "16px 20px",
+                        border: `2px solid ${donationConfirmationChannel.whatsapp ? "#25D366" : "#e5e7eb"}`,
+                        borderRadius: "8px",
+                        background: donationConfirmationChannel.whatsapp ? "#e6f7ed" : "#ffffff",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: "8px",
+                        textAlign: "center"
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!donationConfirmationChannel.whatsapp) {
+                          e.target.style.borderColor = "#25D366";
+                          e.target.style.background = "#f9fafb";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!donationConfirmationChannel.whatsapp) {
+                          e.target.style.borderColor = "#e5e7eb";
+                          e.target.style.background = "#ffffff";
+                        }
+                      }}
+                    >
+                      <div style={{ 
+                        width: "24px", 
+                        height: "24px", 
+                        borderRadius: "50%",
+                        background: donationConfirmationChannel.whatsapp ? "#25D366" : "#e5e7eb",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all 0.2s ease"
+                      }}>
+                        {donationConfirmationChannel.whatsapp && (
+                          <i className="fas fa-check" style={{ color: "#ffffff", fontSize: "12px" }}></i>
+                        )}
+                      </div>
+                      <div>
+                        <div style={{ 
+                          fontWeight: "600", 
+                          color: donationConfirmationChannel.whatsapp ? "#25D366" : "#1a1a1a",
+                          marginBottom: "4px",
+                          fontSize: "1rem"
+                        }}>
+                          <i className="fab fa-whatsapp" style={{ marginRight: "8px" }}></i>
+                          WhatsApp
+                        </div>
+                        <div style={{ 
+                          fontSize: "0.75rem", 
+                          color: "#6b7280",
+                          lineHeight: "1.4"
+                        }}>
+                          Send confirmation message
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      onClick={() => {
+                        setShowDonationConfirmationModal(false);
+                        setDonationConfirmationDonation(null);
+                        setDonationConfirmationChannel({ whatsapp: false });
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-btn"
+                      onClick={() => {
+                        if (!donationConfirmationChannel.whatsapp) {
+                          showToast("Please select WhatsApp", "error");
+                          return;
+                        }
+
+                        if (!phone) {
+                          showToast("Phone number not available for this donor", "error");
+                          return;
+                        }
+
+                        // Close modal immediately
+                        setShowDonationConfirmationModal(false);
+                        const donationData = donationConfirmationDonation;
+                        const phoneNumber = phone;
+                        setDonationConfirmationDonation(null);
+                        setDonationConfirmationChannel({ whatsapp: false });
+
+                        // Format date immediately
+                        const displayDate = donationData.date || 
+                          (donationData.createdAt ? new Date(donationData.createdAt).toLocaleDateString('en-GB', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric'
+                          }) : new Date().toLocaleDateString('en-GB', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric'
+                          }));
+                        
+                        // Create WhatsApp message with PDF URL (always use options URL)
+                        const apiBaseUrl = import.meta.env.VITE_API_URL || window.location.origin;
+                        const downloadUrl = `${apiBaseUrl}/api/donations/${donationData._id || donationData.id}/pdf-receipt/options`;
+                        
+                        const message = `Indian Muslim Association – Hong Kong
+Donation Receipt
+
+Date: ${displayDate}
+Donor Name: ${donationData.donorName}
+Donation Type: ${donationData.donationType}
+Amount: HK$${donationData.amount || '0.00'}
+
+Thank you for your generous donation!
+
+Receipt PDF:
+${downloadUrl}`;
+                        
+                        // Clean phone number
+                        let cleanPhone = phoneNumber.replace(/[^0-9+]/g, "");
+                        if (!cleanPhone.startsWith('+')) {
+                          cleanPhone = '+852' + cleanPhone.replace(/^\+?/, '');
+                        }
+                        const phoneForUrl = cleanPhone.replace(/^\+/, '');
+                        
+                        // Open WhatsApp immediately
+                        const whatsappUrl = `https://wa.me/${phoneForUrl}?text=${encodeURIComponent(message)}`;
+                        const whatsappWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+                        
+                        if (!whatsappWindow || whatsappWindow.closed || typeof whatsappWindow.closed === 'undefined') {
+                          showToast('Popup blocked. Please allow popups to open WhatsApp.', 'warning');
+                        } else {
+                          showToast(`WhatsApp opened for ${donationData.donorName}`, "success");
+                          
+                          // Log to communication in background (non-blocking)
+                          setTimeout(() => {
+                            const comm = {
+                              channel: "WhatsApp",
+                              type: "Donation Confirmation",
+                              memberId: donationData.isMember ? donationData.memberId : null,
+                              memberEmail: donationData.isMember ? (members.find(m => m.id === donationData.memberId)?.email || null) : null,
+                              memberName: donationData.donorName,
+                              message: `Donation confirmation sent to ${donationData.donorName} (${phoneNumber}) - Donation #${donationData._id || donationData.id} (with PDF)`,
+                              status: "Delivered",
+                            };
+                            addCommunication(comm);
+                          }, 100);
+                        }
+                      }}
+                    >
+                      Send
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         <SiteFooter />
       </>

@@ -147,6 +147,197 @@ router.get("/:id/pdf-receipt", async (req, res) => {
   }
 });
 
+// GET PDF options page (view/download options)
+router.get("/:id/pdf-receipt/options", async (req, res) => {
+  try {
+    await ensureConnection();
+
+    const donation = await DonationModel.findById(req.params.id);
+    if (!donation) {
+      return res.status(404).send(`
+        <html>
+          <head><title>Donation Not Found</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h2>Donation Not Found</h2>
+            <p>The requested donation could not be found.</p>
+          </body>
+        </html>
+      `);
+    }
+
+    const apiBaseUrl = req.protocol + '://' + req.get('host');
+    const viewUrl = `${apiBaseUrl}/api/donations/${donation._id || donation.id}/pdf-receipt/view`;
+    const downloadUrl = `${apiBaseUrl}/api/donations/${donation._id || donation.id}/pdf-receipt/download`;
+
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Donation Receipt - Options</title>
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+          }
+          .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+          }
+          .header {
+            margin-bottom: 30px;
+          }
+          .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+          }
+          .header p {
+            color: #666;
+            font-size: 16px;
+          }
+          .options {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 30px;
+          }
+          .btn {
+            display: inline-block;
+            padding: 16px 32px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+            cursor: pointer;
+          }
+          .btn-view {
+            background: #10b981;
+            color: white;
+          }
+          .btn-view:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3);
+          }
+          .btn-download {
+            background: #3b82f6;
+            color: white;
+          }
+          .btn-download:hover {
+            background: #2563eb;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3);
+          }
+          .btn-icon {
+            margin-right: 8px;
+            font-size: 18px;
+          }
+          .info {
+            margin-top: 30px;
+            padding: 15px;
+            background: #f3f4f6;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #666;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>📄 Donation Receipt</h1>
+            <p>Choose an option to access your receipt</p>
+          </div>
+          <div class="options">
+            <a href="${viewUrl}" target="_blank" class="btn btn-view">
+              <span class="btn-icon">👁️</span>
+              View PDF
+            </a>
+            <a href="${downloadUrl}" class="btn btn-download" download>
+              <span class="btn-icon">⬇️</span>
+              Download PDF
+            </a>
+          </div>
+          <div class="info">
+            <strong>Donor:</strong> ${donation.donorName || 'N/A'}<br>
+            <strong>Amount:</strong> ${donation.amount || 'N/A'}
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error("Error generating donation PDF options page:", error);
+    res.status(500).send(`
+      <html>
+        <head><title>Error</title></head>
+        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+          <h2>Error</h2>
+          <p>An error occurred while loading the receipt options.</p>
+        </body>
+      </html>
+    `);
+  }
+});
+
+// GET view PDF receipt in browser (opens in new tab instead of downloading)
+router.get("/:id/pdf-receipt/view", async (req, res) => {
+  try {
+    await ensureConnection();
+
+    const donation = await DonationModel.findById(req.params.id);
+    if (!donation) {
+      return res.status(404).json({ error: "Donation not found" });
+    }
+
+    // Convert Mongoose document to plain object if needed
+    const donationData = donation.toObject ? donation.toObject() : donation;
+
+    // Get member if donation is from a member
+    let member = null;
+    if (donationData.isMember && donationData.memberId) {
+      member = await UserModel.findOne({ id: donationData.memberId });
+      if (member && member.toObject) {
+        member = member.toObject();
+      }
+    }
+
+    // Generate PDF receipt
+    const { generateDonationReceiptPDF } = await import("../utils/pdfReceipt.js");
+    const pdfBuffer = await generateDonationReceiptPDF(donationData, member);
+
+    // Set headers for PDF view (inline instead of attachment)
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Donation_Receipt_${donationData._id || donationData.id}.pdf"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    
+    // Send PDF buffer directly
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Error viewing donation PDF receipt:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET download PDF receipt directly
 router.get("/:id/pdf-receipt/download", async (req, res) => {
   try {

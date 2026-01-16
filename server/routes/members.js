@@ -144,8 +144,8 @@ router.post("/", async (req, res) => {
     // Check if email already exists (only if email is provided)
     if (req.body.email && req.body.email.trim()) {
       const existingEmail = await UserModel.findOne({ email: req.body.email.trim().toLowerCase() });
-      if (existingEmail) {
-        return res.status(400).json({ message: "Email already exists" });
+    if (existingEmail) {
+      return res.status(400).json({ message: "Email already exists" });
       }
     }
     

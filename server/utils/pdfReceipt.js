@@ -77,9 +77,10 @@ export function numberToWords(num) {
  * @param {Object} member - Member object
  * @param {Object} invoice - Invoice object
  * @param {Object} payment - Payment object
+ * @param {string} receiptNo - Optional receipt number (if not provided, will generate new one)
  * @returns {Promise<Buffer>} PDF buffer
  */
-export async function generatePaymentReceiptPDF(member, invoice, payment) {
+export async function generatePaymentReceiptPDF(member, invoice, payment, receiptNo = null) {
   return new Promise(async (resolve, reject) => {
     try {
       const doc = new PDFDocument({ 
@@ -236,11 +237,11 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
 
       currentY += (responsiveHeightUnit * 3);
 
-      // Invoice Title
+      // Official Receipt Title
       doc.fontSize(Math.max(12, responsiveUnit * 2.2))
          .fillColor('#000000')
          .font('Helvetica-Bold')
-         .text('INVOICE', leftMargin, currentY, { 
+         .text('OFFICIAL RECEIPT', leftMargin, currentY, { 
            width: contentWidth,
            align: 'center'
          });
@@ -248,7 +249,8 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
       currentY += (responsiveHeightUnit * 4);
 
       // Prepare data
-      const receiptNoValue = await getNextReceiptNumber();
+      // Only use receipt number if provided or exists in invoice - do NOT generate new one if empty
+      const receiptNoValue = receiptNo || invoice?.receiptNumber || null;
       const receiptDate = new Date().toLocaleDateString('en-GB', {
            day: '2-digit',
            month: 'short',
@@ -256,25 +258,38 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
       });
       const memberName = member?.name || invoice?.memberName || 'N/A';
       const memberId = member?.id || invoice?.memberId || 'N/A';
-      const invoiceId = invoice?.id || payment?.invoiceId || 'N/A';
-      const subscriptionType = member?.subscriptionType || 'N/A';
+      
+      // Determine subscription type based on invoice amount
+      const amountStr = invoice?.amount || payment?.amount || 'HK$0';
+      const amountNum = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
+      let subscriptionType = 'N/A';
+      if (amountNum === 250 || amountNum === 250.00) {
+        subscriptionType = 'Lifetime Member Janaza fund';
+      } else if (amountNum === 500 || amountNum === 500.00) {
+        subscriptionType = 'Annual Member';
+      } else if (amountNum === 5250 || amountNum === 5250.00) {
+        subscriptionType = 'Lifetime membership Janaza fund';
+      } else {
+        // Fallback to member's subscription type if amount doesn't match
+        subscriptionType = member?.subscriptionType || 'N/A';
+      }
       
       // Extract year from invoice period
       const periodStr = String(invoice?.period || '').trim();
       const yearMatch = periodStr.match(/\d{4}/);
       const renewalYear = yearMatch ? yearMatch[0] : new Date().getFullYear().toString();
 
-      // Two-column table layout for invoice details
+      // Two-column table layout for invoice details (50/50 split for centered divider)
       const detailRowHeight = 20;
-      const detailCol1Width = contentWidth * 0.4; // Label column
-      const detailCol2Width = contentWidth * 0.6; // Value column
+      const detailCol1Width = contentWidth * 0.5; // Left column (50%)
+      const detailCol2Width = contentWidth * 0.5; // Right column (50%)
       
       // Invoice details table
       const detailsStartY = currentY;
       
       const verticalBorderX = leftMargin + detailCol1Width;
       
-      // Row 1: Invoice No and Date
+      // Row 1: Receipt No and Date (Invoice No removed)
       doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
          .strokeColor('#000000')
          .lineWidth(0.5)
@@ -291,11 +306,11 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
          .fillColor('#000000')
          .font('Helvetica');
       
-      doc.text(`Invoice No: ${invoiceId}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
+      doc.text(`Receipt No: ${receiptNoValue || '-'}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
       doc.text(`Date: ${receiptDate}`, leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
       currentY += detailRowHeight;
       
-      // Row 2: Member Name and Member ID
+      // Row 2: Member Name only (Member ID hidden)
       doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
          .strokeColor('#000000')
          .lineWidth(0.5)
@@ -309,42 +324,30 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
          .stroke();
       
       doc.text(`Member Name: ${memberName}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
-      const memberIdText = memberId !== 'N/A' ? `Member ID: IMA/${memberId}` : 'Member ID: -';
-      doc.text(memberIdText, leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
-      currentY += detailRowHeight;
-      
-      // Row 3: Membership Type and Year
-      doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
-         .strokeColor('#000000')
-         .lineWidth(0.5)
-         .stroke();
-      
-      // Vertical border in the middle
-      doc.moveTo(verticalBorderX, currentY)
-         .lineTo(verticalBorderX, currentY + detailRowHeight)
-         .strokeColor('#000000')
-         .lineWidth(1)
-         .stroke();
-      
-      doc.text(`Membership Type: ${subscriptionType}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
+      // Year moved to empty cell (where Member ID was)
       doc.text(`Year: ${renewalYear}`, leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
       currentY += detailRowHeight;
       
-      // Row 4: Receipt No
+      // Row 3: Subscription Type only (Year moved to Row 2)
       doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
          .strokeColor('#000000')
          .lineWidth(0.5)
          .stroke();
       
-      // Vertical border in the middle
+      // Vertical border in the middle (centered)
       doc.moveTo(verticalBorderX, currentY)
          .lineTo(verticalBorderX, currentY + detailRowHeight)
          .strokeColor('#000000')
          .lineWidth(1)
          .stroke();
       
-      doc.text(`Receipt No: ${receiptNoValue}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
-      // Leave right column empty or add additional info if needed
+      // Subscription Type in left column (with proper width to prevent overflow)
+      doc.text(`Subscription Type: ${subscriptionType}`, leftMargin + 5, currentY + 5, { 
+        width: detailCol1Width - 10
+      });
+      
+      // Right cell empty (Year moved to Row 2)
+      doc.text('', leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
       currentY += detailRowHeight + (responsiveHeightUnit * 3);
 
       // Description and Amount Table
@@ -373,9 +376,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
       
       currentY = tableTopY + rowHeight;
       
-      // Table data rows
-      const amountStr = invoice?.amount || payment?.amount || 'HK$0';
-      const amountNum = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
+      // Table data rows (using amountStr and amountNum already declared above)
       const formattedAmount = amountNum.toFixed(2);
       
       // First data row - Membership Renewal Fee
@@ -404,7 +405,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
          .fillColor('#000000')
          .font('Helvetica-Bold');
       
-      doc.text('Total Amount Payable', leftMargin + 5, currentY + 5, { 
+      doc.text('Total Amount', leftMargin + 5, currentY + 5, { 
         width: col1Width + col2Width - 10 
       });
       doc.text(`HK$${formattedAmount}`, leftMargin + col1Width + col2Width + 5, currentY + 5, { 
@@ -435,11 +436,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
       const paymentRef = payment?.reference || payment?.transactionId || '';
       doc.text(`Reference / Transaction ID: ${paymentRef}`, leftMargin, currentY, { width: contentWidth });
       
-      currentY += (responsiveHeightUnit * 2.5);
-      
-      const receiverName = payment?.receiver_name || invoice?.receiver_name || '';
-      doc.text(`Receiver Name: ${receiverName}`, leftMargin, currentY, { width: contentWidth });
-      
+      // Receiver Name hidden - removed from PDF
       currentY += (responsiveHeightUnit * 4);
 
       // Footer disclaimer

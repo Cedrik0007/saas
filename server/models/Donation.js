@@ -4,6 +4,7 @@ const DonationSchema = new mongoose.Schema({
   donorName: { type: String, required: true },
   isMember: { type: Boolean, default: false },
   memberId: String, // If isMember is true, link to member
+  phone: String, // Phone number for non-member donations
   donationType: { 
     type: String, 
     required: true,

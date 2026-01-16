@@ -21,6 +21,7 @@ const InvoiceSchema = new mongoose.Schema({
   payment_mode: { type: String, default: null }, // online, cash
   payment_proof: { type: String, default: null }, // URL to payment proof image
   last_payment_date: { type: Date, default: null },
+  receiptNumber: { type: String, default: null }, // Receipt number assigned when payment is approved
 }, {
   timestamps: true
 });
