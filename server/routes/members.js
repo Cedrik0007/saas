@@ -67,20 +67,16 @@ router.post("/", async (req, res) => {
       errors.push("Name must be at least 2 characters.");
     }
     
-    // Validate email
-    if (!req.body.email || !req.body.email.trim()) {
-      errors.push("Email is required.");
-    } else {
+    // Validate email - optional, only validate format if provided
+    if (req.body.email && req.body.email.trim()) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(req.body.email.trim())) {
         errors.push("Please enter a valid email address.");
       }
     }
     
-    // Validate phone - flexible validation for worldwide country codes
-    if (!req.body.phone || !req.body.phone.trim()) {
-      errors.push("WhatsApp number is required.");
-    } else {
+    // Validate phone - optional, only validate format if provided
+    if (req.body.phone && req.body.phone.trim()) {
       const phoneStr = req.body.phone.trim();
       const cleaned = phoneStr.replace(/[^\d+]/g, "");
       
@@ -111,15 +107,18 @@ router.post("/", async (req, res) => {
       }
     }
     
-    // Validate nextDue (start date) for new members
+    // Validate nextDue (start date) - optional, only validate format if provided
     if (req.body.nextDue) {
       const date = new Date(req.body.nextDue);
       if (isNaN(date.getTime())) {
         errors.push("Please select a valid start date.");
       }
-    } else if (!req.body.start_date) {
-      // nextDue is required for new members
-      errors.push("Start date is required.");
+    }
+    if (req.body.start_date) {
+      const date = new Date(req.body.start_date);
+      if (isNaN(date.getTime())) {
+        errors.push("Please select a valid start date.");
+      }
     }
     
     // Return validation errors if any
@@ -142,10 +141,12 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ message: "Member ID already exists" });
     }
     
-    // Check if email already exists
-    const existingEmail = await UserModel.findOne({ email: (req.body.email || '').trim().toLowerCase() });
-    if (existingEmail) {
-      return res.status(400).json({ message: "Email already exists" });
+    // Check if email already exists (only if email is provided)
+    if (req.body.email && req.body.email.trim()) {
+      const existingEmail = await UserModel.findOne({ email: req.body.email.trim().toLowerCase() });
+      if (existingEmail) {
+        return res.status(400).json({ message: "Email already exists" });
+      }
     }
 
     // Parse start_date if provided, otherwise use current date
