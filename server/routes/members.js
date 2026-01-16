@@ -539,8 +539,8 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const subscriptionYearIndex = headers.findIndex(h => (h.includes('subscription') && h.includes('year')) || h.includes('subyear') || (h.includes('year') && !h.includes('start') && !h.includes('date')));
       const startDateIndex = headers.findIndex(h => h.includes('start') || h.includes('date'));
 
-      if (nameIndex === -1 || emailIndex === -1) {
-        return res.status(400).json({ error: "CSV must have 'name' and 'email' columns" });
+      if (nameIndex === -1) {
+        return res.status(400).json({ error: "CSV must have 'name' column" });
       }
 
       // Parse data rows
@@ -580,9 +580,8 @@ router.post("/import", upload.single("file"), async (req, res) => {
           errors.push("Name must be at least 2 characters");
         }
 
-        if (!email) {
-          errors.push("Email is required");
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        // Email is optional - only validate format if provided
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
           errors.push("Invalid email format");
         }
 
@@ -642,7 +641,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
           membersData.push({
             id: memberId || undefined, // Only include if provided
             name: name,
-            email: email.toLowerCase(),
+            email: email ? email.toLowerCase() : '', // Use empty string if no email provided
             phone: finalPhone,
             native: nativeIndex !== -1 ? (values[nativeIndex]?.trim().replace(/[^a-zA-Z\s]/g, '') || '') : '',
             status: statusIndex !== -1 ? (values[statusIndex]?.trim() || 'Active') : 'Active',
@@ -710,8 +709,8 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const subscriptionYearIndex = headers.findIndex(h => (h.includes('subscription') && h.includes('year')) || h.includes('subyear') || (h.includes('year') && !h.includes('start') && !h.includes('date')));
       const startDateIndex = headers.findIndex(h => h.includes('start') || h.includes('date'));
 
-      if (nameIndex === -1 || emailIndex === -1) {
-        return res.status(400).json({ error: "Excel file must have 'name' and 'email' columns" });
+      if (nameIndex === -1) {
+        return res.status(400).json({ error: "Excel file must have 'name' column" });
       }
 
       // Parse data rows
@@ -724,7 +723,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
 
         const memberId = memberIdIndex !== -1 ? String(row[memberIdIndex] || '').trim() : '';
         const name = String(row[nameIndex] || '').trim();
-        const email = String(row[emailIndex] || '').trim();
+        const email = emailIndex !== -1 ? String(row[emailIndex] || '').trim() : '';
 
         // Validate required fields
         if (!name) {
@@ -733,9 +732,8 @@ router.post("/import", upload.single("file"), async (req, res) => {
           errors.push("Name must be at least 2 characters");
         }
 
-        if (!email) {
-          errors.push("Email is required");
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        // Email is optional - only validate format if provided
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
           errors.push("Invalid email format");
         }
 
@@ -820,7 +818,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
           membersData.push({
             id: memberId || undefined, // Only include if provided
             name: name,
-            email: email.toLowerCase(),
+            email: email ? email.toLowerCase() : '', // Use empty string if no email provided
             phone: finalPhone,
             native: nativeIndex !== -1 ? String(row[nativeIndex] || '').trim().replace(/[^a-zA-Z\s]/g, '') : '',
             status: statusIndex !== -1 ? String(row[statusIndex] || 'Active').trim() : 'Active',
@@ -844,8 +842,13 @@ router.post("/import", upload.single("file"), async (req, res) => {
 
     for (let i = 0; i < membersData.length; i++) {
       const member = membersData[i];
-      const emailLower = member.email.toLowerCase();
+      const emailLower = member.email ? member.email.toLowerCase() : '';
       const rowNumber = member._rowNumber || (i + 2);
+
+      // Skip duplicate checking if email is empty
+      if (!emailLower) {
+        continue;
+      }
 
       if (emailMap.has(emailLower)) {
         // This email was seen before in the file
@@ -891,7 +894,12 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const dbDuplicatesToRemove = [];
       for (let i = 0; i < membersData.length; i++) {
         const member = membersData[i];
-        const emailLower = member.email.toLowerCase();
+        const emailLower = member.email ? member.email.toLowerCase() : '';
+
+        // Skip duplicate checking if email is empty
+        if (!emailLower) {
+          continue;
+        }
 
         if (existingEmails.has(emailLower)) {
           // Email exists in database
