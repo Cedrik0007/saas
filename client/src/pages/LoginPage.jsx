@@ -149,17 +149,19 @@ export function LoginPage() {
           if (data.adminId) sessionStorage.setItem('adminId', data.adminId);
           if (data.adminRole) sessionStorage.setItem('adminRole', data.adminRole);
           
-          // Navigate immediately - no delays
-          navigate("/admin", {
-            replace: true,
-            state: {
-              role: "Admin",
-              token: data.token,
-              email: data.email,
-              name: data.name,
-              adminId: data.adminId,
-              adminRole: data.adminRole
-            },
+          // Ensure sessionStorage write completes before navigation
+          requestAnimationFrame(() => {
+            navigate("/admin", {
+              replace: true,
+              state: {
+                role: "Admin",
+                token: data.token,
+                email: data.email,
+                name: data.name,
+                adminId: data.adminId,
+                adminRole: data.adminRole
+              },
+            });
           });
         } else {
           // Member login
@@ -167,17 +169,19 @@ export function LoginPage() {
           sessionStorage.setItem('memberName', data.name);
           if (data.memberId) sessionStorage.setItem('memberId', data.memberId);
           
-          // Navigate immediately - no delays
-          navigate("/member", {
-            replace: true,
-            state: {
-              role: "Member",
-              token: data.token,
-              email: data.email,
-              name: data.name,
-              memberId: data.memberId,
-              phone: data.phone
-            },
+          // Ensure sessionStorage write completes before navigation
+          requestAnimationFrame(() => {
+            navigate("/member", {
+              replace: true,
+              state: {
+                role: "Member",
+                token: data.token,
+                email: data.email,
+                name: data.name,
+                memberId: data.memberId,
+                phone: data.phone
+              },
+            });
           });
         }
         
@@ -305,7 +309,7 @@ export function LoginPage() {
               </div>
             </label>
 
-            <div className="login-hints">
+            {/* <div className="login-hints">
               <p className="login-hints-title">
                 <i className="fas fa-info-circle login-icon"></i>Demo Credentials
               </p>
@@ -317,7 +321,7 @@ export function LoginPage() {
                   <strong>Member:</strong> member1234@gmail.com / member1234
                 </p>
               )}
-            </div>
+            </div> */}
 
             <div className="login-buttons">
               {/* Admin login (email/password) */}
@@ -414,17 +418,19 @@ export function LoginPage() {
                       sessionStorage.setItem("memberName", data.name);
                       sessionStorage.setItem("memberId", data.memberId);
 
-                      // Instant redirect - no delay
-                      navigate("/member", {
-                        replace: true,
-                        state: {
-                          role: "Member",
-                          token: data.token,
-                          email: data.email,
-                          name: data.name,
-                          memberId: data.memberId,
-                          phone: data.phone,
-                        },
+                      // Ensure sessionStorage write completes before navigation
+                      requestAnimationFrame(() => {
+                        navigate("/member", {
+                          replace: true,
+                          state: {
+                            role: "Member",
+                            token: data.token,
+                            email: data.email,
+                            name: data.name,
+                            memberId: data.memberId,
+                            phone: data.phone,
+                          },
+                        });
                       });
                     } catch (error) {
                       console.error("Google member login error:", error);

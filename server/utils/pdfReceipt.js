@@ -146,7 +146,8 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
 
       let currentY = margin;
 
-      // Logo at top left
+      // Prepare logo path first
+      let logoPath = null;
       try {
         // Try multiple possible logo paths and formats
         const logoExtensions = ['png', 'jpg', 'jpeg'];
@@ -161,7 +162,6 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
           path.join(process.cwd(), 'assets'),
         ];
 
-        let logoPath = null;
         for (const basePath of basePaths) {
           for (const ext of logoExtensions) {
             const testPath = path.join(basePath, `logo.${ext}`);
@@ -172,26 +172,34 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
           }
           if (logoPath) break;
         }
+      } catch (logoError) {
+        console.log('Logo not found or failed to load:', logoError.message);
+      }
 
-        if (logoPath) {
-          // Add logo at top left, size: 60x60 points
-          const logoSize = 60;
-          doc.image(logoPath, leftMargin, currentY, {
+      // Calculate header text height to position logo accordingly
+      const headerTextHeight = (responsiveHeightUnit * 2) + (responsiveHeightUnit * 1.8) + (responsiveHeightUnit * 1.8); // Approximate height of all three text lines
+      
+      // Logo size - bigger (80x80 points)
+      const logoSize = 80;
+      
+      // Header section - Center everything, with logo on the left
+      const headerStartY = currentY;
+      let logoY = headerStartY;
+
+      // Position logo on the left side, centered vertically with header text
+      if (logoPath) {
+        try {
+          logoY = headerStartY + (headerTextHeight / 2) - (logoSize / 2); // Center logo vertically with text
+          doc.image(logoPath, leftMargin, logoY, {
             fit: [logoSize, logoSize],
             align: 'left'
           });
-          // Adjust currentY to account for logo height
-          currentY += logoSize + (responsiveHeightUnit * 1);
-        } else {
-          currentY += (responsiveHeightUnit * 2);
+        } catch (logoError) {
+          console.log('Error loading logo:', logoError.message);
         }
-      } catch (logoError) {
-        // If logo fails to load, continue without it
-        console.log('Logo not found or failed to load, continuing without logo:', logoError.message);
-        currentY += (responsiveHeightUnit * 2);
       }
 
-      // Header - Organization Name
+      // Header - Organization Name (centered on full page width, ignoring logo)
       doc.fontSize(Math.max(14, responsiveUnit * 2.5))
          .fillColor('#000000')
          .font('Helvetica-Bold')
@@ -202,7 +210,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
 
       currentY += (responsiveHeightUnit * 2);
 
-      // Hong Kong
+      // Hong Kong (centered on full page width)
       doc.fontSize(Math.max(11, responsiveUnit * 2))
          .fillColor('#000000')
          .font('Helvetica')
@@ -213,7 +221,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
 
       currentY += (responsiveHeightUnit * 1.8);
 
-      // Estd. 1979
+      // Estd. 1979 (centered on full page width)
       doc.fontSize(Math.max(9, responsiveUnit * 1.6))
          .fillColor('#666666')
          .font('Helvetica-Oblique')
@@ -222,151 +230,242 @@ export async function generatePaymentReceiptPDF(member, invoice, payment) {
            align: 'center'
          });
 
+      // Move to next section - use the maximum of logo bottom or text bottom
+      const logoBottom = logoPath ? logoY + logoSize : headerStartY;
+      currentY = Math.max(currentY + (responsiveHeightUnit * 1.5), logoBottom) + (responsiveHeightUnit * 1.5);
+
       currentY += (responsiveHeightUnit * 3);
 
-      // Receipt Title
+      // Invoice Title
       doc.fontSize(Math.max(12, responsiveUnit * 2.2))
          .fillColor('#000000')
          .font('Helvetica-Bold')
-         .text('Payment Receipt', leftMargin, currentY, { 
+         .text('INVOICE', leftMargin, currentY, { 
            width: contentWidth,
            align: 'center'
          });
 
       currentY += (responsiveHeightUnit * 4);
 
-      // Receipt No
+      // Prepare data
       const receiptNoValue = await getNextReceiptNumber();
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .fillColor('#000000')
-         .font('Helvetica-Bold')
-         .text(`Receipt No: ${receiptNoValue}`, leftMargin, currentY, { width: contentWidth });
-
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Date
       const receiptDate = new Date().toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
+           day: '2-digit',
+           month: 'short',
+           year: 'numeric'
       });
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .fillColor('#000000')
-         .font('Helvetica')
-         .text(`Date: ${receiptDate}`, leftMargin, currentY, { width: contentWidth });
-
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Member Name
       const memberName = member?.name || invoice?.memberName || 'N/A';
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .font('Helvetica')
-         .text(`Member Name: ${memberName}`, leftMargin, currentY, { width: contentWidth });
-
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Member ID
       const memberId = member?.id || invoice?.memberId || 'N/A';
-      if (memberId !== 'N/A') {
-        doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-           .font('Helvetica')
-           .text(`Member ID: IMA/${memberId}`, leftMargin, currentY, { width: contentWidth });
-        currentY += (responsiveHeightUnit * 2.5);
-      }
-
-      // Invoice ID
       const invoiceId = invoice?.id || payment?.invoiceId || 'N/A';
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .font('Helvetica')
-         .text(`Invoice No: ${invoiceId}`, leftMargin, currentY, { width: contentWidth });
-
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Renewal Confirmation Year (extract year from invoice period if available)
+      const subscriptionType = member?.subscriptionType || 'N/A';
+      
+      // Extract year from invoice period
       const periodStr = String(invoice?.period || '').trim();
       const yearMatch = periodStr.match(/\d{4}/);
-      if (yearMatch) {
-        const renewalYear = yearMatch[0];
-        doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-           .font('Helvetica-Bold')
-           .fillColor('#000000')
-           .text(`Renewal Confirmation Year: ${renewalYear}`, leftMargin, currentY, { width: contentWidth });
-        currentY += (responsiveHeightUnit * 2.5);
-      }
+      const renewalYear = yearMatch ? yearMatch[0] : new Date().getFullYear().toString();
 
-      // Amount
+      // Two-column table layout for invoice details
+      const detailRowHeight = 20;
+      const detailCol1Width = contentWidth * 0.4; // Label column
+      const detailCol2Width = contentWidth * 0.6; // Value column
+      
+      // Invoice details table
+      const detailsStartY = currentY;
+      
+      const verticalBorderX = leftMargin + detailCol1Width;
+      
+      // Row 1: Invoice No and Date
+      doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
+         .strokeColor('#000000')
+         .lineWidth(0.5)
+         .stroke();
+      
+      // Vertical border in the middle
+      doc.moveTo(verticalBorderX, currentY)
+         .lineTo(verticalBorderX, currentY + detailRowHeight)
+         .strokeColor('#000000')
+         .lineWidth(1)
+         .stroke();
+      
+      doc.fontSize(Math.max(9, responsiveUnit * 1.6))
+         .fillColor('#000000')
+         .font('Helvetica');
+      
+      doc.text(`Invoice No: ${invoiceId}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
+      doc.text(`Date: ${receiptDate}`, leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
+      currentY += detailRowHeight;
+      
+      // Row 2: Member Name and Member ID
+      doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
+         .strokeColor('#000000')
+         .lineWidth(0.5)
+         .stroke();
+      
+      // Vertical border in the middle
+      doc.moveTo(verticalBorderX, currentY)
+         .lineTo(verticalBorderX, currentY + detailRowHeight)
+         .strokeColor('#000000')
+         .lineWidth(1)
+         .stroke();
+      
+      doc.text(`Member Name: ${memberName}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
+      const memberIdText = memberId !== 'N/A' ? `Member ID: IMA/${memberId}` : 'Member ID: -';
+      doc.text(memberIdText, leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
+      currentY += detailRowHeight;
+      
+      // Row 3: Membership Type and Year
+      doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
+         .strokeColor('#000000')
+         .lineWidth(0.5)
+         .stroke();
+      
+      // Vertical border in the middle
+      doc.moveTo(verticalBorderX, currentY)
+         .lineTo(verticalBorderX, currentY + detailRowHeight)
+         .strokeColor('#000000')
+         .lineWidth(1)
+         .stroke();
+      
+      doc.text(`Membership Type: ${subscriptionType}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
+      doc.text(`Year: ${renewalYear}`, leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
+      currentY += detailRowHeight;
+      
+      // Row 4: Receipt No
+      doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
+         .strokeColor('#000000')
+         .lineWidth(0.5)
+         .stroke();
+      
+      // Vertical border in the middle
+      doc.moveTo(verticalBorderX, currentY)
+         .lineTo(verticalBorderX, currentY + detailRowHeight)
+         .strokeColor('#000000')
+         .lineWidth(1)
+         .stroke();
+      
+      doc.text(`Receipt No: ${receiptNoValue}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
+      // Leave right column empty or add additional info if needed
+      currentY += detailRowHeight + (responsiveHeightUnit * 3);
+
+      // Description and Amount Table
+      const tableTopY = currentY;
+      const rowHeight = 20;
+      const col1Width = contentWidth * 0.5; // Description column
+      const col2Width = contentWidth * 0.2; // Year column
+      const col3Width = contentWidth * 0.3; // Amount column
+      
+      // Table header with grey background
+      const headerColor = '#E5E5E5'; // Light grey
+      doc.rect(leftMargin, tableTopY, contentWidth, rowHeight)
+         .fill(headerColor)
+         .strokeColor('#000000')
+         .lineWidth(0.5)
+         .stroke();
+      
+      // Header text
+      doc.fontSize(Math.max(9, responsiveUnit * 1.6))
+         .fillColor('#000000')
+         .font('Helvetica-Bold');
+      
+      doc.text('Description', leftMargin + 5, tableTopY + 5, { width: col1Width - 10 });
+      doc.text('Year', leftMargin + col1Width + 5, tableTopY + 5, { width: col2Width - 10 });
+      doc.text('Amount (HKD)', leftMargin + col1Width + col2Width + 5, tableTopY + 5, { width: col3Width - 10 });
+      
+      currentY = tableTopY + rowHeight;
+      
+      // Table data rows
       const amountStr = invoice?.amount || payment?.amount || 'HK$0';
       const amountNum = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
       const formattedAmount = amountNum.toFixed(2);
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+      
+      // First data row - Membership Renewal Fee
+      doc.rect(leftMargin, currentY, contentWidth, rowHeight)
+         .strokeColor('#000000')
+         .lineWidth(0.5)
+         .stroke();
+      
+      doc.fontSize(Math.max(9, responsiveUnit * 1.6))
+         .fillColor('#000000')
+         .font('Helvetica');
+      
+      doc.text('Membership Renewal Fee', leftMargin + 5, currentY + 5, { width: col1Width - 10 });
+      doc.text(renewalYear, leftMargin + col1Width + 5, currentY + 5, { width: col2Width - 10 });
+      doc.text(`HK$${formattedAmount}`, leftMargin + col1Width + col2Width + 5, currentY + 5, { width: col3Width - 10, align: 'right' });
+      
+      currentY += rowHeight;
+      
+      // Total row (bold)
+      doc.rect(leftMargin, currentY, contentWidth, rowHeight)
+         .strokeColor('#000000')
+         .lineWidth(0.5)
+         .stroke();
+
+      doc.fontSize(Math.max(9, responsiveUnit * 1.6))
+         .fillColor('#000000')
+         .font('Helvetica-Bold');
+      
+      doc.text('Total Amount Payable', leftMargin + 5, currentY + 5, { 
+        width: col1Width + col2Width - 10 
+      });
+      doc.text(`HK$${formattedAmount}`, leftMargin + col1Width + col2Width + 5, currentY + 5, { 
+        width: col3Width - 10, 
+        align: 'right' 
+      });
+      
+      currentY += rowHeight + (responsiveHeightUnit * 3);
+
+      // Payment Information Section
+      doc.fontSize(Math.max(10, responsiveUnit * 1.9))
+         .fillColor('#000000')
          .font('Helvetica-Bold')
-         .text(`Amount: HK$${formattedAmount}`, leftMargin, currentY, { width: contentWidth });
-
+         .text('Payment Information', leftMargin, currentY, { width: contentWidth });
+      
       currentY += (responsiveHeightUnit * 2.5);
-
-      // Payment Method
-      const paymentMethod = String(payment?.method || invoice?.method || '').trim();
-      const paymentMethodDisplay = paymentMethod || 'N/A';
+      
       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .font('Helvetica')
-         .text(`Payment Method: ${paymentMethodDisplay}`, leftMargin, currentY, { width: contentWidth });
-
+         .fillColor('#000000')
+         .font('Helvetica');
+      
+      const paymentMethod = String(payment?.method || invoice?.method || '').trim();
+      const paymentMethodDisplay = paymentMethod || '';
+      doc.text(`Payment Method: ${paymentMethodDisplay}`, leftMargin, currentY, { width: contentWidth });
+      
       currentY += (responsiveHeightUnit * 2.5);
-
-      // Receiver Name (if available)
-      if (payment?.receiver_name || invoice?.receiver_name) {
-        doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-           .font('Helvetica')
-           .text(`Receiver Name: ${payment?.receiver_name || invoice?.receiver_name}`, leftMargin, currentY, { width: contentWidth });
-        currentY += (responsiveHeightUnit * 2.5);
-      }
-
-      // Payment Screenshot (indicate if available)
-      if (payment?.screenshot || invoice?.screenshot || invoice?.payment_proof) {
-        doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-           .font('Helvetica')
-           .text(`Payment Proof: Available`, leftMargin, currentY, { width: contentWidth });
-        currentY += (responsiveHeightUnit * 2.5);
-      }
-
-      // Member Subscription Type
-      if (member?.subscriptionType) {
-        doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-           .font('Helvetica')
-           .text(`Membership Type: ${member.subscriptionType}`, leftMargin, currentY, { width: contentWidth });
-        currentY += (responsiveHeightUnit * 2.5);
-      }
-
+      
+      const paymentRef = payment?.reference || payment?.transactionId || '';
+      doc.text(`Reference / Transaction ID: ${paymentRef}`, leftMargin, currentY, { width: contentWidth });
+      
+      currentY += (responsiveHeightUnit * 2.5);
+      
+      const receiverName = payment?.receiver_name || invoice?.receiver_name || '';
+      doc.text(`Receiver Name: ${receiverName}`, leftMargin, currentY, { width: contentWidth });
+      
       currentY += (responsiveHeightUnit * 4);
 
-      // Thank you message
-      doc.fontSize(Math.max(10, responsiveUnit * 1.9))
-         .font('Helvetica-Bold')
-         .fillColor('#2e7d32')
-         .text('Thank you for your payment!', leftMargin, currentY, { 
+      // Footer disclaimer
+      doc.fontSize(Math.max(8, responsiveUnit * 1.4))
+         .fillColor('#000000')
+         .font('Helvetica')
+         .text('This is a system-generated invoice and does not require a signature.', leftMargin, currentY, {
            width: contentWidth,
            align: 'center'
          });
-
-      currentY += (responsiveHeightUnit * 4);
-
-      // Bottom section - On Behalf of
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .fillColor('#000000')
-         .font('Helvetica')
-         .text('On Behalf of', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'right'
-         });
-
+      
       currentY += (responsiveHeightUnit * 2);
-
-      doc.fontSize(Math.max(10, responsiveUnit * 2))
+      
+      doc.text('Issued by', leftMargin, currentY, {
+         width: contentWidth,
+         align: 'center'
+       });
+      
+      currentY += (responsiveHeightUnit * 1.5);
+      
+      doc.fontSize(Math.max(9, responsiveUnit * 1.6))
          .fillColor('#000000')
          .font('Helvetica-Bold')
-         .text('Indian Muslim Association Jama-ath Ltd.', leftMargin, currentY, { 
+         .text('Indian Muslim Association Jama-ath Ltd.', leftMargin, currentY, {
            width: contentWidth,
-           align: 'right'
+           align: 'center'
          });
 
       // Close the document

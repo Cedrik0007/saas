@@ -76,6 +76,16 @@
       loading,
     } = useApp();
 
+    const navigate = useNavigate();
+
+    // Check for authentication token on mount (defense in depth)
+    useEffect(() => {
+      const token = sessionStorage.getItem('authToken');
+      if (!token) {
+        navigate('/login', { replace: true });
+        return;
+      }
+    }, [navigate]);
 
     // Get current admin role from sessionStorage and normalize legacy values
     const rawAdminRole = sessionStorage.getItem('adminRole') || 'Viewer';
@@ -990,8 +1000,6 @@
     const [memberDetailInvoicesPageSize, setMemberDetailInvoicesPageSize] = useState(10);
     const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed, Pending
     const [remindersChannelFilter, setRemindersChannelFilter] = useState("All"); // All, Email, WhatsApp
-
-    const navigate = useNavigate();
 
     // Sync URL with activeSection changes
     useEffect(() => {

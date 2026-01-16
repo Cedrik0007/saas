@@ -7,6 +7,7 @@ import { ServerPage } from "./pages/ServerPage.jsx";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage.jsx";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage.jsx";
 import { AppProvider } from "./context/AppContext.jsx";
+import { ProtectedRoute } from "./components/ProtectedRoute.jsx";
 
 function App() {
   return (
@@ -22,8 +23,8 @@ function App() {
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="/member" element={<MemberPage />} />
+          <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+          <Route path="/member" element={<ProtectedRoute><MemberPage /></ProtectedRoute>} />
           <Route path="/server" element={<ServerPage />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
