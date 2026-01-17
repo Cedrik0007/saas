@@ -1122,6 +1122,66 @@
       return false;
     };
 
+    // Helper function to download PDF that works on iOS Safari
+    // iOS Safari doesn't support the download attribute on anchor elements for cross-origin URLs
+    const downloadPdfFile = async (pdfUrl, filename, onSuccess, onError) => {
+      try {
+        // Detect iOS
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        
+        if (isIOS) {
+          // For iOS, fetch the PDF as blob and open in new tab
+          // This allows users to save via the iOS share sheet
+          const response = await fetch(pdfUrl, {
+            credentials: 'include'
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to fetch PDF');
+          }
+          
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          
+          // Open in new tab - iOS will show the PDF with share/save options
+          window.open(blobUrl, '_blank');
+          
+          // Clean up blob URL after a delay
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+          
+          if (onSuccess) onSuccess();
+        } else {
+          // For other browsers, use fetch + blob for better reliability
+          const response = await fetch(pdfUrl, {
+            credentials: 'include'
+          });
+          
+          if (!response.ok) {
+            throw new Error('Failed to fetch PDF');
+          }
+          
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          // Clean up blob URL after a delay
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+          
+          if (onSuccess) onSuccess();
+        }
+      } catch (error) {
+        console.error('Error downloading PDF:', error);
+        if (onError) onError(error);
+      }
+    };
+
     // Check if donation belongs to a member in the members list
     const isDonationMemberInList = (donation) => {
       if (!donation) return false;
@@ -7286,12 +7346,7 @@ Indian Muslim Association, Hong Kong`;
                                               <button
                                                 className="ghost-btn icon-btn icon-btn--delete"
                                                 style={{ color: "#ef4444" }}
-                                                onClick={() => {
-                                                  showConfirmation(
-                                                    `Delete member ${member.name}? This cannot be undone.`,
-                                                    () => handleDeleteMember(member.id)
-                                                  );
-                                                }}
+                                                onClick={() => handleDeleteMember(member.id)}
                                                 aria-label="Delete member"
                                               >
                                                 <Tooltip text="Delete member" position="top">
@@ -19722,32 +19777,29 @@ Indian Muslim Association, Hong Kong`;
                 <button
                   type="button"
                   onClick={async () => {
-                    try {
-                      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-                      let pdfUrl, downloadName;
-                      if (selectedPdfInvoice) {
-                        pdfUrl = `${apiUrl}/api/invoices/${selectedPdfInvoice.id}/pdf-receipt/download`;
-                        downloadName = `Invoice_Receipt_${selectedPdfInvoice.id}.pdf`;
-                      } else if (selectedPdfDonation) {
-                        pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download`;
-                        downloadName = `Donation_Receipt_${selectedPdfDonation._id || selectedPdfDonation.id}.pdf`;
-                      }
-                      
-                      const link = document.createElement('a');
-                      link.href = pdfUrl;
-                      link.download = downloadName;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      
-                      setShowPdfOptionsModal(false);
-                      setSelectedPdfInvoice(null);
-                      setSelectedPdfDonation(null);
-                      showToast('Downloading PDF receipt...', 'success');
-                    } catch (error) {
-                      console.error('Error downloading PDF:', error);
-                      showToast('Failed to download PDF receipt', 'error');
+                    const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                    let pdfUrl, downloadName;
+                    if (selectedPdfInvoice) {
+                      pdfUrl = `${apiUrl}/api/invoices/${selectedPdfInvoice.id}/pdf-receipt/download`;
+                      downloadName = `Invoice_Receipt_${selectedPdfInvoice.id}.pdf`;
+                    } else if (selectedPdfDonation) {
+                      pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download`;
+                      downloadName = `Donation_Receipt_${selectedPdfDonation._id || selectedPdfDonation.id}.pdf`;
                     }
+                    
+                    await downloadPdfFile(
+                      pdfUrl,
+                      downloadName,
+                      () => {
+                        setShowPdfOptionsModal(false);
+                        setSelectedPdfInvoice(null);
+                        setSelectedPdfDonation(null);
+                        showToast('Opening PDF receipt...', 'success');
+                      },
+                      () => {
+                        showToast('Failed to open PDF receipt', 'error');
+                      }
+                    );
                   }}
                   style={{
                     padding: "14px 20px",
@@ -19773,32 +19825,29 @@ Indian Muslim Association, Hong Kong`;
                 <button
                   type="button"
                   onClick={async () => {
-                    try {
-                      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-                      let pdfUrl, downloadName;
-                      if (selectedPdfInvoice) {
-                        pdfUrl = `${apiUrl}/api/invoices/${selectedPdfInvoice.id}/pdf-receipt/download`;
-                        downloadName = `Invoice_Receipt_${selectedPdfInvoice.id}.pdf`;
-                      } else if (selectedPdfDonation) {
-                        pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download`;
-                        downloadName = `Donation_Receipt_${selectedPdfDonation._id || selectedPdfDonation.id}.pdf`;
-                      }
-                      
-                      const link = document.createElement('a');
-                      link.href = pdfUrl;
-                      link.download = downloadName;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      
-                      setShowPdfOptionsModal(false);
-                      setSelectedPdfInvoice(null);
-                      setSelectedPdfDonation(null);
-                      showToast('Downloading PDF receipt...', 'success');
-                    } catch (error) {
-                      console.error('Error downloading PDF:', error);
-                      showToast('Failed to download PDF receipt', 'error');
+                    const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+                    let pdfUrl, downloadName;
+                    if (selectedPdfInvoice) {
+                      pdfUrl = `${apiUrl}/api/invoices/${selectedPdfInvoice.id}/pdf-receipt/download`;
+                      downloadName = `Invoice_Receipt_${selectedPdfInvoice.id}.pdf`;
+                    } else if (selectedPdfDonation) {
+                      pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download`;
+                      downloadName = `Donation_Receipt_${selectedPdfDonation._id || selectedPdfDonation.id}.pdf`;
                     }
+                    
+                    await downloadPdfFile(
+                      pdfUrl,
+                      downloadName,
+                      () => {
+                        setShowPdfOptionsModal(false);
+                        setSelectedPdfInvoice(null);
+                        setSelectedPdfDonation(null);
+                        showToast('Downloading PDF receipt...', 'success');
+                      },
+                      () => {
+                        showToast('Failed to download PDF receipt', 'error');
+                      }
+                    );
                   }}
                   style={{
                     padding: "14px 20px",
@@ -19886,22 +19935,20 @@ Indian Muslim Association, Hong Kong`;
                   <button
                     type="button"
                     onClick={async () => {
-                      try {
-                        // Extract filename from URL or use default
-                        const urlParts = selectedPdfUrl.split('/');
-                        const filename = urlParts[urlParts.length - 1] || 'Receipt.pdf';
-                        
-                        const link = document.createElement('a');
-                        link.href = selectedPdfUrl;
-                        link.download = filename;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        showToast('Downloading PDF receipt...', 'success');
-                      } catch (error) {
-                        console.error('Error downloading PDF:', error);
-                        showToast('Failed to download PDF receipt', 'error');
-                      }
+                      // Extract filename from URL or use default
+                      const urlParts = selectedPdfUrl.split('/');
+                      const filename = urlParts[urlParts.length - 1] || 'Receipt.pdf';
+                      
+                      await downloadPdfFile(
+                        selectedPdfUrl,
+                        filename,
+                        () => {
+                          showToast('Downloading PDF receipt...', 'success');
+                        },
+                        () => {
+                          showToast('Failed to download PDF receipt', 'error');
+                        }
+                      );
                     }}
                     style={{
                       padding: "6px 12px",
