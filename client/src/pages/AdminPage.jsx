@@ -7135,7 +7135,7 @@ Indian Muslim Association, Hong Kong`;
                                 </label>
                                 <input
                                   type="text"
-                                  placeholder="Search by name,the year"
+                                  placeholder="Search by name, phone, email, or ID..."
                                   value={memberSearchTerm}
                                   onChange={(e) => {
                                     setMemberSearchTerm(e.target.value);
@@ -7199,10 +7199,9 @@ Indian Muslim Association, Hong Kong`;
                                 <Table
                                   columns={[
                                     "Name",
-                                    "Native Place",
+                                    "Mobile",
                                     "Year",
                                     "Subscription Type",
-                                    "Joined Year",
                                     "Status",
                                     "Outstanding",
                                     "Actions",
@@ -7287,10 +7286,9 @@ Indian Muslim Association, Hong Kong`;
 
                                     const rowData = {
                                       "Name": member.name,
-                                      "Native Place": member.native || "-",
+                                      "Mobile": member.phone || "-",
                                       "Year": subYear,
                                       "Subscription Type": formatSubscriptionType(member.subscriptionType) || "-",
-                                      "Joined Year": joinedYear,
                                       Status: {
                                         render: () => (
                                           <span className={statusBadgeClass}>
