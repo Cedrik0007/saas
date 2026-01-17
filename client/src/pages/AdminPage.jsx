@@ -3927,6 +3927,7 @@ Indian Muslim Association, Hong Kong`;
       setEditingMember(member);
       // Include all fields from add member form - use actual values from member object
       setMemberForm({
+        id: member.id || "",
         name: member.name || "",
         email: member.email || "",
         phone: member.phone || "",
@@ -3960,6 +3961,17 @@ Indian Muslim Association, Hong Kong`;
         const originalMember = editingMember;
 
         // Compare each field and only include if changed
+        // Compare member ID (if changed, need to update)
+        if (memberForm.id !== (originalMember.id || "")) {
+          // Validate member ID format (must be 4 digits)
+          if (memberForm.id && memberForm.id.length !== 4) {
+            showToast("Member ID must be exactly 4 digits", "error");
+            setMemberFieldErrors(prev => ({ ...prev, id: true }));
+            setCurrentInvalidField("id");
+            return;
+          }
+          updateData.id = memberForm.id;
+        }
         if (memberForm.name !== (originalMember.name || "")) {
           updateData.name = memberForm.name;
         }
@@ -6214,14 +6226,45 @@ Indian Muslim Association, Hong Kong`;
                                 </span>
                                 <input
                                   type="text"
-                                  value={editingMember.id || ""}
-                                  readOnly
-                                  style={{
-                                    background: "#f9fafb",
-                                    cursor: "not-allowed",
-                                    color: "#666"
+                                  value={memberForm.id || ""}
+                                  onChange={(e) => {
+                                    let value = e.target.value;
+                                    // Only allow digits, max 4 digits
+                                    value = value.replace(/\D/g, '').substring(0, 4);
+                                    handleMemberFieldChange("id", value);
+                                    // Clear error when user starts typing
+                                    if (memberFieldErrors.id || currentInvalidField === "id") {
+                                      setMemberFieldErrors(prev => ({ ...prev, id: false }));
+                                      if (currentInvalidField === "id") {
+                                        setCurrentInvalidField(null);
+                                      }
+                                    }
                                   }}
+                                  placeholder="Enter 4-digit member ID"
+                                  style={{
+                                    width: "100%",
+                                    padding: "10px 16px",
+                                    border: "1px solid #e0e0e0",
+                                    borderRadius: "4px",
+                                    fontSize: "0.9375rem",
+                                    borderColor: (memberFieldErrors.id && currentInvalidField === "id") ? "#ef4444" : undefined,
+                                    borderWidth: (memberFieldErrors.id && currentInvalidField === "id") ? "2px" : undefined,
+                                    borderStyle: (memberFieldErrors.id && currentInvalidField === "id") ? "solid" : undefined,
+                                    outline: (memberFieldErrors.id && currentInvalidField === "id") ? "none" : undefined,
+                                    boxShadow: (memberFieldErrors.id && currentInvalidField === "id") ? "0 0 0 2px rgba(239, 68, 68, 0.2)" : undefined,
+                                  }}
+                                  aria-invalid={memberFieldErrors.id}
                                 />
+                                {memberForm.id && memberForm.id.length > 0 && memberForm.id.length < 4 && (
+                                  <span style={{ 
+                                    fontSize: "0.75rem", 
+                                    color: "#ef4444", 
+                                    marginTop: "4px", 
+                                    display: "block" 
+                                  }}>
+                                    Please enter 4 digits
+                                  </span>
+                                )}
                               </label>
 
                               <label>

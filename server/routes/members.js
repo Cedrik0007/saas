@@ -444,7 +444,7 @@ router.put("/:id", async (req, res) => {
       // Regular member update - only allow basic fields
       // Whitelist of allowed fields that can be updated when editing member
       // This prevents accidentally overwriting subscription, invoice, payment, or calculated fields
-      const allowedFields = ['name', 'email', 'phone', 'native', 'status', 'password'];
+      const allowedFields = ['id', 'name', 'email', 'phone', 'native', 'status', 'password'];
       
       // Filter updateData to only include allowed fields
       const updateData = {};
@@ -462,6 +462,38 @@ router.put("/:id", async (req, res) => {
       // Ensure email is lowercase if being updated
       if (updateData.email) {
         updateData.email = updateData.email.trim().toLowerCase();
+      }
+      
+      // Handle member ID update - need to update all related records
+      if (updateData.id && updateData.id !== req.params.id) {
+        // Check if new ID already exists
+        const existingMember = await UserModel.findOne({ id: updateData.id });
+        if (existingMember) {
+          return res.status(400).json({ message: "Member ID already exists" });
+        }
+        
+        // Update all related records with new member ID
+        const oldId = req.params.id;
+        const newId = updateData.id;
+        
+        try {
+          // Update invoices
+          await InvoiceModel.updateMany(
+            { memberId: oldId },
+            { $set: { memberId: newId } }
+          );
+          
+          // Update payments
+          await PaymentModel.updateMany(
+            { memberId: oldId },
+            { $set: { memberId: newId } }
+          );
+          
+          console.log(`✓ Updated member ID from ${oldId} to ${newId} in related records`);
+        } catch (updateError) {
+          console.error("Error updating related records with new member ID:", updateError);
+          return res.status(500).json({ message: "Failed to update related records" });
+        }
       }
       
       // Only update the fields that are in updateData
