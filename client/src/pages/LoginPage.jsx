@@ -204,7 +204,7 @@ export function LoginPage() {
           <aside className="login-menu">
             <p className="eyebrow light">Welcome</p>
             <h2>IMA Subscription Manager</h2>
-            <p>
+            {/* <p>
               Streamlined portal for Hong Kong membership dues. Track monthly
               payments and automations from one place.
             </p>
@@ -212,7 +212,7 @@ export function LoginPage() {
               <li>Supports FPS, PayMe, bank transfers, cards</li>
               <li>Automated reminders via email and WhatsApp</li>
               <li>Clear dashboards for admins and members</li>
-            </ul>
+            </ul> */}
           </aside>
 
           <div className="login-form-card">

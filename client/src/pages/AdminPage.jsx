@@ -1061,16 +1061,23 @@
     };
 
     // Helper function to check if an invoice belongs to a member in the list
+    // Prioritize memberId for matching to avoid duplicates
     const isInvoiceMemberInList = (invoice) => {
       if (!invoice) return false;
-      return members.some(m => 
-        m.id === invoice.memberId || 
-        m.email === invoice.memberEmail || 
-        m.name === invoice.memberName ||
-        String(m.id || "") === String(invoice.memberId || "") ||
-        String(m.email || "").toLowerCase() === String(invoice.memberEmail || "").toLowerCase() ||
-        String(m.name || "").toLowerCase() === String(invoice.memberName || "").toLowerCase()
-      );
+      // First try to match by memberId (most reliable)
+      if (invoice.memberId) {
+        return members.some(m => 
+          m.id === invoice.memberId ||
+          String(m.id || "") === String(invoice.memberId || "")
+        );
+      }
+      // Fallback to email only if memberId is not available
+      if (invoice.memberEmail) {
+        return members.some(m => 
+          String(m.email || "").toLowerCase() === String(invoice.memberEmail || "").toLowerCase()
+        );
+      }
+      return false;
     };
 
     // Helper function to check if a payment belongs to a member in the list
@@ -12902,12 +12909,19 @@ Indian Muslim Association, Hong Kong`;
                         if (invoiceSearchTerm.trim()) {
                           const searchLower = invoiceSearchTerm.toLowerCase();
                           filteredInvoices = filteredInvoices.filter((invoice) => {
-                            // Get member for this invoice
-                            const member = members.find(m => 
-                              m.id === invoice.memberId || 
-                              m.email === invoice.memberEmail || 
-                              m.name === invoice.memberName
-                            );
+                            // Get member for this invoice - prioritize memberId
+                            let member = null;
+                            if (invoice.memberId) {
+                              member = members.find(m => 
+                                m.id === invoice.memberId ||
+                                String(m.id || "") === String(invoice.memberId || "")
+                              );
+                            }
+                            if (!member && invoice.memberEmail) {
+                              member = members.find(m => 
+                                String(m.email || "").toLowerCase() === String(invoice.memberEmail || "").toLowerCase()
+                              );
+                            }
 
                             // Search by name
                             const memberName = (invoice.memberName || invoice.member || member?.name || "Unknown").toLowerCase();
@@ -13242,12 +13256,20 @@ Indian Muslim Association, Hong Kong`;
                                       const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
                                       const isOverdue = invoice.status === "Overdue";
 
-                                      // Get member from members list - use only this data, not invoice data
-                                      const member = members.find(m => 
-                                        m.id === invoice.memberId || 
-                                        m.email === invoice.memberEmail || 
-                                        m.name === invoice.memberName
-                                      );
+                                      // Get member from members list - prioritize memberId to avoid duplicates
+                                      let member = null;
+                                      if (invoice.memberId) {
+                                        member = members.find(m => 
+                                          m.id === invoice.memberId ||
+                                          String(m.id || "") === String(invoice.memberId || "")
+                                        );
+                                      }
+                                      // Fallback to email only if memberId didn't find a match
+                                      if (!member && invoice.memberEmail) {
+                                        member = members.find(m => 
+                                          String(m.email || "").toLowerCase() === String(invoice.memberEmail || "").toLowerCase()
+                                        );
+                                      }
                                       
                                       // If member not found in members list, skip this invoice (shouldn't happen due to filter, but double-check)
                                       if (!member) {
@@ -13338,11 +13360,7 @@ Indian Muslim Association, Hong Kong`;
                                                 onClick={(e) => {
                                                   e.preventDefault();
                                                   e.stopPropagation();
-                                                  const member = members.find(m =>
-                                                    m.id === invoice.memberId ||
-                                                    m.email === invoice.memberEmail ||
-                                                    m.name === invoice.memberName
-                                                  );
+                                                  // Use the member already found above to avoid duplicate lookup
                                                   if (member) {
                                                     handleViewMemberDetail(member);
                                                     setActiveSection("member-detail");
@@ -17082,15 +17100,16 @@ Indian Muslim Association, Hong Kong`;
                                                 showToast("Invoice not found for this transaction", "error");
                                                 return;
                                               }
-                                              const member =
-                                                members.find((m) => m.id === invoice.memberId) ||
-                                                members.find(
-                                                  (m) =>
-                                                    m.name &&
-                                                    invoice.memberName &&
-                                                    m.name.toLowerCase() ===
-                                                    invoice.memberName.toLowerCase()
+                                              // Prioritize memberId, fallback to email
+                                              let member = members.find((m) => 
+                                                m.id === invoice.memberId ||
+                                                String(m.id || "") === String(invoice.memberId || "")
+                                              );
+                                              if (!member && invoice.memberEmail) {
+                                                member = members.find((m) =>
+                                                  String(m.email || "").toLowerCase() === String(invoice.memberEmail || "").toLowerCase()
                                                 );
+                                              }
                                               if (!member) {
                                                 showToast("Member not found for this invoice", "error");
                                                 return;
