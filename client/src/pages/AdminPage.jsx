@@ -1863,10 +1863,50 @@
           return paymentDate >= fromDate && paymentDate <= toDate;
         });
 
+        // Calculate total subscription amount from payments in range
+        const totalSubscriptionAmountInRange = paymentsInRange
+          .filter(payment => {
+            const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+            return isCompleted && isPaymentMemberInList(payment);
+          })
+          .reduce((sum, payment) => {
+            const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+            return sum + (isNaN(amount) ? 0 : amount);
+          }, 0);
+
+        // Calculate total donation amount from donations in range
+        const donationsInRangeForSummary = (Array.isArray(donations) ? donations : []).filter(donation => {
+          if (!donation || !donation.date) return false;
+          try {
+            let donationDate = null;
+            const dateStr = String(donation.date).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+              donationDate = new Date(dateStr + 'T00:00:00');
+            } else {
+              donationDate = new Date(dateStr);
+            }
+            if (isNaN(donationDate.getTime())) return false;
+            return donationDate >= fromDate && donationDate <= toDate;
+          } catch (e) {
+            return false;
+          }
+        });
+
+        const totalDonationAmountInRange = donationsInRangeForSummary.reduce((sum, donation) => {
+          const amount = parseFloat(donation.amount?.replace(/[^0-9.]/g, '') || 0);
+          return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
+
+        // Calculate total amount (subscription + donation)
+        const totalAmountInRange = totalSubscriptionAmountInRange + totalDonationAmountInRange;
+
         // Create CSV content
         let csvContent = "Financial Report\n";
         csvContent += `Period,${dateRange.from} to ${dateRange.to}\n\n`;
         csvContent += "Summary\n";
+        csvContent += `Total Amount,${formatCurrency(totalAmountInRange)}\n`;
+        csvContent += `Total Subscription Amount,${formatCurrency(totalSubscriptionAmountInRange)}\n`;
+        csvContent += `Total Donation Amount,${formatCurrency(totalDonationAmountInRange)}\n`;
         csvContent += `Collected,${formatCurrency(reportStats.collected)}\n`;
         csvContent += `Expected,${formatCurrency(reportStats.expected)}\n`;
         csvContent += `Outstanding,${formatCurrency(dashboardMetrics.outstanding)}\n`;
@@ -1898,6 +1938,39 @@
             const reference = payment.reference || "-";
             csvContent += `"${date}","${member}","${period}","${amount}","${method}","${status}","${reference}"\n`;
           });
+
+        // Add donations section
+        const donationsInRange = (Array.isArray(donations) ? donations : []).filter(donation => {
+          if (!donation || !donation.date) return false;
+          try {
+            let donationDate = null;
+            const dateStr = String(donation.date).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+              donationDate = new Date(dateStr + 'T00:00:00');
+            } else {
+              donationDate = new Date(dateStr);
+            }
+            if (isNaN(donationDate.getTime())) return false;
+            return donationDate >= fromDate && donationDate <= toDate;
+          } catch (e) {
+            return false;
+          }
+        });
+
+        if (donationsInRange.length > 0) {
+          csvContent += "\nDonation Details\n";
+          csvContent += "Date,Donor Name,Donor Type,Donation Type,Amount,Payment Method,Phone\n";
+          donationsInRange.forEach(donation => {
+            const date = donation.date || "-";
+            const donorName = donation.donorName || "-";
+            const donorType = donation.isMember ? "Member" : "Non-Member";
+            const donationType = donation.donationType || "-";
+            const amount = donation.amount || "0";
+            const paymentMethod = donation.method || (donation.payment_type === "cash" ? "Cash" : "Online") || "-";
+            const phone = donation.phone || "-";
+            csvContent += `"${date}","${donorName}","${donorType}","${donationType}","${amount}","${paymentMethod}","${phone}"\n`;
+          });
+        }
 
         // Create blob and download
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1957,6 +2030,52 @@
         doc.text(`Period: ${dateRange.from} to ${dateRange.to}`, margin, yPos);
         yPos += 15;
 
+        // Calculate amounts for date range (for PDF summary)
+        const fromDate = new Date(dateRange.from);
+        const toDate = new Date(dateRange.to);
+        toDate.setHours(23, 59, 59, 999);
+
+        const paymentsInRange = paymentHistory.filter(payment => {
+          if (!isPaymentMemberInList(payment)) return false;
+          if (!payment.date) return false;
+          const paymentDate = new Date(payment.date);
+          return paymentDate >= fromDate && paymentDate <= toDate;
+        });
+
+        const totalSubscriptionAmountInRange = paymentsInRange
+          .filter(payment => {
+            const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+            return isCompleted && isPaymentMemberInList(payment);
+          })
+          .reduce((sum, payment) => {
+            const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+            return sum + (isNaN(amount) ? 0 : amount);
+          }, 0);
+
+        const donationsInRangeForSummaryPDF = (Array.isArray(donations) ? donations : []).filter(donation => {
+          if (!donation || !donation.date) return false;
+          try {
+            let donationDate = null;
+            const dateStr = String(donation.date).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+              donationDate = new Date(dateStr + 'T00:00:00');
+            } else {
+              donationDate = new Date(dateStr);
+            }
+            if (isNaN(donationDate.getTime())) return false;
+            return donationDate >= fromDate && donationDate <= toDate;
+          } catch (e) {
+            return false;
+          }
+        });
+
+        const totalDonationAmountInRange = donationsInRangeForSummaryPDF.reduce((sum, donation) => {
+          const amount = parseFloat(donation.amount?.replace(/[^0-9.]/g, '') || 0);
+          return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
+
+        const totalAmountInRange = totalSubscriptionAmountInRange + totalDonationAmountInRange;
+
         // Summary section
         doc.setFontSize(14);
         doc.setFont(undefined, 'bold');
@@ -1965,14 +2084,20 @@
 
         doc.setFontSize(10);
         doc.setFont(undefined, 'normal');
-        doc.text(`Collected: ${formatCurrency(reportStats.collected)}`, margin, yPos);
+        doc.text(`Total Amount: ${formatCurrency(totalAmountInRange)}`, margin, yPos);
         yPos += lineHeight;
-        doc.text(`Expected: ${formatCurrency(reportStats.expected)}`, margin, yPos);
+        doc.text(`Total Subscription Amount: ${formatCurrency(totalSubscriptionAmountInRange)}`, margin, yPos);
         yPos += lineHeight;
+        doc.text(`Total Donation Amount: ${formatCurrency(totalDonationAmountInRange)}`, margin, yPos);
+        yPos += lineHeight;
+        // doc.text(`Collected: ${formatCurrency(reportStats.collected)}`, margin, yPos);
+        // yPos += lineHeight;
+        // doc.text(`Expected: ${formatCurrency(reportStats.expected)}`, margin, yPos);
+        // yPos += lineHeight;
         doc.text(`Outstanding: ${formatCurrency(dashboardMetrics.outstanding)}`, margin, yPos);
         yPos += lineHeight;
-        doc.text(`Average per Member: ${formatCurrency(reportStats.averagePerMember)}`, margin, yPos);
-        yPos += lineHeight;
+        // doc.text(`Average per Member: ${formatCurrency(reportStats.averagePerMember)}`, margin, yPos);
+        // yPos += lineHeight;
         doc.text(`Total Transactions: ${reportStats.transactionCount}`, margin, yPos);
         yPos += 10;
 
@@ -1990,18 +2115,6 @@
         // });
 
         // Check if we need a new page for transactions
-        const fromDate = new Date(dateRange.from);
-        const toDate = new Date(dateRange.to);
-        toDate.setHours(23, 59, 59, 999);
-
-        const paymentsInRange = paymentHistory.filter(payment => {
-          // First check if payment belongs to a member in the list
-          if (!isPaymentMemberInList(payment)) return false;
-          if (!payment.date) return false;
-          const paymentDate = new Date(payment.date);
-          return paymentDate >= fromDate && paymentDate <= toDate;
-        });
-
         if (paymentsInRange.length > 0) {
           yPos += 10;
           if (yPos > pageHeight - 40) {
@@ -2046,6 +2159,70 @@
 
           if (completedPayments.length > maxTransactions) {
             doc.text(`... and ${completedPayments.length - maxTransactions} more transactions`, margin, yPos);
+          }
+        }
+
+        // Reuse donationsInRange for donation details section
+        const donationsInRange = donationsInRangeForSummaryPDF;
+
+        // Add donations section
+        if (donationsInRange.length > 0) {
+          yPos += 15;
+          if (yPos > pageHeight - 40) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          doc.setFontSize(14);
+          doc.setFont(undefined, 'bold');
+          doc.text('Donation Details', margin, yPos);
+          yPos += 8;
+
+          doc.setFontSize(9);
+          doc.setFont(undefined, 'normal');
+
+          // Table headers
+          doc.setFont(undefined, 'bold');
+          doc.text('Date', margin, yPos);
+          doc.text('Donor', margin + 40, yPos);
+          doc.text('Type', margin + 85, yPos);
+          doc.text('Amount', margin + 115, yPos);
+          doc.text('Method', margin + 155, yPos);
+          yPos += lineHeight;
+
+          doc.setFont(undefined, 'normal');
+          // Add donations (limit to fit on page)
+          const maxDonations = Math.min(donationsInRange.length, Math.floor((pageHeight - yPos - 20) / lineHeight));
+          donationsInRange.slice(0, maxDonations).forEach(donation => {
+            if (yPos > pageHeight - 20) {
+              doc.addPage();
+              yPos = 20;
+              // Re-print headers on new page
+              doc.setFont(undefined, 'bold');
+              doc.text('Date', margin, yPos);
+              doc.text('Donor', margin + 40, yPos);
+              doc.text('Type', margin + 85, yPos);
+              doc.text('Amount', margin + 115, yPos);
+              doc.text('Method', margin + 155, yPos);
+              yPos += lineHeight;
+              doc.setFont(undefined, 'normal');
+            }
+            const date = donation.date || "-";
+            const donorName = donation.donorName || "-";
+            const donorType = donation.isMember ? "Member" : "Non-Member";
+            const donationType = (donation.donationType || "-").substring(0, 12);
+            const amount = donation.amount || formatCurrency(0);
+            const paymentMethod = (donation.method || (donation.payment_type === "cash" ? "Cash" : "Online") || "-").substring(0, 12);
+            doc.text(date.substring(0, 10), margin, yPos);
+            doc.text(donorName.substring(0, 15), margin + 40, yPos);
+            doc.text(donorType.substring(0, 10), margin + 85, yPos);
+            doc.text(amount.substring(0, 15), margin + 115, yPos);
+            doc.text(paymentMethod, margin + 155, yPos);
+            yPos += lineHeight;
+          });
+
+          if (donationsInRange.length > maxDonations) {
+            doc.text(`... and ${donationsInRange.length - maxDonations} more donations`, margin, yPos);
           }
         }
 
