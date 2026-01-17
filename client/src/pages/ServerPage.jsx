@@ -926,7 +926,7 @@ export function ServerPage() {
                             value={invoiceForm.memberId}
                             onChange={(e) => setInvoiceForm({ ...invoiceForm, memberId: e.target.value })}
                             className="mono-input"
-                            placeholder="e.g. HK1001"
+                            placeholder="e.g. IMA1001"
                           />
                         </label>
                         <label>

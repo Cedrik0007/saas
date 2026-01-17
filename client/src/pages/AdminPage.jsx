@@ -1,20 +1,20 @@
-  import { useState, useEffect, useRef, useMemo } from "react";
-  import { useNavigate, useSearchParams } from "react-router-dom";
-  import { SiteHeader } from "../components/SiteHeader.jsx";
-  import { SiteFooter } from "../components/SiteFooter.jsx";
-  import { Table } from "../components/Table.jsx";
-  import { Pagination } from "../components/Pagination.jsx";
-  import { Notie } from "../components/Notie.jsx";
-  import { Tooltip } from "../components/Tooltip.jsx";
-  import PhoneInput from "../components/PhoneInput.jsx";
-  import { useApp } from "../context/AppContext.jsx";
-  import jsPDF from "jspdf";
-  import { statusClass } from "../statusClasses";
-  import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { SiteHeader } from "../components/SiteHeader.jsx";
+import { SiteFooter } from "../components/SiteFooter.jsx";
+import { Table } from "../components/Table.jsx";
+import { Pagination } from "../components/Pagination.jsx";
+import { Notie } from "../components/Notie.jsx";
+import { Tooltip } from "../components/Tooltip.jsx";
+import PhoneInput from "../components/PhoneInput.jsx";
+import { useApp } from "../context/AppContext.jsx";
+import jsPDF from "jspdf";
+import { statusClass } from "../statusClasses";
+import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
 
 
-  // Format subscription type for display (remove amount for table display)
-  function formatSubscriptionType(subscriptionType) {
+// Format subscription type for display (remove amount for table display)
+function formatSubscriptionType(subscriptionType) {
     if (!subscriptionType) return 'Lifetime';
     if (subscriptionType === 'Lifetime Janaza Fund Member') {
       return 'Lifetime Member Janaza fund';
@@ -23,9 +23,9 @@
       return 'Lifetime membership Janaza fund';
     }
     return subscriptionType; // Annual Member or other types stay as is
-  }
+}
 
-  function AdminPage() {
+function AdminPage() {
     const {
       members,
       admins,
@@ -370,7 +370,7 @@
     // Check if form is valid (for disabling submit button)
     const isMemberFormValid = () => {
       const fieldOrder = editingMember
-        ? ["name", "email", "phone"] // Edit Member: validate basic fields (dates are optional)
+        ? ["name", "phone"] // Edit Member: validate basic fields (email is optional, dates are optional)
         : ["name", "id", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields and id
 
       for (const field of fieldOrder) {
@@ -386,7 +386,7 @@
     const validateMemberForm = () => {
       // Define field order for validation (only validate fields that exist in the form)
       const fieldOrder = editingMember
-        ? ["name", "email", "phone"] // Edit Member: validate basic fields (dates are optional)
+        ? ["name", "phone"] // Edit Member: validate basic fields (email is optional, dates are optional)
         : ["name", "id", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields and id
 
       // Clear all errors first
@@ -3930,13 +3930,13 @@ Indian Muslim Association, Hong Kong`;
       try {
         setIsMemberSubmitting(true);
 
-        // Prepare member data - include ID if manually entered (4 digits)
+        // Prepare member data - include ID if manually entered (at least 2 characters)
         const memberData = { ...memberForm };
-        if (memberForm.id && memberForm.id.length === 4) {
-          memberData.id = `HK${memberForm.id}`;
+        if (memberForm.id && memberForm.id.length >= 2) {
+          memberData.id = memberForm.id.toUpperCase();
         }
-        // Remove id from memberData if not provided or incomplete
-        if (!memberForm.id || memberForm.id.length !== 4) {
+        // Remove id from memberData if not provided or too short
+        if (!memberForm.id || memberForm.id.length < 2) {
           delete memberData.id;
         }
         
@@ -4030,14 +4030,14 @@ Indian Muslim Association, Hong Kong`;
         // Compare each field and only include if changed
         // Compare member ID (if changed, need to update)
         if (memberForm.id !== (originalMember.id || "")) {
-          // Validate member ID format (must be 4 digits)
-          if (memberForm.id && memberForm.id.length !== 4) {
-            showToast("Member ID must be exactly 4 digits", "error");
+          // Validate member ID format (must be at least 2 alphanumeric characters)
+          if (memberForm.id && memberForm.id.length < 2) {
+            showToast("Member ID must be at least 2 characters", "error");
             setMemberFieldErrors(prev => ({ ...prev, id: true }));
             setCurrentInvalidField("id");
             return;
           }
-          updateData.id = memberForm.id;
+          updateData.id = memberForm.id ? memberForm.id.toUpperCase() : memberForm.id;
         }
         if (memberForm.name !== (originalMember.name || "")) {
           updateData.name = memberForm.name;
@@ -6046,8 +6046,8 @@ Indian Muslim Association, Hong Kong`;
                                   type="text"
                                   value={memberForm.id}
                                   onChange={(e) => {
-                                    // Only allow 4 digits
-                                    const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                                    // Allow alphanumeric characters, max 10 characters
+                                    const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase();
                                     setMemberForm(prev => ({ ...prev, id: value }));
                                     if (memberFieldErrors.id) {
                                       setMemberFieldErrors(prev => ({ ...prev, id: false }));
@@ -6056,37 +6056,31 @@ Indian Muslim Association, Hong Kong`;
                                       }
                                     }
                                   }}
-                                  placeholder="Enter 4-digit ID"
-                                  maxLength={4}
+                                  placeholder="Enter Member ID (e.g. IMA1234)"
+                                  maxLength={10}
                                   style={{
-                                    border: memberFieldErrors.id ? "2px solid #ef4444" : undefined
+                                    border: memberFieldErrors.id ? "2px solid #ef4444" : undefined,
+                                    textTransform: "uppercase"
                                   }}
-                                  // style={{
-                                  //   textAlign: "center",
-                                  //   letterSpacing: "0.5em",
-                                  //   fontFamily: "monospace",
-                                  //   fontSize: "1rem",
-                                  //   fontWeight: "600"
-                                  // }}
                                 />
-                                {memberForm.id && memberForm.id.length === 4 && (
+                                {memberForm.id && memberForm.id.length >= 2 && (
                                   <span style={{ 
                                     fontSize: "0.75rem", 
                                     color: "#10b981", 
                                     marginTop: "4px", 
                                     display: "block" 
                                   }}>
-                                    ID will be: HK{memberForm.id}
+                                    Member ID: {memberForm.id}
                                   </span>
                                 )}
-                                {memberForm.id && memberForm.id.length > 0 && memberForm.id.length < 4 && (
+                                {memberForm.id && memberForm.id.length > 0 && memberForm.id.length < 2 && (
                                   <span style={{ 
                                     fontSize: "0.75rem", 
                                     color: "#ef4444", 
                                     marginTop: "4px", 
                                     display: "block" 
                                   }}>
-                                    Please enter 4 digits
+                                    Please enter at least 2 characters
                                   </span>
                                 )}
                               </label>
@@ -6143,21 +6137,20 @@ Indian Muslim Association, Hong Kong`;
                             <label>
                               <span>
                                 <i className="fas fa-envelope" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                                Email <span style={{ color: "#ef4444" }}>*</span>
+                                Email <span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>(optional)</span>
                               </span>
                               <input
                                 type="email"
-                                required
                                 value={memberForm.email}
                                 onChange={(e) => {
                                   const newValue = e.target.value;
                                   handleMemberFieldChange("email", newValue);
                                   
-                                  // Validate email format
+                                  // Validate email format only if not empty
                                   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                                  const isValidEmail = newValue.trim() && emailRegex.test(newValue.trim());
+                                  const isValidEmail = !newValue.trim() || emailRegex.test(newValue.trim());
                                   
-                                  // Clear error styles only if email is valid
+                                  // Clear error styles if email is valid or empty
                                   if (isValidEmail) {
                                     e.target.style.setProperty("border-color", "", "important");
                                     e.target.style.setProperty("outline", "", "important");
@@ -6169,7 +6162,7 @@ Indian Muslim Association, Hong Kong`;
                                         setCurrentInvalidField(null);
                                       }
                                     }
-                                  } else if (newValue.trim()) {
+                                  } else {
                                     // If email has value but is invalid, show error border
                                     e.target.style.setProperty("border-color", "#ef4444", "important");
                                     e.target.style.setProperty("outline", "none", "important");
@@ -6185,31 +6178,31 @@ Indian Muslim Association, Hong Kong`;
                                 }}
                                 aria-invalid={memberFieldErrors.email && currentInvalidField === "email"}
                                 onFocus={(e) => {
-                                  // Validate email format
+                                  // Validate email format only if not empty
                                   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                                  const isValidEmail = memberForm.email.trim() && emailRegex.test(memberForm.email.trim());
+                                  const isValidEmail = !memberForm.email.trim() || emailRegex.test(memberForm.email.trim());
                                   
                                   if (memberFieldErrors.email && currentInvalidField === "email" && !isValidEmail) {
                                     e.target.style.setProperty("border-color", "#ef4444", "important");
                                     e.target.style.setProperty("outline", "none", "important");
                                     e.target.style.setProperty("box-shadow", "0 0 0 3px rgba(239, 68, 68, 0.1)", "important");
                                   } else if (isValidEmail) {
-                                    // Remove error styles if email is valid
+                                    // Remove error styles if email is valid or empty
                                     e.target.style.setProperty("border-color", "", "important");
                                     e.target.style.setProperty("outline", "", "important");
                                     e.target.style.setProperty("box-shadow", "", "important");
                                   }
                                 }}
                                 onBlur={(e) => {
-                                  // Validate email format on blur
+                                  // Validate email format on blur only if not empty
                                   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                                  const isValidEmail = memberForm.email.trim() && emailRegex.test(memberForm.email.trim());
+                                  const isValidEmail = !memberForm.email.trim() || emailRegex.test(memberForm.email.trim());
                                   
                                   if (memberFieldErrors.email && currentInvalidField === "email" && !isValidEmail) {
                                     e.target.style.setProperty("border-color", "#ef4444", "important");
                                     e.target.style.setProperty("outline", "none", "important");
                                   } else if (isValidEmail) {
-                                    // Remove error styles if email is valid
+                                    // Remove error styles if email is valid or empty
                                     e.target.style.setProperty("border-color", "", "important");
                                     e.target.style.setProperty("outline", "", "important");
                                     e.target.style.setProperty("box-shadow", "", "important");
@@ -6296,8 +6289,8 @@ Indian Muslim Association, Hong Kong`;
                                   value={memberForm.id || ""}
                                   onChange={(e) => {
                                     let value = e.target.value;
-                                    // Only allow digits, max 4 digits
-                                    value = value.replace(/\D/g, '').substring(0, 4);
+                                    // Allow alphanumeric characters, max 10 characters
+                                    value = value.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10).toUpperCase();
                                     handleMemberFieldChange("id", value);
                                     // Clear error when user starts typing
                                     if (memberFieldErrors.id || currentInvalidField === "id") {
@@ -6307,13 +6300,15 @@ Indian Muslim Association, Hong Kong`;
                                       }
                                     }
                                   }}
-                                  placeholder="Enter 4-digit member ID"
+                                  placeholder="Enter Member ID (e.g. IMA1234)"
+                                  maxLength={10}
                                   style={{
                                     width: "100%",
                                     padding: "10px 16px",
                                     border: "1px solid #e0e0e0",
                                     borderRadius: "4px",
                                     fontSize: "0.9375rem",
+                                    textTransform: "uppercase",
                                     borderColor: (memberFieldErrors.id && currentInvalidField === "id") ? "#ef4444" : undefined,
                                     borderWidth: (memberFieldErrors.id && currentInvalidField === "id") ? "2px" : undefined,
                                     borderStyle: (memberFieldErrors.id && currentInvalidField === "id") ? "solid" : undefined,
@@ -6322,14 +6317,14 @@ Indian Muslim Association, Hong Kong`;
                                   }}
                                   aria-invalid={memberFieldErrors.id}
                                 />
-                                {memberForm.id && memberForm.id.length > 0 && memberForm.id.length < 4 && (
+                                {memberForm.id && memberForm.id.length > 0 && memberForm.id.length < 2 && (
                                   <span style={{ 
                                     fontSize: "0.75rem", 
                                     color: "#ef4444", 
                                     marginTop: "4px", 
                                     display: "block" 
                                   }}>
-                                    Please enter 4 digits
+                                    Please enter at least 2 characters
                                   </span>
                                 )}
                               </label>
@@ -7135,7 +7130,7 @@ Indian Muslim Association, Hong Kong`;
                                 </label>
                                 <input
                                   type="text"
-                                  placeholder="Search by name, phone, email, or ID..."
+                                  placeholder="Search by name, mobile, email, or ID..."
                                   value={memberSearchTerm}
                                   onChange={(e) => {
                                     setMemberSearchTerm(e.target.value);
@@ -14320,8 +14315,8 @@ Indian Muslim Association, Hong Kong`;
 
                             // Progressive validation for donation form
                             const validateDonationForm = () => {
-                              // Define field order for validation
-                              const fieldOrder = ["donorName", "donationType", "amount", "payment_type", "method", "receiver_name", "date", "screenshot"];
+                              // Define field order for validation (screenshot is optional)
+                              const fieldOrder = ["donorName", "donationType", "amount", "payment_type", "method", "receiver_name", "date"];
 
                               // If we have a current invalid field, check if it's now valid
                               if (currentInvalidDonationField) {
@@ -14367,12 +14362,8 @@ Indian Muslim Association, Hong Kong`;
                                 } else if (currentInvalidDonationField === "date" && !donationForm.date) {
                                   isValid = false;
                                   errorMsg = "Date is required";
-                                } else if (currentInvalidDonationField === "screenshot") {
-                                  if ((donationForm.payment_type === "cash" || donationForm.payment_type === "online") && !donationForm.screenshot && !donationImageFile) {
-                                    isValid = false;
-                                    errorMsg = "Proof image is required for all payments";
-                                  }
                                 }
+                                // Note: screenshot/attachment is optional
 
                                 if (isValid) {
                                   setDonationFieldErrors(prev => ({ ...prev, [currentInvalidDonationField]: false }));
@@ -14428,12 +14419,8 @@ Indian Muslim Association, Hong Kong`;
                                 } else if (field === "date" && !donationForm.date) {
                                   isValid = false;
                                   errorMsg = "Date is required";
-                                } else if (field === "screenshot") {
-                                  if ((donationForm.payment_type === "cash" || donationForm.payment_type === "online") && !donationForm.screenshot && !donationImageFile) {
-                                    isValid = false;
-                                    errorMsg = "Proof image is required for all payments";
-                                  }
                                 }
+                                // Note: screenshot/attachment is optional
 
                                 if (!isValid) {
                                   // Clear all errors first
@@ -15315,10 +15302,10 @@ Indian Muslim Association, Hong Kong`;
                             </label>
                           )}
 
-                          {/* Proof Image - Required for both Cash and Online Payment */}
+                          {/* Proof Image - Optional for both Cash and Online Payment */}
                           {(donationForm.payment_type === "cash" || donationForm.payment_type === "online") && (
                             <label style={{ gridColumn: "1 / -1", marginBottom: "20px", display: "block" }}>
-                              Proof Image <span style={{ color: "#ef4444" }}>*</span>
+                              Proof Image <span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>(optional)</span>
                               <div
                                 style={{
                                   border: donationFieldErrors.screenshot ? "2px dashed #ef4444" : "2px dashed #d0d0d0",
@@ -20878,7 +20865,7 @@ ${downloadUrl}`;
         <SiteFooter />
       </>
     );
-  }
+}
 
-  export default AdminPage;
-  export { AdminPage };
+export default AdminPage;
+export { AdminPage };

@@ -133,7 +133,7 @@ router.post("/", async (req, res) => {
     // Generate ID if not provided
     let memberId = req.body.id;
     if (!memberId) {
-      memberId = `HK${Math.floor(1000 + Math.random() * 9000)}`;
+      memberId = `IMA${Math.floor(1000 + Math.random() * 9000)}`;
     }
 
     // Check if ID already exists
@@ -560,18 +560,56 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE member
+// DELETE member and all related data (invoices and payments, but NOT donations)
 router.delete("/:id", async (req, res) => {
   try {
     await ensureConnection();
-    const member = await UserModel.findOneAndDelete({ id: req.params.id });
+    
+    const memberId = req.params.id;
+    
+    // Find the member first to confirm they exist
+    const member = await UserModel.findOne({ id: memberId });
 
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
     }
 
+    // Import emit functions for real-time updates
+    const { emitInvoiceUpdate, emitPaymentUpdate } = await import("../config/socket.js");
+
+    // Find all invoices for this member before deleting (for Socket.io events)
+    const memberInvoices = await InvoiceModel.find({ memberId: memberId });
+    
+    // Delete all invoices for this member (by memberId)
+    const invoiceDeleteResult = await InvoiceModel.deleteMany({ memberId: memberId });
+    console.log(`Deleted ${invoiceDeleteResult.deletedCount} invoice(s) for member ${memberId}`);
+    
+    // Emit delete events for each invoice
+    for (const invoice of memberInvoices) {
+      emitInvoiceUpdate('deleted', { id: invoice.id || invoice._id });
+    }
+
+    // Find all payments for this member before deleting (for Socket.io events)
+    const memberPayments = await PaymentModel.find({ memberId: memberId });
+    
+    // Delete all payments for this member (by memberId)
+    const paymentDeleteResult = await PaymentModel.deleteMany({ memberId: memberId });
+    console.log(`Deleted ${paymentDeleteResult.deletedCount} payment(s) for member ${memberId}`);
+    
+    // Emit delete events for each payment
+    for (const payment of memberPayments) {
+      emitPaymentUpdate('deleted', { id: payment.id || payment._id });
+    }
+
+    // Note: Donations are NOT deleted - they are preserved for record keeping
+
+    // Finally delete the member
+    await UserModel.findOneAndDelete({ id: memberId });
+
     // Emit Socket.io event for real-time update
-    emitMemberUpdate('deleted', { id: req.params.id });
+    emitMemberUpdate('deleted', { id: memberId });
+
+    console.log(`✓ Member ${member.name} (${memberId}) deleted with ${invoiceDeleteResult.deletedCount} invoice(s) and ${paymentDeleteResult.deletedCount} payment(s). Donations preserved.`);
 
     res.status(204).send();
   } catch (error) {
