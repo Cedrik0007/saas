@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Reset Data</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: #f9fafb;
+    }
+    .container {
+      text-align: center;
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      max-width: 400px;
+    }
+    button {
+      background: #000;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      margin: 10px;
+    }
+    button:hover {
+      background: #333;
+    }
+    .secondary {
+      background: white;
+      color: #000;
+      border: 1px solid #e5e7eb;
+    }
+    .secondary:hover {
+      background: #f9fafb;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔄 Reset Data</h1>
+    <p>This will clear localStorage and load fresh data from data.js</p>
+    <p><strong>Including: Shan Yeager with $250 outstanding</strong></p>
+    <button onclick="resetData()">Reset All Data</button>
+    <button class="secondary" onclick="goBack()">Cancel</button>
+    <div id="message" style="margin-top: 20px; color: #10b981; font-weight: bold;"></div>
+  </div>
+
+  <script>
+    function resetData() {
+      localStorage.clear();
+      document.getElementById('message').innerHTML = '✓ Data cleared! Redirecting...';
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 1000);
+    }
+    
+    function goBack() {
+      window.location.href = '/';
+    }
+  </script>
+</body>
+</html>
+
