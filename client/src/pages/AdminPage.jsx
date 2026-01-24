@@ -317,24 +317,24 @@ function AdminPage() {
           else if (value.trim().length < 2) error = "Name must be at least 2 characters.";
           break;
 
-        case "id":
-          // Member ID validation - must be exactly 4 digits if provided
-          if (!value || value.trim() === "") {
-            error = "Member ID is required. Please enter 4 digits.";
-          } else {
-            const idDigits = value.replace(/\D/g, '');
-            if (idDigits.length !== 4) {
-              error = "Member ID must be exactly 4 digits.";
-            }
-          }
-          break;
+        // case "id":
+        //   // Member ID validation - must be exactly 4 digits if provided
+        //   if (!value || value.trim() === "") {
+        //     error = "Member ID is required. Please enter 4 digits.";
+        //   } else {
+        //     const idDigits = value.replace(/\D/g, '');
+        //     if (idDigits.length !== 4) {
+        //       error = "Member ID must be exactly 4 digits.";
+        //     }
+        //   }
+        //   break;
 
-        case "email":
-          if (!value.trim()) error = "Email is required.";
-          else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
-            error = "Please enter a valid email address.";
-          }
-          break;
+        // case "email":
+        //   if (!value.trim()) error = "Email is required.";
+        //   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+        //     error = "Please enter a valid email address.";
+        //   }
+        //   break;
 
         case "phone":
           // Phone validation - check required and format
@@ -5240,7 +5240,7 @@ Indian Muslim Association, Hong Kong`;
 
     // Get member's invoices
     // Helper function to get effective invoice status (considering completed payments)
-    function getEffectiveInvoiceStatus(invoice) {
+    const getEffectiveInvoiceStatus = (invoice) => {
       // If invoice is already marked as Paid, return Paid immediately
       if (invoice.status === "Paid" || invoice.status === "Completed") {
         return "Paid";
@@ -5268,9 +5268,9 @@ Indian Muslim Association, Hong Kong`;
 
       // Otherwise use the invoice's own status
       return invoice.status || "Unpaid";
-    }
+    };
 
-    function getMemberInvoices(memberId) {
+    const getMemberInvoices = (memberId) => {
       // Use strict string comparison to ensure only this member's invoices are returned
       const memberIdStr = String(memberId || "").trim();
       
@@ -5293,9 +5293,9 @@ Indian Muslim Association, Hong Kong`;
       console.log(`getMemberInvoices for ${memberIdStr}: found ${filteredInvoices.length} invoices out of ${invoicesArray.length} total`);
       
       return filteredInvoices;
-    }
+    };
 
-    function getPreferredInvoicesForMember(memberId, { includeOptimistic = true } = {}) {
+    const getPreferredInvoicesForMember = (memberId, { includeOptimistic = true } = {}) => {
       const normalizedMemberId = String(memberId || "").trim();
       if (!normalizedMemberId || normalizedMemberId === "undefined" || normalizedMemberId === "null") {
         return [];
@@ -5327,7 +5327,7 @@ Indian Muslim Association, Hong Kong`;
       }
 
       return fallbackInvoices;
-    }
+    };
 
     // Approve pending member
     const handleApproveMember = async (memberId) => {
@@ -6182,55 +6182,39 @@ Indian Muslim Association, Hong Kong`;
                                 }}
                               />
                             </label>
+
                             {!editingMember && (
-                              <label>
-                                <span>
-                                  <i className="fas fa-id-card admin-members-form-icon" style={{ marginRight: "8px" }} aria-hidden="true"></i>
-                                  Member ID <span className="admin-members-form-required" style={{ color: "#ef4444" }}>*</span>
-                                </span>
-                                <input
-                                  type="text"
-                                  value={memberForm.id}
-                                  onChange={(e) => {
-                                    // Allow alphanumeric characters, max 10 characters
-                                    const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase();
-                                    setMemberForm(prev => ({ ...prev, id: value }));
-                                    if (memberFieldErrors.id) {
-                                      setMemberFieldErrors(prev => ({ ...prev, id: false }));
-                                      if (currentInvalidField === "id") {
-                                        setCurrentInvalidField(null);
-                                      }
-                                    }
-                                  }}
-                                  placeholder="Enter Member ID (e.g. IMA1234)"
-                                  maxLength={10}
-                                  style={{
-                                    border: memberFieldErrors.id ? "2px solid #ef4444" : undefined,
-                                    textTransform: "uppercase"
-                                  }}
-                                />
-                                {memberForm.id && memberForm.id.length >= 2 && (
-                                  <span style={{ 
-                                    fontSize: "0.75rem", 
-                                    color: "#10b981", 
-                                    marginTop: "4px", 
-                                    display: "block" 
-                                  }}>
-                                    Member ID: {memberForm.id}
-                                  </span>
-                                )}
-                                {memberForm.id && memberForm.id.length > 0 && memberForm.id.length < 2 && (
-                                  <span style={{ 
-                                    fontSize: "0.75rem", 
-                                    color: "#ef4444", 
-                                    marginTop: "4px", 
-                                    display: "block" 
-                                  }}>
-                                    Please enter at least 2 characters
-                                  </span>
-                                )}
-                              </label>
-                            )}
+  <label>
+    <span>
+      <i
+        className="fas fa-id-card admin-members-form-icon"
+        style={{ marginRight: "8px" }}
+        aria-hidden="true"
+      ></i>
+      Member ID
+    </span>
+
+    <input
+      type="text"
+      value={memberForm.id}
+      onChange={(e) => {
+        const value = e.target.value; // allow anything
+        setMemberForm(prev => ({ ...prev, id: value }));
+
+        if (memberFieldErrors.id) {
+          setMemberFieldErrors(prev => ({ ...prev, id: false }));
+          if (currentInvalidField === "id") {
+            setCurrentInvalidField(null);
+          }
+        }
+      }}
+      placeholder="Enter Member ID (optional)"
+      style={{
+        border: memberFieldErrors.id ? "2px solid #ef4444" : undefined
+      }}
+    />
+  </label>
+)}
 
                             {/* <label>
                               <span>
@@ -6280,10 +6264,12 @@ Indian Muslim Association, Hong Kong`;
                               )}
                             </label> */}
 
+                            
+
                             <label>
                               <span>
                                 <i className="fas fa-envelope" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                                Email <span style={{ color: "red", fontSize: "0.75rem" }}>*</span>
+                                Email 
                               </span>
                               <input
                                 type="email"
@@ -20482,10 +20468,10 @@ Indian Muslim Association, Hong Kong`;
                               payment = payments.find(p => p.invoiceId === targetInvoiceId);
                             }
                             
-                            // Capture invoice ID once for downstream usage
+                            // Determine invoice ID for receipt link handling
                             const invoiceId = latestInvoice?.id || paymentConfirmationInvoice?.id || null;
 
-                            // Trigger PDF generation to keep backend behavior unchanged
+                            // Trigger PDF generation to keep backend workflow intact
                             if (invoiceId) {
                               try {
                                 const viewerParam = (latestInvoice?.memberId || paymentConfirmationInvoice?.memberId)
@@ -20500,7 +20486,7 @@ Indian Muslim Association, Hong Kong`;
                                 }
                               } catch (pdfError) {
                                 console.error('Error generating PDF for WhatsApp:', pdfError);
-                                // Continue even if PDF generation fails; message fallback handles absence
+                                // Continue even if PDF generation fails; message fallback is handled via invoiceId
                               }
                             }
                             
