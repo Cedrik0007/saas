@@ -1546,6 +1546,96 @@ function AdminPage() {
       return "Other";
     };
 
+    // Helper function to get effective invoice status (considering completed payments)
+    const getEffectiveInvoiceStatus = (invoice) => {
+      // If invoice is already marked as Paid, return Paid immediately
+      if (invoice.status === "Paid" || invoice.status === "Completed") {
+        return "Paid";
+      }
+
+      // Check if there's a completed payment for this SPECIFIC invoice
+      // Use strict string comparison to avoid false positives
+      const invoiceIdStr = String(invoice.id || "").trim();
+      
+      // Only check for related payment if invoice has a valid ID
+      if (invoiceIdStr && invoiceIdStr !== "undefined" && invoiceIdStr !== "null") {
+        const relatedPayment = (paymentHistory || []).find((p) => {
+          const paymentInvoiceIdStr = String(p.invoiceId || "").trim();
+          // Strict match: both IDs must be non-empty and exactly equal
+          return paymentInvoiceIdStr && 
+                 paymentInvoiceIdStr === invoiceIdStr && 
+                 (p.status === "Completed" || p.status === "Paid");
+        });
+
+        // If there's a completed payment, invoice is effectively paid
+        if (relatedPayment) {
+          return "Paid";
+        }
+      }
+
+      // Otherwise use the invoice's own status
+      return invoice.status || "Unpaid";
+    };
+
+    const getMemberInvoices = (memberId) => {
+      // Use strict string comparison to ensure only this member's invoices are returned
+      const memberIdStr = String(memberId || "").trim();
+      
+      if (!memberIdStr || memberIdStr === "undefined" || memberIdStr === "null") {
+        console.warn('getMemberInvoices: Invalid memberId provided:', memberId);
+        return [];
+      }
+      
+      // Ensure invoices is an array
+      const invoicesArray = Array.isArray(invoices) ? invoices : [];
+      
+      const filteredInvoices = invoicesArray.filter((inv) => {
+        if (!inv) return false;
+        const invMemberIdStr = String(inv.memberId || "").trim();
+        // Only match by memberId - strict comparison, no fallbacks to email/name
+        const matches = invMemberIdStr === memberIdStr;
+        return matches;
+      });
+      
+      console.log(`getMemberInvoices for ${memberIdStr}: found ${filteredInvoices.length} invoices out of ${invoicesArray.length} total`);
+      
+      return filteredInvoices;
+    };
+
+    const getPreferredInvoicesForMember = (memberId, { includeOptimistic = true } = {}) => {
+      const normalizedMemberId = String(memberId || "").trim();
+      if (!normalizedMemberId || normalizedMemberId === "undefined" || normalizedMemberId === "null") {
+        return [];
+      }
+
+      const selectedMemberId = String(selectedMember?.id || "").trim();
+      const hasSelectedInvoices = Array.isArray(selectedMemberInvoices) && selectedMemberInvoices.length > 0;
+
+      if (hasSelectedInvoices && selectedMemberId && selectedMemberId === normalizedMemberId) {
+        return selectedMemberInvoices;
+      }
+
+      const fallbackInvoices = getMemberInvoices(normalizedMemberId);
+
+      if (
+        includeOptimistic &&
+        lastCreatedInvoice &&
+        String(lastCreatedInvoice.memberId || "").trim() === normalizedMemberId
+      ) {
+        const optimisticId = String(lastCreatedInvoice.id || lastCreatedInvoice._id || "").trim();
+        const alreadyIncluded = fallbackInvoices.some((inv) => {
+          const candidateId = String(inv?.id || inv?._id || "").trim();
+          return candidateId && optimisticId && candidateId === optimisticId;
+        });
+
+        if (!alreadyIncluded) {
+          return [lastCreatedInvoice, ...fallbackInvoices];
+        }
+      }
+
+      return fallbackInvoices;
+    };
+
     const getRecentPayments = () => {
       // Use payments from finance section, filter to only show payments from members in the members list
       return (payments || [])
@@ -5236,97 +5326,6 @@ Indian Muslim Association, Hong Kong`;
       } catch (error) {
         console.warn("Error refreshing data:", error);
       }
-    };
-
-    // Get member's invoices
-    // Helper function to get effective invoice status (considering completed payments)
-    const getEffectiveInvoiceStatus = (invoice) => {
-      // If invoice is already marked as Paid, return Paid immediately
-      if (invoice.status === "Paid" || invoice.status === "Completed") {
-        return "Paid";
-      }
-
-      // Check if there's a completed payment for this SPECIFIC invoice
-      // Use strict string comparison to avoid false positives
-      const invoiceIdStr = String(invoice.id || "").trim();
-      
-      // Only check for related payment if invoice has a valid ID
-      if (invoiceIdStr && invoiceIdStr !== "undefined" && invoiceIdStr !== "null") {
-        const relatedPayment = (paymentHistory || []).find((p) => {
-          const paymentInvoiceIdStr = String(p.invoiceId || "").trim();
-          // Strict match: both IDs must be non-empty and exactly equal
-          return paymentInvoiceIdStr && 
-                 paymentInvoiceIdStr === invoiceIdStr && 
-                 (p.status === "Completed" || p.status === "Paid");
-        });
-
-        // If there's a completed payment, invoice is effectively paid
-        if (relatedPayment) {
-          return "Paid";
-        }
-      }
-
-      // Otherwise use the invoice's own status
-      return invoice.status || "Unpaid";
-    };
-
-    const getMemberInvoices = (memberId) => {
-      // Use strict string comparison to ensure only this member's invoices are returned
-      const memberIdStr = String(memberId || "").trim();
-      
-      if (!memberIdStr || memberIdStr === "undefined" || memberIdStr === "null") {
-        console.warn('getMemberInvoices: Invalid memberId provided:', memberId);
-        return [];
-      }
-      
-      // Ensure invoices is an array
-      const invoicesArray = Array.isArray(invoices) ? invoices : [];
-      
-      const filteredInvoices = invoicesArray.filter((inv) => {
-        if (!inv) return false;
-        const invMemberIdStr = String(inv.memberId || "").trim();
-        // Only match by memberId - strict comparison, no fallbacks to email/name
-        const matches = invMemberIdStr === memberIdStr;
-        return matches;
-      });
-      
-      console.log(`getMemberInvoices for ${memberIdStr}: found ${filteredInvoices.length} invoices out of ${invoicesArray.length} total`);
-      
-      return filteredInvoices;
-    };
-
-    const getPreferredInvoicesForMember = (memberId, { includeOptimistic = true } = {}) => {
-      const normalizedMemberId = String(memberId || "").trim();
-      if (!normalizedMemberId || normalizedMemberId === "undefined" || normalizedMemberId === "null") {
-        return [];
-      }
-
-      const selectedMemberId = String(selectedMember?.id || "").trim();
-      const hasSelectedInvoices = Array.isArray(selectedMemberInvoices) && selectedMemberInvoices.length > 0;
-
-      if (hasSelectedInvoices && selectedMemberId && selectedMemberId === normalizedMemberId) {
-        return selectedMemberInvoices;
-      }
-
-      const fallbackInvoices = getMemberInvoices(normalizedMemberId);
-
-      if (
-        includeOptimistic &&
-        lastCreatedInvoice &&
-        String(lastCreatedInvoice.memberId || "").trim() === normalizedMemberId
-      ) {
-        const optimisticId = String(lastCreatedInvoice.id || lastCreatedInvoice._id || "").trim();
-        const alreadyIncluded = fallbackInvoices.some((inv) => {
-          const candidateId = String(inv?.id || inv?._id || "").trim();
-          return candidateId && optimisticId && candidateId === optimisticId;
-        });
-
-        if (!alreadyIncluded) {
-          return [lastCreatedInvoice, ...fallbackInvoices];
-        }
-      }
-
-      return fallbackInvoices;
     };
 
     // Approve pending member
