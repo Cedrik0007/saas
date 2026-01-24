@@ -5240,7 +5240,7 @@ Indian Muslim Association, Hong Kong`;
 
     // Get member's invoices
     // Helper function to get effective invoice status (considering completed payments)
-    const getEffectiveInvoiceStatus = (invoice) => {
+    function getEffectiveInvoiceStatus(invoice) {
       // If invoice is already marked as Paid, return Paid immediately
       if (invoice.status === "Paid" || invoice.status === "Completed") {
         return "Paid";
@@ -5268,9 +5268,9 @@ Indian Muslim Association, Hong Kong`;
 
       // Otherwise use the invoice's own status
       return invoice.status || "Unpaid";
-    };
+    }
 
-    const getMemberInvoices = (memberId) => {
+    function getMemberInvoices(memberId) {
       // Use strict string comparison to ensure only this member's invoices are returned
       const memberIdStr = String(memberId || "").trim();
       
@@ -5293,9 +5293,9 @@ Indian Muslim Association, Hong Kong`;
       console.log(`getMemberInvoices for ${memberIdStr}: found ${filteredInvoices.length} invoices out of ${invoicesArray.length} total`);
       
       return filteredInvoices;
-    };
+    }
 
-    const getPreferredInvoicesForMember = (memberId, { includeOptimistic = true } = {}) => {
+    function getPreferredInvoicesForMember(memberId, { includeOptimistic = true } = {}) {
       const normalizedMemberId = String(memberId || "").trim();
       if (!normalizedMemberId || normalizedMemberId === "undefined" || normalizedMemberId === "null") {
         return [];
@@ -5327,7 +5327,7 @@ Indian Muslim Association, Hong Kong`;
       }
 
       return fallbackInvoices;
-    };
+    }
 
     // Approve pending member
     const handleApproveMember = async (memberId) => {
@@ -20482,24 +20482,26 @@ Indian Muslim Association, Hong Kong`;
                               payment = payments.find(p => p.invoiceId === targetInvoiceId);
                             }
                             
-                            // Generate PDF and get URL
-                            let pdfUrl = null;
-                            try {
-                              const invoiceIdForPdf = latestInvoice.id || paymentConfirmationInvoice.id;
-                              const viewerParam = (latestInvoice?.memberId || paymentConfirmationInvoice?.memberId) ? `?viewerMemberId=${encodeURIComponent(latestInvoice?.memberId || paymentConfirmationInvoice?.memberId)}` : '';
-                              const pdfResponse = await fetch(`${apiUrl}/api/invoices/${invoiceIdForPdf}/pdf-receipt${viewerParam}`, {
-                                method: 'GET',
-                              });
+                            // Capture invoice ID once for downstream usage
+                            const invoiceId = latestInvoice?.id || paymentConfirmationInvoice?.id || null;
 
-                              if (pdfResponse.ok) {
-                                const pdfData = await pdfResponse.json();
-                                if (pdfData.success && pdfData.pdfUrl) {
-                                  pdfUrl = pdfData.pdfUrl;
+                            // Trigger PDF generation to keep backend behavior unchanged
+                            if (invoiceId) {
+                              try {
+                                const viewerParam = (latestInvoice?.memberId || paymentConfirmationInvoice?.memberId)
+                                  ? `?viewerMemberId=${encodeURIComponent(latestInvoice?.memberId || paymentConfirmationInvoice?.memberId)}`
+                                  : '';
+                                const pdfResponse = await fetch(`${apiUrl}/api/invoices/${invoiceId}/pdf-receipt${viewerParam}`, {
+                                  method: 'GET',
+                                });
+
+                                if (pdfResponse.ok) {
+                                  await pdfResponse.json().catch(() => null);
                                 }
+                              } catch (pdfError) {
+                                console.error('Error generating PDF for WhatsApp:', pdfError);
+                                // Continue even if PDF generation fails; message fallback handles absence
                               }
-                            } catch (pdfError) {
-                              console.error('Error generating PDF for WhatsApp:', pdfError);
-                              // Continue without PDF URL
                             }
                             
                             // Helper function to convert number to words
@@ -20633,18 +20635,12 @@ Renewal confirmed for Year ${invoiceYear || '____'}
 
 Thank you for supporting the IMA community!`;
 
-                            // Prepare PDF options page URL (instead of direct download)
-                            let downloadUrl = null;
-                            if (pdfUrl) {
-                              // Use the PDF options page endpoint which shows view/download options
-                              // Always use VITE_API_URL if available, otherwise use current origin
-                              const apiBaseUrl = import.meta.env.VITE_API_URL || window.location.origin;
-                              downloadUrl = `${apiBaseUrl}/api/invoices/${latestInvoice.id || paymentConfirmationInvoice.id}/pdf-receipt/options`;
-                              
-                              // For WhatsApp, provide the PDF options page link
-                              message += `\n\nReceipt PDF:\n${downloadUrl}`;
-                            } else {
-                              message += `\n\nYour payment receipt PDF has been sent to your email.`;
+                            const receiptPdfLink = invoiceId
+                              ? `${import.meta.env.VITE_API_URL || window.location.origin}/api/invoices/${invoiceId}/pdf-receipt/options`
+                              : null;
+
+                            if (receiptPdfLink) {
+                              message += `\n\nReceipt PDF:\n${receiptPdfLink}`;
                             }
 
                             // Clean phone number - ensure it starts with country code
@@ -20688,7 +20684,7 @@ Payment Mode: ${paymentMode}
 
 Renewal confirmed for Year ${invoiceYear || '____'}
 
-Thank you for supporting the IMA community!${downloadUrl ? `\n\nReceipt PDF:\n${downloadUrl}` : '\n\nReceipt PDF sent to your email.'}`;
+Thank you for supporting the IMA community!${receiptPdfLink ? `\n\nReceipt PDF:\n${receiptPdfLink}` : ''}`;
                               whatsappUrl = `https://wa.me/${phoneForUrl}?text=${encodeURIComponent(finalMessage)}`;
                             }
                             
@@ -20717,7 +20713,7 @@ Thank you for supporting the IMA community!${downloadUrl ? `\n\nReceipt PDF:\n${
                                 memberId: member.id,
                                 memberEmail: member.email,
                                 memberName: member.name,
-                                message: `Payment confirmation sent to ${member.name} (${member.phone}) - Invoice #${latestInvoice.id || paymentConfirmationInvoice.id}${pdfUrl ? ' (with PDF)' : ''} - Receipt No: ${receiptNo || 'N/A'}`,
+                                message: `Payment confirmation sent to ${member.name} (${member.phone}) - Invoice #${invoiceId || 'N/A'}${receiptPdfLink ? ' (with receipt link)' : ''} - Receipt No: ${receiptNo || 'N/A'}`,
                                 status: "Delivered",
                               };
                               addCommunication(comm);
