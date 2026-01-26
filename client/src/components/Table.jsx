@@ -1,10 +1,40 @@
 import { statusClass } from "../statusClasses";
 import { useEffect, useMemo, useState } from "react";
 
-export function Table({ columns, rows }) {
+const normalizeColumnName = (columnName) => {
+  if (typeof columnName === "string") {
+    return columnName.trim().toLowerCase();
+  }
+  return String(columnName ?? "").trim().toLowerCase();
+};
+
+export function Table({
+  columns,
+  rows,
+  sortConfig: controlledSortConfig,
+  onSortChange,
+  sortableColumns = null,
+  defaultSortColumn = null,
+  defaultSortDirection = "asc",
+}) {
   const [isMobile, setIsMobile] = useState(false);
   const [selectedCardIndex, setSelectedCardIndex] = useState(null); // For modal popup
-  const [sortConfig, setSortConfig] = useState({ column: null, direction: "asc" });
+  const [internalSortConfig, setInternalSortConfig] = useState(() => {
+    if (defaultSortColumn) {
+      return { column: defaultSortColumn, direction: defaultSortDirection };
+    }
+    return { column: null, direction: "asc" };
+  });
+
+  const allowedSortableColumns = useMemo(() => {
+    if (Array.isArray(sortableColumns) && sortableColumns.length > 0) {
+      return sortableColumns;
+    }
+    return columns;
+  }, [columns, sortableColumns]);
+
+  const isControlledSort = Boolean(controlledSortConfig) && typeof onSortChange === "function";
+  const sortConfig = isControlledSort ? controlledSortConfig : internalSortConfig;
 
   useEffect(() => {
     const checkMobile = () => {
@@ -144,7 +174,17 @@ export function Table({ columns, rows }) {
   };
 
   const handleSort = (column) => {
-    setSortConfig((prev) => {
+    if (!allowedSortableColumns.includes(column)) {
+      return;
+    }
+
+    if (isControlledSort) {
+      const nextDirection = sortConfig?.column === column && sortConfig?.direction === "asc" ? "desc" : "asc";
+      onSortChange({ column, direction: nextDirection });
+      return;
+    }
+
+    setInternalSortConfig((prev) => {
       if (prev.column === column) {
         return { column, direction: prev.direction === "asc" ? "desc" : "asc" };
       }
@@ -154,6 +194,9 @@ export function Table({ columns, rows }) {
 
   // Sort rows - MUST be called before any conditional return
   const sortedRows = useMemo(() => {
+    if (isControlledSort) {
+      return rows;
+    }
     if (!sortConfig.column) return rows;
     const col = sortConfig.column;
     const dir = sortConfig.direction === "asc" ? 1 : -1;
@@ -368,16 +411,26 @@ export function Table({ columns, rows }) {
         <tr>
           {columns.map((col) => {
             const align = getAlignmentForColumn(col);
-            const isActionsColumn = col === "Actions";
-            const isSorted = sortConfig.column === col;
-            const sortIndicator = isSorted ? (sortConfig.direction === "asc" ? "▲" : "▼") : "↕";
+            const isColumnSortable = allowedSortableColumns.includes(col);
+            const isSorted = sortConfig?.column === col;
+            const sortIndicator = isSorted ? (sortConfig.direction === "asc" ? "▲" : "▼") : null;
 
             return (
               <th
                 key={col}
-                style={{ textAlign: align, cursor: "default", whiteSpace: "nowrap" }}
+                onClick={isColumnSortable ? () => handleSort(col) : undefined}
+                style={{
+                  textAlign: align,
+                  cursor: isColumnSortable ? "pointer" : "default",
+                  whiteSpace: "nowrap",
+                  userSelect: isColumnSortable ? "none" : "auto",
+                }}
+                aria-sort={isSorted ? (sortConfig.direction === "asc" ? "ascending" : "descending") : "none"}
               >
-                  <span>{col}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                    {col}
+                    {isSorted && sortIndicator && <span style={{ fontSize: "0.75rem" }}>{sortIndicator}</span>}
+                  </span>
               </th>
             );
           })}
@@ -418,15 +471,50 @@ export function Table({ columns, rows }) {
             ...(row._rowStyle || {}),
             ...(rowBackgroundColor ? { backgroundColor: rowBackgroundColor } : {})
           };
+
+          const rowNonInteractiveColumns = Array.isArray(row._nonInteractiveColumns) && row._nonInteractiveColumns.length > 0
+            ? new Set(
+                row._nonInteractiveColumns
+                  .map((columnName) => normalizeColumnName(columnName))
+                  .filter(Boolean)
+              )
+            : null;
+
+          const rowClassNames = ["data-table__row"];
+          if (row._onRowClick) {
+            rowClassNames.push("data-table__row--clickable");
+          }
           
+          const handleRowClick = (event) => {
+            if (!row._onRowClick) return;
+            if (event.defaultPrevented) return;
+            row._onRowClick(event, row);
+          };
+
           return (
             <tr 
               key={`${row.id ?? rowIndex}-${rowIndex}`}
               style={rowStyle}
+              className={rowClassNames.join(" ")}
+              onClick={row._onRowClick ? handleRowClick : undefined}
             >
               {columns.map((col) => {
                 const value = row[col];
                 const align = getAlignmentForColumn(col);
+                const normalizedColumnName = normalizeColumnName(col);
+                const isActionColumn = normalizedColumnName === "actions" || normalizedColumnName === "action";
+                const isSelectionColumn =
+                  normalizedColumnName === "select" ||
+                  normalizedColumnName === "selection" ||
+                  normalizedColumnName === "checkbox";
+                const isNonInteractiveColumn =
+                  isActionColumn ||
+                  isSelectionColumn ||
+                  (rowNonInteractiveColumns?.has(normalizedColumnName) ?? false);
+                const cellClassNames = ["data-table__cell"];
+                if (isNonInteractiveColumn) {
+                  cellClassNames.push("data-table__cell--static");
+                }
 
                 if (typeof value === "object" && value !== null && value.render) {
                   const renderedValue = value.render();
@@ -434,6 +522,7 @@ export function Table({ columns, rows }) {
                   return (
                     <td
                       key={`${col}-render-${rowIndex}`}
+                      className={cellClassNames.join(" ")}
                       data-label={col}
                       style={{ 
                         textAlign: align, 
@@ -451,6 +540,7 @@ export function Table({ columns, rows }) {
                 return (
                   <td
                     key={`${col}-${rowIndex}`}
+                    className={cellClassNames.join(" ")}
                     data-label={col}
                     style={{ 
                       textAlign: align, 

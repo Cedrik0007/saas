@@ -286,20 +286,18 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       const memberName = member?.name || 'N/A';
       const memberId = member?.id || 'N/A';
       
-      // Determine subscription type based on invoice amount
-      const amountStr = invoice?.amount || payment?.amount || 'HK$0';
-      const amountNum = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
-      let subscriptionType = 'N/A';
-      if (amountNum === 250 || amountNum === 250.00) {
-        subscriptionType = 'Lifetime Member Janaza fund';
-      } else if (amountNum === 500 || amountNum === 500.00) {
-        subscriptionType = 'Annual Member';
-      } else if (amountNum === 5250 || amountNum === 5250.00) {
-        subscriptionType = 'Lifetime membership Janaza fund';
-      } else {
-        // Fallback to member's subscription type if amount doesn't match
-        subscriptionType = member?.subscriptionType || 'N/A';
-      }
+      // Subscription type must always come from the member record (single source of truth)
+      const memberSubscriptionTypeRaw = typeof member?.subscriptionType === 'string'
+        ? member.subscriptionType.trim()
+        : (member?.subscriptionType ?? '');
+      const invoiceSubscriptionTypeRaw = typeof invoice?.subscriptionType === 'string'
+        ? invoice.subscriptionType.trim()
+        : (invoice?.invoiceType ?? '');
+      const subscriptionType = (memberSubscriptionTypeRaw && String(memberSubscriptionTypeRaw))
+        || (invoiceSubscriptionTypeRaw && String(invoiceSubscriptionTypeRaw))
+        || 'Not Assigned';
+      const isLifetimeSubscription = typeof subscriptionType === 'string' && subscriptionType.toLowerCase().includes('lifetime');
+      const showRenewalText = !isLifetimeSubscription;
       
       // Extract year from invoice period
       const periodStr = String(invoice?.period || '').trim();
@@ -352,7 +350,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       
       doc.text(`Member Name: ${memberName}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
       // Year moved to empty cell (where Member ID was)
-      doc.text(`Year: ${renewalYear}`, leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
+      doc.text(showRenewalText ? `Year: ${renewalYear}` : '', leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
       currentY += detailRowHeight;
       
       // Row 3: Subscription Type only (Year moved to Row 2)
@@ -398,7 +396,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
          .font('Helvetica-Bold');
       
       doc.text('Description', leftMargin + 5, tableTopY + 5, { width: col1Width - 10 });
-      doc.text('Year', leftMargin + col1Width + 5, tableTopY + 5, { width: col2Width - 10 });
+      doc.text(showRenewalText ? 'Year' : '', leftMargin + col1Width + 5, tableTopY + 5, { width: col2Width - 10 });
       doc.text('Amount (HKD)', leftMargin + col1Width + col2Width + 5, tableTopY + 5, { width: col3Width - 10 });
       
       currentY = tableTopY + rowHeight;
@@ -406,7 +404,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       // Table data rows (using amountStr and amountNum already declared above)
       const formattedAmount = amountNum.toFixed(2);
       
-      // First data row - Membership Renewal Fee
+      // First data row - Membership Renewal Fee (hidden label/year for lifetime subscriptions)
       doc.rect(leftMargin, currentY, contentWidth, rowHeight)
          .strokeColor('#000000')
          .lineWidth(0.5)
@@ -416,8 +414,8 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
          .fillColor('#000000')
          .font('Helvetica');
       
-      doc.text('Membership Renewal Fee', leftMargin + 5, currentY + 5, { width: col1Width - 10 });
-      doc.text(renewalYear, leftMargin + col1Width + 5, currentY + 5, { width: col2Width - 10 });
+      doc.text(showRenewalText ? 'Membership Renewal Fee' : subscriptionType, leftMargin + 5, currentY + 5, { width: col1Width - 10 });
+      doc.text(showRenewalText ? renewalYear : '', leftMargin + col1Width + 5, currentY + 5, { width: col2Width - 10 });
       doc.text(`HK$${formattedAmount}`, leftMargin + col1Width + col2Width + 5, currentY + 5, { width: col3Width - 10, align: 'right' });
       
       currentY += rowHeight;

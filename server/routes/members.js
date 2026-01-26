@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import multer from "multer";
 import ExcelJS from "exceljs";
 import { ensureConnection } from "../config/database.js";
@@ -13,6 +14,44 @@ const router = express.Router();
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({ storage: multer.memoryStorage() });
+
+const { Types } = mongoose;
+
+const normalizeMemberIdValue = (rawValue = "") => {
+  if (typeof rawValue !== "string") {
+    return "";
+  }
+  return rawValue.trim().toUpperCase();
+};
+
+const formatMemberIdForSave = (rawValue) => {
+  const normalized = normalizeMemberIdValue(rawValue);
+  return normalized || null;
+};
+
+const findMemberByIdentifier = async (identifier) => {
+  if (!identifier || (typeof identifier !== "string" && typeof identifier !== "number")) {
+    return null;
+  }
+
+  const identifierStr = String(identifier).trim();
+  if (!identifierStr) {
+    return null;
+  }
+
+  const normalizedCandidate = normalizeMemberIdValue(identifierStr);
+  let member = null;
+
+  if (normalizedCandidate) {
+    member = await UserModel.findOne({ id: normalizedCandidate });
+  }
+
+  if (!member && Types.ObjectId.isValid(identifierStr)) {
+    member = await UserModel.findById(identifierStr);
+  }
+
+  return member;
+};
 
 // GET all members
 router.get("/", async (req, res) => {
@@ -42,7 +81,7 @@ router.get("/count", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     await ensureConnection();
-    const member = await UserModel.findOne({ id: req.params.id });
+    const member = await findMemberByIdentifier(req.params.id);
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
     }
@@ -130,16 +169,12 @@ router.post("/", async (req, res) => {
       });
     }
     
-    // Generate ID if not provided
-    let memberId = req.body.id;
-    if (!memberId) {
-      memberId = `IMA${Math.floor(1000 + Math.random() * 9000)}`;
-    }
-
-    // Check if ID already exists
-    const existing = await UserModel.findOne({ id: memberId });
-    if (existing) {
-      return res.status(400).json({ message: "Member ID already exists" });
+    let memberId = formatMemberIdForSave(req.body.id || "");
+    if (memberId) {
+      const existing = await UserModel.findOne({ id: memberId });
+      if (existing) {
+        return res.status(400).json({ message: "Member ID already exists" });
+      }
     }
     
     // Check if email already exists (only if email is provided)
@@ -191,7 +226,7 @@ router.post("/", async (req, res) => {
     }
 
     const newMember = new UserModel({
-      id: memberId,
+      ...(memberId ? { id: memberId } : {}),
       name: req.body.name || '',
       email: (req.body.email || '').trim().toLowerCase(),
       phone: req.body.phone || '',
@@ -230,104 +265,99 @@ router.post("/", async (req, res) => {
     savedMember.membershipFee = fees.membershipFee;
     savedMember.janazaFee = fees.janazaFee;
     await savedMember.save();
-    
-    let invoicePeriod = 'Lifetime Subscription';
-    if (subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
-      invoicePeriod = 'Annual Member Subscription';
-    } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
-      invoicePeriod = 'Lifetime Janaza Fund Member Subscription';
-    } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
-      invoicePeriod = savedMember.lifetimeMembershipPaid 
-        ? 'Lifetime Membership - Janaza Fund'
-        : 'Lifetime Membership - Full Payment';
-    } else if (subscriptionType === 'Yearly + Janaza Fund') {
-      invoicePeriod = 'Yearly Subscription + Janaza Fund';
-    }
-    
-    // If subscriptionYear is provided, use it as the period
-    if (req.body.subscriptionYear) {
-      invoicePeriod = req.body.subscriptionYear;
-    }
 
-    // Check if invoice already exists for this member and period (prevent duplicates)
-    const existingInvoice = await InvoiceModel.findOne({
-      memberId: savedMember.id,
-      period: invoicePeriod,
-      status: { $ne: "Rejected" }
-    });
-
-    // Only create invoice if one doesn't already exist
-    if (!existingInvoice) {
-      // Create initial invoice
-      const invoiceAmount = `HK$${fees.totalFee}`;
-      let dueDate = new Date();
+    if (savedMember.id) {
+      let invoicePeriod = 'Lifetime Subscription';
+      if (subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+        invoicePeriod = 'Annual Member Subscription';
+      } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
+        invoicePeriod = 'Lifetime Janaza Fund Member Subscription';
+      } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
+        invoicePeriod = savedMember.lifetimeMembershipPaid 
+          ? 'Lifetime Membership - Janaza Fund'
+          : 'Lifetime Membership - Full Payment';
+      } else if (subscriptionType === 'Yearly + Janaza Fund') {
+        invoicePeriod = 'Yearly Subscription + Janaza Fund';
+      }
       
-      // Calculate due date based on subscriptionYear if provided, otherwise 1 year from now
+      // If subscriptionYear is provided, use it as the period
       if (req.body.subscriptionYear) {
-        const subscriptionYear = parseInt(req.body.subscriptionYear);
-        if (!isNaN(subscriptionYear)) {
-          // Due date is Jan 1st of the year after subscription year
-          dueDate = new Date(subscriptionYear + 1, 0, 1);
+        invoicePeriod = req.body.subscriptionYear;
+      }
+
+      const existingInvoice = await InvoiceModel.findOne({
+        memberId: savedMember.id,
+        period: invoicePeriod,
+        status: { $ne: "Rejected" }
+      });
+
+      if (!existingInvoice) {
+        const invoiceAmount = `HK$${fees.totalFee}`;
+        let dueDate = new Date();
+        
+        if (req.body.subscriptionYear) {
+          const subscriptionYear = parseInt(req.body.subscriptionYear);
+          if (!isNaN(subscriptionYear)) {
+            dueDate = new Date(subscriptionYear + 1, 0, 1);
+          } else {
+            dueDate.setFullYear(dueDate.getFullYear() + 1);
+          }
         } else {
-          // Invalid subscription year, fall back to 1 year from now
           dueDate.setFullYear(dueDate.getFullYear() + 1);
         }
+
+        const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        }).replace(',', '');
+
+        let invoiceType = "combined";
+        if (fees.membershipFee > 0 && fees.janazaFee > 0) {
+          invoiceType = "combined";
+        } else if (fees.membershipFee > 0) {
+          invoiceType = "membership";
+        } else if (fees.janazaFee > 0) {
+          invoiceType = "janaza";
+        }
+        
+        if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && !savedMember.lifetimeMembershipPaid) {
+          invoiceType = "lifetime_membership";
+        }
+
+        const invoiceData = {
+          id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+          memberId: savedMember.id,
+          memberName: savedMember.name,
+          memberEmail: savedMember.email,
+          period: invoicePeriod,
+          amount: invoiceAmount,
+          membershipFee: fees.membershipFee,
+          janazaFee: fees.janazaFee,
+          invoiceType: invoiceType,
+          status: "Unpaid",
+          due: dueDateFormatted,
+          method: "",
+          reference: "",
+        };
+
+        const newInvoice = new InvoiceModel(invoiceData);
+        await newInvoice.save();
+        console.log(`✓ Invoice created for new member ${savedMember.name} (${savedMember.id}): ${invoiceData.id}`);
       } else {
-        // No subscription year provided, set due date to 1 year from now
-        dueDate.setFullYear(dueDate.getFullYear() + 1);
+        console.log(`⚠ Invoice already exists for member ${savedMember.name} (${savedMember.id}), skipping duplicate creation`);
       }
-
-      // Format due date as "DD MMM YYYY"
-      const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      }).replace(',', '');
-
-      // Determine invoice type
-      let invoiceType = "combined";
-      if (fees.membershipFee > 0 && fees.janazaFee > 0) {
-        invoiceType = "combined";
-      } else if (fees.membershipFee > 0) {
-        invoiceType = "membership";
-      } else if (fees.janazaFee > 0) {
-        invoiceType = "janaza";
-      }
-      
-      // Special case for lifetime membership first payment
-      if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && !savedMember.lifetimeMembershipPaid) {
-        invoiceType = "lifetime_membership";
-      }
-
-      // Create invoice
-      const invoiceData = {
-        id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
-        memberId: savedMember.id,
-        memberName: savedMember.name,
-        memberEmail: savedMember.email,
-        period: invoicePeriod,
-        amount: invoiceAmount,
-        membershipFee: fees.membershipFee,
-        janazaFee: fees.janazaFee,
-        invoiceType: invoiceType,
-        status: "Unpaid",
-        due: dueDateFormatted,
-        method: "",
-        reference: "",
-      };
-
-      const newInvoice = new InvoiceModel(invoiceData);
-      await newInvoice.save();
-      console.log(`✓ Invoice created for new member ${savedMember.name} (${savedMember.id}): ${invoiceData.id}`);
     } else {
-      console.log(`⚠ Invoice already exists for member ${savedMember.name} (${savedMember.id}), skipping duplicate creation`);
+      console.log(`ℹ Member ${savedMember.name} created without Member ID. Skipping automatic invoice generation until an ID is assigned.`);
     }
 
-    // Update member balance (this will also format it like "$250.00 Outstanding")
-    await calculateAndUpdateMemberBalance(savedMember.id);
-
-    // Fetch the updated member with the computed balance so frontend sees correct outstanding
-    const updatedMember = await UserModel.findOne({ id: savedMember.id });
+    let updatedMember;
+    if (savedMember.id) {
+      await calculateAndUpdateMemberBalance(savedMember.id);
+      updatedMember = await UserModel.findOne({ id: savedMember.id });
+    } else {
+      updatedMember = await UserModel.findById(savedMember._id);
+    }
 
     // Emit Socket.io event for real-time update
     emitMemberUpdate('created', updatedMember);
@@ -347,7 +377,7 @@ router.put("/:id/approve", async (req, res) => {
   try {
     await ensureConnection();
 
-    const member = await UserModel.findOne({ id: req.params.id });
+    const member = await findMemberByIdentifier(req.params.id);
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
     }
@@ -370,6 +400,13 @@ router.put("/:id/approve", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     await ensureConnection();
+    const identifier = req.params.id;
+    const targetMember = await findMemberByIdentifier(identifier);
+    if (!targetMember) {
+      return res.status(404).json({ message: "Member not found" });
+    }
+    const memberQuery = { _id: targetMember._id };
+    const originalMemberId = targetMember.id || null;
     
     // Check if this is a payment update request (has payment-related fields)
     const hasPaymentFields = req.body.payment_status || req.body.payment_mode || 
@@ -424,7 +461,7 @@ router.put("/:id", async (req, res) => {
       
       // Update member with payment data
       const member = await UserModel.findOneAndUpdate(
-        { id: req.params.id },
+        memberQuery,
         { $set: updateData },
         { new: true, runValidators: true }
       );
@@ -434,72 +471,68 @@ router.put("/:id", async (req, res) => {
       }
 
       // Update member balance after payment update
-      await calculateAndUpdateMemberBalance(member.id);
+      if (member.id) {
+        await calculateAndUpdateMemberBalance(member.id);
+      }
 
       // Emit Socket.io event for real-time update
       emitMemberUpdate('updated', member);
 
       res.json(member);
     } else {
-      // Regular member update - only allow basic fields
-      // Whitelist of allowed fields that can be updated when editing member
-      // This prevents accidentally overwriting subscription, invoice, payment, or calculated fields
       const allowedFields = ['id', 'name', 'email', 'phone', 'native', 'status', 'password'];
-      
-      // Filter updateData to only include allowed fields
       const updateData = {};
       for (const field of allowedFields) {
-        if (req.body.hasOwnProperty(field)) {
+        if (Object.prototype.hasOwnProperty.call(req.body, field)) {
           updateData[field] = req.body[field];
         }
       }
-      
-      // If no fields to update, return error
+
       if (Object.keys(updateData).length === 0) {
         return res.status(400).json({ message: "No valid fields to update" });
       }
-      
-      // Ensure email is lowercase if being updated
+
       if (updateData.email) {
         updateData.email = updateData.email.trim().toLowerCase();
       }
-      
-      // Handle member ID update - need to update all related records
-      if (updateData.id && updateData.id !== req.params.id) {
-        // Check if new ID already exists
+
+      if (Object.prototype.hasOwnProperty.call(updateData, 'id')) {
+        const normalizedIncomingId = formatMemberIdForSave(updateData.id);
+        if (normalizedIncomingId) {
+          updateData.id = normalizedIncomingId;
+        } else {
+          delete updateData.id;
+        }
+      }
+
+      if (updateData.id && updateData.id !== originalMemberId) {
         const existingMember = await UserModel.findOne({ id: updateData.id });
         if (existingMember) {
           return res.status(400).json({ message: "Member ID already exists" });
         }
-        
-        // Update all related records with new member ID
-        const oldId = req.params.id;
-        const newId = updateData.id;
-        
-        try {
-          // Update invoices
-          await InvoiceModel.updateMany(
-            { memberId: oldId },
-            { $set: { memberId: newId } }
-          );
-          
-          // Update payments
-          await PaymentModel.updateMany(
-            { memberId: oldId },
-            { $set: { memberId: newId } }
-          );
-          
-          console.log(`✓ Updated member ID from ${oldId} to ${newId} in related records`);
-        } catch (updateError) {
-          console.error("Error updating related records with new member ID:", updateError);
-          return res.status(500).json({ message: "Failed to update related records" });
+
+        if (originalMemberId) {
+          try {
+            await InvoiceModel.updateMany(
+              { memberId: originalMemberId },
+              { $set: { memberId: updateData.id } }
+            );
+
+            await PaymentModel.updateMany(
+              { memberId: originalMemberId },
+              { $set: { memberId: updateData.id } }
+            );
+
+            console.log(`✓ Updated member ID from ${originalMemberId} to ${updateData.id} in related records`);
+          } catch (updateError) {
+            console.error("Error updating related records with new member ID:", updateError);
+            return res.status(500).json({ message: "Failed to update related records" });
+          }
         }
       }
-      
-      // Only update the fields that are in updateData
-      // All other fields (balance, subscriptionType, invoices, payment data, etc.) remain unchanged
+
       const member = await UserModel.findOneAndUpdate(
-        { id: req.params.id },
+        memberQuery,
         { $set: updateData },
         { new: true, runValidators: true }
       );
@@ -508,7 +541,6 @@ router.put("/:id", async (req, res) => {
         return res.status(404).json({ message: "Member not found" });
       }
 
-      // Update related payments if member name, email, or phone changed
       if (updateData.name || updateData.email || updateData.phone) {
         try {
           const paymentUpdates = {};
@@ -518,35 +550,34 @@ router.put("/:id", async (req, res) => {
           if (updateData.email) {
             paymentUpdates.memberEmail = updateData.email;
           }
-          
-          // Update all payments for this member and emit socket events for instant update
-          const updatedPayments = await PaymentModel.find({ memberId: req.params.id });
-          
-          if (updatedPayments.length > 0) {
-            await PaymentModel.updateMany(
-              { memberId: req.params.id },
-              { $set: paymentUpdates }
-            );
-            
-            // Emit socket events for each updated payment to trigger instant frontend update
-            const { emitPaymentUpdate } = await import("../config/socket.js");
-            for (const payment of updatedPayments) {
-              const updatedPayment = {
-                ...payment.toObject(),
-                ...paymentUpdates
-              };
-              emitPaymentUpdate('updated', updatedPayment);
+
+          const memberIdentifierForPayments = member.id || originalMemberId;
+          if (memberIdentifierForPayments) {
+            const updatedPayments = await PaymentModel.find({ memberId: memberIdentifierForPayments });
+
+            if (updatedPayments.length > 0) {
+              await PaymentModel.updateMany(
+                { memberId: memberIdentifierForPayments },
+                { $set: paymentUpdates }
+              );
+
+              const { emitPaymentUpdate } = await import("../config/socket.js");
+              for (const payment of updatedPayments) {
+                const updatedPayment = {
+                  ...payment.toObject(),
+                  ...paymentUpdates
+                };
+                emitPaymentUpdate('updated', updatedPayment);
+              }
+
+              console.log(`✓ Updated ${updatedPayments.length} payment(s) for member ${memberIdentifierForPayments} with new data`);
             }
-            
-            console.log(`✓ Updated ${updatedPayments.length} payment(s) for member ${req.params.id} with new data`);
           }
         } catch (paymentUpdateError) {
           console.error("Error updating related payments:", paymentUpdateError);
-          // Don't fail the member update if payment update fails
         }
       }
 
-      // Emit Socket.io event for real-time update
       emitMemberUpdate('updated', member);
 
       res.json(member);

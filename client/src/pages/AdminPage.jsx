@@ -67,6 +67,39 @@ const buildInvoiceFormDefaults = (member) => {
   };
 };
 
+const normalizeMemberIdForSort = (member) => {
+  if (!member) return null;
+  const rawId = member.id ?? member.memberId;
+  if (!rawId || !String(rawId).trim()) {
+    return null;
+  }
+  return String(rawId).trim().toUpperCase();
+};
+
+const compareMembersByBusinessId = (memberA, memberB, direction = "asc") => {
+  const sortMultiplier = direction === "desc" ? -1 : 1;
+  const normalizedA = normalizeMemberIdForSort(memberA);
+  const normalizedB = normalizeMemberIdForSort(memberB);
+
+  if (!normalizedA && !normalizedB) return 0;
+  if (!normalizedA) return 1 * sortMultiplier;
+  if (!normalizedB) return -1 * sortMultiplier;
+
+  const idComparison = normalizedA.localeCompare(normalizedB, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+  if (idComparison !== 0) {
+    return idComparison * sortMultiplier;
+  }
+
+  return (
+    String(memberA?.name || "").localeCompare(String(memberB?.name || ""), undefined, {
+      sensitivity: "base",
+    }) * sortMultiplier
+  );
+};
+
 function AdminPage() {
     const {
       members,
@@ -244,6 +277,19 @@ function AdminPage() {
     const [lastCreatedInvoice, setLastCreatedInvoice] = useState(null);
     const [showInvoiceSuccessCard, setShowInvoiceSuccessCard] = useState(false);
 
+    // Member subscription context – used for detail header + invoice comparison without mutating data
+    const normalizedSelectedMemberSubscriptionType = selectedMember
+      ? normalizeSubscriptionType(selectedMember.subscriptionType)
+      : null;
+    const memberSubscriptionTypeLabel = (() => {
+      if (!selectedMember) return null;
+      if (!selectedMember.subscriptionType) return "Not Assigned";
+      if (normalizedSelectedMemberSubscriptionType) {
+        return formatSubscriptionType(normalizedSelectedMemberSubscriptionType);
+      }
+      return formatSubscriptionType(selectedMember.subscriptionType);
+    })();
+
     const normalizedLastInvoiceMemberId = lastCreatedInvoice?.memberId
       ? String(lastCreatedInvoice.memberId).toLowerCase()
       : null;
@@ -262,12 +308,19 @@ function AdminPage() {
     const [importErrors, setImportErrors] = useState([]);
 
     // Confirmation dialog state
-    const [confirmationDialog, setConfirmationDialog] = useState({
+    const confirmationDialogDefaults = {
       isOpen: false,
       message: "",
       onConfirm: null,
       onCancel: null,
       confirmButtonText: "Confirm", // Default button text
+      requirePassword: false,
+      password: "",
+      isProcessing: false,
+    };
+
+    const [confirmationDialog, setConfirmationDialog] = useState({
+      ...confirmationDialogDefaults,
     });
 
     // Form states
@@ -278,6 +331,47 @@ function AdminPage() {
       const month = String(today.getMonth() + 1).padStart(2, '0');
       const day = String(today.getDate()).padStart(2, '0');
       return `${year}-${month}-${day}`;
+    };
+
+    const getTodayPaymentDisplayDate = () =>
+      new Date().toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+
+    const buildEmptyPaymentForm = () => ({
+      memberId: "",
+      member: "",
+      invoiceId: "",
+      amount: "",
+      payment_type: "",
+      method: "",
+      customMethod: "",
+      receiver_name: "",
+      reference: "",
+      date: getTodayPaymentDisplayDate(),
+      status: "Pending",
+      screenshot: "",
+      notes: "",
+    });
+
+    const derivePaymentDateValue = (payment) => {
+      if (payment?.date && String(payment.date).trim()) {
+        return payment.date;
+      }
+      if (payment?.createdAt) {
+        try {
+          return new Date(payment.createdAt).toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          });
+        } catch (error) {
+          console.warn("Unable to parse payment.createdAt", error);
+        }
+      }
+      return getTodayPaymentDisplayDate();
     };
 
     const [memberForm, setMemberForm] = useState({
@@ -572,8 +666,13 @@ function AdminPage() {
         return;
       }
 
+      const resolvedMember = {
+        ...member,
+        subscriptionYear: getResolvedSubscriptionYear(member),
+      };
+
       setInvoiceForm((prev) => ({
-        ...buildInvoiceFormDefaults(member),
+        ...buildInvoiceFormDefaults(resolvedMember),
         notes: prev.notes || "",
       }));
     };
@@ -973,6 +1072,7 @@ function AdminPage() {
     const [memberStatusFilter, setMemberStatusFilter] = useState("All"); // Status filter for members
     const [memberYearFilter, setMemberYearFilter] = useState("All"); // Year filter for members
     const [memberTypeFilter, setMemberTypeFilter] = useState("All"); // Member type filter: All, Annual Member, Lifetime Member
+    const [memberSortConfig, setMemberSortConfig] = useState({ column: "Member ID", direction: "asc" });
     const [memberSortByOutstanding, setMemberSortByOutstanding] = useState("none"); // Sort by outstanding amount
     const [memberNotes, setMemberNotes] = useState(() => {
       try {
@@ -1008,28 +1108,11 @@ function AdminPage() {
       method: false,
       receiver_name: false,
       screenshot: false,
+      date: false,
     });
     const [currentInvalidPaymentField, setCurrentInvalidPaymentField] = useState(null);
 
-    const [paymentForm, setPaymentForm] = useState({
-      memberId: "",
-      member: "",
-      invoiceId: "",
-      amount: "",
-      payment_type: "", // "cash" or "online"
-      method: "",
-      customMethod: "", // Custom payment method when "Other" is selected
-      receiver_name: "", // Required only for online payments
-      reference: "",
-      date: new Date().toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric"
-      }),
-      status: "Pending",
-      screenshot: "",
-      notes: "",
-    });
+    const [paymentForm, setPaymentForm] = useState(() => buildEmptyPaymentForm());
 
     // Pagination states
     const [membersPage, setMembersPage] = useState(1);
@@ -1634,6 +1717,54 @@ function AdminPage() {
       }
 
       return fallbackInvoices;
+    };
+
+    const deriveSubscriptionYearFromInvoices = (invoicesList = []) => {
+      if (!Array.isArray(invoicesList) || invoicesList.length === 0) {
+        return null;
+      }
+
+      const sortedInvoices = invoicesList
+        .filter(Boolean)
+        .slice()
+        .sort((a, b) => {
+          const aDate = new Date(a?.createdAt || a?.updatedAt || a?.due || 0).getTime();
+          const bDate = new Date(b?.createdAt || b?.updatedAt || b?.due || 0).getTime();
+          return bDate - aDate;
+        });
+
+      for (const invoice of sortedInvoices) {
+        const yearFromPeriod = extractYearFromValue(invoice?.period);
+        if (yearFromPeriod) {
+          return yearFromPeriod;
+        }
+        const yearFromDue = extractYearFromValue(invoice?.due);
+        if (yearFromDue) {
+          return yearFromDue;
+        }
+      }
+
+      return null;
+    };
+
+    const getResolvedSubscriptionYear = (member) => {
+      if (!member) {
+        return new Date().getFullYear().toString();
+      }
+
+      try {
+        const invoicesForMember = member.id
+          ? getPreferredInvoicesForMember(member.id, { includeOptimistic: true })
+          : [];
+        const invoiceYear = deriveSubscriptionYearFromInvoices(invoicesForMember);
+        if (invoiceYear) {
+          return invoiceYear;
+        }
+      } catch (error) {
+        console.warn("Unable to derive subscription year from invoices:", error);
+      }
+
+      return deriveSubscriptionYearForMember(member);
     };
 
     const getRecentPayments = () => {
@@ -2807,7 +2938,7 @@ function AdminPage() {
     // Progressive validation for payment form
     const validatePaymentForm = () => {
       // Define field order for validation
-      const fieldOrder = ["memberId", "amount", "payment_type", "method", "receiver_name", "screenshot"];
+      const fieldOrder = ["memberId", "amount", "payment_type", "method", "receiver_name", "screenshot", "date"];
 
       // If we have a current invalid field, check if it's now valid
       if (currentInvalidPaymentField) {
@@ -2837,6 +2968,12 @@ function AdminPage() {
         } else if (currentInvalidPaymentField === "screenshot" && paymentForm.method === "Cash" && !paymentForm.screenshot) {
           isValid = false;
           errorMsg = "Screenshot upload is required for Cash payments";
+        } else if (currentInvalidPaymentField === "date") {
+          const trimmedDate = (paymentForm.date || "").trim();
+          if (!trimmedDate) {
+            isValid = false;
+            errorMsg = "Payment date is required";
+          }
         }
 
         if (isValid) {
@@ -2877,6 +3014,12 @@ function AdminPage() {
         } else if (field === "screenshot" && paymentForm.method === "Cash" && !paymentForm.screenshot) {
           isValid = false;
           errorMsg = "Screenshot upload is required for Cash payments";
+        } else if (field === "date") {
+          const trimmedDate = (paymentForm.date || "").trim();
+          if (!trimmedDate) {
+            isValid = false;
+            errorMsg = "Payment date is required";
+          }
         }
 
         if (!isValid) {
@@ -2888,6 +3031,7 @@ function AdminPage() {
             method: false,
             receiver_name: false,
             screenshot: false,
+            date: false,
           });
           // Set only this field as invalid
           setPaymentFieldErrors(prev => ({ ...prev, [field]: true }));
@@ -2905,6 +3049,7 @@ function AdminPage() {
         method: false,
         receiver_name: false,
         screenshot: false,
+        date: false,
       });
       setCurrentInvalidPaymentField(null);
       return true;
@@ -2932,6 +3077,7 @@ function AdminPage() {
         };
         // Remove customMethod from data sent to backend
         delete paymentData.customMethod;
+        paymentData.date = (paymentData.date || "").trim();
         
         // If cash is selected, ensure method is "Cash"
         if (paymentData.payment_type === "cash") {
@@ -2948,25 +3094,7 @@ function AdminPage() {
         await addPayment(paymentData);
         showToast("Payment added successfully!");
         setShowPaymentForm(false);
-        setPaymentForm({
-          memberId: "",
-          member: "",
-          invoiceId: "",
-          amount: "",
-          payment_type: "",
-          method: "",
-          customMethod: "",
-          receiver_name: "",
-          reference: "",
-          date: new Date().toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric"
-          }),
-          status: "Pending",
-          screenshot: "",
-          notes: "",
-        });
+        setPaymentForm(buildEmptyPaymentForm());
         // No need to refetch - Socket.io will update in real-time
       } catch (error) {
         console.error('Error adding payment:', error);
@@ -2986,24 +3114,29 @@ function AdminPage() {
         customMethod: "", // Reset custom method when editing
         receiver_name: payment.receiver_name || "",
         reference: payment.reference || "",
-        date: payment.date || payment.createdAt ? new Date(payment.createdAt).toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric"
-        }) : new Date().toLocaleDateString("en-GB", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric"
-        }),
+        date: derivePaymentDateValue(payment),
         status: payment.status || "Pending",
         screenshot: payment.screenshot || "",
         notes: payment.notes || "",
       });
+      setPaymentFieldErrors({
+        memberId: false,
+        amount: false,
+        payment_type: false,
+        method: false,
+        receiver_name: false,
+        screenshot: false,
+        date: false,
+      });
+      setCurrentInvalidPaymentField(null);
       setShowPaymentForm(true);
     };
 
     const handleUpdatePayment = async (e) => {
       e.preventDefault();
+      if (!validatePaymentForm()) {
+        return;
+      }
       try {
         if (!paymentForm.memberId || !paymentForm.amount) {
           showToast("Please fill all required fields", "error");
@@ -3021,10 +3154,15 @@ function AdminPage() {
         const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
         const paymentId = editingPayment._id || editingPayment.id;
 
+        const updatedPaymentPayload = {
+          ...paymentForm,
+          date: (paymentForm.date || "").trim(),
+        };
+
         const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(paymentForm),
+          body: JSON.stringify(updatedPaymentPayload),
         });
 
         if (!response.ok) {
@@ -3035,24 +3173,7 @@ function AdminPage() {
         showToast("Payment updated successfully!");
         setShowPaymentForm(false);
         setEditingPayment(null);
-        setPaymentForm({
-          memberId: "",
-          member: "",
-          invoiceId: "",
-          amount: "",
-          payment_type: "",
-          method: "",
-          receiver_name: "",
-          reference: "",
-          date: new Date().toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric"
-          }),
-          status: "Pending",
-          screenshot: "",
-          notes: "",
-        });
+        setPaymentForm(buildEmptyPaymentForm());
         // No need to refetch - Socket.io will update in real-time
       } catch (error) {
         console.error('Error updating payment:', error);
@@ -3085,7 +3206,10 @@ function AdminPage() {
             console.error('Error deleting payment:', error);
             showToast(error.message || "Failed to delete payment", "error");
           }
-        }
+        },
+        null,
+        "Delete",
+        { requirePassword: true }
       );
     };
 
@@ -3638,6 +3762,13 @@ Indian Muslim Association, Hong Kong`;
       }
     }, [members, memberSearchTerm, membersPageSize, membersPage]);
 
+    useEffect(() => {
+      if (memberTypeFilter === "Lifetime Member" && memberYearFilter !== "All") {
+        // Lifetime subscriptions are not tied to annual billing cycles, so a year filter would be misleading.
+        setMemberYearFilter("All");
+      }
+    }, [memberTypeFilter, memberYearFilter]);
+
     // Handle pagination bounds checking for payments
     useEffect(() => {
       const filteredPayments = (payments || []).filter(payment => {
@@ -3870,20 +4001,107 @@ Indian Muslim Association, Hong Kong`;
     };
 
     // Show confirmation dialog
-    const showConfirmation = (message, onConfirm, onCancel = null, confirmButtonText = "Confirm") => {
+    const showConfirmation = (
+      message,
+      onConfirm,
+      onCancel = null,
+      confirmButtonText = "Confirm",
+      options = {}
+    ) => {
+      const { requirePassword = false } = options || {};
       setConfirmationDialog({
+        ...confirmationDialogDefaults,
         isOpen: true,
         message,
         confirmButtonText,
-        onConfirm: () => {
-          setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null, confirmButtonText: "Confirm" });
-          if (onConfirm) onConfirm();
-        },
-        onCancel: () => {
-          setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null, confirmButtonText: "Confirm" });
-          if (onCancel) onCancel();
-        },
+        onConfirm: onConfirm || null,
+        onCancel: onCancel || null,
+        requirePassword,
       });
+    };
+
+    const resetConfirmationDialog = () => {
+      setConfirmationDialog({ ...confirmationDialogDefaults });
+    };
+
+    const handleConfirmationPasswordChange = (event) => {
+      const value = event?.target?.value ?? "";
+      setConfirmationDialog((prev) => ({ ...prev, password: value }));
+    };
+
+    const handleConfirmationCancel = () => {
+      if (confirmationDialog.isProcessing) return;
+      const cancelAction = confirmationDialog.onCancel;
+      resetConfirmationDialog();
+      if (typeof cancelAction === "function") {
+        cancelAction();
+      }
+    };
+
+    const validateAdminPassword = async (password) => {
+      const adminEmail = sessionStorage.getItem('adminEmail');
+      const adminToken = sessionStorage.getItem('authToken');
+      if (!adminEmail || !adminToken) {
+        showToast("Unable to verify admin session. Please sign in again.", "error");
+        return false;
+      }
+
+      try {
+        const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+        const response = await fetch(`${apiUrl}/api/admin/confirm-password`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminToken}`,
+          },
+          body: JSON.stringify({ password }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data?.success) {
+          const message = data?.message || (response.status === 401
+            ? "Invalid password. Please try again."
+            : "Unable to verify password. Please try again.");
+          showToast(message, "error");
+          return false;
+        }
+
+        return true;
+      } catch (error) {
+        console.error("Admin password validation failed:", error);
+        showToast("Unable to verify password. Please check your connection and try again.", "error");
+        return false;
+      }
+    };
+
+    const handleConfirmationConfirm = async () => {
+      const confirmAction = confirmationDialog.onConfirm;
+      if (!confirmAction) {
+        resetConfirmationDialog();
+        return;
+      }
+
+      if (confirmationDialog.requirePassword) {
+        const password = (confirmationDialog.password || "").trim();
+        if (!password) {
+          showToast("Password is required to continue", "error");
+          return;
+        }
+
+        setConfirmationDialog((prev) => ({ ...prev, isProcessing: true }));
+        const isValid = await validateAdminPassword(password);
+        if (!isValid) {
+          setConfirmationDialog((prev) => ({ ...prev, isProcessing: false }));
+          return;
+        }
+      }
+
+      resetConfirmationDialog();
+      try {
+        await confirmAction();
+      } catch (error) {
+        console.error("Confirmation action failed:", error);
+      }
     };
 
     // Handle CSV/Excel import for members - shows preview first
@@ -4078,7 +4296,7 @@ Indian Muslim Association, Hong Kong`;
         native: member.native || "",
         status: member.status || "Active",
         subscriptionType: normalizeSubscriptionType(member.subscriptionType),
-        subscriptionYear: member.subscriptionYear || new Date().getFullYear().toString(),
+        subscriptionYear: getResolvedSubscriptionYear(member),
         balance: member.balance ? member.balance.replace(/[^0-9.]/g, '') : "500",
         nextDue: member.start_date ? new Date(member.start_date).toISOString().split('T')[0] : getTodayDate(),
         lastPayment: member.last_payment_date ? new Date(member.last_payment_date).toISOString().split('T')[0] : "",
@@ -4139,7 +4357,7 @@ Indian Muslim Association, Hong Kong`;
         }
         
         // Compare subscription year
-        const originalSubscriptionYear = originalMember.subscriptionYear || new Date().getFullYear().toString();
+        const originalSubscriptionYear = getResolvedSubscriptionYear(originalMember);
         if (memberForm.subscriptionYear !== originalSubscriptionYear) {
           updateData.subscriptionYear = memberForm.subscriptionYear;
         }
@@ -4215,7 +4433,10 @@ Indian Muslim Association, Hong Kong`;
           } catch (error) {
             showToast("Failed to delete member. Please try again.", "error");
           }
-        }
+        },
+        null,
+        "Delete",
+        { requirePassword: true }
       );
     };
 
@@ -4660,7 +4881,8 @@ Indian Muslim Association, Hong Kong`;
       }
     };
 
-    const handleDeleteInvoice = (invoiceIdentifier) => {
+    const handleDeleteInvoice = (invoiceIdentifier, options = {}) => {
+      const { skipConfirmation = false } = options || {};
       const normalizedId = String(invoiceIdentifier);
       const findByIdentifier = (collection = []) =>
         collection.find((inv) => {
@@ -4711,9 +4933,16 @@ Indian Muslim Association, Hong Kong`;
         }
       };
 
+      if (skipConfirmation) {
+        return confirmDelete();
+      }
+
       showConfirmation(
         "Are you sure you want to delete this invoice? This cannot be undone.",
-        confirmDelete
+        confirmDelete,
+        null,
+        "Delete",
+        { requirePassword: true }
       );
     };
 
@@ -5385,20 +5614,48 @@ Indian Muslim Association, Hong Kong`;
                 <p className="confirmation-dialog-message">
                   {confirmationDialog.message}
                 </p>
+                {confirmationDialog.requirePassword && (
+                  <div className="confirmation-dialog-password" style={{ marginTop: "1rem", width: "100%" }}>
+                    <label className="mono-label" style={{ width: "100%" }}>
+                      <span>Admin password confirmation</span>
+                      <input
+                        type="password"
+                        value={confirmationDialog.password}
+                        className="mono-input"
+                        onChange={handleConfirmationPasswordChange}
+                        placeholder="Enter your password to continue"
+                        autoComplete="current-password"
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        spellCheck="false"
+                        disabled={confirmationDialog.isProcessing}
+                        data-lpignore="true"
+                        data-form-type="password"
+                      />
+                    </label>
+                    <p style={{ fontSize: "0.78rem", color: "#6b7280", marginTop: "6px" }}>
+                      For security, please confirm with your admin password before deleting.
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="confirmation-dialog-divider"></div>
               <div className="confirmation-dialog-actions">
                 <button
                   className="secondary-btn"
-                  onClick={confirmationDialog.onCancel || (() => setConfirmationDialog({ isOpen: false, message: "", onConfirm: null, onCancel: null }))}
+                  type="button"
+                  onClick={handleConfirmationCancel}
+                  disabled={confirmationDialog.isProcessing}
                 >
                   Cancel
                 </button>
                 <button
                   className="danger-btn admin-confirmation-button-success"
-                  onClick={confirmationDialog.onConfirm}
+                  type="button"
+                  onClick={handleConfirmationConfirm}
+                  disabled={confirmationDialog.isProcessing}
                 >
-                  {confirmationDialog.confirmButtonText || "Confirm"}
+                  {confirmationDialog.isProcessing ? "Validating..." : (confirmationDialog.confirmButtonText || "Confirm")}
                 </button>
               </div>
             </div>
@@ -6958,8 +7215,14 @@ Indian Muslim Association, Hong Kong`;
                             return false;
                           });
 
-                        // No sorting - use filtered members as-is
-                        const sortedMembers = filteredMembers;
+                        const sortedMembers = (() => {
+                          if (memberSortConfig?.column === "Member ID") {
+                            return [...filteredMembers].sort((memberA, memberB) =>
+                              compareMembersByBusinessId(memberA, memberB, memberSortConfig.direction)
+                            );
+                          }
+                          return [...filteredMembers];
+                        })();
 
                         // Calculate pagination
                         const totalPages = Math.ceil(sortedMembers.length / membersPageSize) || 1;
@@ -6969,6 +7232,8 @@ Indian Muslim Association, Hong Kong`;
                         const paginatedMembers = sortedMembers.slice(startIndex, endIndex);
 
                         const isOwner = currentAdminRole === "Owner";
+
+                        const isYearFilterDisabled = memberTypeFilter === "Lifetime Member";
 
                         return (
                           <>
@@ -7085,7 +7350,9 @@ Indian Muslim Association, Hong Kong`;
                                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                                     <button
                                       type="button"
+                                      disabled={isYearFilterDisabled}
                                       onClick={() => {
+                                        if (isYearFilterDisabled) return;
                                         setMemberYearFilter("All");
                                         setMembersPage(1);
                                       }}
@@ -7094,22 +7361,22 @@ Indian Muslim Association, Hong Kong`;
                                         borderRadius: "4px 0 0 4px",
                                         border: "1px solid #e5e7eb",
                                         borderRight: "none",
-                                        background: memberYearFilter === "All" ? "#5a31ea" : "#ffffff",
-                                        color: memberYearFilter === "All" ? "#ffffff" : "#6b7280",
+                                        background: memberYearFilter === "All" ? "#5a31ea" : (isYearFilterDisabled ? "#f3f4f6" : "#ffffff"),
+                                        color: memberYearFilter === "All" ? "#ffffff" : (isYearFilterDisabled ? "#9ca3af" : "#6b7280"),
                                         fontSize: "0.875rem",
                                         fontWeight: "500",
-                                        cursor: "pointer",
+                                        cursor: isYearFilterDisabled ? "not-allowed" : "pointer",
                                         outline: "none",
                                         transition: "all 0.2s ease",
                                         whiteSpace: "nowrap"
                                       }}
                                       onMouseEnter={(e) => {
-                                        if (memberYearFilter !== "All") {
+                                        if (memberYearFilter !== "All" && !isYearFilterDisabled) {
                                           e.target.style.background = "#f3f4f6";
                                         }
                                       }}
                                       onMouseLeave={(e) => {
-                                        if (memberYearFilter !== "All") {
+                                        if (memberYearFilter !== "All" && !isYearFilterDisabled) {
                                           e.target.style.background = "#ffffff";
                                         }
                                       }}
@@ -7119,9 +7386,11 @@ Indian Muslim Association, Hong Kong`;
                                     <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
                                       <input
                                         type="text"
+                                        disabled={isYearFilterDisabled}
                                         value={memberYearFilter === "All" ? "" : memberYearFilter}
                                         placeholder="Year"
                                         onChange={(e) => {
+                                          if (isYearFilterDisabled) return;
                                           const value = e.target.value;
                                           // Allow empty, "All", or valid year (4 digits)
                                           if (value === "" || value === "All" || /^\d{0,4}$/.test(value)) {
@@ -7130,6 +7399,7 @@ Indian Muslim Association, Hong Kong`;
                                           }
                                         }}
                                         onKeyDown={(e) => {
+                                          if (isYearFilterDisabled) return;
                                           // Allow arrow keys to increment/decrement
                                           if (e.key === "ArrowUp") {
                                             e.preventDefault();
@@ -7154,15 +7424,17 @@ Indian Muslim Association, Hong Kong`;
                                           borderLeft: "none",
                                           borderRadius: "0 4px 4px 0",
                                           borderRight: "1px sol",
-                                          background: "#ffffff",
+                                          background: isYearFilterDisabled ? "#f3f4f6" : "#ffffff",
                                           fontSize: "0.875rem",
                                           fontWeight: "500",
                                           outline: "none",
                                           transition: "border-color 0.2s",
                                           width: "100px",
-                                          textAlign: "center"
+                                          textAlign: "center",
+                                          color: isYearFilterDisabled ? "#9ca3af" : "#111827",
                                         }}
                                         onFocus={(e) => {
+                                          if (isYearFilterDisabled) return;
                                           e.target.style.borderColor = "#5a31ea";
                                           e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
                                         }}
@@ -7187,8 +7459,10 @@ Indian Muslim Association, Hong Kong`;
                                       }}>
                                         <button
                                           type="button"
+                                          disabled={isYearFilterDisabled}
                                           onClick={(e) => {
                                             e.preventDefault();
+                                            if (isYearFilterDisabled) return;
                                             const currentYear = memberYearFilter === "All" || memberYearFilter === "" ? new Date().getFullYear() : parseInt(memberYearFilter);
                                             if (!isNaN(currentYear)) {
                                               setMemberYearFilter(String(currentYear + 1));
@@ -7199,20 +7473,22 @@ Indian Muslim Association, Hong Kong`;
                                             padding: "2px 4px",
                                             border: "none",
                                             background: "transparent",
-                                            cursor: "pointer",
+                                            cursor: isYearFilterDisabled ? "not-allowed" : "pointer",
                                             display: "flex",
                                             alignItems: "center",
                                             justifyContent: "center",
                                             fontSize: "10px",
-                                            color: "#6b7280",
+                                            color: isYearFilterDisabled ? "#d1d5db" : "#6b7280",
                                             lineHeight: "1",
                                             transition: "color 0.2s"
                                           }}
                                           onMouseEnter={(e) => {
-                                            e.target.style.color = "#5a31ea";
+                                            if (!isYearFilterDisabled) {
+                                              e.target.style.color = "#5a31ea";
+                                            }
                                           }}
                                           onMouseLeave={(e) => {
-                                            e.target.style.color = "#6b7280";
+                                            e.target.style.color = isYearFilterDisabled ? "#d1d5db" : "#6b7280";
                                           }}
                                           title="Increase year"
                                         >
@@ -7220,8 +7496,10 @@ Indian Muslim Association, Hong Kong`;
                                         </button>
                                         <button
                                           type="button"
+                                          disabled={isYearFilterDisabled}
                                           onClick={(e) => {
                                             e.preventDefault();
+                                            if (isYearFilterDisabled) return;
                                             const currentYear = memberYearFilter === "All" || memberYearFilter === "" ? new Date().getFullYear() : parseInt(memberYearFilter);
                                             if (!isNaN(currentYear) && currentYear > 1900) {
                                               setMemberYearFilter(String(currentYear - 1));
@@ -7232,20 +7510,22 @@ Indian Muslim Association, Hong Kong`;
                                             padding: "2px 4px",
                                             border: "none",
                                             background: "transparent",
-                                            cursor: "pointer",
+                                            cursor: isYearFilterDisabled ? "not-allowed" : "pointer",
                                             display: "flex",
                                             alignItems: "center",
                                             justifyContent: "center",
                                             fontSize: "10px",
-                                            color: "#6b7280",
+                                            color: isYearFilterDisabled ? "#d1d5db" : "#6b7280",
                                             lineHeight: "1",
                                             transition: "color 0.2s"
                                           }}
                                           onMouseEnter={(e) => {
-                                            e.target.style.color = "#5a31ea";
+                                            if (!isYearFilterDisabled) {
+                                              e.target.style.color = "#5a31ea";
+                                            }
                                           }}
                                           onMouseLeave={(e) => {
-                                            e.target.style.color = "#6b7280";
+                                            e.target.style.color = isYearFilterDisabled ? "#d1d5db" : "#6b7280";
                                           }}
                                           title="Decrease year"
                                         >
@@ -7326,6 +7606,7 @@ Indian Muslim Association, Hong Kong`;
                                 <Table
                                   columns={[
                                     "Name",
+                                    "Member ID",
                                     "Mobile",
                                     "Year",
                                     "Subscription Type",
@@ -7403,8 +7684,15 @@ Indian Muslim Association, Hong Kong`;
                                     // Check if member has 1 or more unpaid invoices
                                     const hasUnpaidInvoices = unpaidInvoiceCount >= 1;
 
+                                    const hasMemberId =
+                                      member.id !== null &&
+                                      member.id !== undefined &&
+                                      String(member.id).trim() !== "";
+                                    const memberIdDisplay = hasMemberId ? String(member.id) : "Not Assigned";
+
                                     const rowData = {
                                       "Name": member.name,
+                                      "Member ID": memberIdDisplay,
                                       "Mobile": member.phone || "-",
                                       "Year": subYear,
                                       "Subscription Type": formatSubscriptionType(member.subscriptionType) || "-",
@@ -7441,9 +7729,26 @@ Indian Muslim Association, Hong Kong`;
                                       Actions: {
                                         render: () => (
                                           <div className="flex gap-sm justify-center" style={{ flexWrap: "unset" }}>
+                                            {hasUnpaidInvoices && (
+                                              <button
+                                                className="ghost-btn icon-btn icon-btn--reminder"
+                                                onClick={(event) => {
+                                                  event.stopPropagation();
+                                                  handleRequestReminder(member, false);
+                                                }}
+                                                aria-label="Send reminder"
+                                              >
+                                                <Tooltip text="Send reminder" position="top">
+                                                  <i className="fas fa-bell" aria-hidden="true"></i>
+                                                </Tooltip>
+                                              </button>
+                                            )}
                                             <button
                                               className="ghost-btn icon-btn icon-btn--view"
-                                              onClick={() => handleViewMemberDetail(member)}
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                handleViewMemberDetail(member);
+                                              }}
                                               aria-label="View member"
                                             >
                                               <Tooltip text="View member" position="top">
@@ -7452,7 +7757,10 @@ Indian Muslim Association, Hong Kong`;
                                             </button>
                                             <button
                                               className="secondary-btn icon-btn icon-btn--edit"
-                                              onClick={() => handleEditMember(member)}
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                handleEditMember(member);
+                                              }}
                                               aria-label="Edit member"
                                             >
                                               <Tooltip text="Edit member" position="top">
@@ -7463,7 +7771,10 @@ Indian Muslim Association, Hong Kong`;
                                               <button
                                                 className="ghost-btn icon-btn icon-btn--delete"
                                                 style={{ color: "#ef4444" }}
-                                                onClick={() => handleDeleteMember(member.id)}
+                                                onClick={(event) => {
+                                                  event.stopPropagation();
+                                                  handleDeleteMember(member.id);
+                                                }}
                                                 aria-label="Delete member"
                                               >
                                                 <Tooltip text="Delete member" position="top">
@@ -7486,6 +7797,9 @@ Indian Muslim Association, Hong Kong`;
                                       // Explicitly set to undefined to clear any previous styling
                                       rowData._rowStyle = undefined;
                                     }
+
+                                    rowData._onRowClick = () => handleViewMemberDetail(member);
+                                    rowData._nonInteractiveColumns = ["Actions"];
 
                                     return rowData;
                                   })}
@@ -7595,6 +7909,9 @@ Indian Muslim Association, Hong Kong`;
                           </h4>
                           <p className="admin-members-detail-meta">
                             Member ID {selectedMember.id} · {selectedMember.email} · WhatsApp {selectedMember.phone}
+                          </p>
+                          <p className="admin-members-detail-meta">
+                            Current Subscription: {memberSubscriptionTypeLabel || "Not Assigned"}
                           </p>
                         </div>
                       </div>
@@ -7843,6 +8160,18 @@ Indian Muslim Association, Hong Kong`;
                                 </p>
                               );
                             })()}
+                            <div
+                              style={{
+                                marginTop: "6px",
+                                fontSize: "0.8125rem",
+                                color: "#6b7280",
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: "6px"
+                              }}
+                            >
+                              <span><strong>Member Subscription:</strong> {memberSubscriptionTypeLabel || "Not Assigned"}</span>
+                            </div>
                           </div>
                           <div>
                             <button
@@ -7948,15 +8277,8 @@ Indian Muslim Association, Hong Kong`;
                               return invoice.due || '-';
                             };
 
-                            const normalizedInvoiceType = invoice.subscriptionType
-                              ? normalizeSubscriptionType(invoice.subscriptionType)
-                              : invoice.invoiceType
-                                ? normalizeSubscriptionType(invoice.invoiceType)
-                                : null;
-                            const subscriptionType = normalizedInvoiceType
-                              ? formatSubscriptionType(normalizedInvoiceType)
-                              : (invoice.subscriptionType || invoice.invoiceType || "-");
-
+                            // UI requirement: subscription labels always reflect the member record, never historical invoice data.
+                            const subscriptionType = memberSubscriptionTypeLabel || "Not Assigned";
                             const amountDisplay = (() => {
                               if (invoice.amount == null) {
                                 return "HK$0.00";
@@ -7976,7 +8298,13 @@ Indian Muslim Association, Hong Kong`;
                               "Invoice #": invoice.id,
                               "Receipt No": invoice.receiptNumber || "-",
                               "Year": invoice.period || "-",
-                              "Subscription Type": subscriptionType,
+                              "Subscription Type": {
+                                render: () => (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                                    <span>{subscriptionType}</span>
+                                  </div>
+                                )
+                              },
                               Amount: amountDisplay,
                               Status: {
                                 render: () => (
@@ -8070,7 +8398,10 @@ Indian Muslim Association, Hong Kong`;
                                         onClick={() => {
                                           showConfirmation(
                                             `Delete invoice ${invoice.id}? This cannot be undone.`,
-                                            () => handleDeleteInvoice(invoice.id)
+                                            () => handleDeleteInvoice(invoice.id, { skipConfirmation: true }),
+                                            null,
+                                            "Delete",
+                                            { requirePassword: true }
                                           );
                                         }}
                                         aria-label="Delete Invoice"
@@ -8117,7 +8448,10 @@ Indian Muslim Association, Hong Kong`;
                                               onClick={() => {
                                                 showConfirmation(
                                                   `Delete invoice ${invoice.id}? This cannot be undone.`,
-                                                  () => handleDeleteInvoice(invoice.id)
+                                                  () => handleDeleteInvoice(invoice.id, { skipConfirmation: true }),
+                                                  null,
+                                                  "Delete",
+                                                  { requirePassword: true }
                                                 );
                                               }}
                                               aria-label="Delete Invoice"
@@ -11251,7 +11585,8 @@ Indian Muslim Association, Hong Kong`;
                                                 }
                                               },
                                               null,
-                                              "Delete"
+                                              "Delete",
+                                              { requirePassword: true }
                                             );
                                           }}
                                       style={{
@@ -12167,22 +12502,17 @@ Indian Muslim Association, Hong Kong`;
                           onClick={() => {
                             setShowPaymentForm(true);
                             setEditingPayment(null);
-                            setPaymentForm({
-                              memberId: "",
-                              member: "",
-                              invoiceId: "",
-                              amount: "",
-                              method: "",
-                              reference: "",
-                              date: new Date().toLocaleDateString("en-GB", {
-                                day: "2-digit",
-                                month: "short",
-                                year: "numeric"
-                              }),
-                              status: "Pending",
-                              screenshot: "",
-                              notes: "",
+                            setPaymentForm(buildEmptyPaymentForm());
+                            setPaymentFieldErrors({
+                              memberId: false,
+                              amount: false,
+                              payment_type: false,
+                              method: false,
+                              receiver_name: false,
+                              screenshot: false,
+                              date: false,
                             });
+                            setCurrentInvalidPaymentField(null);
                           }}
                         >
                           + Add Payment
@@ -12285,28 +12615,12 @@ Indian Muslim Association, Hong Kong`;
                                 method: false,
                                 receiver_name: false,
                                 screenshot: false,
+                                date: false,
                               });
                               setCurrentInvalidPaymentField(null);
                               setShowPaymentForm(false);
                               setEditingPayment(null);
-                              setPaymentForm({
-                                memberId: "",
-                                member: "",
-                                invoiceId: "",
-                                amount: "",
-                                payment_type: "",
-                                method: "",
-                                receiver_name: "",
-                                reference: "",
-                                date: new Date().toLocaleDateString("en-GB", {
-                                  day: "2-digit",
-                                  month: "short",
-                                  year: "numeric",
-                                }),
-                                status: "Pending",
-                                screenshot: "",
-                                notes: "",
-                              });
+                              setPaymentForm(buildEmptyPaymentForm());
                             }}
                             style={{
                               fontSize: "1.5rem",
@@ -12570,17 +12884,34 @@ Indian Muslim Association, Hong Kong`;
                             />
                           </label>
                           <label>
-                            <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date</span>
+                            <span>
+                              <i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                              Payment Date <span style={{ color: "#ef4444" }}>*</span>
+                            </span>
                             <input
                               type="text"
                               value={paymentForm.date}
-                              onChange={(e) =>
+                              onChange={(e) => {
                                 setPaymentForm({
                                   ...paymentForm,
                                   date: e.target.value,
-                                })
-                              }
+                                });
+                                if (paymentFieldErrors.date) {
+                                  setPaymentFieldErrors(prev => ({ ...prev, date: false }));
+                                  if (currentInvalidPaymentField === "date") {
+                                    setCurrentInvalidPaymentField(null);
+                                  }
+                                }
+                              }}
                               placeholder="01 Jan 2025"
+                              required
+                              style={{
+                                width: "100%",
+                                padding: "12px 16px",
+                                borderRadius: "8px",
+                                border: paymentFieldErrors.date ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                fontSize: "0.9375rem",
+                              }}
                             />
                           </label>
                           <label>
@@ -12655,22 +12986,17 @@ Indian Muslim Association, Hong Kong`;
                               onClick={() => {
                                 setShowPaymentForm(false);
                                 setEditingPayment(null);
-                                setPaymentForm({
-                                  memberId: "",
-                                  member: "",
-                                  invoiceId: "",
-                                  amount: "",
-                                  method: "",
-                                  reference: "",
-                                  date: new Date().toLocaleDateString("en-GB", {
-                                    day: "2-digit",
-                                    month: "short",
-                                    year: "numeric",
-                                  }),
-                                  status: "Pending",
-                                  screenshot: "",
-                                  notes: "",
+                                setPaymentFieldErrors({
+                                  memberId: false,
+                                  amount: false,
+                                  payment_type: false,
+                                  method: false,
+                                  receiver_name: false,
+                                  screenshot: false,
+                                  date: false,
                                 });
+                                setCurrentInvalidPaymentField(null);
+                                setPaymentForm(buildEmptyPaymentForm());
                               }}
                             >
                               Cancel
@@ -13564,22 +13890,17 @@ Indian Muslim Association, Hong Kong`;
                         if (e.target === e.currentTarget) {
                           setShowPaymentForm(false);
                           setEditingPayment(null);
-                          setPaymentForm({
-                            memberId: "",
-                            member: "",
-                            invoiceId: "",
-                            amount: "",
-                            method: "",
-                            reference: "",
-                            date: new Date().toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric"
-                            }),
-                            status: "Pending",
-                            screenshot: "",
-                            notes: "",
+                          setPaymentFieldErrors({
+                            memberId: false,
+                            amount: false,
+                            payment_type: false,
+                            method: false,
+                            receiver_name: false,
+                            screenshot: false,
+                            date: false,
                           });
+                          setCurrentInvalidPaymentField(null);
+                          setPaymentForm(buildEmptyPaymentForm());
                         }
                       }}
                     >
@@ -13597,22 +13918,17 @@ Indian Muslim Association, Hong Kong`;
                             onClick={() => {
                               setShowPaymentForm(false);
                               setEditingPayment(null);
-                              setPaymentForm({
-                                memberId: "",
-                                member: "",
-                                invoiceId: "",
-                                amount: "",
-                                method: "",
-                                reference: "",
-                                date: new Date().toLocaleDateString("en-GB", {
-                                  day: "2-digit",
-                                  month: "short",
-                                  year: "numeric"
-                                }),
-                                status: "Pending",
-                                screenshot: "",
-                                notes: "",
+                              setPaymentFieldErrors({
+                                memberId: false,
+                                amount: false,
+                                payment_type: false,
+                                method: false,
+                                receiver_name: false,
+                                screenshot: false,
+                                date: false,
                               });
+                              setCurrentInvalidPaymentField(null);
+                              setPaymentForm(buildEmptyPaymentForm());
                             }}
                             style={{
                               background: "transparent",
@@ -13713,12 +14029,31 @@ Indian Muslim Association, Hong Kong`;
                             />
                           </label>
                           <label>
-                            <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date</span>
+                            <span>
+                              <i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+                              Payment Date <span style={{ color: "#ef4444" }}>*</span>
+                            </span>
                             <input
                               type="text"
                               value={paymentForm.date}
-                              onChange={(e) => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                              onChange={(e) => {
+                                setPaymentForm({ ...paymentForm, date: e.target.value });
+                                if (paymentFieldErrors.date) {
+                                  setPaymentFieldErrors(prev => ({ ...prev, date: false }));
+                                  if (currentInvalidPaymentField === "date") {
+                                    setCurrentInvalidPaymentField(null);
+                                  }
+                                }
+                              }}
                               placeholder="01 Jan 2025"
+                              required
+                              style={{
+                                width: "100%",
+                                padding: "12px 16px",
+                                borderRadius: "8px",
+                                border: paymentFieldErrors.date ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                fontSize: "0.9375rem",
+                              }}
                             />
                           </label>
                           <label>
@@ -13761,22 +14096,17 @@ Indian Muslim Association, Hong Kong`;
                             <button type="button" className="ghost-btn" onClick={() => {
                               setShowPaymentForm(false);
                               setEditingPayment(null);
-                              setPaymentForm({
-                                memberId: "",
-                                member: "",
-                                invoiceId: "",
-                                amount: "",
-                                method: "",
-                                reference: "",
-                                date: new Date().toLocaleDateString("en-GB", {
-                                  day: "2-digit",
-                                  month: "short",
-                                  year: "numeric"
-                                }),
-                                status: "Pending",
-                                screenshot: "",
-                                notes: "",
+                              setPaymentFieldErrors({
+                                memberId: false,
+                                amount: false,
+                                payment_type: false,
+                                method: false,
+                                receiver_name: false,
+                                screenshot: false,
+                                date: false,
                               });
+                              setCurrentInvalidPaymentField(null);
+                              setPaymentForm(buildEmptyPaymentForm());
                             }}>
                               Cancel
                             </button>
@@ -17550,7 +17880,10 @@ Indian Muslim Association, Hong Kong`;
                                             } catch (error) {
                                               showToast(error.message || "Failed to delete admin", "error");
                                             }
-                                          }
+                                          },
+                                          null,
+                                          "Delete",
+                                          { requirePassword: true }
                                         );
                                       }}
                                       title="Delete Admin"
@@ -17783,7 +18116,7 @@ Indian Muslim Association, Hong Kong`;
                                       onClick={async () => {
                                         showConfirmation(
                                           `Remove ${user.name} from admin users?`,
-                                          async () => {
+                                            async () => {
                                             try {
                                               await deleteAdminUser(user.id);
                                               showToast(`${user.name} removed`);
@@ -17791,7 +18124,10 @@ Indian Muslim Association, Hong Kong`;
                                             } catch (error) {
                                               showToast(error.message || "Failed to delete admin", "error");
                                             }
-                                          }
+                                            },
+                                            null,
+                                            "Delete",
+                                            { requirePassword: true }
                                         );
                                       }}
                                       title="Remove Admin"

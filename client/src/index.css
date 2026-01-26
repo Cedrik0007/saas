@@ -3689,6 +3689,17 @@ button[disabled] {
   color: var(--danger);
 }
 
+.icon-btn--reminder {
+  color: #ea580c;
+  border-color: rgba(234, 88, 12, 0.35);
+}
+
+.icon-btn--reminder:hover {
+  border-color: #ea580c;
+  color: #ea580c;
+  background: rgba(234, 88, 12, 0.08);
+}
+
 .segmented {
   display: inline-flex;
   gap: 8px;
@@ -11038,6 +11049,50 @@ button[disabled] {
     flex-wrap: wrap;
     gap: 8px;
   }
+}
+
+/* Clickable data table row affordances */
+.data-table__row {
+  transition: background-color 0.18s ease;
+}
+
+.data-table__row--clickable td {
+  transition: background-color 0.18s ease;
+}
+
+@media (hover: hover) {
+  .data-table__row--clickable td:not(.data-table__cell--static) {
+    cursor: pointer;
+  }
+
+  .data-table__row--clickable:hover td:not(.data-table__cell--static),
+  .data-table__row--clickable:focus-within td:not(.data-table__cell--static) {
+    background-color: #f4f7fb;
+  }
+}
+
+.data-table__row--clickable:focus-within {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: -2px;
+}
+
+.data-table__row--clickable .icon-btn--view {
+  transition: color 0.18s ease, opacity 0.18s ease;
+}
+
+.data-table__row--clickable .icon-btn--view i {
+  opacity: 0.8;
+  transition: color 0.18s ease, opacity 0.18s ease;
+}
+
+.data-table__row--clickable:hover .icon-btn--view,
+.data-table__row--clickable:focus-within .icon-btn--view {
+  color: #2563eb;
+}
+
+.data-table__row--clickable:hover .icon-btn--view i,
+.data-table__row--clickable:focus-within .icon-btn--view i {
+  opacity: 1;
 }
 
 /* Mobile Table Cards (under 768px) */

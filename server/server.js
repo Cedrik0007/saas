@@ -23,6 +23,7 @@ import paymentMethodsRoutes from "./routes/paymentMethods.js";
 import authRoutes from "./routes/auth.js";
 import uploadRoutes from "./routes/upload.js";
 import authGoogleMemberRoutes from "./routes/authGoogleMember.js";
+import adminSecurityRoutes from "./routes/adminSecurity.js";
 
 dotenv.config();
 
@@ -124,6 +125,7 @@ app.use("/api/reminders", remindersRoutes);
 app.use("/api/email-settings", emailRoutes);
 app.use("/api/payment-methods", paymentMethodsRoutes);
 app.use("/api/upload", uploadRoutes);
+app.use("/api/admin", adminSecurityRoutes);
 app.use("/api", authRoutes); // email/password login
 app.use("/api", authGoogleMemberRoutes); // Google member login
 
