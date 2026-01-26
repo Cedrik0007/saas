@@ -12,6 +12,7 @@ import EmailSettingsModel from "../models/EmailSettings.js";
 import EmailTemplateModel from "../models/EmailTemplate.js";
 import { generateUniqueMessageId, createEmailTransporter } from "../config/email.js";
 import { sendPaymentApprovalEmail } from "../utils/emailHelpers.js";
+import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
 import nodemailer from "nodemailer";
 
 const router = express.Router();
@@ -137,23 +138,29 @@ router.post("/", async (req, res) => {
       });
     }
 
-    let memberId;
-    try {
-      memberId = assertValidMemberId(req.body.memberId);
-    } catch (validationError) {
-      console.warn("Invoice creation rejected due to invalid memberId", validationError.message);
-      return res.status(validationError.status || 400).json({ error: validationError.message });
-    }
-    req.body.memberId = memberId;
-
-    // CRITICAL: Validate that memberId exists in members collection (by business id, not _id)
-    const memberExists = await UserModel.findOne({ id: memberId });
-    if (!memberExists) {
-      console.error(`❌ Invoice creation rejected: Member with id="${memberId}" does not exist`);
+    if (req.body.memberId && objectIdRegex.test(String(req.body.memberId).trim())) {
       return res.status(400).json({
-        error: `Member with ID "${memberId}" not found. Invoice creation rejected.`
+        error: "Invoices require a business identifier (e.g., LM100, AM702) and not a Mongo ObjectId.",
       });
     }
+
+    let memberExists;
+    try {
+      memberExists = await resolveMember(req.body.memberId || req.body.memberRef);
+    } catch (resolveError) {
+      console.warn("Invoice creation rejected due to invalid member reference", resolveError.message);
+      return res.status(resolveError.status || 400).json({ error: resolveError.message });
+    }
+
+    if (!memberExists.id) {
+      return res.status(400).json({
+        error: "Member is missing business ID; invoice creation requires a business identifier.",
+      });
+    }
+
+    const memberId = memberExists.id;
+    const memberRef = memberExists._id;
+    req.body.memberId = memberId;
     console.log(`✓ Invoice creation: Validated member exists (id=${memberExists.id}, name=${memberExists.name})`);
 
     const { membershipFee, janazaFee, totalFee } =
@@ -210,6 +217,7 @@ router.post("/", async (req, res) => {
       membershipFee,
       janazaFee,
       amount: `HK$${totalFee.toFixed(2)}`,
+      memberRef,
       memberId,
       due: dueDate, // Always set due date at creation
       status: req.body.status || "Unpaid",
@@ -527,9 +535,11 @@ router.put("/:id", async (req, res) => {
   try {
     await ensureConnection();
 
-    const oldInvoice = await resolveInvoiceByParam(req.params.id);
-    if (!oldInvoice) {
-      return res.status(404).json({ message: "Invoice not found" });
+    let oldInvoice;
+    try {
+      oldInvoice = await resolveInvoice(req.params.id);
+    } catch (resolveError) {
+      return res.status(resolveError.status || 400).json({ error: resolveError.message });
     }
 
     // Protect the 'due' field - never allow it to be updated once invoice is created
@@ -544,22 +554,24 @@ router.put("/:id", async (req, res) => {
       delete updateData.memberEmail;
     }
 
-    if (Object.prototype.hasOwnProperty.call(updateData, "memberId")) {
-      let normalized;
+    if (Object.prototype.hasOwnProperty.call(updateData, "memberId")
+      || Object.prototype.hasOwnProperty.call(updateData, "memberRef")) {
+      let memberExists;
       try {
-        normalized = assertValidMemberId(updateData.memberId);
-      } catch (validationError) {
-        console.warn(`Invoice update rejected: invalid memberId for invoice ${req.params.id}`, validationError.message);
-        return res.status(validationError.status || 400).json({ error: validationError.message });
+        memberExists = await resolveMember(updateData.memberId || updateData.memberRef);
+      } catch (resolveError) {
+        console.warn(`Invoice update rejected: invalid member reference for invoice ${req.params.id}`, resolveError.message);
+        return res.status(resolveError.status || 400).json({ error: resolveError.message });
       }
 
-      const memberExists = await UserModel.findOne({ id: normalized });
-      if (!memberExists) {
+      if (!memberExists.id) {
         return res.status(400).json({
-          error: `Member with ID "${normalized}" not found. Invoice update rejected.`
+          error: "Member is missing business ID; invoice updates require a business identifier.",
         });
       }
-      updateData.memberId = normalized;
+
+      updateData.memberId = memberExists.id;
+      updateData.memberRef = memberExists._id;
     }
 
     if (Object.prototype.hasOwnProperty.call(updateData, "status")) {
@@ -916,6 +928,10 @@ router.get("/:id/pdf-receipt/options", async (req, res) => {
 // GET download PDF receipt directly (proxy endpoint to bypass Cloudinary auth)
 router.get("/:id/pdf-receipt/download", async (req, res) => {
   try {
+    res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "https://admin.imahk.org");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
     await ensureConnection();
 
     const invoice = await resolveInvoiceByParam(req.params.id);

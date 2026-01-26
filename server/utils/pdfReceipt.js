@@ -402,6 +402,14 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       currentY = tableTopY + rowHeight;
       
       // Table data rows (using amountStr and amountNum already declared above)
+      const amountValue = payment?.amount ?? invoice?.amount ?? '';
+      const amountStr = typeof amountValue === 'string' ? amountValue : String(amountValue ?? '');
+      const amountNum = typeof amountValue === 'number'
+        ? Number(amountValue)
+        : Number(String(amountValue).replace(/[^\d.]/g, ""));
+      if (Number.isNaN(amountNum)) {
+        throw new Error("Invalid amount for receipt generation");
+      }
       const formattedAmount = amountNum.toFixed(2);
       
       // First data row - Membership Renewal Fee (hidden label/year for lifetime subscriptions)

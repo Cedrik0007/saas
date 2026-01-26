@@ -31,40 +31,27 @@ const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 4000;
 
-// Initialize Socket.io
-initializeSocket(server);
-
 // Middleware
-const allowedOrigins = process.env.NODE_ENV === 'production' 
-  ? [
-      "https://subs-manager.vercel.app",
-      "https://saas-cj3b.onrender.com",
-      "https://admin.imahk.org",
-      process.env.FRONTEND_URL
-    ].filter(Boolean) // Remove undefined values
-  : ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"];
+const allowedOrigins = [
+  "https://admin.imahk.org",
+  "http://localhost:5173"
+];
 
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, Postman, etc.)
+  origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
-      callback(null, true);
-    } else {
-      console.warn('CORS blocked origin:', origin);
-      callback(null, true); // Allow for now, but log it
-    }
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("CORS not allowed"), false);
   },
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   credentials: true,
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// Handle preflight requests explicitly
-app.options('*', cors());
+app.options("*", cors());
+
+// Initialize Socket.io (after CORS setup)
+initializeSocket(server);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -132,6 +119,12 @@ app.use("/api", authGoogleMemberRoutes); // Google member login
 // Global error handler middleware
 app.use((err, req, res, next) => {
   console.error('Global error handler:', err);
+
+  const requestOrigin = req.headers?.origin;
+  if (requestOrigin === "https://admin.imahk.org" || requestOrigin === "http://localhost:5173") {
+    res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
   
   // Handle timeout errors
   if (err.message && err.message.includes('timeout')) {

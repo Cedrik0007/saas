@@ -68,6 +68,7 @@ async function createSubscriptionInvoice(member, subscriptionType, customPeriod 
     // Create invoice
     const invoiceData = {
       id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      memberRef: member._id,
       memberId: member.id,
       memberName: member.name,
       memberEmail: member.email,

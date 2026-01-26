@@ -7,22 +7,13 @@ import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { sendPaymentApprovalEmail, sendPaymentRejectionEmail } from "../utils/emailHelpers.js";
 import { emitInvoiceUpdate, emitMemberUpdate, emitPaymentUpdate } from "../config/socket.js";
 import { approveInvoicePayment, approvePaymentAndMarkInvoicePaid } from "../services/paymentApprovalService.js";
+import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
 
 const router = express.Router();
 const objectIdRegex = /^[a-f\d]{24}$/i;
 
 const normalizeMemberId = (rawMemberId = "") =>
   typeof rawMemberId === "string" ? rawMemberId.trim() : "";
-
-const assertValidObjectId = (value, contextLabel = "id") => {
-  const normalized = typeof value === "string" ? value.trim() : "";
-  if (!normalized || !objectIdRegex.test(normalized)) {
-    const error = new Error(`${contextLabel} must be a valid Mongo _id`);
-    error.status = 400;
-    throw error;
-  }
-  return normalized;
-};
 
 const assertValidMemberId = (value, contextLabel = "memberId") => {
   const normalized = normalizeMemberId(value);
@@ -92,23 +83,28 @@ router.post("/", async (req, res) => {
   try {
     await ensureConnection();
 
-    let memberId;
-    try {
-      memberId = assertValidMemberId(req.body.memberId);
-    } catch (validationError) {
-      return res.status(validationError.status || 400).json({ error: validationError.message });
-    }
-
     let memberRecord;
     try {
-      memberRecord = await findMemberOrThrow(memberId);
-    } catch (memberError) {
-      return res.status(memberError.status || 404).json({ error: memberError.message });
+      memberRecord = await resolveMember(req.body.memberId || req.body.memberRef);
+    } catch (resolveError) {
+      return res.status(resolveError.status || 400).json({ error: resolveError.message });
+    }
+
+    let invoiceRecord = null;
+    if (req.body.invoiceId || req.body.invoiceRef) {
+      try {
+        invoiceRecord = await resolveInvoice(req.body.invoiceId || req.body.invoiceRef);
+      } catch (resolveError) {
+        return res.status(resolveError.status || 400).json({ error: resolveError.message });
+      }
     }
 
     const paymentData = {
       ...req.body,
-      memberId,
+      memberRef: memberRecord._id,
+      memberId: memberRecord.id || undefined,
+      invoiceRef: invoiceRecord?._id,
+      invoiceId: invoiceRecord?.id || undefined,
       member: req.body.member || memberRecord.name || "",
       memberEmail: req.body.memberEmail || memberRecord.email || "",
       date: req.body.date || new Date().toLocaleDateString("en-GB", {
@@ -137,18 +133,9 @@ router.post("/approve-invoice", async (req, res) => {
   try {
     await ensureConnection();
 
-    let invoiceMongoId;
-    let memberMongoId;
-    try {
-      invoiceMongoId = assertValidObjectId(req.body.invoiceId, "invoiceId");
-      memberMongoId = assertValidObjectId(req.body.memberId, "memberId");
-    } catch (validationError) {
-      return res.status(validationError.status || 400).json({ error: validationError.message });
-    }
-
     const { payment, invoice, member } = await approveInvoicePayment({
-      invoiceMongoId,
-      memberMongoId,
+      invoiceRef: req.body.invoiceId,
+      memberRef: req.body.memberId,
       amount: req.body.amount,
       paymentType: req.body.payment_type,
       method: req.body.method,

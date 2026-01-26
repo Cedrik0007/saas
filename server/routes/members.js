@@ -375,6 +375,7 @@ router.post("/", async (req, res) => {
 
         const invoiceData = {
           id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+          memberRef: savedMember._id,
           memberId: savedMember.id,
           memberName: savedMember.name,
           memberEmail: savedMember.email,

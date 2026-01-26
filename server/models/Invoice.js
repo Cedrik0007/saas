@@ -127,6 +127,7 @@ async function ensureReceiptNumberForUpdate(update, existingInvoice) {
 
 const InvoiceSchema = new mongoose.Schema({
   id: { type: String },
+  memberRef: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
   memberId: String,
   memberName: String,
   memberEmail: String,

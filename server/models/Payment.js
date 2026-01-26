@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 
 const PaymentSchema = new mongoose.Schema({
+  invoiceRef: { type: mongoose.Schema.Types.ObjectId, ref: "invoices" },
+  memberRef: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
   invoiceId: String,
   memberId: String,
   memberEmail: String,

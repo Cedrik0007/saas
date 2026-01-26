@@ -4,26 +4,7 @@ import PaymentModel from "../models/Payment.js";
 import InvoiceModel from "../models/Invoice.js";
 import UserModel from "../models/User.js";
 import { getNextReceiptNumberStrict } from "../utils/receiptCounter.js";
-
-const objectIdRegex = /^[a-f\d]{24}$/i;
-
-const normalizeMemberId = (rawMemberId = "") =>
-  typeof rawMemberId === "string" ? rawMemberId.trim() : "";
-
-const assertValidMemberId = (value, contextLabel = "memberId") => {
-  const normalized = normalizeMemberId(value);
-  if (!normalized) {
-    const error = new Error(`${contextLabel} is required and must be a non-empty string`);
-    error.status = 400;
-    throw error;
-  }
-  if (objectIdRegex.test(normalized)) {
-    const error = new Error(`${contextLabel} must be the business identifier (e.g., IMA1234), not the Mongo _id`);
-    error.status = 400;
-    throw error;
-  }
-  return normalized;
-};
+import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
 
 export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adminName }) {
   await ensureConnection();
@@ -45,31 +26,29 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
         throw error;
       }
 
-      const normalizedMemberId = assertValidMemberId(payment.memberId, "payment.memberId");
-      payment.memberId = normalizedMemberId;
+      const memberRefInput = payment.memberRef || payment.memberId;
+      member = await resolveMember(memberRefInput, { session });
 
-      member = await UserModel.findOne({ id: normalizedMemberId }).session(session);
-      if (!member) {
-        const error = new Error(`Member with ID "${normalizedMemberId}" not found.`);
-        error.status = 404;
-        throw error;
-      }
-
-      if (!payment.invoiceId) {
-        const error = new Error("Payment is missing invoiceId.");
+      const invoiceRefInput = payment.invoiceRef || payment.invoiceId;
+      if (!invoiceRefInput) {
+        const error = new Error("Payment is missing invoice reference.");
         error.status = 400;
         throw error;
       }
 
-      if (objectIdRegex.test(payment.invoiceId)) {
-        invoice = await InvoiceModel.findById(payment.invoiceId).session(session);
-      } else {
-        invoice = await InvoiceModel.findOne({ id: payment.invoiceId }).session(session);
+      invoice = await resolveInvoice(invoiceRefInput, { session });
+
+      if (member?._id) {
+        payment.memberRef = member._id;
       }
-      if (!invoice) {
-        const error = new Error("Invoice not found");
-        error.status = 404;
-        throw error;
+      if (member?.id) {
+        payment.memberId = member.id;
+      }
+      if (invoice?._id) {
+        payment.invoiceRef = invoice._id;
+      }
+      if (invoice?.id) {
+        payment.invoiceId = invoice.id;
       }
 
       payment.status = "Completed";
@@ -95,7 +74,7 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
       }
 
       const updatedInvoice = await InvoiceModel.findOneAndUpdate(
-        { id: payment.invoiceId },
+        { _id: invoice._id },
         { $set: invoiceUpdate },
         { new: true, runValidators: true, session, allowPaidStatusUpdate: true }
       );
@@ -147,13 +126,13 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
         }
 
         await UserModel.findOneAndUpdate(
-          { id: member.id },
+          { _id: member._id },
           { $set: memberUpdate },
           { session }
         );
       } else {
         await UserModel.findOneAndUpdate(
-          { id: member.id },
+          { _id: member._id },
           { $set: { payment_status: "paid", last_payment_date: new Date() } },
           { session }
         );
@@ -167,8 +146,8 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
 }
 
 export async function approveInvoicePayment({
-  invoiceMongoId,
-  memberMongoId,
+  invoiceRef,
+  memberRef,
   amount,
   paymentType,
   method,
@@ -189,19 +168,8 @@ export async function approveInvoicePayment({
 
   try {
     await session.withTransaction(async () => {
-      invoice = await InvoiceModel.findById(invoiceMongoId).session(session);
-      if (!invoice) {
-        const error = new Error("Invoice not found");
-        error.status = 404;
-        throw error;
-      }
-
-      member = await UserModel.findById(memberMongoId).session(session);
-      if (!member) {
-        const error = new Error("Member not found");
-        error.status = 404;
-        throw error;
-      }
+      invoice = await resolveInvoice(invoiceRef, { session });
+      member = await resolveMember(memberRef, { session });
 
       if (invoice.status === "Paid" || invoice.status === "Completed") {
         const error = new Error("Invoice is already marked as paid.");
@@ -218,6 +186,8 @@ export async function approveInvoicePayment({
       });
 
       payment = new PaymentModel({
+        invoiceRef: invoice._id,
+        memberRef: member._id,
         invoiceId: invoice.id || undefined,
         memberId: member.id || undefined,
         member: member.name || "",
