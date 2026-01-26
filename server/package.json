@@ -6,7 +6,8 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
-    "integrity": "node scripts/integrityCheck.js"
+    "integrity": "node scripts/integrityCheck.js",
+    "receipts:backfill": "node scripts/backfillInvoiceReceipts.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

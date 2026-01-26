@@ -552,6 +552,15 @@ router.put("/:id", async (req, res) => {
       updateData.memberId = normalized;
     }
 
+    if (Object.prototype.hasOwnProperty.call(updateData, "status")) {
+      const nextStatus = String(updateData.status || "").trim();
+      if (nextStatus === "Paid" || nextStatus === "Completed") {
+        return res.status(400).json({
+          error: "Paid status can only be set via the payment approval service.",
+        });
+      }
+    }
+
     const updatedInvoice = await InvoiceModel.findOneAndUpdate(
       { id: req.params.id },
       { $set: updateData },
@@ -567,34 +576,6 @@ router.put("/:id", async (req, res) => {
     const wasUnpaid = oldInvoice.status === "Unpaid" || oldInvoice.status === "Overdue";
     const isNowPaid = updatedInvoice.status === "Paid";
     const markedAsPaid = statusChanged && wasUnpaid && isNowPaid;
-
-    // Generate receipt number if:
-    // 1. Invoice was just marked as paid, OR
-    // 2. Invoice is already paid but somehow doesn't have a receipt number (edge case recovery)
-    const needsReceiptNumber = (markedAsPaid || (isNowPaid && !oldInvoice.receiptNumber)) && !updatedInvoice.receiptNumber;
-
-    // Variable to hold the final invoice data to return
-    let finalInvoice = updatedInvoice;
-
-    if (needsReceiptNumber) {
-      try {
-        const receiptNumber = await getNextReceiptNumber();
-        // Use findOneAndUpdate to atomically update and return the updated document
-        const invoiceWithReceipt = await InvoiceModel.findOneAndUpdate(
-          { id: req.params.id },
-          { $set: { receiptNumber: receiptNumber } },
-          { new: true }
-        );
-        // Use the returned document which has the receipt number
-        if (invoiceWithReceipt) {
-          finalInvoice = invoiceWithReceipt;
-        }
-        console.log(`✓ Generated and stored receipt number ${receiptNumber} for invoice ${req.params.id}`);
-      } catch (receiptError) {
-        console.error("Error generating receipt number:", receiptError);
-        // Continue without receipt number - don't fail the update
-      }
-    }
 
     if (statusChanged || amountChanged || memberChanged) {
       // Always recalculate balance for the old member if:
@@ -622,7 +603,7 @@ router.put("/:id", async (req, res) => {
     }
 
     // Convert to plain object to ensure all properties are included
-    const responseInvoice = finalInvoice.toObject ? finalInvoice.toObject() : finalInvoice;
+    const responseInvoice = updatedInvoice.toObject ? updatedInvoice.toObject() : updatedInvoice;
 
     // Emit Socket.io event for real-time update
     emitInvoiceUpdate('updated', responseInvoice);
@@ -630,7 +611,8 @@ router.put("/:id", async (req, res) => {
     res.json(responseInvoice);
   } catch (error) {
     console.error("Error updating invoice:", error);
-    res.status(500).json({ error: error.message });
+    const statusCode = error.statusCode || error.status || (error.name === "ValidationError" ? 400 : 500);
+    res.status(statusCode).json({ error: error.message });
   }
 });
 

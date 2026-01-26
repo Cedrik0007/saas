@@ -7114,33 +7114,15 @@ Indian Muslim Association, Hong Kong`;
                   <div className="admin-members-table-card">
                     <div className="table-wrapper">
                       {(() => {
-                        // Helper function to extract subscription year from member
+                        // Subscription year is always sourced from member.year only.
                         const getMemberSubscriptionYear = (member) => {
-                          const memberInvoices = getMemberInvoices(member.id)
-                            .slice()
-                            .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-
-                          if (memberInvoices.length > 0) {
-                            const latestInvoice = memberInvoices[0];
-                            if (latestInvoice?.period) {
-                              const periodStr = String(latestInvoice.period).trim();
-                              const yearMatch = periodStr.match(/\d{4}/);
-                              if (yearMatch) {
-                                return yearMatch[0];
-                              }
-                            }
+                          if (!member) return null;
+                          const rawYear = member.year;
+                          if (rawYear === null || rawYear === undefined) {
+                            return null;
                           }
-
-                          if (member.next_due_date) {
-                            return new Date(member.next_due_date).getFullYear().toString();
-                          }
-                          if (member.nextDue) {
-                            const nextDueStr = String(member.nextDue).trim();
-                            const yearMatch = nextDueStr.match(/\d{4}/);
-                            return yearMatch ? yearMatch[0] : (nextDueStr.split('-')[0] || null);
-                          }
-
-                          return null;
+                          const normalized = String(rawYear).trim();
+                          return normalized || null;
                         };
 
                         // Filter members based on search term and status (using derived status)
@@ -7627,29 +7609,8 @@ Indian Muslim Association, Hong Kong`;
                                     // Get all invoices for this member using business ID
                                     const memberInvoices = getMemberInvoices(member.id);
 
-                                    // Subscription Year - extract from latest invoice period, or fallback to next_due_date/nextDue
-                                    let subYear = "-";
-                                    if (memberInvoices.length > 0) {
-                                      // Get the most recent invoice (by date or use the first one)
-                                      const latestInvoice = memberInvoices[0];
-                                      if (latestInvoice.period) {
-                                        const periodStr = String(latestInvoice.period).trim();
-                                        const yearMatch = periodStr.match(/\d{4}/);
-                                        if (yearMatch) {
-                                          subYear = yearMatch[0];
-                                        }
-                                      }
-                                    }
-                                    // Fallback to next_due_date or nextDue if no invoice found or no year in period
-                                    if (subYear === "-") {
-                                      if (member.next_due_date) {
-                                        subYear = new Date(member.next_due_date).getFullYear().toString();
-                                      } else if (member.nextDue) {
-                                        const nextDueStr = String(member.nextDue).trim();
-                                        const yearMatch = nextDueStr.match(/\d{4}/);
-                                        subYear = yearMatch ? yearMatch[0] : nextDueStr.split('-')[0] || "-";
-                                      }
-                                    }
+                                    // Subscription Year - display only member.year (no inference)
+                                    const subYear = getMemberSubscriptionYear(member) || "-";
 
                                     // Derive status: Active / Inactive only
                                     let derivedStatus = "Active";
@@ -8294,9 +8255,10 @@ Indian Muslim Association, Hong Kong`;
                               return rawAmount;
                             })();
 
+
                             return {
                               "Invoice #": invoice.id,
-                              "Receipt No": invoice.receiptNumber || "-",
+                              "Receipt No": isPaid ? invoice.receiptNumber : "-",
                               "Year": invoice.period || "-",
                               "Subscription Type": {
                                 render: () => (
