@@ -2520,7 +2520,7 @@ function AdminPage() {
         // In development, use empty string to use Vite proxy (localhost:4000)
         // // In production, use VITE_API_URL if set
         // const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-        const apiUrl = import.meta.env.VITE_API_URL;
+        const apiUrl = import.meta.env.DEV ? "" : (import.meta.env.VITE_API_URL || "");
         
         const response = await fetch(`${apiUrl}/api/email-settings`);
         if (response.ok) {
@@ -2893,11 +2893,16 @@ function AdminPage() {
         if (payment && payment.memberId) {
           const newBalance = calculateMemberBalance(payment.memberId);
           const balanceText = newBalance > 0 ? `${formatCurrency(newBalance)} Outstanding` : formatCurrency(0);
+          const member = members.find(m => String(m.id || "").trim() === String(payment.memberId || "").trim());
 
-          try {
-            await updateMember(payment.memberId, { balance: balanceText });
-          } catch (error) {
-            console.error('Error updating member balance:', error);
+          if (!member?._id) {
+            console.error('Missing member _id for balance update', payment.memberId);
+          } else {
+            try {
+              await updateMember(member._id, { balance: balanceText });
+            } catch (error) {
+              console.error('Error updating member balance:', error);
+            }
           }
         }
 
@@ -3075,6 +3080,14 @@ function AdminPage() {
           ...paymentForm,
           method: finalMethod
         };
+        if (paymentData.invoiceId && /^INV-/i.test(String(paymentData.invoiceId))) {
+          const matchedInvoice = invoices.find(inv => inv.id === paymentData.invoiceId);
+          if (!matchedInvoice?._id) {
+            showToast("Invoice number not found. Please select a valid invoice.", "error");
+            return;
+          }
+          paymentData.invoiceId = matchedInvoice._id;
+        }
         // Remove customMethod from data sent to backend
         delete paymentData.customMethod;
         paymentData.date = (paymentData.date || "").trim();
@@ -3158,6 +3171,14 @@ function AdminPage() {
           ...paymentForm,
           date: (paymentForm.date || "").trim(),
         };
+        if (updatedPaymentPayload.invoiceId && /^INV-/i.test(String(updatedPaymentPayload.invoiceId))) {
+          const matchedInvoice = invoices.find(inv => inv.id === updatedPaymentPayload.invoiceId);
+          if (!matchedInvoice?._id) {
+            showToast("Invoice number not found. Please select a valid invoice.", "error");
+            return;
+          }
+          updatedPaymentPayload.invoiceId = matchedInvoice._id;
+        }
 
         const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
           method: 'PUT',
@@ -3792,22 +3813,31 @@ Indian Muslim Association, Hong Kong`;
     }, [donations, donationsPageSize, donationsPage]);
 
     // Helper function to refresh selected member's invoices from backend
-    const refreshSelectedMemberInvoices = async (memberId) => {
-      if (!memberId) return;
-      
+    const refreshSelectedMemberInvoices = async (member) => {
+      if (!member?._id) {
+        console.error("Missing member _id for invoice refresh.", member);
+        return;
+      }
+
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-      const memberIdStr = String(memberId).trim();
-      
+      const memberBusinessId = member.id ? String(member.id).trim() : "";
+
       try {
         setLoadingMemberInvoices(true);
-        const response = await fetch(`${apiUrl}/api/invoices/member/${encodeURIComponent(memberIdStr)}`);
+        const response = await fetch(`${apiUrl}/api/invoices`);
         if (response.ok) {
           const invoices = await response.json();
-          console.log(`✓ Refreshed ${invoices.length} invoices for member ${memberIdStr}`);
-          setSelectedMemberInvoices(invoices);
+          const memberInvoices = memberBusinessId
+            ? invoices.filter((invoice) => String(invoice.memberId || "").trim() === memberBusinessId)
+            : [];
+          console.log(`✓ Refreshed ${memberInvoices.length} invoices for member ${memberBusinessId || member._id}`);
+          setSelectedMemberInvoices(memberInvoices);
+        } else {
+          setSelectedMemberInvoices([]);
         }
       } catch (error) {
         console.error('Error refreshing member invoices:', error);
+        setSelectedMemberInvoices([]);
       } finally {
         setLoadingMemberInvoices(false);
       }
@@ -4226,12 +4256,12 @@ Indian Muslim Association, Hong Kong`;
 
         // Prepare member data - include ID if manually entered (at least 2 characters)
         const memberData = { ...memberForm };
-        if (memberForm.id && memberForm.id.length >= 2) {
-          memberData.id = memberForm.id.toUpperCase();
-        }
-        // Remove id from memberData if not provided or too short
-        if (!memberForm.id || memberForm.id.length < 2) {
+        const rawMemberId = (memberForm.id || "").trim();
+        const isNotAssigned = rawMemberId.toLowerCase() === "not assigned";
+        if (!rawMemberId || rawMemberId.length < 2 || isNotAssigned) {
           delete memberData.id;
+        } else {
+          memberData.id = rawMemberId.toUpperCase();
         }
         memberData.subscriptionType = normalizeSubscriptionType(memberData.subscriptionType);
         
@@ -4288,8 +4318,10 @@ Indian Muslim Association, Hong Kong`;
       setCurrentInvalidField(null);
       setEditingMember(member);
       // Include all fields from add member form - use actual values from member object
+      const rawMemberId = member.id || "";
+      const sanitizedMemberId = String(rawMemberId).trim().toLowerCase() === "not assigned" ? "" : rawMemberId;
       setMemberForm({
-        id: member.id || "",
+        id: sanitizedMemberId,
         name: member.name || "",
         email: member.email || "",
         phone: member.phone || "",
@@ -4324,15 +4356,20 @@ Indian Muslim Association, Hong Kong`;
 
         // Compare each field and only include if changed
         // Compare member ID (if changed, need to update)
-        if (memberForm.id !== (originalMember.id || "")) {
+        const rawMemberId = (memberForm.id || "").trim();
+        const isNotAssigned = rawMemberId.toLowerCase() === "not assigned";
+        const normalizedInputId = isNotAssigned ? "" : rawMemberId;
+        if (normalizedInputId !== (originalMember.id || "")) {
           // Validate member ID format (must be at least 2 alphanumeric characters)
-          if (memberForm.id && memberForm.id.length < 2) {
+          if (normalizedInputId && normalizedInputId.length < 2) {
             showToast("Member ID must be at least 2 characters", "error");
             setMemberFieldErrors(prev => ({ ...prev, id: true }));
             setCurrentInvalidField("id");
             return;
           }
-          updateData.id = memberForm.id ? memberForm.id.toUpperCase() : memberForm.id;
+          if (normalizedInputId) {
+            updateData.id = normalizedInputId.toUpperCase();
+          }
         }
         if (memberForm.name !== (originalMember.name || "")) {
           updateData.name = memberForm.name;
@@ -4391,7 +4428,12 @@ Indian Muslim Association, Hong Kong`;
           return;
         }
 
-        await updateMember(editingMember.id, updateData);
+        if (!editingMember._id) {
+          showToast("Member data not available. Please refresh the page.", "error");
+          return;
+        }
+
+        await updateMember(editingMember._id, updateData);
         setEditingMember(null);
         setMemberForm({
           name: "",
@@ -4419,7 +4461,8 @@ Indian Muslim Association, Hong Kong`;
         setShowMemberForm(false);
         showToast("Member updated successfully!");
       } catch (error) {
-        showToast("Failed to update member. Please try again.", "error");
+        const errorMessage = error?.message || "Failed to update member. Please try again.";
+        showToast(errorMessage, "error");
       }
     };
 
@@ -4612,28 +4655,21 @@ Indian Muslim Association, Hong Kong`;
       showToast("Invoice created successfully!");
     };
 
-    const handleMarkAsPaid = async (invoiceId, method = "Cash", screenshotUrl = null, referenceNumber = null, paymentData = {}) => {
+    const handleMarkAsPaid = async (invoiceDbId, method = "Cash", screenshotUrl = null, referenceNumber = null, paymentData = {}) => {
       try {
         // In development, use empty string to use Vite proxy (localhost:4000)
         // In production, use VITE_API_URL if set
         const apiUrl = import.meta.env.VITE_API_URL;
 
-        // CRITICAL: Fetch fresh invoice data from server to avoid stale state issues
-        // This prevents issues when marking multiple invoices as paid in quick succession
-        let invoice = null;
-        try {
-          const freshInvoicesResponse = await fetch(`${apiUrl}/api/invoices`);
-          if (freshInvoicesResponse.ok) {
-            const freshInvoices = await freshInvoicesResponse.json();
-            invoice = freshInvoices.find((inv) => inv.id === invoiceId);
-          }
-        } catch (fetchError) {
-          console.warn("Could not fetch fresh invoices, using local state:", fetchError);
+        const invoiceIdValue = String(invoiceDbId || "").trim();
+        if (!invoiceIdValue) {
+          showToast("Invoice not found", "error");
+          return;
         }
 
-        // Fallback to local state if fresh fetch failed
+        let invoice = invoices.find((inv) => String(inv._id || "").trim() === invoiceIdValue);
         if (!invoice) {
-          invoice = invoices.find((inv) => inv.id === invoiceId);
+          invoice = (selectedMemberInvoices || []).find((inv) => String(inv._id || "").trim() === invoiceIdValue);
         }
 
         if (!invoice) {
@@ -4642,7 +4678,7 @@ Indian Muslim Association, Hong Kong`;
         }
 
         // Don't allow marking already paid invoices
-        if (invoice.status === "Paid") {
+        if (invoice.status === "Paid" || invoice.status === "Completed") {
           showToast("Invoice is already marked as paid", "error");
           return;
         }
@@ -4657,221 +4693,88 @@ Indian Muslim Association, Hong Kong`;
         const paymentMethod = paymentData.method || method || (payment_type === "cash" ? "Cash" : "Online Payment");
         const receiver_name = paymentData.receiver_name || "";
 
-        // Map payment_type to payment_mode (online or cash)
-        const paymentMode = payment_type;
-
         // Generate reference if not provided
         let reference = referenceNumber;
         if (!reference) {
           reference = payment_type === "online" ? `ONL_${Date.now()}` : `CASH_${Date.now()}`;
         }
 
-        // Calculate payment dates
-        const lastPaymentDate = new Date(); // Exact date/time of confirmation
-
-        // Calculate next due year based on the invoice period if possible (e.g. "2025" or "Jan 2025 Yearly...")
-        let nextDueYear = lastPaymentDate.getFullYear() + 1;
-        const periodStr = String(invoice.period || "").trim();
-        const yearMatch = periodStr.match(/\d{4}/);
-        if (yearMatch) {
-          nextDueYear = parseInt(yearMatch[0]) + 1;
-        } else if (periodStr.toLowerCase().includes("yearly") || periodStr.toLowerCase().includes("lifetime")) {
-          nextDueYear = lastPaymentDate.getFullYear() + 1;
+        const member = members.find(m => String(m.id || "").trim() === String(invoice.memberId || "").trim());
+        if (!member?._id) {
+          showToast("Member record is missing a Mongo _id.", "error");
+          return;
         }
 
-        const nextDueDate = new Date(nextDueYear, 0, 1); // Jan 1st of next year
-        nextDueDate.setHours(0, 0, 0, 0); // Reset time to midnight for consistency
-
-        // Step 1: Create payment record with "Completed" status (matches backend approval flow)
-        const paymentResponse = await fetch(`${apiUrl}/api/payments`, {
+        // Step 1: Approve payment (single-step, server handles invoice + member updates)
+        const paymentResponse = await fetch(`${apiUrl}/api/payments/approve-invoice`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            invoiceId: invoiceId,
+            invoiceId: invoice._id,
+            memberId: member._id,
             amount: invoice.amount,
             payment_type: payment_type,
             method: paymentMethod,
             receiver_name: receiver_name,
             reference: reference,
-            member: invoice.memberName || "Member",
-            memberId: invoice.memberId,
-            memberEmail: invoice.memberEmail,
             period: invoice.period,
-            status: "Completed", // Use "Completed" to match backend payment approval status
-            date: new Date().toLocaleDateString("en-GB", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-            }),
+            date: new Date().toISOString(),
             paidToAdmin: adminId,
             paidToAdminName: adminName,
             approvedBy: adminName,
-            approvedAt: new Date().toISOString(),
             screenshot: screenshotUrl || invoice.screenshot || null,
           }),
         });
 
         if (!paymentResponse.ok) {
           const errorData = await paymentResponse.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Failed to create payment record');
-        }
-
-        const newPayment = await paymentResponse.json();
-        console.log('✓ Payment record created:', newPayment);
-
-        // Step 2: Update invoice with payment confirmation fields
-        // Capture the result to verify the update succeeded
-        const invoiceUpdateResult = await updateInvoice(invoiceId, {
-          status: "Paid",
-          method: paymentMethod,
-          reference: reference,
-          paidToAdmin: adminId,
-          paidToAdminName: adminName,
-          payment_mode: paymentMode,
-          payment_proof: screenshotUrl || invoice.screenshot || null,
-          last_payment_date: lastPaymentDate.toISOString(),
-        });
-        
-        console.log('✓ Invoice update result:', invoiceUpdateResult);
-        
-        // Verify the invoice was actually updated
-        if (!invoiceUpdateResult || invoiceUpdateResult.status !== "Paid") {
-          console.error('⚠ Invoice status not updated correctly:', invoiceUpdateResult);
-        }
-
-        // Step 3: Update member with payment confirmation fields
-        if (invoice.memberId) {
-          // Format dates for display strings
-          const lastPaymentDateFormatted = lastPaymentDate.toLocaleDateString('en-GB', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric'
-          }).replace(',', '');
-
-          const nextDueDateFormatted = nextDueDate.toLocaleDateString('en-GB', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric'
-          }).replace(',', '');
-
-          // Check if this is a lifetime membership full payment
-          // Check by invoice type, amount (5250), or membershipFee (5000)
-          const member = members.find(m => m.id === invoice.memberId);
-          const isLifetimeMembershipFullPayment = member?.subscriptionType === "Lifetime Membership" 
-            && !member?.lifetimeMembershipPaid 
-            && (
-              invoice.invoiceType === "lifetime_membership" ||
-              invoice.amount === "HK$5250" ||
-              invoice.membershipFee === 5000
-            );
-
-          const memberUpdateResponse = await fetch(`${apiUrl}/api/members/${invoice.memberId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              payment_status: 'paid',
-              payment_mode: paymentMode,
-              last_payment_date: lastPaymentDate.toISOString(),
-              next_due_date: nextDueDate.toISOString(),
-              payment_proof: screenshotUrl || invoice.screenshot || null,
-              // Mark lifetime membership as paid if this is the full payment
-              lifetimeMembershipPaid: isLifetimeMembershipFullPayment ? true : (member?.lifetimeMembershipPaid || false),
-              // Also update the display string fields
-              lastPayment: lastPaymentDateFormatted,
-              nextDue: nextDueDateFormatted,
-            }),
-          });
-
-          if (!memberUpdateResponse.ok) {
-            const errorData = await memberUpdateResponse.json().catch(() => ({ message: 'Failed to update member payment fields' }));
-            console.error('Failed to update member payment fields:', errorData.message || memberUpdateResponse.statusText);
-            // Continue anyway - invoice is already updated, but show warning
-            showToast(`Payment processed, but member update failed: ${errorData.message || 'Unknown error'}`, "error");
+          const statusCode = paymentResponse.status;
+          const statusText = paymentResponse.statusText || "";
+          if (statusCode === 404) {
+            throw new Error("Payment approval endpoint not found (404). Redeploy backend to include /api/payments/approve-invoice.");
           }
+          throw new Error(
+            errorData.error ||
+            errorData.message ||
+            `Failed to create payment record (${statusCode}${statusText ? ` ${statusText}` : ""})`
+          );
         }
 
-        // Step 4: Store invoice ID for later use (avoid stale closure)
-        const processedInvoiceId = invoiceId;
-        const processedMemberId = invoice.memberId;
+        const approvalResult = await paymentResponse.json();
+        const approvedInvoice = approvalResult?.invoice || null;
+        const approvedMember = approvalResult?.member || null;
 
-        // Step 5: Refresh all data to get updated balances and dates
-        await Promise.all([
-          fetchInvoices(),
-          fetchPayments(),
-          fetchMembers(), // Refresh members to get updated balance, next_due_date, and last_payment_date
-        ]);
+        // Step 2: Store member ID for later use (avoid stale closure)
+        const processedMemberDbId = member?._id || null;
 
-        // Step 6: Fetch fresh invoice data for the confirmation modal (avoid stale data)
-        let freshInvoice = null;
-        try {
-          const invoicesResponse = await fetch(`${apiUrl}/api/invoices`);
-          if (invoicesResponse.ok) {
-            const allInvoices = await invoicesResponse.json();
-            freshInvoice = allInvoices.find(inv => inv.id === processedInvoiceId);
-          }
-        } catch (error) {
-          console.warn("Could not fetch fresh invoice data:", error);
-        }
-        
-        // Use fresh invoice data for confirmation modal, fallback to original if fetch failed
-        const invoiceForConfirmation = freshInvoice || { ...invoice, status: "Paid" };
+        // Step 3: Use approval response for confirmation modal
+        const invoiceForConfirmation = approvedInvoice || { ...invoice, status: "Paid" };
         setPaymentConfirmationInvoice(invoiceForConfirmation);
         setPaymentConfirmationChannels({ email: false, whatsapp: false });
         setShowPaymentConfirmationModal(true);
 
         // Step 7: Update selectedMember and their invoices if we're currently viewing this member's details
-        if (processedMemberId && selectedMember && selectedMember.id === processedMemberId) {
-          // Fetch the updated member directly to ensure we have the latest data
-          try {
-            const memberResponse = await fetch(`${apiUrl}/api/members`);
-            if (memberResponse.ok) {
-              const allMembers = await memberResponse.json();
-              const updatedMember = allMembers.find(m => m.id === processedMemberId);
-              if (updatedMember) {
-                setSelectedMember(updatedMember);
-              }
-            }
-          } catch (error) {
-            console.warn("Could not refresh selected member:", error);
-          }
-          
-          // Also refresh the member's invoices to reflect the payment
-          await refreshSelectedMemberInvoices(processedMemberId);
+        if (processedMemberDbId && selectedMember && selectedMember._id === processedMemberDbId && approvedMember?._id) {
+          setSelectedMember(approvedMember);
         }
 
-        // Step 8: Show success message
-        if (processedMemberId) {
-          // Fetch fresh member data for the success message
-          let updatedMember = null;
-          try {
-            const memberResponse = await fetch(`${apiUrl}/api/members`);
-            if (memberResponse.ok) {
-              const allMembers = await memberResponse.json();
-              updatedMember = allMembers.find(m => m.id === processedMemberId);
-            }
-          } catch (error) {
-            console.warn("Could not fetch member for success message:", error);
-          }
-          if (updatedMember) {
-            // Format dates for display
-            const lastPaymentDateStr = updatedMember.last_payment_date
-              ? new Date(updatedMember.last_payment_date).toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric'
-              })
-              : '-';
-            const nextDueDateStr = updatedMember.next_due_date
-              ? new Date(updatedMember.next_due_date).toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric'
-              })
-              : '-';
-            showToast(`Invoice marked as paid (${paymentMethod})! Last payment: ${lastPaymentDateStr}, Next due: ${nextDueDateStr}`, "success");
-          } else {
-            showToast(`Invoice marked as paid (${paymentMethod})!`, "success");
-          }
+        // Step 4: Show success message
+        if (approvedMember?.last_payment_date || approvedMember?.next_due_date) {
+          const lastPaymentDateStr = approvedMember.last_payment_date
+            ? new Date(approvedMember.last_payment_date).toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric'
+            })
+            : '-';
+          const nextDueDateStr = approvedMember.next_due_date
+            ? new Date(approvedMember.next_due_date).toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric'
+            })
+            : '-';
+          showToast(`Invoice marked as paid (${paymentMethod})! Last payment: ${lastPaymentDateStr}, Next due: ${nextDueDateStr}`, "success");
         } else {
           showToast(`Invoice marked as paid (${paymentMethod})!`, "success");
         }
@@ -4904,7 +4807,7 @@ Indian Muslim Association, Hong Kong`;
 
       const confirmDelete = async () => {
         try {
-          await deleteInvoice(invoice.id || normalizedId);
+          await deleteInvoice(invoice._id || normalizedId);
 
           const isViewingMemberDetail =
             activeSection === "member-detail" &&
@@ -4921,8 +4824,8 @@ Indian Muslim Association, Hong Kong`;
               });
               return updated;
             });
-            if (invoice.memberId) {
-              await refreshSelectedMemberInvoices(invoice.memberId);
+            if (selectedMember?._id) {
+              await refreshSelectedMemberInvoices(selectedMember);
             }
           }
 
@@ -5470,23 +5373,24 @@ Indian Muslim Association, Hong Kong`;
 
       // Try to find from current members state (most up-to-date)
       // IMPORTANT: Only match by ID to avoid showing wrong member's data
-      if (member.id) {
-        const memberIdStr = String(member.id).trim();
-        const foundMember = members.find(m => String(m.id).trim() === memberIdStr);
+      if (member._id) {
+        const memberDbId = String(member._id).trim();
+        const foundMember = members.find(m => String(m._id || "").trim() === memberDbId);
         if (foundMember) {
           memberToView = foundMember;
         }
       }
 
       // Ensure we have a valid member object
-      if (!memberToView || !memberToView.id) {
+      if (!memberToView || !memberToView._id) {
         console.error("Member not found:", member);
         showToast("Member data not available. Please refresh the page.", "error");
         return;
       }
 
-      const targetMemberId = String(memberToView.id).trim();
-      console.log(`Viewing member details for: ${targetMemberId} - ${memberToView.name}`);
+      const targetMemberDbId = String(memberToView._id).trim();
+      const targetMemberBusinessId = String(memberToView.id || "").trim();
+      console.log(`Viewing member details for: ${targetMemberDbId} - ${memberToView.name}`);
 
       // Reset state when switching members - CRITICAL to prevent showing old data
       setMemberDetailInvoicesPage(1);
@@ -5504,10 +5408,13 @@ Indian Muslim Association, Hong Kong`;
       
       try {
         // Fetch invoices SPECIFICALLY for this member from the backend
-        const invoicesResponse = await fetch(`${apiUrl}/api/invoices/member/${encodeURIComponent(targetMemberId)}`);
-        if (invoicesResponse.ok) {
-          const memberInvoices = await invoicesResponse.json();
-          console.log(`✓ Fetched ${memberInvoices.length} invoices for member ${targetMemberId}`);
+        const invoicesResponse = await fetch(`${apiUrl}/api/invoices`);
+          if (invoicesResponse.ok) {
+            const allInvoices = await invoicesResponse.json();
+            const memberInvoices = targetMemberBusinessId
+              ? allInvoices.filter((invoice) => String(invoice.memberId || "").trim() === targetMemberBusinessId)
+              : [];
+            console.log(`✓ Fetched ${memberInvoices.length} invoices for member ${targetMemberBusinessId || targetMemberDbId}`);
           if (shouldBlockMemberDetailForMissingInvoices(memberToView, memberInvoices)) {
             setSelectedMember(null);
             setSelectedMemberInvoices([]);
@@ -5533,16 +5440,13 @@ Indian Muslim Association, Hong Kong`;
           fetchPayments(),
         ]).then(() => {
           // After data is refreshed, update the selected member with latest data
-          if (targetMemberId) {
-            fetch(`${apiUrl}/api/members`)
+          if (targetMemberDbId) {
+            fetch(`${apiUrl}/api/members/${encodeURIComponent(targetMemberDbId)}`)
               .then(response => response.ok ? response.json() : null)
-              .then(allMembers => {
-                if (allMembers) {
-                  const latestMember = allMembers.find(m => String(m.id).trim() === targetMemberId);
-                  if (latestMember) {
-                    console.log(`Updated selected member with fresh data: ${latestMember.id}`);
-                    setSelectedMember(latestMember);
-                  }
+              .then(latestMember => {
+                if (latestMember?._id) {
+                  console.log(`Updated selected member with fresh data: ${latestMember.id || latestMember._id}`);
+                  setSelectedMember(latestMember);
                 }
               })
               .catch(fetchError => {
@@ -5563,6 +5467,12 @@ Indian Muslim Association, Hong Kong`;
         // In development, use empty string to use Vite proxy (localhost:4000)
         // In production, use VITE_API_URL if set
         const apiUrl = import.meta.env.VITE_API_URL;
+        if (!memberId) {
+          console.error("Missing member _id for approval.");
+          showToast("Member data not available. Please refresh the page.", "error");
+          return;
+        }
+
         const response = await fetch(`${apiUrl}/api/members/${memberId}/approve`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -5895,7 +5805,7 @@ Indian Muslim Association, Hong Kong`;
           message={notieMessage}
           type={notieType}
           onClose={() => setNotieMessage(null)}
-          duration={1000}
+          duration={6000}
         />
 
         <main className="admin-main admin-main--sticky-header">
@@ -6452,7 +6362,7 @@ Indian Muslim Association, Hong Kong`;
 
     <input
       type="text"
-      value={memberForm.id}
+      value={(memberForm.id && String(memberForm.id).trim().toLowerCase() === "not assigned") ? "" : (memberForm.id ?? "")}
       onChange={(e) => {
         const value = e.target.value; // allow anything
         setMemberForm(prev => ({ ...prev, id: value }));
@@ -6464,7 +6374,7 @@ Indian Muslim Association, Hong Kong`;
           }
         }
       }}
-      placeholder="Enter Member ID (optional)"
+      placeholder="Enter Member ID (eg: AM001)"
       style={{
         border: memberFieldErrors.id ? "2px solid #ef4444" : undefined
       }}
@@ -6674,7 +6584,7 @@ Indian Muslim Association, Hong Kong`;
                                 </span>
                                 <input
                                   type="text"
-                                  value={memberForm.id || ""}
+                                  value={(memberForm.id && String(memberForm.id).trim().toLowerCase() === "not assigned") ? "" : (memberForm.id ?? "")}
                                   onChange={(e) => {
                                     let value = e.target.value;
                                     // Allow alphanumeric characters, max 10 characters
@@ -6688,7 +6598,7 @@ Indian Muslim Association, Hong Kong`;
                                       }
                                     }
                                   }}
-                                  placeholder="Enter Member ID (e.g. IMA1234)"
+                                  placeholder="Enter Member ID (eg: AM001)"
                                   maxLength={10}
                                   style={{
                                     width: "100%",
@@ -7042,7 +6952,7 @@ Indian Muslim Association, Hong Kong`;
                               <div className="flex gap-sm flex-shrink-0">
                                 <button
                                   className="primary-btn"
-                                  onClick={() => handleApproveMember(member.id)}
+                                  onClick={() => handleApproveMember(member._id)}
                                 >
                                   ✓ Approve
                                 </button>
@@ -7114,10 +7024,10 @@ Indian Muslim Association, Hong Kong`;
                   <div className="admin-members-table-card">
                     <div className="table-wrapper">
                       {(() => {
-                        // Subscription year is always sourced from member.year only.
+                        // Subscription year is always sourced from backend-derived latest invoice year only.
                         const getMemberSubscriptionYear = (member) => {
                           if (!member) return null;
-                          const rawYear = member.year;
+                          const rawYear = member.latestInvoiceYear;
                           if (rawYear === null || rawYear === undefined) {
                             return null;
                           }
@@ -7609,7 +7519,7 @@ Indian Muslim Association, Hong Kong`;
                                     // Get all invoices for this member using business ID
                                     const memberInvoices = getMemberInvoices(member.id);
 
-                                    // Subscription Year - display only member.year (no inference)
+                                    // Subscription Year - display only backend-derived latest invoice year (no inference)
                                     const subYear = getMemberSubscriptionYear(member) || "-";
 
                                     // Derive status: Active / Inactive only
@@ -7734,7 +7644,7 @@ Indian Muslim Association, Hong Kong`;
                                                 style={{ color: "#ef4444" }}
                                                 onClick={(event) => {
                                                   event.stopPropagation();
-                                                  handleDeleteMember(member.id);
+                                                  handleDeleteMember(member._id);
                                                 }}
                                                 aria-label="Delete member"
                                               >
@@ -8360,7 +8270,7 @@ Indian Muslim Association, Hong Kong`;
                                         onClick={() => {
                                           showConfirmation(
                                             `Delete invoice ${invoice.id}? This cannot be undone.`,
-                                            () => handleDeleteInvoice(invoice.id, { skipConfirmation: true }),
+                                            () => handleDeleteInvoice(invoice._id, { skipConfirmation: true }),
                                             null,
                                             "Delete",
                                             { requirePassword: true }
@@ -8410,7 +8320,7 @@ Indian Muslim Association, Hong Kong`;
                                               onClick={() => {
                                                 showConfirmation(
                                                   `Delete invoice ${invoice.id}? This cannot be undone.`,
-                                                  () => handleDeleteInvoice(invoice.id, { skipConfirmation: true }),
+                                                  () => handleDeleteInvoice(invoice._id, { skipConfirmation: true }),
                                                   null,
                                                   "Delete",
                                                   { requirePassword: true }
@@ -13793,8 +13703,8 @@ Indian Muslim Association, Hong Kong`;
                                                 <button
                                                   className="icon-btn icon-btn--delete"
                                                   onClick={() => {
-                                                    if (invoice.id || invoice._id) {
-                                                      handleDeleteInvoice(invoice.id || invoice._id);
+                                                    if (invoice._id) {
+                                                      handleDeleteInvoice(invoice._id);
                                                     }
                                                   }}
                                                   aria-label="Delete Invoice"
@@ -19129,82 +19039,28 @@ Indian Muslim Association, Hong Kong`;
 
                         // Show confirmation dialog
                         showConfirmation(
-                          `Are you sure you want to mark Invoice #${paymentModalInvoice?.id} as paid?`,
+                          `Are you sure you want to mark Invoice #${paymentModalInvoice?.id || paymentModalInvoice?._id} as paid?`,
                           async () => {
                             setUploadingPaymentModal(true);
                             try {
                               const apiUrl = import.meta.env.VITE_API_URL;
                               
                               // Defensive check: Verify invoice ID exists and fetch fresh invoice data
-                              const targetInvoiceId = paymentModalInvoice?.id;
+                              const targetInvoiceId = paymentModalInvoice?._id;
                               if (!targetInvoiceId) {
                                 throw new Error("Invoice ID not found. Please close and try again.");
                               }
-                              
-                              // Fetch fresh invoice data to ensure we're working with the correct invoice
-                              let currentInvoice = paymentModalInvoice;
-                              try {
-                                const invoiceCheckResponse = await fetch(`${apiUrl}/api/invoices`);
-                                if (invoiceCheckResponse.ok) {
-                                  const allInvoices = await invoiceCheckResponse.json();
-                                  const freshInvoice = allInvoices.find(inv => inv.id === targetInvoiceId);
-                                  if (freshInvoice) {
-                                    // Verify invoice is not already paid
-                                    if (freshInvoice.status === "Paid" || freshInvoice.status === "Completed") {
-                                      throw new Error("This invoice is already marked as paid.");
-                                    }
-                                    currentInvoice = freshInvoice;
-                                  }
-                                }
-                              } catch (checkError) {
-                                if (checkError.message.includes("already marked as paid")) {
-                                  throw checkError;
-                                }
-                                console.warn("Could not verify invoice status:", checkError);
+
+                              if (paymentModalInvoice?.status === "Paid" || paymentModalInvoice?.status === "Completed") {
+                                throw new Error("This invoice is already marked as paid.");
                               }
-                              
-                              let imageUrl = paymentModalData.imageUrl || currentInvoice.screenshot;
 
-                              // Upload image if new file exists
-                              if (paymentModalData.imageFile) {
-                                const formData = new FormData();
-                                formData.append("screenshot", paymentModalData.imageFile);
-                                formData.append("uploadType", "invoice-payment-attachment");
-
-                                const uploadResponse = await fetch(`${apiUrl}/api/upload/screenshot`, {
-                                  method: "POST",
-                                  body: formData,
-                                });
-
-                                if (!uploadResponse.ok) {
-                                  // Try to get error message from response
-                                  let errorMessage = "Failed to upload image";
-                                  try {
-                                    const errorData = await uploadResponse.json();
-                                    errorMessage = errorData.error || errorMessage;
-                                    console.error("Upload error response:", errorData);
-                                  } catch (parseError) {
-                                    console.error("Failed to parse error response:", parseError);
-                                    errorMessage = `Upload failed with status ${uploadResponse.status}`;
-                                  }
-                                  throw new Error(errorMessage);
-                                }
-
-                                const uploadData = await uploadResponse.json();
-                                if (!uploadData.url) {
-                                  throw new Error("No URL returned from upload. Please try again.");
-                                }
-                                imageUrl = uploadData.url;
+                              let imageUrl = paymentModalData.imageUrl || paymentModalInvoice.screenshot;
+                              if (paymentModalData.imageFile && paymentModalData.imagePreview) {
+                                imageUrl = paymentModalData.imagePreview;
                               }
 
                               // Image is optional, so no validation needed here
-
-                              // Update invoice with screenshot if image was uploaded
-                              if (imageUrl && imageUrl !== currentInvoice.screenshot) {
-                                await updateInvoice(targetInvoiceId, {
-                                  screenshot: imageUrl,
-                                });
-                              }
 
                               // Mark invoice as paid - wait for it to complete before closing modal
                               // Ensure payment_type and method are properly set
@@ -20158,7 +20014,13 @@ Indian Muslim Association, Hong Kong`;
                     let pdfUrl, downloadName;
                     if (selectedPdfInvoice) {
                       const viewerParam = selectedPdfInvoice.memberId ? `?viewerMemberId=${encodeURIComponent(selectedPdfInvoice.memberId)}` : '';
-                      pdfUrl = `${apiUrl}/api/invoices/${selectedPdfInvoice.id}/pdf-receipt/download${viewerParam}`;
+                      const invoiceDbId = selectedPdfInvoice._id || selectedPdfInvoice.id;
+                      if (!invoiceDbId || /^INV-/i.test(String(invoiceDbId))) {
+                        console.error("❌ Blocked PDF request with invalid invoice id:", invoiceDbId);
+                        showToast("PDF requests require a valid invoice _id.", "error");
+                        return;
+                      }
+                      pdfUrl = `${apiUrl}/api/invoices/${invoiceDbId}/pdf-receipt/download${viewerParam}`;
                       downloadName = `Invoice_Receipt_${selectedPdfInvoice.id}.pdf`;
                     } else if (selectedPdfDonation) {
                       pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download`;
@@ -20207,7 +20069,13 @@ Indian Muslim Association, Hong Kong`;
                     let pdfUrl, downloadName;
                     if (selectedPdfInvoice) {
                       const viewerParam = selectedPdfInvoice.memberId ? `?viewerMemberId=${encodeURIComponent(selectedPdfInvoice.memberId)}` : '';
-                      pdfUrl = `${apiUrl}/api/invoices/${selectedPdfInvoice.id}/pdf-receipt/download${viewerParam}`;
+                      const invoiceDbId = selectedPdfInvoice._id || selectedPdfInvoice.id;
+                      if (!invoiceDbId || /^INV-/i.test(String(invoiceDbId))) {
+                        console.error("❌ Blocked PDF request with invalid invoice id:", invoiceDbId);
+                        showToast("PDF requests require a valid invoice _id.", "error");
+                        return;
+                      }
+                      pdfUrl = `${apiUrl}/api/invoices/${invoiceDbId}/pdf-receipt/download${viewerParam}`;
                       downloadName = `Invoice_Receipt_${selectedPdfInvoice.id}.pdf`;
                     } else if (selectedPdfDonation) {
                       pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download`;
@@ -20660,6 +20528,14 @@ Indian Muslim Association, Hong Kong`;
                         ? ""
                         : import.meta.env.VITE_API_URL || "";
 
+                      const confirmationInvoiceId = String(paymentConfirmationInvoice?._id || "").trim();
+                      if (!confirmationInvoiceId || /^INV-/i.test(confirmationInvoiceId)) {
+                        console.error("❌ Blocked payment confirmation request with invalid invoice id:", confirmationInvoiceId);
+                        showToast("Payment confirmation requires a valid invoice _id.", "error");
+                        setSendingPaymentConfirmation(false);
+                        return;
+                      }
+
                       let emailSuccess = false;
                       let whatsappSuccess = false;
                       const errors = [];
@@ -20668,7 +20544,7 @@ Indian Muslim Association, Hong Kong`;
                       if (paymentConfirmationChannels.email) {
                         try {
                           console.log('📧 Sending payment confirmation email...');
-                          const emailResponse = await fetch(`${apiUrl}/api/invoices/${paymentConfirmationInvoice.id}/send-payment-confirmation`, {
+                          const emailResponse = await fetch(`${apiUrl}/api/invoices/${confirmationInvoiceId}/send-payment-confirmation`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                           });
@@ -20718,7 +20594,7 @@ Indian Muslim Association, Hong Kong`;
                         try {
                           // Store the member ID to avoid stale closure issues
                           const targetMemberId = paymentConfirmationInvoice.memberId;
-                          const targetInvoiceId = paymentConfirmationInvoice.id || paymentConfirmationInvoice._id;
+                          const targetInvoiceDbId = paymentConfirmationInvoice._id;
                           
                           // Fetch fresh member data to ensure we have the correct member
                           let member = null;
@@ -20740,7 +20616,7 @@ Indian Muslim Association, Hong Kong`;
                               const invoiceResponse = await fetch(`${apiUrl}/api/invoices`);
                               if (invoiceResponse.ok) {
                                 const allInvoices = await invoiceResponse.json();
-                                const updatedInvoice = allInvoices.find(inv => inv.id === targetInvoiceId || inv._id === targetInvoiceId);
+                                const updatedInvoice = allInvoices.find(inv => inv._id === targetInvoiceDbId);
                                 if (updatedInvoice) {
                                   latestInvoice = updatedInvoice;
                                   // Update the state to reflect the latest invoice data
@@ -20758,32 +20634,39 @@ Indian Muslim Association, Hong Kong`;
                               const paymentResponse = await fetch(`${apiUrl}/api/payments`);
                               if (paymentResponse.ok) {
                                 const allPayments = await paymentResponse.json();
-                                payment = allPayments.find(p => p.invoiceId === targetInvoiceId);
+                                const paymentInvoiceId = latestInvoice?.id || paymentConfirmationInvoice?.id;
+                                payment = allPayments.find(p => p.invoiceId === paymentInvoiceId);
                               }
                             } catch (paymentError) {
                               console.warn('Could not fetch fresh payment data, using cached:', paymentError);
-                              payment = payments.find(p => p.invoiceId === targetInvoiceId);
+                              const paymentInvoiceId = latestInvoice?.id || paymentConfirmationInvoice?.id;
+                              payment = payments.find(p => p.invoiceId === paymentInvoiceId);
                             }
                             
                             // Determine invoice ID for receipt link handling
-                            const invoiceId = latestInvoice?.id || paymentConfirmationInvoice?.id || null;
+                            const invoiceId = targetInvoiceDbId || latestInvoice?._id || paymentConfirmationInvoice?._id || null;
 
                             // Trigger PDF generation to keep backend workflow intact
                             if (invoiceId) {
-                              try {
-                                const viewerParam = (latestInvoice?.memberId || paymentConfirmationInvoice?.memberId)
-                                  ? `?viewerMemberId=${encodeURIComponent(latestInvoice?.memberId || paymentConfirmationInvoice?.memberId)}`
-                                  : '';
-                                const pdfResponse = await fetch(`${apiUrl}/api/invoices/${invoiceId}/pdf-receipt${viewerParam}`, {
-                                  method: 'GET',
-                                });
+                              if (/^INV-/i.test(String(invoiceId))) {
+                                console.error("❌ Blocked PDF generation with business invoice number:", invoiceId);
+                                showToast("PDF generation requires a valid invoice _id.", "error");
+                              } else {
+                                try {
+                                  const viewerParam = (latestInvoice?.memberId || paymentConfirmationInvoice?.memberId)
+                                    ? `?viewerMemberId=${encodeURIComponent(latestInvoice?.memberId || paymentConfirmationInvoice?.memberId)}`
+                                    : '';
+                                  const pdfResponse = await fetch(`${apiUrl}/api/invoices/${invoiceId}/pdf-receipt${viewerParam}`, {
+                                    method: 'GET',
+                                  });
 
-                                if (pdfResponse.ok) {
-                                  await pdfResponse.json().catch(() => null);
+                                  if (pdfResponse.ok) {
+                                    await pdfResponse.json().catch(() => null);
+                                  }
+                                } catch (pdfError) {
+                                  console.error('Error generating PDF for WhatsApp:', pdfError);
+                                  // Continue even if PDF generation fails; message fallback is handled via invoiceId
                                 }
-                              } catch (pdfError) {
-                                console.error('Error generating PDF for WhatsApp:', pdfError);
-                                // Continue even if PDF generation fails; message fallback is handled via invoiceId
                               }
                             }
                             
@@ -20910,7 +20793,7 @@ ${receiptTitle}
 Date: ${displayDate}
 Member ID: ${member.id || '-'}
 Name: ${member.name}
-Receipt No: ${receiptNo || '-'}
+Receipt No: ${receiptNo || ''}
 Amount: ${amountStr}
 Payment Mode: ${paymentMode}
 
@@ -20961,7 +20844,7 @@ ${receiptTitle}
 Date: ${displayDate}
 Member ID: ${member.id || '-'}
 Name: ${member.name}
-Receipt No: ${receiptNo || '-'}
+Receipt No: ${receiptNo || ''}
 Amount: ${amountStr}
 Payment Mode: ${paymentMode}
 
@@ -20996,7 +20879,7 @@ Thank you for supporting the IMA community!${receiptPdfLink ? `\n\nReceipt PDF:\
                                 memberId: member.id,
                                 memberEmail: member.email,
                                 memberName: member.name,
-                                message: `Payment confirmation sent to ${member.name} (${member.phone}) - Invoice #${invoiceId || 'N/A'}${receiptPdfLink ? ' (with receipt link)' : ''} - Receipt No: ${receiptNo || 'N/A'}`,
+                                message: `Payment confirmation sent to ${member.name} (${member.phone}) - Invoice #${latestInvoice?.id || paymentConfirmationInvoice?.id || 'N/A'}${receiptPdfLink ? ' (with receipt link)' : ''}${receiptNo ? ` - Receipt No: ${receiptNo}` : ''}`,
                                 status: "Delivered",
                               };
                               addCommunication(comm);

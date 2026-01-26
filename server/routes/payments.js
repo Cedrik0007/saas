@@ -5,14 +5,24 @@ import InvoiceModel from "../models/Invoice.js";
 import UserModel from "../models/User.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { sendPaymentApprovalEmail, sendPaymentRejectionEmail } from "../utils/emailHelpers.js";
-import { emitPaymentUpdate } from "../config/socket.js";
-import { approvePaymentAndMarkInvoicePaid } from "../services/paymentApprovalService.js";
+import { emitInvoiceUpdate, emitMemberUpdate, emitPaymentUpdate } from "../config/socket.js";
+import { approveInvoicePayment, approvePaymentAndMarkInvoicePaid } from "../services/paymentApprovalService.js";
 
 const router = express.Router();
 const objectIdRegex = /^[a-f\d]{24}$/i;
 
 const normalizeMemberId = (rawMemberId = "") =>
   typeof rawMemberId === "string" ? rawMemberId.trim() : "";
+
+const assertValidObjectId = (value, contextLabel = "id") => {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized || !objectIdRegex.test(normalized)) {
+    const error = new Error(`${contextLabel} must be a valid Mongo _id`);
+    error.status = 400;
+    throw error;
+  }
+  return normalized;
+};
 
 const assertValidMemberId = (value, contextLabel = "memberId") => {
   const normalized = normalizeMemberId(value);
@@ -122,6 +132,55 @@ router.post("/", async (req, res) => {
   }
 });
 
+// POST approve invoice payment (single-step approval by invoice _id)
+router.post("/approve-invoice", async (req, res) => {
+  try {
+    await ensureConnection();
+
+    let invoiceMongoId;
+    let memberMongoId;
+    try {
+      invoiceMongoId = assertValidObjectId(req.body.invoiceId, "invoiceId");
+      memberMongoId = assertValidObjectId(req.body.memberId, "memberId");
+    } catch (validationError) {
+      return res.status(validationError.status || 400).json({ error: validationError.message });
+    }
+
+    const { payment, invoice, member } = await approveInvoicePayment({
+      invoiceMongoId,
+      memberMongoId,
+      amount: req.body.amount,
+      paymentType: req.body.payment_type,
+      method: req.body.method,
+      receiverName: req.body.receiver_name,
+      reference: req.body.reference,
+      screenshot: req.body.screenshot,
+      date: req.body.date,
+      paidToAdmin: req.body.paidToAdmin,
+      paidToAdminName: req.body.paidToAdminName,
+      approvedBy: req.body.approvedBy || req.body.adminName || req.body.adminId,
+    });
+
+    if (member?.id) {
+      await calculateAndUpdateMemberBalance(member.id);
+    }
+
+    emitPaymentUpdate('created', payment);
+    if (invoice) {
+      emitInvoiceUpdate('updated', invoice);
+    }
+    if (member) {
+      emitMemberUpdate('updated', member);
+    }
+
+    res.json({ success: true, payment, invoice, member });
+  } catch (error) {
+    console.error("Error approving invoice payment:", error);
+    const statusCode = error.status || error.statusCode || 500;
+    res.status(statusCode).json({ error: error.message });
+  }
+});
+
 // PUT approve payment
 router.put("/:id/approve", async (req, res) => {
   try {
@@ -138,7 +197,11 @@ router.put("/:id/approve", async (req, res) => {
     }
 
     if (member && invoice) {
-      await sendPaymentApprovalEmail(member, payment, invoice);
+      try {
+        await sendPaymentApprovalEmail(member, payment, invoice);
+      } catch (emailError) {
+        console.warn("⚠ Payment approved, but email failed:", emailError?.message || emailError);
+      }
     }
 
     emitPaymentUpdate('updated', payment);
@@ -177,7 +240,11 @@ router.put("/:id/reject", async (req, res) => {
     let member = null;
 
     if (payment.invoiceId) {
-      invoice = await InvoiceModel.findOne({ id: payment.invoiceId });
+      if (objectIdRegex.test(payment.invoiceId)) {
+        invoice = await InvoiceModel.findById(payment.invoiceId);
+      } else {
+        invoice = await InvoiceModel.findOne({ id: payment.invoiceId });
+      }
     }
 
     let normalizedMemberId;
@@ -196,8 +263,11 @@ router.put("/:id/reject", async (req, res) => {
 
     // Update related invoice back to Unpaid
     if (payment.invoiceId) {
+      const invoiceQuery = objectIdRegex.test(payment.invoiceId)
+        ? { _id: payment.invoiceId }
+        : { id: payment.invoiceId };
       await InvoiceModel.findOneAndUpdate(
-        { id: payment.invoiceId },
+        invoiceQuery,
         {
           $set: {
             status: "Unpaid",

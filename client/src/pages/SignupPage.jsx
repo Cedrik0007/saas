@@ -435,7 +435,7 @@ export function SignupPage() {
               message={notieMessage}
               type={notieType}
               onClose={() => setNotieMessage(null)}
-              duration={3000}
+              duration={6000}
             />
           </div>
         </div>

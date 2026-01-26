@@ -1,7 +1,21 @@
 import mongoose from "mongoose";
 
 const UserSchema = new mongoose.Schema({
-  id: { type: String, unique: true, sparse: true },
+  id: {
+    type: String,
+    unique: true,
+    sparse: true,
+    validate: {
+      validator: (value) => {
+        if (value === null || value === undefined) return true;
+        const normalized = String(value).trim();
+        if (!normalized) return false;
+        if (normalized.toUpperCase() === "NOT ASSIGNED") return false;
+        return true;
+      },
+      message: "Member ID must be a valid business identifier or null.",
+    },
+  },
   name: String,
   email: String,
   phone: String,

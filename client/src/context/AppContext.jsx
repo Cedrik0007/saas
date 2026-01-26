@@ -127,8 +127,7 @@ export function AppProvider({ children }) {
   const [selectedMember, setSelectedMember] = useState(null);
   // In development, use empty string to use Vite proxy (localhost:4000)
   // In production, use VITE_API_URL if set
-  // const apiBaseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-  const apiBaseUrl = import.meta.env.VITE_API_URL;
+  const apiBaseUrl = import.meta.env.DEV ? "" : (import.meta.env.VITE_API_URL || "");
 
   
   // Socket.io connection and request deduplication
@@ -217,20 +216,20 @@ export function AppProvider({ children }) {
       // Listen for invoice updates
       socketRef.current.on('invoice:created', (invoice) => {
         setInvoices(prev => {
-          const exists = prev.find(inv => inv.id === invoice.id);
+          const exists = prev.find(inv => inv._id === invoice._id);
           if (exists) {
-            return prev.map(inv => inv.id === invoice.id ? invoice : inv);
+            return prev.map(inv => inv._id === invoice._id ? invoice : inv);
           }
           return [invoice, ...prev];
         });
       });
 
       socketRef.current.on('invoice:updated', (invoice) => {
-        setInvoices(prev => prev.map(inv => inv.id === invoice.id ? invoice : inv));
+        setInvoices(prev => prev.map(inv => inv._id === invoice._id ? invoice : inv));
       });
 
       socketRef.current.on('invoice:deleted', (data) => {
-        setInvoices(prev => prev.filter(inv => inv.id !== data.id));
+        setInvoices(prev => prev.filter(inv => inv._id !== data.id && inv.id !== data.businessId));
       });
 
       // Listen for payment updates
@@ -267,6 +266,46 @@ export function AppProvider({ children }) {
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!window.__invoiceIdFetchGuardInstalled) {
+      const originalFetch = window.fetch.bind(window);
+      const guardedFetch = async (input, init = {}) => {
+        const url = typeof input === "string" ? input : input?.url || "";
+
+        if (/\/api\/invoices\/INV-/i.test(url)) {
+          console.error("❌ Blocked API call using business invoice number in URL:", url);
+          throw new Error("BUG: Business invoice number used as API identifier");
+        }
+
+        const body = init?.body;
+        if (typeof body === "string") {
+          try {
+            const parsed = JSON.parse(body);
+            const invoiceId = parsed?.invoiceId;
+            if (typeof invoiceId === "string" && invoiceId.startsWith("INV-")) {
+              console.error("❌ Blocked API call using business invoice number in payload:", invoiceId);
+              throw new Error("BUG: Business invoice number used as API identifier");
+            }
+          } catch (error) {
+            // Ignore non-JSON payloads
+          }
+        }
+
+        return originalFetch(input, init);
+      };
+      guardedFetch.__originalFetch = originalFetch;
+      window.fetch = guardedFetch;
+      window.__invoiceIdFetchGuardInstalled = true;
+    }
+
+    return () => {
+      if (window.__invoiceIdFetchGuardInstalled && window.fetch?.__originalFetch) {
+        window.fetch = window.fetch.__originalFetch;
+        window.__invoiceIdFetchGuardInstalled = false;
       }
     };
   }, []);
@@ -627,6 +666,10 @@ export function AppProvider({ children }) {
   };
 
   const updateMember = async (id, updatedData) => {
+    if (!id) {
+      console.error("Missing member _id for update.");
+      throw new Error("Member data not available. Please refresh the page.");
+    }
     const requestKey = `update-member-${id}-${Date.now()}`;
     const normalizedUpdate = updatedData && typeof updatedData === "object"
       ? (
@@ -638,7 +681,10 @@ export function AppProvider({ children }) {
     
     // Optimistic update
     const previousMembers = members;
-    setMembers(prev => prev.map(m => m.id === id ? { ...m, ...normalizedUpdate, _isOptimistic: true } : m));
+    setMembers(prev => prev.map(m => {
+      const matches = m._id ? m._id === id : m.id === id;
+      return matches ? { ...m, ...normalizedUpdate, _isOptimistic: true } : m;
+    }));
     
     try {
       const updated = await makeRequest(requestKey, async () => {
@@ -647,13 +693,20 @@ export function AppProvider({ children }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(normalizedUpdate),
         });
-        if (!response.ok) throw new Error('Failed to update member');
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const message = errorData.message || errorData.error || 'Failed to update member';
+          throw new Error(message);
+        }
         return await response.json();
       });
       const normalizedResult = normalizeMemberRecord(updated);
       
       // Replace optimistic update with real one
-      setMembers(prev => prev.map(m => m.id === id ? normalizedResult : m));
+      setMembers(prev => prev.map(m => {
+        const matches = m._id ? m._id === id : m.id === id;
+        return matches ? normalizedResult : m;
+      }));
       console.log('✓ Member updated on server:', normalizedResult);
       return normalizedResult;
     } catch (error) {
@@ -665,14 +718,22 @@ export function AppProvider({ children }) {
   };
 
   const deleteMember = async (id) => {
+    if (!id) {
+      console.error("Missing member _id for delete.");
+      throw new Error("Member data not available. Please refresh the page.");
+    }
     const requestKey = `delete-member-${id}-${Date.now()}`;
     
     // Optimistic update
     const previousMembers = members;
     const previousInvoices = invoices;
-    const deletedMember = members.find(m => m.id === id);
-    setMembers(prev => prev.filter((m) => m.id !== id));
-    setInvoices(prev => prev.filter((inv) => inv.memberId !== id));
+    const deletedMember = members.find(m => (m._id ? m._id === id : m.id === id));
+    const deletedBusinessId = deletedMember?.id;
+    setMembers(prev => prev.filter((m) => (m._id ? m._id !== id : m.id !== id)));
+    setInvoices(prev => {
+      if (!deletedBusinessId) return prev;
+      return prev.filter((inv) => inv.memberId !== deletedBusinessId);
+    });
     updateMetrics({ totalMembers: metrics.totalMembers - 1 });
     
     try {
@@ -722,22 +783,37 @@ export function AppProvider({ children }) {
     }
   };
 
+  const isBusinessInvoiceNumber = (value) => /^INV-/i.test(String(value || "").trim());
+
+  const assertInvoiceMongoId = (value, contextLabel = "invoiceId") => {
+    const normalized = String(value || "").trim();
+    if (!normalized) {
+      throw new Error(`${contextLabel} is required`);
+    }
+    if (isBusinessInvoiceNumber(normalized)) {
+      console.error(`❌ Blocked API call using business invoice number: ${normalized}`);
+      throw new Error("Invoice API calls must use Mongo _id, not business invoice number.");
+    }
+    return normalized;
+  };
+
   const updateInvoice = async (id, updatedData) => {
-    const requestKey = `update-invoice-${id}-${Date.now()}`;
+    const resolvedId = assertInvoiceMongoId(id, "updateInvoice id");
+    const requestKey = `update-invoice-${resolvedId}-${Date.now()}`;
     
     // Optimistic update
     const previousInvoices = invoices;
     const previousMetrics = { ...metrics };
-    const oldInvoice = invoices.find((inv) => inv.id === id);
+    const oldInvoice = invoices.find((inv) => String(inv._id || "") === resolvedId);
     
     // Log for debugging
-    console.log(`📝 updateInvoice called for ${id}:`, { 
+    console.log(`📝 updateInvoice called for ${resolvedId}:`, { 
       oldStatus: oldInvoice?.status, 
       newStatus: updatedData.status,
       hasOldInvoice: !!oldInvoice 
     });
     
-    setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, ...updatedData, _isOptimistic: true } : inv));
+    setInvoices(prev => prev.map(inv => String(inv._id || "") === resolvedId ? { ...inv, ...updatedData, _isOptimistic: true } : inv));
     
     // Optimistic metrics update
     if (updatedData.status === "Paid" && oldInvoice && oldInvoice.status !== "Paid") {
@@ -751,7 +827,7 @@ export function AppProvider({ children }) {
     
     try {
       const updated = await makeRequest(requestKey, async () => {
-        const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, {
+        const response = await fetch(`${apiBaseUrl}/api/invoices/${resolvedId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(updatedData),
@@ -759,12 +835,12 @@ export function AppProvider({ children }) {
         
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          console.error(`❌ Invoice update failed for ${id}:`, errorData);
+          console.error(`❌ Invoice update failed for ${resolvedId}:`, errorData);
           throw new Error(errorData.message || errorData.error || 'Failed to update invoice');
         }
         
         const result = await response.json();
-        console.log(`✓ Invoice ${id} API response:`, { 
+        console.log(`✓ Invoice ${resolvedId} API response:`, { 
           status: result.status, 
           receiptNumber: result.receiptNumber 
         });
@@ -772,7 +848,7 @@ export function AppProvider({ children }) {
       });
       
       // Replace optimistic update with real one
-      setInvoices(prev => prev.map(inv => inv.id === id ? updated : inv));
+      setInvoices(prev => prev.map(inv => String(inv._id || "") === resolvedId ? updated : inv));
       console.log('✓ Invoice updated on server:', updated.id, updated.status);
       return updated;
     } catch (error) {
@@ -785,17 +861,18 @@ export function AppProvider({ children }) {
   };
 
   const deleteInvoice = async (id) => {
-    const requestKey = `delete-invoice-${id}-${Date.now()}`;
+    const resolvedId = assertInvoiceMongoId(id, "deleteInvoice id");
+    const requestKey = `delete-invoice-${resolvedId}-${Date.now()}`;
     
     try {
       await makeRequest(requestKey, async () => {
-        const response = await fetch(`${apiBaseUrl}/api/invoices/${id}`, { method: 'DELETE' });
+        const response = await fetch(`${apiBaseUrl}/api/invoices/${resolvedId}`, { method: 'DELETE' });
         if (!response.ok) throw new Error('Failed to delete invoice');
         return response;
       });
       
-      setInvoices(prev => prev.filter((inv) => inv.id !== id));
-      console.log('✓ Invoice deleted from server:', id);
+      setInvoices(prev => prev.filter((inv) => String(inv._id || "") !== resolvedId));
+      console.log('✓ Invoice deleted from server:', resolvedId);
     } catch (error) {
       console.error('Error deleting invoice:', error);
       throw error;
@@ -815,6 +892,11 @@ export function AppProvider({ children }) {
         }),
       };
       
+    if (payment.invoiceId && isBusinessInvoiceNumber(payment.invoiceId)) {
+      console.error(`❌ Blocked payment payload with business invoice number: ${payment.invoiceId}`);
+      throw new Error("Payment payload must not include business invoice numbers.");
+    }
+
     // Optimistic update
     const tempId = `temp-payment-${Date.now()}`;
     const optimisticPayment = { ...paymentData, _id: tempId, id: tempId, _isOptimistic: true };
@@ -826,16 +908,6 @@ export function AppProvider({ children }) {
     setPayments(prev => [optimisticPayment, ...prev]);
     setRecentPayments(prev => [optimisticPayment, ...prev]);
     setPaymentHistory(prev => [optimisticPayment, ...prev]);
-    
-    // Optimistic invoice update
-    if (payment.invoiceId) {
-      const previousInvoices = invoices;
-      setInvoices(prev => prev.map(inv => 
-        inv.id === payment.invoiceId 
-          ? { ...inv, status: "Paid", method: payment.method, reference: payment.reference, _isOptimistic: true }
-          : inv
-      ));
-    }
     
     // Optimistic metrics update
     const amount = parseFloat(payment.amount.replace(/[^0-9.]/g, ""));
@@ -866,23 +938,6 @@ export function AppProvider({ children }) {
       setRecentPayments(prev => prev.map(p => (p._isOptimistic && (p._id === tempId || p.id === tempId)) ? newPayment : p));
       setPaymentHistory(prev => prev.map(p => (p._isOptimistic && (p._id === tempId || p.id === tempId)) ? newPayment : p));
       
-      // Update related invoice (real update)
-      if (payment.invoiceId) {
-        try {
-        await updateInvoice(payment.invoiceId, { 
-          status: "Paid", 
-          method: payment.method, 
-          reference: payment.reference,
-          screenshot: payment.screenshot || payment.screenshotUrl,
-          paidToAdmin: payment.paidToAdmin,
-          paidToAdminName: payment.paidToAdminName,
-        });
-        } catch (invoiceError) {
-          console.error('Error updating invoice after payment:', invoiceError);
-          // Don't throw - payment was successful
-        }
-      }
-
       console.log('✓ Payment saved to MongoDB:', newPayment);
       return newPayment;
     } catch (error) {
@@ -892,9 +947,6 @@ export function AppProvider({ children }) {
       setRecentPayments(previousRecentPayments);
       setPaymentHistory(previousPaymentHistory);
       setMetrics(previousMetrics);
-      if (payment.invoiceId) {
-        // Rollback invoice update would be handled by updateInvoice's own rollback
-      }
       throw error;
     }
   };

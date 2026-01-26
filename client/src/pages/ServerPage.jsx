@@ -161,7 +161,11 @@ export function ServerPage() {
         ...memberForm,
         subscriptionType: normalizeSubscriptionType(memberForm.subscriptionType),
       };
-      await updateMember(editingItem.id, payload);
+      if (!editingItem?._id) {
+        showToast("Member data not available. Please refresh the page.", "error");
+        return;
+      }
+      await updateMember(editingItem._id, payload);
       showToast("Member updated successfully!");
       setShowForm(false);
       setEditingItem(null);
@@ -309,7 +313,7 @@ export function ServerPage() {
         amount: invoiceForm.amount.startsWith("$") ? invoiceForm.amount : `$${invoiceForm.amount}`,
         subscriptionType: normalizeSubscriptionType(invoiceForm.invoiceType),
       };
-      await updateInvoice(editingItem.id, invoiceData);
+      await updateInvoice(editingItem._id, invoiceData);
       showToast("Invoice updated successfully!");
       setShowForm(false);
       setEditingItem(null);
@@ -551,7 +555,7 @@ export function ServerPage() {
         message={notieMessage}
         type={notieType}
         onClose={() => setNotieMessage(null)}
-        duration={3000}
+        duration={6000}
       />
 
       <main className="server-main server-main--sticky-header">
@@ -791,7 +795,7 @@ export function ServerPage() {
                             </button>
                             <button
                               className="server-action-btn server-action-btn--delete"
-                              onClick={() => handleDeleteMember(member.id)}
+                              onClick={() => handleDeleteMember(member._id)}
                               title="Delete Member"
                               aria-label="Delete Member"
                             >
@@ -1104,7 +1108,7 @@ export function ServerPage() {
                             </button>
                             <button
                               className="server-action-btn server-action-btn--delete"
-                              onClick={() => handleDeleteInvoice(invoice.id)}
+                              onClick={() => handleDeleteInvoice(invoice._id)}
                               title="Delete Invoice"
                               aria-label="Delete Invoice"
                             >

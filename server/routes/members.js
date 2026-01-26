@@ -18,15 +18,23 @@ const upload = multer({ storage: multer.memoryStorage() });
 const { Types } = mongoose;
 
 const normalizeMemberIdValue = (rawValue = "") => {
-  if (typeof rawValue !== "string") {
+  if (rawValue === null || rawValue === undefined) {
     return "";
   }
-  return rawValue.trim().toUpperCase();
+  return String(rawValue).trim().toUpperCase();
+};
+
+const isDisallowedMemberIdValue = (rawValue) => {
+  const normalized = normalizeMemberIdValue(rawValue);
+  return normalized === "" || normalized === "NOT ASSIGNED";
 };
 
 const formatMemberIdForSave = (rawValue) => {
   const normalized = normalizeMemberIdValue(rawValue);
-  return normalized || null;
+  if (!normalized || normalized === "NOT ASSIGNED") {
+    return null;
+  }
+  return normalized;
 };
 
 const findMemberByIdentifier = async (identifier) => {
@@ -42,7 +50,7 @@ const findMemberByIdentifier = async (identifier) => {
   const normalizedCandidate = normalizeMemberIdValue(identifierStr);
   let member = null;
 
-  if (normalizedCandidate) {
+  if (normalizedCandidate && normalizedCandidate !== "NOT ASSIGNED") {
     member = await UserModel.findOne({ id: normalizedCandidate });
   }
 
@@ -58,7 +66,40 @@ router.get("/", async (req, res) => {
   try {
     await ensureConnection();
     const members = await UserModel.find({}).sort({ createdAt: -1 }).lean();
-    res.json(members);
+    const memberIds = members
+      .map((member) => member?.id)
+      .filter((value) => typeof value === "string" && value.trim().length > 0);
+
+    const latestInvoiceYearByMember = {};
+    if (memberIds.length > 0) {
+      const invoices = await InvoiceModel.find({ memberId: { $in: memberIds } })
+        .select("memberId period")
+        .lean();
+
+      invoices.forEach((invoice) => {
+        const memberId = typeof invoice?.memberId === "string" ? invoice.memberId.trim() : "";
+        if (!memberId) return;
+        const yearMatch = String(invoice?.period || "").match(/\d{4}/);
+        if (!yearMatch) return;
+        const yearValue = parseInt(yearMatch[0], 10);
+        if (Number.isNaN(yearValue)) return;
+        const existing = latestInvoiceYearByMember[memberId];
+        if (!existing || yearValue > existing) {
+          latestInvoiceYearByMember[memberId] = yearValue;
+        }
+      });
+    }
+
+    const enrichedMembers = members.map((member) => {
+      const memberId = typeof member?.id === "string" ? member.id.trim() : "";
+      const latestYear = memberId ? latestInvoiceYearByMember[memberId] : null;
+      return {
+        ...member,
+        latestInvoiceYear: latestYear ? String(latestYear) : null,
+      };
+    });
+
+    res.json(enrichedMembers);
   } catch (error) {
     console.error("Error fetching members:", error);
     res.status(500).json({ error: error.message });
@@ -169,11 +210,18 @@ router.post("/", async (req, res) => {
       });
     }
     
-    let memberId = formatMemberIdForSave(req.body.id || "");
-    if (memberId) {
-      const existing = await UserModel.findOne({ id: memberId });
-      if (existing) {
-        return res.status(400).json({ message: "Member ID already exists" });
+    let memberId = null;
+    if (Object.prototype.hasOwnProperty.call(req.body, "id")) {
+      if (isDisallowedMemberIdValue(req.body.id)) {
+        return res.status(400).json({ message: "Member ID cannot be empty or 'Not Assigned'." });
+      }
+
+      memberId = formatMemberIdForSave(req.body.id);
+      if (memberId) {
+        const existing = await UserModel.findOne({ id: memberId });
+        if (existing) {
+          return res.status(400).json({ message: "Member ID already exists" });
+        }
       }
     }
     
@@ -366,7 +414,8 @@ router.post("/", async (req, res) => {
   } catch (error) {
     console.error("Error creating member:", error);
     if (error.code === 11000) {
-      return res.status(400).json({ message: "Email or ID already exists" });
+      const duplicateField = error.keyPattern?.id ? "Member ID" : "Email";
+      return res.status(400).json({ message: `${duplicateField} already exists` });
     }
     res.status(500).json({ error: error.message });
   }
@@ -406,7 +455,7 @@ router.put("/:id", async (req, res) => {
       return res.status(404).json({ message: "Member not found" });
     }
     const memberQuery = { _id: targetMember._id };
-    const originalMemberId = targetMember.id || null;
+    const originalMemberId = isDisallowedMemberIdValue(targetMember.id) ? null : (targetMember.id || null);
     
     // Check if this is a payment update request (has payment-related fields)
     const hasPaymentFields = req.body.payment_status || req.body.payment_mode || 
@@ -497,11 +546,17 @@ router.put("/:id", async (req, res) => {
       }
 
       if (Object.prototype.hasOwnProperty.call(updateData, 'id')) {
-        const normalizedIncomingId = formatMemberIdForSave(updateData.id);
-        if (normalizedIncomingId) {
-          updateData.id = normalizedIncomingId;
+        if (updateData.id === null) {
+          updateData.id = null;
+        } else if (isDisallowedMemberIdValue(updateData.id)) {
+          return res.status(400).json({ message: "Member ID cannot be empty or 'Not Assigned'." });
         } else {
-          delete updateData.id;
+          const normalizedIncomingId = formatMemberIdForSave(updateData.id);
+          if (normalizedIncomingId) {
+            updateData.id = normalizedIncomingId;
+          } else {
+            delete updateData.id;
+          }
         }
       }
 
@@ -585,7 +640,8 @@ router.put("/:id", async (req, res) => {
   } catch (error) {
     console.error("Error updating member:", error);
     if (error.code === 11000) {
-      return res.status(400).json({ message: "Email already exists" });
+      const duplicateField = error.keyPattern?.id ? "Member ID" : "Email";
+      return res.status(400).json({ message: `${duplicateField} already exists` });
     }
     res.status(500).json({ error: error.message });
   }
@@ -722,7 +778,8 @@ router.post("/import", upload.single("file"), async (req, res) => {
         }
         values.push(current.trim().replace(/^"|"$/g, ''));
 
-        const memberId = memberIdIndex !== -1 ? values[memberIdIndex]?.trim() : '';
+        const rawMemberId = memberIdIndex !== -1 ? values[memberIdIndex]?.trim() : '';
+        let memberId = rawMemberId;
         const name = values[nameIndex]?.trim();
         const email = values[emailIndex]?.trim();
 
@@ -736,6 +793,10 @@ router.post("/import", upload.single("file"), async (req, res) => {
         // Email is optional - only validate format if provided
         if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
           errors.push("Invalid email format");
+        }
+
+        if (rawMemberId && isDisallowedMemberIdValue(rawMemberId)) {
+          errors.push("Member ID cannot be empty or 'Not Assigned'");
         }
 
         // Parse subscription year
@@ -770,7 +831,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
             row: rowNumber,
             errors: errors,
             data: {
-              id: memberId || '',
+              id: rawMemberId || '',
               name: name || '',
               email: email || '',
               phone: phoneIndex !== -1 ? (values[phoneIndex]?.trim() || '') : '',
@@ -791,6 +852,12 @@ router.post("/import", upload.single("file"), async (req, res) => {
           
           const finalPhone = phoneValue || '+85200000000'; // Default placeholder for import if empty
           
+          if (rawMemberId) {
+            memberId = formatMemberIdForSave(rawMemberId);
+          } else {
+            memberId = null;
+          }
+
           membersData.push({
             id: memberId || undefined, // Only include if provided
             name: name,
@@ -874,7 +941,8 @@ router.post("/import", upload.single("file"), async (req, res) => {
         const rowNumber = i + 1; // Row number for error reporting (1-indexed, +1 for header)
         const errors = [];
 
-        const memberId = memberIdIndex !== -1 ? String(row[memberIdIndex] || '').trim() : '';
+        const rawMemberId = memberIdIndex !== -1 ? String(row[memberIdIndex] || '').trim() : '';
+        let memberId = rawMemberId;
         const name = String(row[nameIndex] || '').trim();
         const email = emailIndex !== -1 ? String(row[emailIndex] || '').trim() : '';
 
@@ -888,6 +956,10 @@ router.post("/import", upload.single("file"), async (req, res) => {
         // Email is optional - only validate format if provided
         if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
           errors.push("Invalid email format");
+        }
+
+        if (rawMemberId && isDisallowedMemberIdValue(rawMemberId)) {
+          errors.push("Member ID cannot be empty or 'Not Assigned'");
         }
 
         // Parse subscription year
@@ -947,7 +1019,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
             row: rowNumber,
             errors: errors,
             data: {
-              id: memberId || '',
+              id: rawMemberId || '',
               name: name || '',
               email: email || '',
               phone: phoneIndex !== -1 ? String(row[phoneIndex] || '').trim() : '',
@@ -968,6 +1040,12 @@ router.post("/import", upload.single("file"), async (req, res) => {
           
           const finalPhone = phoneValue || '+85200000000'; // Default placeholder for import if empty
           
+          if (rawMemberId) {
+            memberId = formatMemberIdForSave(rawMemberId);
+          } else {
+            memberId = null;
+          }
+
           membersData.push({
             id: memberId || undefined, // Only include if provided
             name: name,

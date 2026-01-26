@@ -12,7 +12,6 @@ import EmailSettingsModel from "../models/EmailSettings.js";
 import EmailTemplateModel from "../models/EmailTemplate.js";
 import { generateUniqueMessageId, createEmailTransporter } from "../config/email.js";
 import { sendPaymentApprovalEmail } from "../utils/emailHelpers.js";
-import { getNextReceiptNumber } from "../utils/receiptCounter.js";
 import nodemailer from "nodemailer";
 
 const router = express.Router();
@@ -34,6 +33,17 @@ const assertValidMemberId = (memberIdValue) => {
   }
   return normalized;
 };
+
+const resolveInvoiceByParam = async (invoiceParam) => {
+  const normalized = String(invoiceParam || "").trim();
+  if (!normalized) return null;
+  if (objectIdRegex.test(normalized)) {
+    return InvoiceModel.findById(normalized);
+  }
+  return InvoiceModel.findOne({ id: normalized });
+};
+
+const getInvoiceRouteId = (invoiceDoc) => invoiceDoc?._id?.toString() || invoiceDoc?.id;
 
 const filterInvoicesWithExistingMembers = async (invoiceDocs = []) => {
   if (!Array.isArray(invoiceDocs) || invoiceDocs.length === 0) {
@@ -517,7 +527,7 @@ router.put("/:id", async (req, res) => {
   try {
     await ensureConnection();
 
-    const oldInvoice = await InvoiceModel.findOne({ id: req.params.id });
+    const oldInvoice = await resolveInvoiceByParam(req.params.id);
     if (!oldInvoice) {
       return res.status(404).json({ message: "Invoice not found" });
     }
@@ -562,7 +572,7 @@ router.put("/:id", async (req, res) => {
     }
 
     const updatedInvoice = await InvoiceModel.findOneAndUpdate(
-      { id: req.params.id },
+      { _id: oldInvoice._id },
       { $set: updateData },
       { new: true, runValidators: true }
     );
@@ -621,7 +631,12 @@ router.delete("/:id", async (req, res) => {
   try {
     await ensureConnection();
 
-    const deletedInvoice = await InvoiceModel.findOneAndDelete({ id: req.params.id });
+    const invoice = await resolveInvoiceByParam(req.params.id);
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+
+    const deletedInvoice = await InvoiceModel.findByIdAndDelete(invoice._id);
     if (!deletedInvoice) {
       return res.status(404).json({ message: "Invoice not found" });
     }
@@ -633,7 +648,7 @@ router.delete("/:id", async (req, res) => {
     }
 
     // Emit Socket.io event for real-time update
-    emitInvoiceUpdate('deleted', { id: req.params.id });
+    emitInvoiceUpdate('deleted', { id: deletedInvoice._id?.toString(), businessId: deletedInvoice.id });
 
     res.status(204).send();
   } catch (error) {
@@ -647,7 +662,7 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
   try {
     await ensureConnection();
 
-    const invoice = await InvoiceModel.findOne({ id: req.params.id });
+    const invoice = await resolveInvoiceByParam(req.params.id);
     if (!invoice) {
       return res.status(404).json({ message: "Invoice not found" });
     }
@@ -667,7 +682,7 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
 
     // Find the most recent payment for this invoice
     const payment = await PaymentModel.findOne({
-      invoiceId: invoice.id
+      invoiceId: { $in: [invoice.id, invoice._id?.toString()] }
     }).sort({ createdAt: -1 });
 
     // Prepare payment object with screenshot from payment or invoice
@@ -762,10 +777,11 @@ router.get("/:id/pdf-receipt/options", async (req, res) => {
     const protocol = req.get('X-Forwarded-Proto') || req.protocol || 'https';
     const host = req.get('host');
     const apiBaseUrl = `${protocol}://${host}`;
+    const invoiceRouteId = getInvoiceRouteId(invoice);
     // View PDF - use the same download endpoint but will open in browser instead of downloading
     // We'll add a query parameter to indicate viewing mode
-    const viewUrl = `${apiBaseUrl}/api/invoices/${invoice.id}/pdf-receipt/view`;
-    const downloadUrl = `${apiBaseUrl}/api/invoices/${invoice.id}/pdf-receipt/download`;
+    const viewUrl = `${apiBaseUrl}/api/invoices/${invoiceRouteId}/pdf-receipt/view`;
+    const downloadUrl = `${apiBaseUrl}/api/invoices/${invoiceRouteId}/pdf-receipt/download`;
 
     res.send(`
       <!DOCTYPE html>
@@ -902,7 +918,7 @@ router.get("/:id/pdf-receipt/download", async (req, res) => {
   try {
     await ensureConnection();
 
-    const invoice = await InvoiceModel.findOne({ id: req.params.id });
+    const invoice = await resolveInvoiceByParam(req.params.id);
     if (!invoice) {
       return res.status(404).json({ error: "Invoice not found" });
     }
@@ -934,7 +950,7 @@ router.get("/:id/pdf-receipt/download", async (req, res) => {
 
     // Find the most recent payment for this invoice
     const payment = await PaymentModel.findOne({
-      invoiceId: invoice.id
+      invoiceId: { $in: [invoice.id, invoice._id?.toString()] }
     }).sort({ createdAt: -1 });
 
     // Prepare payment object with screenshot from payment or invoice
@@ -980,7 +996,7 @@ router.get("/:id/pdf-receipt", async (req, res) => {
   try {
     await ensureConnection();
 
-    const invoice = await InvoiceModel.findOne({ id: req.params.id });
+    const invoice = await resolveInvoiceByParam(req.params.id);
     if (!invoice) {
       return res.status(404).json({ error: "Invoice not found" });
     }
@@ -1091,7 +1107,7 @@ router.get("/:id/pdf-receipt/view", async (req, res) => {
   try {
     await ensureConnection();
 
-    const invoice = await InvoiceModel.findOne({ id: req.params.id });
+    const invoice = await resolveInvoiceByParam(req.params.id);
     if (!invoice) {
       return res.status(404).json({ error: "Invoice not found" });
     }

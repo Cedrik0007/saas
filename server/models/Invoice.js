@@ -30,7 +30,12 @@ const PAID_STATUSES = new Set(["Paid", "Completed"]);
 
 const isPaidStatus = (status = "") => typeof status === "string" && PAID_STATUSES.has(status);
 
-const hasReceiptValue = (value) => typeof value === "string" && value.trim().length > 0;
+const hasReceiptValue = (value) => {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim();
+  if (!normalized || normalized === "-") return false;
+  return /^\d+$/.test(normalized);
+};
 
 const buildValidationError = (message) => {
   const error = new Error(message);
@@ -68,6 +73,20 @@ const isRemovingReceiptValue = (value) =>
   value === null || (typeof value === "string" && value.trim().length === 0);
 
 const isPaidStatusUpdate = (update) => isPaidStatus(extractUpdateValue(update, "status"));
+
+const hasInvalidReceiptUpdate = (update) => {
+  if (!update) return false;
+  const receiptUpdateValue = extractUpdateValue(update, "receiptNumber");
+  if (isReceiptUnset(update)) return true;
+  if (receiptUpdateValue === undefined) return false;
+  return !hasReceiptValue(receiptUpdateValue);
+};
+
+const requiresReceiptForPaidUpdate = (update) => {
+  if (!isPaidStatusUpdate(update)) return false;
+  const receiptUpdateValue = extractUpdateValue(update, "receiptNumber");
+  return !hasReceiptValue(receiptUpdateValue || "");
+};
 
 async function ensureReceiptNumberForUpdate(update, existingInvoice) {
   if (!update) {
@@ -163,7 +182,7 @@ InvoiceSchema.pre('save', async function (next) {
       }
     }
 
-    if (isPaidStatus(this.status) && !isPaidStatusUpdateAllowed(this.$locals || {})) {
+    if (this.isModified('status') && isPaidStatus(this.status) && !isPaidStatusUpdateAllowed(this.$locals || {})) {
       throw buildValidationError("Paid status can only be set via the payment approval service.");
     }
 
@@ -228,6 +247,20 @@ InvoiceSchema.pre('updateOne', async function (next) {
       throw buildValidationError("Paid status can only be set via the payment approval service.");
     }
 
+    if (requiresReceiptForPaidUpdate(update)) {
+      throw buildValidationError("Paid invoices require a receiptNumber.");
+    }
+
+    if (hasInvalidReceiptUpdate(update)) {
+      const query = this.getQuery();
+      const hasPaidMatch = await this.model.exists({
+        $and: [query, { status: { $in: Array.from(PAID_STATUSES) } }],
+      });
+      if (hasPaidMatch) {
+        throw buildValidationError("Paid invoices require a receiptNumber.");
+      }
+    }
+
     return next();
   } catch (err) {
     return next(err);
@@ -242,6 +275,20 @@ InvoiceSchema.pre('updateMany', async function (next) {
     const options = this.getOptions ? this.getOptions() : {};
     if (isPaidStatusUpdate(update) && !isPaidStatusUpdateAllowed(options)) {
       throw buildValidationError("Paid status can only be set via the payment approval service.");
+    }
+
+    if (requiresReceiptForPaidUpdate(update)) {
+      throw buildValidationError("Paid invoices require a receiptNumber.");
+    }
+
+    if (hasInvalidReceiptUpdate(update)) {
+      const query = this.getQuery();
+      const hasPaidMatch = await this.model.exists({
+        $and: [query, { status: { $in: Array.from(PAID_STATUSES) } }],
+      });
+      if (hasPaidMatch) {
+        throw buildValidationError("Paid invoices require a receiptNumber.");
+      }
     }
 
     return next();

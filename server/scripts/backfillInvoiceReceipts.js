@@ -17,6 +17,7 @@ async function backfillInvoiceReceipts() {
       { receiptNumber: null },
       { receiptNumber: "" },
       { receiptNumber: "-" },
+      { receiptNumber: { $not: /^\d+$/ } },
     ],
   })
     .sort({ updatedAt: 1 })

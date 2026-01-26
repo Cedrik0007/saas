@@ -6,7 +6,7 @@ import "./Notie.css";
  * Supports only: success (green) for positive, error (red) for negative
  * Warning and info types are mapped to error (negative)
  */
-export function Notie({ message, type = "success", onClose, duration = 3000 }) {
+export function Notie({ message, type = "success", onClose, duration = 6000 }) {
   const [isExiting, setIsExiting] = useState(false);
   const [displayedMessage, setDisplayedMessage] = useState(message);
   const [displayedType, setDisplayedType] = useState(type);

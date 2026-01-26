@@ -216,14 +216,14 @@ export function MemberPage() {
       due: inv.due,
       amount: inv.amount,
       status: inv.status,
-      id: inv.id,
+      id: inv._id,
     }));
   };
 
   // Calculate total amount to pay
   const calculateTotal = () => {
     return selectedInvoices.reduce((total, invId) => {
-      const invoice = invoices.find((inv) => inv.id === invId);
+      const invoice = invoices.find((inv) => inv._id === invId);
       if (invoice) {
         return total + parseFloat(invoice.amount.replace("$", ""));
       }
@@ -294,7 +294,7 @@ export function MemberPage() {
 
       // Process each selected invoice
       for (const invoiceId of selectedInvoices) {
-        const invoice = invoices.find((inv) => inv.id === invoiceId);
+        const invoice = invoices.find((inv) => inv._id === invoiceId);
         if (invoice) {
           // Update invoice status to Pending Verification (NOT Paid)
           await updateInvoice(invoiceId, {
@@ -306,7 +306,7 @@ export function MemberPage() {
 
           // Add payment record with Pending status
           await addPayment({
-            invoiceId: invoiceId,
+            invoiceId: invoice._id,
             amount: invoice.amount,
             method: "Screenshot",
             reference: `PENDING_${Date.now()}`,
@@ -398,7 +398,7 @@ export function MemberPage() {
 
       // Process each selected invoice
       for (const invoiceId of selectedInvoices) {
-        const invoice = invoices.find((inv) => inv.id === invoiceId);
+        const invoice = invoices.find((inv) => inv._id === invoiceId);
         if (invoice) {
           // Update invoice status to Pending Verification (requires admin approval)
           await updateInvoice(invoiceId, {
@@ -412,7 +412,7 @@ export function MemberPage() {
 
           // Add payment record with Pending status (requires admin approval)
           await addPayment({
-            invoiceId: invoiceId,
+            invoiceId: invoice._id,
             amount: invoice.amount,
             method: "Cash to Admin",
             reference: `CASH_PENDING_${Date.now()}`,
@@ -484,7 +484,11 @@ export function MemberPage() {
       }
 
       // Update member in MongoDB
-      await updateMember(currentMember.id, updateData);
+      if (!currentMember?._id) {
+        showToast("Member data not available. Please refresh the page.", "error");
+        return;
+      }
+      await updateMember(currentMember._id, updateData);
       
       showToast("Profile updated successfully!");
       setIsEditingProfile(false);
@@ -627,7 +631,7 @@ export function MemberPage() {
         message={notieMessage}
         type={notieType}
         onClose={() => setNotieMessage(null)}
-        duration={3000}
+        duration={6000}
       />
 
       <main className="admin-main admin-main--sticky-header">
@@ -918,7 +922,7 @@ export function MemberPage() {
                               if (selectedInvoices.length === getUnpaidInvoices().length) {
                                 setSelectedInvoices([]);
                               } else {
-                                setSelectedInvoices(getUnpaidInvoices().map(inv => inv.id));
+                                setSelectedInvoices(getUnpaidInvoices().map(inv => inv._id));
                               }
                             }}
                           >
@@ -943,7 +947,7 @@ export function MemberPage() {
                           marginBottom: "24px"
                         }}>
                           {getUnpaidInvoices().map((invoice) => {
-                            const isSelected = selectedInvoices.includes(invoice.id);
+                            const isSelected = selectedInvoices.includes(invoice._id);
                             return (
                               <label
                                 key={invoice.id}
@@ -978,7 +982,7 @@ export function MemberPage() {
                                   <input
                                     type="checkbox"
                                     checked={isSelected}
-                                    onChange={() => handleSelectInvoice(invoice.id)}
+                                    onChange={() => handleSelectInvoice(invoice._id)}
                                     style={{
                                       marginTop: "2px",
                                       width: "18px",
@@ -1250,7 +1254,7 @@ export function MemberPage() {
                                     className="primary-btn"
                                     style={{ padding: "6px 12px" }}
                                     onClick={() => {
-                                      setSelectedInvoices([invoice.id]);
+                                      setSelectedInvoices([invoice._id]);
                                       handleNavClick("pay");
                                     }}
                                   >

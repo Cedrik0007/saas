@@ -61,7 +61,11 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
         throw error;
       }
 
-      invoice = await InvoiceModel.findOne({ id: payment.invoiceId }).session(session);
+      if (objectIdRegex.test(payment.invoiceId)) {
+        invoice = await InvoiceModel.findById(payment.invoiceId).session(session);
+      } else {
+        invoice = await InvoiceModel.findOne({ id: payment.invoiceId }).session(session);
+      }
       if (!invoice) {
         const error = new Error("Invoice not found");
         error.status = 404;
@@ -152,6 +156,190 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
           { id: member.id },
           { $set: { payment_status: "paid", last_payment_date: new Date() } },
           { session }
+        );
+      }
+    });
+
+    return { payment, invoice, member };
+  } finally {
+    session.endSession();
+  }
+}
+
+export async function approveInvoicePayment({
+  invoiceMongoId,
+  memberMongoId,
+  amount,
+  paymentType,
+  method,
+  receiverName,
+  reference,
+  screenshot,
+  date,
+  paidToAdmin,
+  paidToAdminName,
+  approvedBy,
+}) {
+  await ensureConnection();
+
+  const session = await mongoose.startSession();
+  let payment;
+  let invoice;
+  let member;
+
+  try {
+    await session.withTransaction(async () => {
+      invoice = await InvoiceModel.findById(invoiceMongoId).session(session);
+      if (!invoice) {
+        const error = new Error("Invoice not found");
+        error.status = 404;
+        throw error;
+      }
+
+      member = await UserModel.findById(memberMongoId).session(session);
+      if (!member) {
+        const error = new Error("Member not found");
+        error.status = 404;
+        throw error;
+      }
+
+      if (invoice.status === "Paid" || invoice.status === "Completed") {
+        const error = new Error("Invoice is already marked as paid.");
+        error.status = 400;
+        throw error;
+      }
+
+      const parsedDate = date ? new Date(date) : null;
+      const paymentDate = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : new Date();
+      const paymentDateLabel = paymentDate.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+
+      payment = new PaymentModel({
+        invoiceId: invoice.id || undefined,
+        memberId: member.id || undefined,
+        member: member.name || "",
+        memberEmail: member.email || "",
+        amount: amount || invoice.amount,
+        payment_type: paymentType || "online",
+        method,
+        receiver_name: receiverName,
+        reference,
+        period: invoice.period,
+        status: "Completed",
+        date: paymentDateLabel,
+        screenshot: screenshot || undefined,
+        paidToAdmin,
+        paidToAdminName,
+        approvedBy: approvedBy || "Admin",
+        approvedAt: paymentDate,
+      });
+
+      await payment.save({ session });
+
+      const receiptNumber = await getNextReceiptNumberStrict({ session });
+
+      const invoiceUpdate = {
+        status: "Paid",
+        receiptNumber,
+        method,
+        reference,
+        screenshot: screenshot || null,
+        payment_mode: paymentType || null,
+        payment_proof: screenshot || null,
+        last_payment_date: paymentDate,
+      };
+
+      if (paidToAdmin) {
+        invoiceUpdate.paidToAdmin = paidToAdmin;
+      }
+      if (paidToAdminName) {
+        invoiceUpdate.paidToAdminName = paidToAdminName;
+      }
+
+      const updatedInvoice = await InvoiceModel.findByIdAndUpdate(
+        invoice._id,
+        { $set: invoiceUpdate },
+        { new: true, runValidators: true, session, allowPaidStatusUpdate: true }
+      );
+
+      if (!updatedInvoice) {
+        const error = new Error("Failed to update invoice during payment approval");
+        error.status = 500;
+        throw error;
+      }
+
+      invoice = updatedInvoice;
+
+      // AUTOMATIC NEXT DUE DATE UPDATE LOGIC
+      let nextDueYear = null;
+      const periodStr = String(invoice.period || "").trim();
+
+      const yearMatch = periodStr.match(/\d{4}/);
+      if (yearMatch) {
+        nextDueYear = parseInt(yearMatch[0]) + 1;
+      } else if (periodStr.toLowerCase().includes("yearly") || periodStr.toLowerCase().includes("lifetime")) {
+        nextDueYear = paymentDate.getFullYear() + 1;
+      }
+
+      const lastPaymentDisplay = paymentDate.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }).replace(",", "");
+
+      if (nextDueYear) {
+        const newNextDueDate = new Date(nextDueYear, 0, 1);
+        newNextDueDate.setHours(0, 0, 0, 0);
+
+        const nextDueDisplay = newNextDueDate.toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }).replace(",", "");
+
+        const isLifetimeMembershipFullPayment = member.subscriptionType === "Lifetime Membership"
+          && !member.lifetimeMembershipPaid
+          && (
+            invoice.invoiceType === "lifetime_membership" ||
+            invoice.amount === "HK$5250" ||
+            invoice.membershipFee === 5000
+          );
+
+        const memberUpdate = {
+          payment_status: "paid",
+          payment_mode: paymentType || null,
+          last_payment_date: paymentDate,
+          next_due_date: newNextDueDate,
+          payment_proof: screenshot || null,
+          lastPayment: lastPaymentDisplay,
+          nextDue: nextDueDisplay,
+        };
+
+        if (isLifetimeMembershipFullPayment) {
+          memberUpdate.lifetimeMembershipPaid = true;
+        }
+
+        member = await UserModel.findByIdAndUpdate(
+          member._id,
+          { $set: memberUpdate },
+          { session, new: true }
+        );
+      } else {
+        member = await UserModel.findByIdAndUpdate(
+          member._id,
+          {
+            $set: {
+              payment_status: "paid",
+              payment_mode: paymentType || null,
+              last_payment_date: paymentDate,
+              payment_proof: screenshot || null,
+              lastPayment: lastPaymentDisplay,
+            },
+          },
+          { session, new: true }
         );
       }
     });
