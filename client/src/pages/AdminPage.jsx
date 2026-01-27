@@ -4473,6 +4473,7 @@ Indian Muslim Association, Hong Kong`;
           try {
             await deleteMember(id);
             showToast("Member deleted successfully!");
+             window.location.reload();
           } catch (error) {
             showToast("Failed to delete member. Please try again.", "error");
           }
@@ -4655,6 +4656,20 @@ Indian Muslim Association, Hong Kong`;
       showToast("Invoice created successfully!");
     };
 
+   const updateInvoiceInSelectedTable = (updatedInvoice) => {
+  if (!updatedInvoice?._id) return;
+
+  setSelectedMemberInvoices(prev =>
+    prev.map(inv =>
+      inv._id === updatedInvoice._id
+        ? { ...inv, ...updatedInvoice }
+        : inv
+    )
+  );
+};
+
+
+
     const handleMarkAsPaid = async (invoiceDbId, method = "Cash", screenshotUrl = null, referenceNumber = null, paymentData = {}) => {
       try {
         // In development, use empty string to use Vite proxy (localhost:4000)
@@ -4744,6 +4759,10 @@ Indian Muslim Association, Hong Kong`;
         const approvedInvoice = approvalResult?.invoice || null;
         const approvedMember = approvalResult?.member || null;
 
+        if (approvedInvoice) {
+  updateInvoiceInSelectedTable(approvedInvoice);
+}
+
         // Step 2: Store member ID for later use (avoid stale closure)
         const processedMemberDbId = member?._id || null;
 
@@ -4784,72 +4803,114 @@ Indian Muslim Association, Hong Kong`;
       }
     };
 
-    const handleDeleteInvoice = (invoiceIdentifier, options = {}) => {
-      const { skipConfirmation = false } = options || {};
-      const normalizedId = String(invoiceIdentifier);
-      const findByIdentifier = (collection = []) =>
-        collection.find((inv) => {
-          const candidateId = String(inv.id || inv._id || "");
-          return candidateId === normalizedId;
-        });
+    // const handleDeleteInvoice = (invoiceIdentifier, options = {}) => {
+    //   const { skipConfirmation = false } = options || {};
+    //   const normalizedId = String(invoiceIdentifier);
+    //   const findByIdentifier = (collection = []) =>
+    //     collection.find((inv) => {
+    //       const candidateId = String(inv.id || inv._id || "");
+    //       return candidateId === normalizedId;
+    //     });
 
-      const invoice = findByIdentifier(selectedMemberInvoices) || findByIdentifier(invoices);
-      if (!invoice) {
-        showToast("Invoice not found", "error");
-        return;
-      }
+    //   const invoice = findByIdentifier(selectedMemberInvoices) || findByIdentifier(invoices);
+    //   if (!invoice) {
+    //     showToast("Invoice not found", "error");
+    //     return;
+    //   }
 
-      // Prevent deletion after payment (Paid/Completed)
-      if (invoice.status === "Paid" || invoice.status === "Completed") {
-        showToast("Paid invoices cannot be deleted", "error");
-        return;
-      }
+    //   // Prevent deletion after payment (Paid/Completed)
+    //   if (invoice.status === "Paid" || invoice.status === "Completed") {
+    //     showToast("Paid invoices cannot be deleted", "error");
+    //     return;
+    //   }
 
-      const confirmDelete = async () => {
-        try {
-          await deleteInvoice(invoice._id || normalizedId);
+    //   const confirmDelete = async () => {
+    //     try {
+    //       await deleteInvoice(invoice._id || normalizedId);
 
-          const isViewingMemberDetail =
-            activeSection === "member-detail" &&
-            selectedMember &&
-            invoice.memberId &&
-            String(selectedMember.id).toLowerCase() === String(invoice.memberId).toLowerCase();
+    //       const isViewingMemberDetail =
+    //         activeSection === "member-detail" &&
+    //         selectedMember &&
+    //         invoice.memberId &&
+    //         String(selectedMember.id).toLowerCase() === String(invoice.memberId).toLowerCase();
 
-          if (isViewingMemberDetail) {
-            setSelectedMemberInvoices((prev) => {
-              if (!Array.isArray(prev) || prev.length === 0) return prev;
-              const updated = prev.filter((inv) => {
-                const candidateId = String(inv.id || inv._id || "");
-                return candidateId !== normalizedId;
-              });
-              return updated;
-            });
-            if (selectedMember?._id) {
-              await refreshSelectedMemberInvoices(selectedMember);
-            }
-          }
+    //       if (isViewingMemberDetail) {
+    //         setSelectedMemberInvoices((prev) => {
+    //           if (!Array.isArray(prev) || prev.length === 0) return prev;
+    //           const updated = prev.filter((inv) => {
+    //             const candidateId = String(inv.id || inv._id || "");
+    //             return candidateId !== normalizedId;
+    //           });
+    //           return updated;
+    //         });
+    //         if (selectedMember?._id) {
+    //           await refreshSelectedMemberInvoices(selectedMember);
+    //         }
+    //       }
 
-          showToast("Invoice deleted successfully!");
-        } catch (error) {
-          console.error("Failed to delete invoice:", error);
-          showToast(error.message || "Failed to delete invoice", "error");
-        }
-      };
+    //       showToast("Invoice deleted successfully!");
+    //     } catch (error) {
+    //       console.error("Failed to delete invoice:", error);
+    //       showToast(error.message || "Failed to delete invoice", "error");
+    //     }
+    //   };
 
-      if (skipConfirmation) {
-        return confirmDelete();
-      }
+    //   if (skipConfirmation) {
+    //     return confirmDelete();
+    //   }
 
-      showConfirmation(
-        "Are you sure you want to delete this invoice? This cannot be undone.",
-        confirmDelete,
-        null,
-        "Delete",
-        { requirePassword: true }
-      );
-    };
+    //   showConfirmation(
+    //     "Are you sure you want to delete this invoice? This cannot be undone.",
+    //     confirmDelete,
+    //     null,
+    //     "Delete",
+    //     { requirePassword: true }
+    //   );
+    // };
+
 
     // Helper function to generate invoice list text for WhatsApp
+ 
+    const handleDeleteInvoice = async (invoiceDbId) => {
+  try {
+    if (!invoiceDbId) {
+      showToast("Invoice not found", "error");
+      return;
+    }
+
+    const invoiceIdStr = String(invoiceDbId);
+
+    const invoice =
+      selectedMemberInvoices.find(inv => String(inv._id) === invoiceIdStr) ||
+      invoices.find(inv => String(inv._id) === invoiceIdStr);
+
+    if (!invoice) {
+      showToast("Invoice not found", "error");
+      return;
+    }
+
+    // Prevent deleting paid invoices
+    if (invoice.status === "Paid" || invoice.status === "Completed") {
+      showToast("Paid invoices cannot be deleted", "error");
+      return;
+    }
+
+    // 🔥 Backend delete
+    await deleteInvoice(invoice._id);
+
+    // 🔥 Instant table update (NO refetch)
+    setSelectedMemberInvoices(prev =>
+      prev.filter(inv => String(inv._id) !== invoiceIdStr)
+    );
+
+    showToast("Invoice deleted successfully", "success");
+  } catch (error) {
+    console.error("Failed to delete invoice:", error);
+    showToast(error.message || "Failed to delete invoice", "error");
+  }
+};
+
+ 
     const generateInvoiceListText = (memberUnpaidInvoices) => {
       if (memberUnpaidInvoices.length === 0) return '';
       
@@ -5460,6 +5521,9 @@ Indian Muslim Association, Hong Kong`;
         console.warn("Error refreshing data:", error);
       }
     };
+
+    
+
 
     // Approve pending member
     const handleApproveMember = async (memberId) => {
@@ -7644,7 +7708,7 @@ Indian Muslim Association, Hong Kong`;
                                                 style={{ color: "#ef4444" }}
                                                 onClick={(event) => {
                                                   event.stopPropagation();
-                                                  handleDeleteMember(member._id);
+                                                  handleDeleteMember(member.id);
                                                 }}
                                                 aria-label="Delete member"
                                               >
@@ -8107,7 +8171,8 @@ Indian Muslim Association, Hong Kong`;
                                      paymentInvoiceId === invoice.id?.toString() ||
                                      paymentInvoiceId === invoice._id?.toString();
                             });
-                            const receiverName = relatedPayment?.receiver_name || relatedPayment?.paidToAdminName || invoice.receiver_name || invoice.paidToAdminName || "-";
+                            // const receiverName = relatedPayment?.receiver_name || relatedPayment?.paidToAdminName || invoice.receiver_name || invoice.paidToAdminName || "-";
+                            const receiverName = relatedPayment?.receiver_name || "-";
 
                             // Display invoice's own stored due date (never auto-updated)
                             // Each invoice has its own due_date set at creation time and never changes
@@ -18377,7 +18442,7 @@ Indian Muslim Association, Hong Kong`;
               <div className="modal-header">
                 <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
                   <i className="fas fa-money-bill-wave" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
-                  Pay Invoice #{paymentModalInvoice.id}
+                  Pay Invoice 
                 </h3>
                 <button
                   type="button"
