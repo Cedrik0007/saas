@@ -82,6 +82,9 @@ const hasInvalidReceiptUpdate = (update) => {
   return !hasReceiptValue(receiptUpdateValue);
 };
 
+const isReceiptUpdateAttempt = (update) =>
+  isReceiptUnset(update) || isUpdatingField(update, "receiptNumber");
+
 const requiresReceiptForPaidUpdate = (update) => {
   if (!isPaidStatusUpdate(update)) return false;
   const receiptUpdateValue = extractUpdateValue(update, "receiptNumber");
@@ -126,8 +129,24 @@ async function ensureReceiptNumberForUpdate(update, existingInvoice) {
 }
 
 const InvoiceSchema = new mongoose.Schema({
+  invoiceNo: {
+    type: Number,
+    immutable: true,
+  },
   id: { type: String },
-  memberRef: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
+  memberRef: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "users",
+    required: function () {
+      return this.isNew;
+    },
+  },
+  memberNo: {
+    type: Number,
+    required: function () {
+      return this.isNew;
+    },
+  },
   memberId: String,
   memberName: String,
   memberEmail: String,
@@ -147,6 +166,7 @@ const InvoiceSchema = new mongoose.Schema({
   payment_mode: { type: String, default: null }, // online, cash
   payment_proof: { type: String, default: null }, // URL to payment proof image
   last_payment_date: { type: Date, default: null },
+  receiver_name: { type: String, default: null },
   receiptNumber: { type: String, default: null }, // Receipt number assigned when payment is approved
 }, {
   timestamps: true
@@ -154,6 +174,16 @@ const InvoiceSchema = new mongoose.Schema({
 
 // Ensure invoice ID uniqueness when possible. Use sparse index to avoid conflicts with legacy rows missing `id`.
 InvoiceSchema.index({ id: 1 }, { unique: true, sparse: true });
+InvoiceSchema.index({ invoiceNo: 1 }, { unique: true, sparse: true });
+
+const isUpdatingField = (update, field) => {
+  if (!update) return false;
+  if (update.$set && Object.prototype.hasOwnProperty.call(update.$set, field)) return true;
+  if (update.$unset && Object.prototype.hasOwnProperty.call(update.$unset, field)) return true;
+  if (update.$inc && Object.prototype.hasOwnProperty.call(update.$inc, field)) return true;
+  if (update.$setOnInsert && Object.prototype.hasOwnProperty.call(update.$setOnInsert, field)) return true;
+  return Object.prototype.hasOwnProperty.call(update, field);
+};
 
 InvoiceSchema.pre('validate', function (next) {
   try {
@@ -172,14 +202,25 @@ InvoiceSchema.pre('save', async function (next) {
     if (this.memberName !== undefined) this.memberName = undefined;
     if (this.memberEmail !== undefined) this.memberEmail = undefined;
 
+    const existing = !this.isNew
+      ? await this.constructor.findOne({ _id: this._id }).lean()
+      : null;
+
     if (this.isModified('memberId')) {
       this.memberId = sanitizeMemberIdValue(this.memberId || "");
 
       if (!this.isNew) {
-        const existing = await this.constructor.findOne({ _id: this._id }).lean();
         if (existing && (existing.status === 'Paid' || existing.status === 'Completed')) {
           return next(new Error('Cannot change memberId on an invoice that is already Paid/Completed'));
         }
+      }
+    }
+
+    if (this.isModified('receiptNumber') && existing && hasReceiptValue(existing.receiptNumber)) {
+      const existingReceipt = String(existing.receiptNumber).trim();
+      const nextReceipt = String(this.receiptNumber || "").trim();
+      if (!nextReceipt || existingReceipt !== nextReceipt) {
+        throw buildValidationError("receiptNumber is immutable and cannot be changed.");
       }
     }
 
@@ -198,6 +239,10 @@ InvoiceSchema.pre('findOneAndUpdate', async function (next) {
   try {
     const update = this.getUpdate();
     if (!update) return next();
+
+    if (isUpdatingField(update, "invoiceNo")) {
+      throw buildValidationError("invoiceNo is immutable and cannot be updated.");
+    }
 
     stripMemberIdentityFields(update);
     if (update.$set) {
@@ -219,6 +264,14 @@ InvoiceSchema.pre('findOneAndUpdate', async function (next) {
     const existing = await this.model.findOne(query).lean();
     const target = getTargetObject();
 
+    if (existing && hasReceiptValue(existing.receiptNumber) && isReceiptUpdateAttempt(update)) {
+      const receiptUpdateValue = extractUpdateValue(update, "receiptNumber");
+      const nextReceipt = receiptUpdateValue !== undefined ? String(receiptUpdateValue || "").trim() : "";
+      if (!nextReceipt || String(existing.receiptNumber).trim() !== nextReceipt) {
+        throw buildValidationError("receiptNumber is immutable and cannot be changed.");
+      }
+    }
+
     if (target) {
       target.memberId = sanitizeMemberIdValue(target.memberId || "");
 
@@ -229,6 +282,16 @@ InvoiceSchema.pre('findOneAndUpdate', async function (next) {
 
     if (isPaidStatusUpdate(update) && !isPaidStatusUpdateAllowed(options)) {
       throw buildValidationError("Paid status can only be set via the payment approval service.");
+    }
+
+    if (isReceiptUpdateAttempt(update)) {
+      const query = this.getQuery();
+      const hasReceiptMatch = await this.model.exists({
+        $and: [query, { receiptNumber: { $nin: [null, "", "-"] } }],
+      });
+      if (hasReceiptMatch) {
+        throw buildValidationError("receiptNumber is immutable and cannot be changed.");
+      }
     }
 
     await ensureReceiptNumberForUpdate(update, existing);
@@ -243,9 +306,23 @@ InvoiceSchema.pre('updateOne', async function (next) {
     const update = this.getUpdate();
     if (!update) return next();
 
+    if (isUpdatingField(update, "invoiceNo")) {
+      throw buildValidationError("invoiceNo is immutable and cannot be updated.");
+    }
+
     const options = this.getOptions ? this.getOptions() : {};
     if (isPaidStatusUpdate(update) && !isPaidStatusUpdateAllowed(options)) {
       throw buildValidationError("Paid status can only be set via the payment approval service.");
+    }
+
+    if (isReceiptUpdateAttempt(update)) {
+      const query = this.getQuery();
+      const hasReceiptMatch = await this.model.exists({
+        $and: [query, { receiptNumber: { $nin: [null, "", "-"] } }],
+      });
+      if (hasReceiptMatch) {
+        throw buildValidationError("receiptNumber is immutable and cannot be changed.");
+      }
     }
 
     if (requiresReceiptForPaidUpdate(update)) {
@@ -272,6 +349,10 @@ InvoiceSchema.pre('updateMany', async function (next) {
   try {
     const update = this.getUpdate();
     if (!update) return next();
+
+    if (isUpdatingField(update, "invoiceNo")) {
+      throw buildValidationError("invoiceNo is immutable and cannot be updated.");
+    }
 
     const options = this.getOptions ? this.getOptions() : {};
     if (isPaidStatusUpdate(update) && !isPaidStatusUpdateAllowed(options)) {

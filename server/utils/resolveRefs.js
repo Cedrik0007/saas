@@ -25,9 +25,18 @@ export async function resolveMember(ref, options = {}) {
     throw buildResolutionError("Member", normalized, "Member reference is required.");
   }
 
+  const numericCandidate = Number.parseInt(normalized, 10);
+  const memberNoQuery = Number.isNaN(numericCandidate) ? null : { memberNo: numericCandidate };
+
   const query = isObjectIdRef(normalized)
     ? UserModel.findById(normalized)
-    : UserModel.findOne({ id: normalized });
+    : UserModel.findOne({
+        $or: [
+          { id: normalized },
+          { "previousDisplayIds.id": normalized },
+          memberNoQuery,
+        ].filter(Boolean),
+      });
 
   const member = await withSession(query, options.session);
   if (!member) {

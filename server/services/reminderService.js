@@ -7,6 +7,21 @@ import ReminderLogModel from "../models/ReminderLog.js";
 import EmailSettingsModel from "../models/EmailSettings.js";
 import nodemailer from "nodemailer";
 
+const buildInvoiceMemberMatch = (member) => {
+  const previousIds = Array.isArray(member?.previousDisplayIds)
+    ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+    : [];
+  const memberIdCandidates = [member?.id, ...previousIds].filter(Boolean).map(String);
+
+  return {
+    $or: [
+      member?._id ? { memberRef: member._id } : null,
+      member?.memberNo ? { memberNo: member.memberNo } : null,
+      memberIdCandidates.length > 0 ? { memberId: { $in: memberIdCandidates } } : null,
+    ].filter(Boolean),
+  };
+};
+
 // Function to check and send automated reminders
 export async function checkAndSendReminders() {
   try {
@@ -74,7 +89,7 @@ export async function checkAndSendReminders() {
     for (const member of members) {
       // Get unpaid/overdue invoices for this member
       const unpaidInvoices = await InvoiceModel.find({
-        memberId: member.id,
+        ...buildInvoiceMemberMatch(member),
         status: { $in: ['Unpaid', 'Overdue'] }
       });
 

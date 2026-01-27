@@ -6,6 +6,8 @@ import { Table } from "../components/Table.jsx";
 import { Pagination } from "../components/Pagination.jsx";
 import { Notie } from "../components/Notie.jsx";
 import { Tooltip } from "../components/Tooltip.jsx";
+import { ActionIcon } from "../components/ActionIcon.jsx";
+import { Modal } from "../components/Modal.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import jsPDF from "jspdf";
@@ -269,6 +271,56 @@ function AdminPage() {
       });
       return expanded;
     });
+    // Single modal state - only one modal open at a time
+    const [activeModal, setActiveModal] = useState(null);
+    const [previousModal, setPreviousModal] = useState(null);
+    
+    // Helper to check if a specific modal is active
+    const isModalOpen = (modalName) => activeModal === modalName;
+    
+    // Helper to open a modal (closes any other open modal)
+    const openModal = (modalName) => {
+      setPreviousModal(null);
+      setActiveModal(modalName);
+    };
+
+    // Helper to open a confirmation modal while remembering the previous modal
+    const openConfirmModal = (confirmModalName) => {
+      setPreviousModal(activeModal);
+      setActiveModal(confirmModalName);
+    };
+
+    // Helper to cancel a confirmation modal and restore previous modal (if any)
+    const cancelConfirmModal = () => {
+      if (previousModal) {
+        setActiveModal(previousModal);
+      } else {
+        setActiveModal(null);
+      }
+      setPreviousModal(null);
+    };
+
+    // Helper to close all modals and reset dialog state
+    const closeAllModals = () => {
+      setActiveModal(null);
+      setPreviousModal(null);
+      setShowMemberForm(false);
+      setShowPaymentModal(false);
+      setShowPaymentConfirmationModal(false);
+      setShowSubscriptionChangeConfirm(false);
+      setPaymentModalInvoice(null);
+      setPaymentConfirmationInvoice(null);
+      setPaymentConfirmationChannels({ email: false, whatsapp: false });
+      setSelectedConfirmationChannel(null);
+      setPendingSubscriptionType(null);
+      setConfirmationDialog({ ...confirmationDialogDefaults });
+    };
+    
+    // Helper to close any modal
+    const closeModal = () => setActiveModal(null);
+    
+    // Legacy state bindings for backward compatibility with existing code
+    // These will be phased out but allow gradual migration
     const [showMemberForm, setShowMemberForm] = useState(false);
     const [showInvoiceForm, setShowInvoiceForm] = useState(false);
     const [editingMember, setEditingMember] = useState(null);
@@ -616,22 +668,15 @@ function AdminPage() {
       } else if (field === "balance") {
         value = rawValue.replace(/\D/g, "");
       } else if (field === "subscriptionType") {
-        // Auto-update balance when subscription changes
         const normalizedType = normalizeSubscriptionType(rawValue);
-        const balancePresets = {
-          [SUBSCRIPTION_TYPES.ANNUAL_MEMBER]: "500",
-          [SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER]: "250",
-          [SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP]: "5250",
-        };
-        const nextBalance = balancePresets[normalizedType] || "250";
+        const currentType = normalizeSubscriptionType(memberForm.subscriptionType);
 
-        setMemberForm(prev => ({
-          ...prev,
-          subscriptionType: normalizedType,
-          balance: nextBalance,
-        }));
+        if (normalizedType !== currentType) {
+          setPendingSubscriptionType(normalizedType);
+          // Replace member form with subscription change confirmation (modal replacement pattern)
+          openConfirmModal('subscriptionChangeConfirmation');
+        }
 
-        // No need to run generic update below for subscriptionType
         return;
       }
 
@@ -992,6 +1037,7 @@ function AdminPage() {
       email: false,
       whatsapp: false,
     });
+    const [selectedConfirmationChannel, setSelectedConfirmationChannel] = useState(null);
     const [showDonationConfirmationModal, setShowDonationConfirmationModal] = useState(false);
     const [donationConfirmationDonation, setDonationConfirmationDonation] = useState(null);
     const [donationConfirmationChannel, setDonationConfirmationChannel] = useState({
@@ -1026,6 +1072,38 @@ function AdminPage() {
           y: e.clientY - rect.top
         });
       }
+    };
+
+    const getSubscriptionBalancePreset = (subscriptionType) => {
+      const normalizedType = normalizeSubscriptionType(subscriptionType);
+      const balancePresets = {
+        [SUBSCRIPTION_TYPES.ANNUAL_MEMBER]: "500",
+        [SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER]: "250",
+        [SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP]: "5250",
+      };
+      return balancePresets[normalizedType] || "250";
+    };
+
+    const confirmSubscriptionTypeChange = () => {
+      if (!pendingSubscriptionType) {
+        cancelConfirmModal();
+        return;
+      }
+
+      const nextBalance = getSubscriptionBalancePreset(pendingSubscriptionType);
+      setMemberForm(prev => ({
+        ...prev,
+        subscriptionType: pendingSubscriptionType,
+        balance: nextBalance,
+      }));
+
+      closeAllModals();
+      setPendingSubscriptionType(null);
+    };
+
+    const cancelSubscriptionTypeChange = () => {
+      setPendingSubscriptionType(null);
+      cancelConfirmModal();
     };
 
     // Helper component for Dashboard KPI Card
@@ -1095,6 +1173,8 @@ function AdminPage() {
     const [selectedPdfInvoice, setSelectedPdfInvoice] = useState(null); // Selected invoice for PDF options
     const [selectedPdfDonation, setSelectedPdfDonation] = useState(null); // Selected donation for PDF options
     const [pdfLoading, setPdfLoading] = useState(true); // PDF loading state
+    const [showSubscriptionChangeConfirm, setShowSubscriptionChangeConfirm] = useState(false);
+    const [pendingSubscriptionType, setPendingSubscriptionType] = useState(null);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
 
     // Payment form state
@@ -1222,7 +1302,7 @@ function AdminPage() {
 
     // Helper function to download PDF that works on iOS Safari
     // iOS Safari doesn't support the download attribute on anchor elements for cross-origin URLs
-    const downloadPdfFile = async (pdfUrl, filename, onSuccess, onError) => {
+    const downloadPdfFile = async (pdfUrl, filename, onSuccess, onError, popupWindow = null) => {
       try {
         // Detect iOS
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
@@ -1242,8 +1322,11 @@ function AdminPage() {
           const blob = await response.blob();
           const blobUrl = URL.createObjectURL(blob);
           
-          // Open in new tab - iOS will show the PDF with share/save options
-          window.open(blobUrl, '_blank');
+          if (popupWindow && !popupWindow.closed) {
+            popupWindow.location.href = blobUrl;
+          } else {
+            window.open(blobUrl, '_blank');
+          }
           
           // Clean up blob URL after a delay
           setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
@@ -1262,12 +1345,16 @@ function AdminPage() {
           const blob = await response.blob();
           const blobUrl = URL.createObjectURL(blob);
           
-          const link = document.createElement('a');
-          link.href = blobUrl;
-          link.download = filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
+          if (popupWindow && !popupWindow.closed) {
+            popupWindow.location.href = blobUrl;
+          } else {
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
           
           // Clean up blob URL after a delay
           setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
@@ -1278,6 +1365,15 @@ function AdminPage() {
         console.error('Error downloading PDF:', error);
         if (onError) onError(error);
       }
+    };
+
+    const resolveReceiptPdfUrl = (pdfUrl) => {
+      if (!pdfUrl) return "";
+      if (pdfUrl.startsWith("http://") || pdfUrl.startsWith("https://")) {
+        return pdfUrl;
+      }
+      const apiBase = import.meta.env.VITE_API_URL || window.location.origin;
+      return `${apiBase}${pdfUrl}`;
     };
 
     // Check if donation belongs to a member in the members list
@@ -1660,6 +1756,37 @@ function AdminPage() {
       return invoice.status || "Unpaid";
     };
 
+    const getDisplayPrefixForType = (subscriptionType) =>
+      normalizeSubscriptionType(subscriptionType) === SUBSCRIPTION_TYPES.ANNUAL_MEMBER ? "AM" : "LM";
+
+    const extractDisplayNumber = (displayId) => {
+      const numeric = String(displayId || "").replace(/[^0-9]/g, "");
+      const parsed = parseInt(numeric, 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    };
+
+    const getPreviewDisplayId = (subscriptionType) => {
+      const prefix = getDisplayPrefixForType(subscriptionType);
+      const candidates = [];
+
+      (members || []).forEach((member) => {
+        if (member?.id) candidates.push(member.id);
+        const previousIds = Array.isArray(member?.previousDisplayIds) ? member.previousDisplayIds : [];
+        previousIds.forEach((entry) => {
+          if (entry?.id) candidates.push(entry.id);
+        });
+      });
+
+      const maxValue = candidates.reduce((max, candidate) => {
+        if (!candidate || !String(candidate).startsWith(prefix)) return max;
+        const numeric = extractDisplayNumber(candidate);
+        if (!numeric) return max;
+        return Math.max(max, numeric);
+      }, 0);
+
+      return `${prefix}${maxValue + 1}`;
+    };
+
     const getMemberInvoices = (memberId) => {
       // Use strict string comparison to ensure only this member's invoices are returned
       const memberIdStr = String(memberId || "").trim();
@@ -1672,12 +1799,26 @@ function AdminPage() {
       // Ensure invoices is an array
       const invoicesArray = Array.isArray(invoices) ? invoices : [];
       
+      const matchingMember = (members || []).find((member) => {
+        if (!member) return false;
+        const currentId = String(member.id || "").trim();
+        if (currentId && currentId === memberIdStr) return true;
+        const previousIds = Array.isArray(member.previousDisplayIds) ? member.previousDisplayIds : [];
+        return previousIds.some((entry) => String(entry?.id || "").trim() === memberIdStr);
+      });
+
+      const memberAliases = new Set([
+        memberIdStr,
+        ...(matchingMember?.id ? [String(matchingMember.id).trim()] : []),
+        ...((matchingMember?.previousDisplayIds || [])
+          .map((entry) => String(entry?.id || "").trim())
+          .filter(Boolean)),
+      ]);
+
       const filteredInvoices = invoicesArray.filter((inv) => {
         if (!inv) return false;
         const invMemberIdStr = String(inv.memberId || "").trim();
-        // Only match by memberId - strict comparison, no fallbacks to email/name
-        const matches = invMemberIdStr === memberIdStr;
-        return matches;
+        return memberAliases.has(invMemberIdStr);
       });
       
       console.log(`getMemberInvoices for ${memberIdStr}: found ${filteredInvoices.length} invoices out of ${invoicesArray.length} total`);
@@ -2906,6 +3047,12 @@ function AdminPage() {
           }
         }
 
+        try {
+          await Promise.all([fetchPayments(), fetchInvoices()]);
+        } catch (refreshError) {
+          console.warn('Fallback refresh failed after payment approval:', refreshError);
+        }
+
         showToast("Payment approved successfully!");
       } catch (error) {
         console.error('Error approving payment:', error);
@@ -3821,14 +3968,18 @@ Indian Muslim Association, Hong Kong`;
 
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const memberBusinessId = member.id ? String(member.id).trim() : "";
+      const memberPreviousIds = Array.isArray(member.previousDisplayIds)
+        ? member.previousDisplayIds.map((entry) => String(entry?.id || "").trim()).filter(Boolean)
+        : [];
+      const memberAliases = new Set([memberBusinessId, ...memberPreviousIds].filter(Boolean));
 
       try {
         setLoadingMemberInvoices(true);
         const response = await fetch(`${apiUrl}/api/invoices`);
         if (response.ok) {
           const invoices = await response.json();
-          const memberInvoices = memberBusinessId
-            ? invoices.filter((invoice) => String(invoice.memberId || "").trim() === memberBusinessId)
+          const memberInvoices = memberAliases.size > 0
+            ? invoices.filter((invoice) => memberAliases.has(String(invoice.memberId || "").trim()))
             : [];
           console.log(`✓ Refreshed ${memberInvoices.length} invoices for member ${memberBusinessId || member._id}`);
           setSelectedMemberInvoices(memberInvoices);
@@ -4039,6 +4190,7 @@ Indian Muslim Association, Hong Kong`;
       options = {}
     ) => {
       const { requirePassword = false } = options || {};
+
       setConfirmationDialog({
         ...confirmationDialogDefaults,
         isOpen: true,
@@ -4048,6 +4200,9 @@ Indian Muslim Association, Hong Kong`;
         onCancel: onCancel || null,
         requirePassword,
       });
+
+      // Replace the current modal with confirmation while keeping a path to restore
+      openConfirmModal("confirmationDialog");
     };
 
     const resetConfirmationDialog = () => {
@@ -4063,6 +4218,7 @@ Indian Muslim Association, Hong Kong`;
       if (confirmationDialog.isProcessing) return;
       const cancelAction = confirmationDialog.onCancel;
       resetConfirmationDialog();
+      cancelConfirmModal();
       if (typeof cancelAction === "function") {
         cancelAction();
       }
@@ -4129,6 +4285,7 @@ Indian Muslim Association, Hong Kong`;
       resetConfirmationDialog();
       try {
         await confirmAction();
+        closeAllModals();
       } catch (error) {
         console.error("Confirmation action failed:", error);
       }
@@ -4334,6 +4491,7 @@ Indian Muslim Association, Hong Kong`;
         lastPayment: member.last_payment_date ? new Date(member.last_payment_date).toISOString().split('T')[0] : "",
       });
       setShowMemberForm(true);
+      openModal('memberForm');
     };
 
     const handleUpdateMember = async (e) => {
@@ -4355,22 +4513,6 @@ Indian Muslim Association, Hong Kong`;
         const originalMember = editingMember;
 
         // Compare each field and only include if changed
-        // Compare member ID (if changed, need to update)
-        const rawMemberId = (memberForm.id || "").trim();
-        const isNotAssigned = rawMemberId.toLowerCase() === "not assigned";
-        const normalizedInputId = isNotAssigned ? "" : rawMemberId;
-        if (normalizedInputId !== (originalMember.id || "")) {
-          // Validate member ID format (must be at least 2 alphanumeric characters)
-          if (normalizedInputId && normalizedInputId.length < 2) {
-            showToast("Member ID must be at least 2 characters", "error");
-            setMemberFieldErrors(prev => ({ ...prev, id: true }));
-            setCurrentInvalidField("id");
-            return;
-          }
-          if (normalizedInputId) {
-            updateData.id = normalizedInputId.toUpperCase();
-          }
-        }
         if (memberForm.name !== (originalMember.name || "")) {
           updateData.name = memberForm.name;
         }
@@ -4433,33 +4575,47 @@ Indian Muslim Association, Hong Kong`;
           return;
         }
 
-        await updateMember(editingMember._id, updateData);
-        setEditingMember(null);
-        setMemberForm({
-          name: "",
-          email: "",
-          phone: "",
-          native: "",
-          password: "",
-          status: "Active",
-          balance: "500",
-          nextDue: getTodayDate(),
-          lastPayment: "",
-          subscriptionType: SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
-          subscriptionYear: new Date().getFullYear().toString(),
-        });
-        // Clear validation state
-        setMemberFieldErrors({
-          name: false,
-          id: false,
-          email: false,
-          phone: false,
-          nextDue: false,
-          lastPayment: false,
-        });
-        setCurrentInvalidField(null);
-        setShowMemberForm(false);
-        showToast("Member updated successfully!");
+        const performUpdate = async () => {
+          await updateMember(editingMember._id, updateData);
+          setEditingMember(null);
+          setMemberForm({
+            name: "",
+            email: "",
+            phone: "",
+            native: "",
+            password: "",
+            status: "Active",
+            balance: "500",
+            nextDue: getTodayDate(),
+            lastPayment: "",
+            subscriptionType: SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
+            subscriptionYear: new Date().getFullYear().toString(),
+          });
+          // Clear validation state
+          setMemberFieldErrors({
+            name: false,
+            id: false,
+            email: false,
+            phone: false,
+            nextDue: false,
+            lastPayment: false,
+          });
+          setCurrentInvalidField(null);
+          setShowMemberForm(false);
+          showToast("Member updated successfully!");
+        };
+
+        if (updateData.subscriptionType) {
+          showConfirmation(
+            "Changing subscription will generate a new display ID and keep old invoices/payments unchanged. Continue?",
+            performUpdate,
+            null,
+            "Confirm"
+          );
+          return;
+        }
+
+        await performUpdate();
       } catch (error) {
         const errorMessage = error?.message || "Failed to update member. Please try again.";
         showToast(errorMessage, "error");
@@ -4471,11 +4627,18 @@ Indian Muslim Association, Hong Kong`;
         "Are you sure you want to delete this member?",
         async () => {
           try {
+            // Delete member - deleteMember from context already handles optimistic state update
             await deleteMember(id);
-            showToast("Member deleted successfully!");
-             window.location.reload();
+
+            // Show success message for 2+ seconds
+            setNotieMessage("Member deleted successfully!");
+            setNotieType("success");
+            setTimeout(() => setNotieMessage(null), 2000);
           } catch (error) {
-            showToast("Failed to delete member. Please try again.", "error");
+            // Error message for 2+ seconds
+            setNotieMessage("Failed to delete member. Please try again.");
+            setNotieType("error");
+            setTimeout(() => setNotieMessage(null), 2000);
           }
         },
         null,
@@ -4756,15 +4919,21 @@ Indian Muslim Association, Hong Kong`;
         }
 
         const approvalResult = await paymentResponse.json();
+        console.log("✓ Payment approval response:", approvalResult);
         const approvedInvoice = approvalResult?.invoice || null;
         const approvedMember = approvalResult?.member || null;
 
-     if (approvedInvoice) {
-  updateInvoiceInSelectedTable(
-    approvedInvoice,
-    paymentModalData.receiver_name // pass the latest receiver name from modal
-  );
-}
+        if (approvedInvoice) {
+          console.log("✓ Approved invoice received:", {
+            id: approvedInvoice._id || approvedInvoice.id,
+            status: approvedInvoice.status,
+            receiptNumber: approvedInvoice.receiptNumber,
+          });
+          updateInvoiceInSelectedTable(
+            approvedInvoice,
+            paymentModalData.receiver_name
+          );
+        }
 
         // Step 2: Store member ID for later use (avoid stale closure)
         const processedMemberDbId = member?._id || null;
@@ -4773,11 +4942,24 @@ Indian Muslim Association, Hong Kong`;
         const invoiceForConfirmation = approvedInvoice || { ...invoice, status: "Paid" };
         setPaymentConfirmationInvoice(invoiceForConfirmation);
         setPaymentConfirmationChannels({ email: false, whatsapp: false });
-        setShowPaymentConfirmationModal(true);
+        // Replace payment modal with confirmation modal (modal replacement pattern)
+        openConfirmModal('paymentConfirmation');
 
         // Step 7: Update selectedMember and their invoices if we're currently viewing this member's details
         if (processedMemberDbId && selectedMember && selectedMember._id === processedMemberDbId && approvedMember?._id) {
           setSelectedMember(approvedMember);
+        }
+
+        try {
+          await fetchInvoices();
+          console.log("✓ Invoices list refreshed after payment approval");
+        } catch (refreshError) {
+          console.warn("⚠ Failed to refresh invoices list after payment approval:", refreshError);
+        }
+
+        if (selectedMember) {
+          await refreshSelectedMemberInvoices(selectedMember);
+          console.log("✓ Selected member invoices refreshed after payment approval");
         }
 
         // Step 4: Show success message
@@ -4805,71 +4987,6 @@ Indian Muslim Association, Hong Kong`;
         showToast(error.message || "Failed to mark invoice as paid", "error");
       }
     };
-
-    // const handleDeleteInvoice = (invoiceIdentifier, options = {}) => {
-    //   const { skipConfirmation = false } = options || {};
-    //   const normalizedId = String(invoiceIdentifier);
-    //   const findByIdentifier = (collection = []) =>
-    //     collection.find((inv) => {
-    //       const candidateId = String(inv.id || inv._id || "");
-    //       return candidateId === normalizedId;
-    //     });
-
-    //   const invoice = findByIdentifier(selectedMemberInvoices) || findByIdentifier(invoices);
-    //   if (!invoice) {
-    //     showToast("Invoice not found", "error");
-    //     return;
-    //   }
-
-    //   // Prevent deletion after payment (Paid/Completed)
-    //   if (invoice.status === "Paid" || invoice.status === "Completed") {
-    //     showToast("Paid invoices cannot be deleted", "error");
-    //     return;
-    //   }
-
-    //   const confirmDelete = async () => {
-    //     try {
-    //       await deleteInvoice(invoice._id || normalizedId);
-
-    //       const isViewingMemberDetail =
-    //         activeSection === "member-detail" &&
-    //         selectedMember &&
-    //         invoice.memberId &&
-    //         String(selectedMember.id).toLowerCase() === String(invoice.memberId).toLowerCase();
-
-    //       if (isViewingMemberDetail) {
-    //         setSelectedMemberInvoices((prev) => {
-    //           if (!Array.isArray(prev) || prev.length === 0) return prev;
-    //           const updated = prev.filter((inv) => {
-    //             const candidateId = String(inv.id || inv._id || "");
-    //             return candidateId !== normalizedId;
-    //           });
-    //           return updated;
-    //         });
-    //         if (selectedMember?._id) {
-    //           await refreshSelectedMemberInvoices(selectedMember);
-    //         }
-    //       }
-
-    //       showToast("Invoice deleted successfully!");
-    //     } catch (error) {
-    //       console.error("Failed to delete invoice:", error);
-    //       showToast(error.message || "Failed to delete invoice", "error");
-    //     }
-    //   };
-
-    //   if (skipConfirmation) {
-    //     return confirmDelete();
-    //   }
-
-    //   showConfirmation(
-    //     "Are you sure you want to delete this invoice? This cannot be undone.",
-    //     confirmDelete,
-    //     null,
-    //     "Delete",
-    //     { requirePassword: true }
-    //   );
-    // };
 
 
     // Helper function to generate invoice list text for WhatsApp
@@ -5575,298 +5692,310 @@ Indian Muslim Association, Hong Kong`;
 
         {/* Toast Notification */}
         {/* Confirmation Dialog */}
-        {confirmationDialog.isOpen && (
-          <div
-            className="confirmation-dialog-overlay"
-            onClick={(e) => {
-              // Prevent closing on background click
-              e.stopPropagation();
-            }}
-          >
-            <div
-              className="confirmation-dialog"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="confirmation-dialog-content">
-                <p className="confirmation-dialog-message">
-                  {confirmationDialog.message}
-                </p>
-                {confirmationDialog.requirePassword && (
-                  <div className="confirmation-dialog-password" style={{ marginTop: "1rem", width: "100%" }}>
-                    <label className="mono-label" style={{ width: "100%" }}>
-                      <span>Admin password confirmation</span>
-                      <input
-                        type="password"
-                        value={confirmationDialog.password}
-                        className="mono-input"
-                        onChange={handleConfirmationPasswordChange}
-                        placeholder="Enter your password to continue"
-                        autoComplete="current-password"
-                        autoCapitalize="off"
-                        autoCorrect="off"
-                        spellCheck="false"
-                        disabled={confirmationDialog.isProcessing}
-                        data-lpignore="true"
-                        data-form-type="password"
-                      />
-                    </label>
-                    <p style={{ fontSize: "0.78rem", color: "#6b7280", marginTop: "6px" }}>
-                      For security, please confirm with your admin password before deleting.
-                    </p>
-                  </div>
-                )}
-              </div>
-              <div className="confirmation-dialog-divider"></div>
-              <div className="confirmation-dialog-actions">
-                <button
-                  className="secondary-btn"
-                  type="button"
-                  onClick={handleConfirmationCancel}
-                  disabled={confirmationDialog.isProcessing}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="danger-btn admin-confirmation-button-success"
-                  type="button"
-                  onClick={handleConfirmationConfirm}
-                  disabled={confirmationDialog.isProcessing}
-                >
-                  {confirmationDialog.isProcessing ? "Validating..." : (confirmationDialog.confirmButtonText || "Confirm")}
-                </button>
-              </div>
+        <Modal
+          isOpen={isModalOpen('confirmationDialog') && confirmationDialog.isOpen}
+          onClose={handleConfirmationCancel}
+          title={null}
+          size="sm"
+          ariaLabel="Confirmation dialog"
+          contentClassName="admin-members-form-container"
+          contentStyle={{ maxWidth: "500px" }}
+        >
+          <div className="admin-members-form-header">
+            <div className="admin-members-form-header-top">
+              <h3 className="admin-members-form-title">
+                <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px" }}></i>
+                Confirm Action
+              </h3>
+              <button
+                className="admin-members-form-close"
+                onClick={handleConfirmationCancel}
+                disabled={confirmationDialog.isProcessing}
+                aria-label="Close"
+              >
+                <i className="fa-solid fa-times" />
+              </button>
             </div>
           </div>
-        )}
+
+          <div style={{ padding: "0 24px 24px" }}>
+            <p style={{ marginBottom: "20px", color: "#374151", fontSize: "0.95rem", lineHeight: 1.5 }}>
+              {confirmationDialog.message}
+            </p>
+            {confirmationDialog.requirePassword && (
+              <div style={{ marginBottom: "20px", width: "100%" }}>
+                <label className="mono-label" style={{ width: "100%" }}>
+                  <span>Admin password confirmation</span>
+                  <input
+                    type="password"
+                    value={confirmationDialog.password}
+                    className="mono-input"
+                    onChange={handleConfirmationPasswordChange}
+                    placeholder="Enter your password to continue"
+                    autoComplete="current-password"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    disabled={confirmationDialog.isProcessing}
+                    data-lpignore="true"
+                    data-form-type="password"
+                  />
+                </label>
+                <p style={{ fontSize: "0.78rem", color: "#6b7280", marginTop: "6px" }}>
+                  For security, please confirm with your admin password before deleting.
+                </p>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                className="secondary-btn"
+                type="button"
+                onClick={handleConfirmationCancel}
+                disabled={confirmationDialog.isProcessing}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary-btn"
+                type="button"
+                onClick={handleConfirmationConfirm}
+                disabled={confirmationDialog.isProcessing}
+                style={{
+                  background: "#ef4444",
+                  borderColor: "#ef4444",
+                  boxShadow: "0 2px 8px rgba(239, 68, 68, 0.3)"
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = "#dc2626";
+                  e.target.style.boxShadow = "0 4px 12px rgba(239, 68, 68, 0.4)";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = "#ef4444";
+                  e.target.style.boxShadow = "0 2px 8px rgba(239, 68, 68, 0.3)";
+                }}
+              >
+                {confirmationDialog.isProcessing ? "Validating..." : (confirmationDialog.confirmButtonText || "Confirm")}
+              </button>
+            </div>
+          </div>
+        </Modal>
 
         {/* Template Preview Modal */}
-        {showTemplatePreview && (
-          <div
-            className="modal-overlay modal-overlay-high"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowTemplatePreview(false);
-              }
-            }}
-          >
-            <div
-              className="card admin-template-preview-modal modal-container modal-container-800"
-              style={{
-                maxWidth: "900px",
-              }}
-              onClick={(e) => e.stopPropagation()}
+        <Modal
+          isOpen={showTemplatePreview}
+          onClose={() => setShowTemplatePreview(false)}
+          title={null}
+          size="lg"
+          ariaLabel="Email template preview"
+          contentClassName="card admin-template-preview-modal modal-container modal-container-800"
+          contentStyle={{ maxWidth: "900px" }}
+        >
+          <div className="modal-header mb-2xl">
+            <h3 className="modal-title">
+              <i className="fas fa-eye text-primary"></i>
+              Email Template {showTemplateCode ? "Code" : "Preview"}
+            </h3>
+            <button
+              type="button"
+              onClick={() => setShowTemplatePreview(false)}
+              className="close-btn-simple"
+              aria-label="Close template preview"
             >
-              <div className="modal-header mb-2xl">
-                <h3 className="modal-title">
-                  <i className="fas fa-eye text-primary"></i>
-                  Email Template {showTemplateCode ? "Code" : "Preview"}
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setShowTemplatePreview(false)}
-                  className="close-btn-simple"
-                  aria-label="Close template preview"
-                >
-                  ×
-                </button>
-              </div>
-              <div style={{ marginBottom: "16px", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  onClick={() => setShowTemplateCode(!showTemplateCode)}
-                  className="secondary-btn"
-                  style={{
-                    fontSize: "0.875rem",
-                    padding: "8px 16px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px"
-                  }}
-                >
-                  <i className={`fas ${showTemplateCode ? "fa-eye" : "fa-code"}`}></i>
-                  {showTemplateCode ? "Show Preview" : "Show Template Code"}
-                </button>
-              </div>
-              {showTemplateCode ? (
-                <div
-                  style={{
-                    background: "#1e1e1e",
-                    color: "#d4d4d4",
-                    padding: "20px",
-                    borderRadius: "8px",
-                    fontFamily: "Monaco, 'Courier New', monospace",
-                    fontSize: "0.875rem",
-                    lineHeight: "1.6",
-                    overflow: "auto",
-                    maxHeight: "600px",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word"
-                  }}
-                >
-                  {emailTemplate.htmlTemplate || "No template available"}
-                </div>
-              ) : (
-              <div
-                className="admin-template-preview-content"
-                dangerouslySetInnerHTML={{ __html: getPreviewTemplate() }}
-              />
-              )}
-              <div className="mt-2xl pt-xl border-t flex justify-end">
-                <button
-                  className="secondary-btn"
-                  onClick={() => setShowTemplatePreview(false)}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
+              ×
+            </button>
           </div>
-        )}
+          <div style={{ marginBottom: "16px", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => setShowTemplateCode(!showTemplateCode)}
+              className="secondary-btn"
+              style={{
+                fontSize: "0.875rem",
+                padding: "8px 16px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px"
+              }}
+            >
+              <i className={`fas ${showTemplateCode ? "fa-eye" : "fa-code"}`}></i>
+              {showTemplateCode ? "Show Preview" : "Show Template Code"}
+            </button>
+          </div>
+          {showTemplateCode ? (
+            <div
+              style={{
+                background: "#1e1e1e",
+                color: "#d4d4d4",
+                padding: "20px",
+                borderRadius: "8px",
+                fontFamily: "Monaco, 'Courier New', monospace",
+                fontSize: "0.875rem",
+                lineHeight: "1.6",
+                overflow: "auto",
+                maxHeight: "600px",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word"
+              }}
+            >
+              {emailTemplate.htmlTemplate || "No template available"}
+            </div>
+          ) : (
+            <div
+              className="admin-template-preview-content"
+              dangerouslySetInnerHTML={{ __html: getPreviewTemplate() }}
+            />
+          )}
+          <div className="mt-2xl pt-xl border-t flex justify-end">
+            <button
+              className="secondary-btn"
+              onClick={() => setShowTemplatePreview(false)}
+            >
+              Close
+            </button>
+          </div>
+        </Modal>
 
         {/* Channel Selection Modal */}
-        {showChannelSelection && (
-          <div
-            className="modal-overlay modal-overlay-high"
-            onClick={() => {
-              setShowChannelSelection(false);
-              setPendingReminderAction(null);
-            }}
-          >
-            <div
-              className="admin-modal-card admin-modal-card--small"
-              onClick={(e) => e.stopPropagation()}
+        <Modal
+          isOpen={showChannelSelection}
+          onClose={() => {
+            setShowChannelSelection(false);
+            setPendingReminderAction(null);
+          }}
+          title={null}
+          size="sm"
+          ariaLabel="Channel selection"
+          contentClassName="admin-modal-card admin-modal-card--small"
+        >
+          <div className="modal-header mb-2xl">
+            <h3 className="modal-title">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="icon-spacing-sm" style={{ verticalAlign: "middle", display: "inline-block" }}>
+                <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#5a31ea" />
+              </svg>
+              Select Channel
+            </h3>
+            <button
+              type="button"
+              onClick={() => {
+                setShowChannelSelection(false);
+                setPendingReminderAction(null);
+              }}
+              className="close-btn-simple"
             >
-              <div className="modal-header mb-2xl">
-                <h3 className="modal-title">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="icon-spacing-sm" style={{ verticalAlign: "middle", display: "inline-block" }}>
-                    <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#5a31ea" />
-                  </svg>
-                  Select Channel
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowChannelSelection(false);
-                    setPendingReminderAction(null);
-                  }}
-                  className="close-btn-simple"
-                >
-                  ×
-                </button>
-              </div>
-              <p className="mb-2xl text-muted">
-                {pendingReminderAction?.type === 'bulk'
-                  ? (selectedChannels.length > 0
-                    ? `Selected: ${selectedChannels.join(" and ")}. Click "Send" to send reminders to all outstanding members.`
-                    : "Select one or both channels to send reminders to all outstanding members:")
-                  : `Select the channel to send reminder to ${pendingReminderAction?.memberData?.name || 'member'}:`}
-              </p>
-              <div className="admin-channel-buttons-container">
-                {/* Channel selection buttons - always visible for bulk */}
-                {pendingReminderAction?.type === 'bulk' ? (
-                  <>
-                    <button
-                      className={`admin-channel-button ${selectedChannels.includes('Email') ? 'admin-channel-button--selected' : ''}`}
-                      onClick={() => handleSelectChannel('Email')}
-                      style={{ display: "none" }}
-                    >
-                      <div className="admin-channel-button-content">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                          <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="#ffffff" />
-                        </svg>
-                        <span className="admin-channel-button-text-white">Email</span>
-                      </div>
-                      {selectedChannels.includes('Email') && (
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginLeft: "8px" }}>
-                          <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#ffffff" />
-                        </svg>
-                      )}
-                    </button>
-                    <button
-                      className={`admin-channel-button ${selectedChannels.includes('WhatsApp') ? 'admin-channel-button--selected' : ''}`}
-                      onClick={() => handleSelectChannel('WhatsApp')}
-                    >
-                      <div className="admin-channel-button-content">
-                        <i className="fab fa-whatsapp admin-channel-button-icon-white"></i>
-                        <span className="admin-channel-button-text-white">WhatsApp</span>
-                      </div>
-                      {selectedChannels.includes('WhatsApp') && (
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginLeft: "8px" }}>
-                          <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#ffffff" />
-                        </svg>
-                      )}
-                    </button>
-
-                    {/* Send All button - shown when at least one channel is selected */}
-                    {selectedChannels.length > 0 && (
-                      <button
-                        className={`admin-channel-send-button ${(sendingToAll || sendingWhatsAppToAll) ? 'admin-channel-send-button-loading' : ''}`}
-                        onClick={handleSendAllWithSelectedChannels}
-                        disabled={sendingToAll || sendingWhatsAppToAll}
-                      >
-                        {sendingToAll || sendingWhatsAppToAll ? (
-                          <>
-                            <svg
-                              className="login-btn-spinner"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
-                              <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"></path>
-                            </svg>
-                            Sending...
-                          </>
-                        ) : (
-                          <>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                              <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#ffffff" />
-                            </svg>
-                            Send
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  // Single member - send immediately
-                  <>
-                    <button
-                      className="admin-channel-action-button"
-                      onClick={() => handleSelectChannel('Email')}
-                      style={{ display: "none" }}
-                    >
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                        <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor" />
-                      </svg>
-                      Email
-                    </button>
-                    <button
-                      className="admin-channel-action-button admin-channel-action-button--whatsapp"
-                      onClick={() => handleSelectChannel('WhatsApp')}
-                    >
-                      <i className="fab fa-whatsapp admin-channel-action-icon-large"></i>
-                      WhatsApp
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="admin-modal-footer">
-                <button
-                  className="secondary-btn"
-                  onClick={() => {
-                    setShowChannelSelection(false);
-                    setPendingReminderAction(null);
-                    setSelectedChannels([]);
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+              ×
+            </button>
           </div>
-        )}
+          <p className="mb-2xl text-muted">
+            {pendingReminderAction?.type === 'bulk'
+              ? (selectedChannels.length > 0
+                ? `Selected: ${selectedChannels.join(" and ")}. Click "Send" to send reminders to all outstanding members.`
+                : "Select one or both channels to send reminders to all outstanding members:")
+              : `Select the channel to send reminder to ${pendingReminderAction?.memberData?.name || 'member'}:`}
+          </p>
+          <div className="admin-channel-buttons-container">
+            {/* Channel selection buttons - always visible for bulk */}
+            {pendingReminderAction?.type === 'bulk' ? (
+              <>
+                <button
+                  className={`admin-channel-button ${selectedChannels.includes('Email') ? 'admin-channel-button--selected' : ''}`}
+                  onClick={() => handleSelectChannel('Email')}
+                  style={{ display: "none" }}
+                >
+                  <div className="admin-channel-button-content">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                      <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="#ffffff" />
+                    </svg>
+                    <span className="admin-channel-button-text-white">Email</span>
+                  </div>
+                  {selectedChannels.includes('Email') && (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginLeft: "8px" }}>
+                      <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#ffffff" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  className={`admin-channel-button ${selectedChannels.includes('WhatsApp') ? 'admin-channel-button--selected' : ''}`}
+                  onClick={() => handleSelectChannel('WhatsApp')}
+                >
+                  <div className="admin-channel-button-content">
+                    <i className="fab fa-whatsapp admin-channel-button-icon-white"></i>
+                    <span className="admin-channel-button-text-white">WhatsApp</span>
+                  </div>
+                  {selectedChannels.includes('WhatsApp') && (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginLeft: "8px" }}>
+                      <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM10 17L5 12L6.41 10.59L10 14.17L17.59 6.58L19 8L10 17Z" fill="#ffffff" />
+                    </svg>
+                  )}
+                </button>
+
+                {/* Send All button - shown when at least one channel is selected */}
+                {selectedChannels.length > 0 && (
+                  <button
+                    className={`admin-channel-send-button ${(sendingToAll || sendingWhatsAppToAll) ? 'admin-channel-send-button-loading' : ''}`}
+                    onClick={handleSendAllWithSelectedChannels}
+                    disabled={sendingToAll || sendingWhatsAppToAll}
+                  >
+                    {sendingToAll || sendingWhatsAppToAll ? (
+                      <>
+                        <svg
+                          className="login-btn-spinner"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
+                          <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round"></path>
+                        </svg>
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                          <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="#ffffff" />
+                        </svg>
+                        Send
+                      </>
+                    )}
+                  </button>
+                )}
+              </>
+            ) : (
+              // Single member - send immediately
+              <>
+                <button
+                  className="admin-channel-action-button"
+                  onClick={() => handleSelectChannel('Email')}
+                  style={{ display: "none" }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
+                    <path d="M20 4H4C2.9 4 2.01 4.9 2.01 6L2 18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM20 8L12 13L4 8V6L12 11L20 6V8Z" fill="currentColor" />
+                  </svg>
+                  Email
+                </button>
+                <button
+                  className="admin-channel-action-button admin-channel-action-button--whatsapp"
+                  onClick={() => handleSelectChannel('WhatsApp')}
+                >
+                  <i className="fab fa-whatsapp admin-channel-action-icon-large"></i>
+                  WhatsApp
+                </button>
+              </>
+            )}
+          </div>
+          <div className="admin-modal-footer">
+            <button
+              className="secondary-btn"
+              onClick={() => {
+                setShowChannelSelection(false);
+                setPendingReminderAction(null);
+                setSelectedChannels([]);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </Modal>
 
         <Notie
           message={notieMessage}
@@ -6284,6 +6413,7 @@ Indian Muslim Association, Hong Kong`;
                           className="primary-btn"
                           onClick={() => {
                             setShowMemberForm(true);
+                            openModal('memberForm');
                             setEditingMember(null);
                             // Reset form with balance matching default subscription type
                             setMemberForm({
@@ -6309,29 +6439,29 @@ Indian Muslim Association, Hong Kong`;
 
                   {/* Member Form - now as popup/modal */}
                   {showMemberForm && (
-                    <div
-                      className="admin-members-form-overlay"
-                      onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                          // Clear validation state when closing
-                          setMemberFieldErrors({
-                            name: false,
-                            email: false,
-                            phone: false,
-                            nextDue: false,
-                            lastPayment: false,
-                          });
-                          setCurrentInvalidField(null);
-                          setShowMemberForm(false);
-                          setEditingMember(null);
-                        }
+                    <Modal
+                      isOpen={isModalOpen('memberForm') && showMemberForm}
+                      onClose={() => {
+                        // Clear validation state when closing
+                        setMemberFieldErrors({
+                          name: false,
+                          id: false,
+                          email: false,
+                          phone: false,
+                          nextDue: false,
+                          lastPayment: false,
+                        });
+                        setCurrentInvalidField(null);
+                        setShowMemberForm(false);
+                        setEditingMember(null);
+                        closeAllModals();
                       }}
+                      title={null}
+                      size="lg"
+                      ariaLabel="Member form"
+                      contentClassName="admin-members-form-container"
                     >
-                      <div
-                        className="admin-members-form-container"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="admin-members-form-header">
+                      <div className="admin-members-form-header">
                           <div className="admin-members-form-header-top">
                             <h4 className="admin-members-form-title">
                               <i className="fas fa-user-plus" aria-hidden="true"></i>
@@ -6652,21 +6782,9 @@ Indian Muslim Association, Hong Kong`;
                                 <input
                                   type="text"
                                   value={(memberForm.id && String(memberForm.id).trim().toLowerCase() === "not assigned") ? "" : (memberForm.id ?? "")}
-                                  onChange={(e) => {
-                                    let value = e.target.value;
-                                    // Allow alphanumeric characters, max 10 characters
-                                    value = value.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10).toUpperCase();
-                                    handleMemberFieldChange("id", value);
-                                    // Clear error when user starts typing
-                                    if (memberFieldErrors.id || currentInvalidField === "id") {
-                                      setMemberFieldErrors(prev => ({ ...prev, id: false }));
-                                      if (currentInvalidField === "id") {
-                                        setCurrentInvalidField(null);
-                                      }
-                                    }
-                                  }}
                                   placeholder="Enter Member ID (eg: AM001)"
                                   maxLength={10}
+                                  readOnly
                                   style={{
                                     width: "100%",
                                     padding: "10px 16px",
@@ -6674,6 +6792,8 @@ Indian Muslim Association, Hong Kong`;
                                     borderRadius: "4px",
                                     fontSize: "0.9375rem",
                                     textTransform: "uppercase",
+                                    background: "#f9fafb",
+                                    cursor: "not-allowed",
                                     borderColor: (memberFieldErrors.id && currentInvalidField === "id") ? "#ef4444" : undefined,
                                     borderWidth: (memberFieldErrors.id && currentInvalidField === "id") ? "2px" : undefined,
                                     borderStyle: (memberFieldErrors.id && currentInvalidField === "id") ? "solid" : undefined,
@@ -6691,6 +6811,46 @@ Indian Muslim Association, Hong Kong`;
                                   }}>
                                     Please enter at least 2 characters
                                   </span>
+                                )}
+                              </label>
+
+                              <label>
+                                <span>
+                                  <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                  Subscription Type
+                                </span>
+                                <select
+                                  value={memberForm.subscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER}
+                                  onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
+                                  style={{
+                                    width: "100%",
+                                    padding: "10px 12px",
+                                    borderRadius: "8px",
+                                    border: "1px solid #e0e0e0",
+                                    fontSize: "0.9375rem",
+                                    background: "#fff",
+                                    outline: "none",
+                                    cursor: "pointer",
+                                    appearance: "none",
+                                    WebkitAppearance: "none",
+                                    MozAppearance: "none",
+                                    backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E\")",
+                                    backgroundRepeat: "no-repeat",
+                                    backgroundPosition: "right 12px center",
+                                    paddingRight: "36px",
+                                    transition: "all 0.2s ease"
+                                  }}
+                                >
+                                  {SUBSCRIPTION_TYPE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                {editingMember && normalizeSubscriptionType(editingMember.subscriptionType) !== memberForm.subscriptionType && (
+                                  <div style={{ marginTop: "6px", fontSize: "0.8rem", color: "#6b7280" }}>
+                                    Will become {getPreviewDisplayId(memberForm.subscriptionType)}
+                                  </div>
                                 )}
                               </label>
 
@@ -6969,9 +7129,8 @@ Indian Muslim Association, Hong Kong`;
                               </button>
                             </div>
                           </form>
-                        </div>
                       </div>
-                    </div>
+                    </Modal>
                   )}
 
                   {/* Pending Members Section */}
@@ -8329,12 +8488,16 @@ Indian Muslim Association, Hong Kong`;
                                                 setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
                                           setCurrentInvalidPaymentModalField(null);
                                           setShowPaymentModal(true);
+                                                openModal('paymentModal');
                                         }}
                                       >
                                         Pay
                                       </button>
-                                      <button
-                                        className="ghost-btn icon-btn icon-btn--delete"
+                                      <ActionIcon
+                                        icon="fa-trash"
+                                        tooltip="Delete Invoice"
+                                        variant="delete"
+                                        ariaLabel="Delete Invoice"
                                         onClick={() => {
                                           showConfirmation(
                                             `Delete invoice ${invoice.id}? This cannot be undone.`,
@@ -8344,47 +8507,40 @@ Indian Muslim Association, Hong Kong`;
                                             { requirePassword: true }
                                           );
                                         }}
-                                        aria-label="Delete Invoice"
-                                      >
-                                        <Tooltip text="Delete Invoice" position="top">
-                                        <i className="fas fa-trash" aria-hidden="true"></i>
-                                        </Tooltip>
-                                      </button>
+                                      />
                                           </>
                                         )}
                                         {/* Paid invoices: Show Send, PDF, and Delete buttons as circular icons */}
                                         {isPaid && (
                                           <>
-                                            <button
-                                              className="icon-btn icon-btn--view"
+                                            <ActionIcon
+                                              icon="fa-whatsapp"
+                                              tooltip="Send Confirmation"
+                                              variant="whatsapp"
+                                              ariaLabel="Send payment confirmation"
                                               onClick={() => {
                                                 setPaymentConfirmationInvoice(invoice);
                                                 setPaymentConfirmationChannels({ email: false, whatsapp: false });
-                                                setShowPaymentConfirmationModal(true);
+                                                openConfirmModal('paymentConfirmation');
                                               }}
-                                              aria-label="Send payment confirmation"
-                                            >
-                                              <Tooltip text="Send Confirmation" position="top">
-                                                <i className="fas fa-paper-plane" aria-hidden="true"></i>
-                                              </Tooltip>
-                                            </button>
-                                            <button
-                                              className="icon-btn"
-                                              style={{ color: "#ef4444" }}
+                                            />
+                                            <ActionIcon
+                                              icon="fa-file-pdf"
+                                              tooltip="View/Download PDF"
+                                              variant="pdf"
+                                              ariaLabel="PDF Options"
                                               onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
                                                 setSelectedPdfInvoice(invoice);
                                                 setShowPdfOptionsModal(true);
                                               }}
-                                              aria-label="PDF Options"
-                                            >
-                                              <Tooltip text="View/Download PDF" position="top">
-                                                <i className="fas fa-file-pdf" aria-hidden="true"></i>
-                                              </Tooltip>
-                                            </button>
-                                            <button
-                                              className="icon-btn icon-btn--delete"
+                                            />
+                                            <ActionIcon
+                                              icon="fa-trash"
+                                              tooltip="Delete Invoice"
+                                              variant="delete"
+                                              ariaLabel="Delete Invoice"
                                               onClick={() => {
                                                 showConfirmation(
                                                   `Delete invoice ${invoice.id}? This cannot be undone.`,
@@ -8394,12 +8550,7 @@ Indian Muslim Association, Hong Kong`;
                                                   { requirePassword: true }
                                                 );
                                               }}
-                                              aria-label="Delete Invoice"
-                                            >
-                                              <Tooltip text="Delete Invoice" position="top">
-                                                <i className="fas fa-trash" aria-hidden="true"></i>
-                                              </Tooltip>
-                                            </button>
+                                            />
                                           </>
                                         )}
                                       </>
@@ -11614,24 +11765,22 @@ Indian Muslim Association, Hong Kong`;
                                           <td>
                                             <div style={{ display: "flex", gap: "6px" }} onClick={(e) => e.stopPropagation()}>
                                               {/* View full message in modal */}
-                                              <button
-                                                type="button"
-                                                className="icon-btn icon-btn--view"
-                                                aria-label="View full message"
+                                              <ActionIcon
+                                                icon="fa-eye"
+                                                tooltip="View full message"
+                                                variant="default"
+                                                ariaLabel="View full message"
                                                 onClick={() => {
                                                   setSelectedReminderLogItem(item);
                                                 }}
-                                              >
-                                                <Tooltip text="View full message" position="top">
-                                                <i className="fas fa-eye" aria-hidden="true"></i>
-                                                </Tooltip>
-                                              </button>
+                                              />
                                               {/* Retry failed email reminders */}
                                               {item.channel === "Email" && item.status === "Failed" && !isViewer && (
-                                                <button
-                                                  type="button"
-                                                  className="icon-btn icon-btn--edit"
-                                                  aria-label="Retry sending reminder"
+                                                <ActionIcon
+                                                  icon="fa-redo"
+                                                  tooltip="Retry sending"
+                                                  variant="default"
+                                                  ariaLabel="Retry sending reminder"
                                                   onClick={async () => {
                                                     try {
                                                       // Only backend-stored reminder logs have raw.id or raw._id
@@ -11666,11 +11815,7 @@ Indian Muslim Association, Hong Kong`;
                                                       showToast("Failed to retry reminder", "error");
                                                     }
                                                   }}
-                                                >
-                                                  <Tooltip text="Retry sending" position="top">
-                                                  <i className="fas fa-redo" aria-hidden="true"></i>
-                                                  </Tooltip>
-                                                </button>
+                                                />
                                               )}
                                             </div>
                                           </td>
@@ -12526,20 +12671,29 @@ Indian Muslim Association, Hong Kong`;
 
                   {/* Payment Form - shown as popup modal */}
                   {showPaymentForm && (
-                    <div
-                      className="modal-overlay"
-                      onClick={(e) => {
-                        // 点击遮罩不关闭，避免误操作；只允许通过按钮关闭
-                        if (e.target === e.currentTarget) {
-                          // 如果你希望点击背景也能关闭，可以在这里调用关闭逻辑
-                        }
+                    <Modal
+                      isOpen={showPaymentForm}
+                      onClose={() => {
+                        setPaymentFieldErrors({
+                          memberId: false,
+                          amount: false,
+                          payment_type: false,
+                          method: false,
+                          receiver_name: false,
+                          screenshot: false,
+                          date: false,
+                        });
+                        setCurrentInvalidPaymentField(null);
+                        setShowPaymentForm(false);
+                        setEditingPayment(null);
+                        setPaymentForm(buildEmptyPaymentForm());
                       }}
+                      title={null}
+                      size="md"
+                      ariaLabel="Payment form"
+                      contentClassName="card modal-container modal-container-640"
                     >
-                      <div
-                        className="card modal-container modal-container-640"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="modal-header mb-xl">
+                      <div className="modal-header mb-xl">
                           <h4 className="m-0">
                             {editingPayment ? "Edit Payment" : "Add New Payment"}
                           </h4>
@@ -12946,8 +13100,7 @@ Indian Muslim Association, Hong Kong`;
                             </button>
                           </div>
                         </form>
-                      </div>
-                    </div>
+                    </Modal>
                   )}
 
                   <div className="card-payment-approvals">
@@ -13052,28 +13205,24 @@ Indian Muslim Association, Hong Kong`;
                                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
                                         {payment.status === "Pending" && (
                                           <>
-                                            <button
-                                              className="icon-btn icon-btn--view"
+                                            <ActionIcon
+                                              icon="fa-check"
+                                              tooltip="Approve payment (By Admin)"
+                                              variant="default"
+                                              ariaLabel="Approve payment (By Admin)"
                                               onClick={() => {
                                                 if (paymentIdString) handleApprovePayment(paymentIdString);
                                               }}
-                                              aria-label="Approve payment (By Admin)"
-                                            >
-                                              <Tooltip text="Approve payment (By Admin)" position="top">
-                                              <i className="fas fa-check" aria-hidden="true"></i>
-                                              </Tooltip>
-                                            </button>
-                                            <button
-                                              className="icon-btn icon-btn--delete"
+                                            />
+                                            <ActionIcon
+                                              icon="fa-times"
+                                              tooltip="Reject payment (By Admin)"
+                                              variant="delete"
+                                              ariaLabel="Reject payment (By Admin)"
                                               onClick={() => {
                                                 if (paymentIdString) handleRejectPayment(paymentIdString);
                                               }}
-                                              aria-label="Reject payment (By Admin)"
-                                            >
-                                              <Tooltip text="Reject payment (By Admin)" position="top">
-                                              <i className="fas fa-times" aria-hidden="true"></i>
-                                              </Tooltip>
-                                            </button>
+                                            />
                                           </>
                                         )}
                                         {payment.status === "Rejected" && payment.rejectionReason && (
@@ -13746,8 +13895,11 @@ Indian Muslim Association, Hong Kong`;
                                         "Actions": {
                                           render: () => (
                                             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-start" }}>
-                                              <button
-                                                className="icon-btn icon-btn--view"
+                                              <ActionIcon
+                                                icon="fa-eye"
+                                                tooltip="View Invoice Details"
+                                                variant="default"
+                                                ariaLabel="View Invoice Details"
                                                 onClick={(e) => {
                                                   e.preventDefault();
                                                   e.stopPropagation();
@@ -13761,26 +13913,19 @@ Indian Muslim Association, Hong Kong`;
                                                     showToast("Member not found for this invoice", "error");
                                                   }
                                                 }}
-                                                aria-label="View Invoice Details"
-                                              >
-                                                <Tooltip text="View Invoice Details" position="top">
-                                                <i className="fas fa-eye" aria-hidden="true"></i>
-                                                </Tooltip>
-                                              </button>
+                                              />
                                               {!isPaid && (
-                                                <button
-                                                  className="icon-btn icon-btn--delete"
+                                                <ActionIcon
+                                                  icon="fa-trash"
+                                                  tooltip="Delete Invoice"
+                                                  variant="delete"
+                                                  ariaLabel="Delete Invoice"
                                                   onClick={() => {
                                                     if (invoice._id) {
                                                       handleDeleteInvoice(invoice._id);
                                                     }
                                                   }}
-                                                  aria-label="Delete Invoice"
-                                                >
-                                                  <Tooltip text="Delete Invoice" position="top">
-                                                  <i className="fas fa-trash" aria-hidden="true"></i>
-                                                  </Tooltip>
-                                                </button>
+                                                />
                                               )}
                                             </div>
                                           ),
@@ -13824,31 +13969,29 @@ Indian Muslim Association, Hong Kong`;
 
                   {/* Payment Form Modal */}
                   {showPaymentForm && (
-                    <div
-                      className="admin-members-form-overlay"
-                      onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                          setShowPaymentForm(false);
-                          setEditingPayment(null);
-                          setPaymentFieldErrors({
-                            memberId: false,
-                            amount: false,
-                            payment_type: false,
-                            method: false,
-                            receiver_name: false,
-                            screenshot: false,
-                            date: false,
-                          });
-                          setCurrentInvalidPaymentField(null);
-                          setPaymentForm(buildEmptyPaymentForm());
-                        }
+                    <Modal
+                      isOpen={showPaymentForm}
+                      onClose={() => {
+                        setShowPaymentForm(false);
+                        setEditingPayment(null);
+                        setPaymentFieldErrors({
+                          memberId: false,
+                          amount: false,
+                          payment_type: false,
+                          method: false,
+                          receiver_name: false,
+                          screenshot: false,
+                          date: false,
+                        });
+                        setCurrentInvalidPaymentField(null);
+                        setPaymentForm(buildEmptyPaymentForm());
                       }}
+                      title={null}
+                      size="lg"
+                      ariaLabel="Payment form"
+                      contentClassName="payments-card admin-members-form-container"
                     >
-                      <div
-                        className="payments-card admin-members-form-container"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
                           <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
                             <i className="fas fa-credit-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                             {editingPayment ? "Edit Payment" : "Add New Payment"}
@@ -14055,8 +14198,7 @@ Indian Muslim Association, Hong Kong`;
                             </button>
                           </div>
                         </form>
-                      </div>
-                    </div>
+                    </Modal>
                   )}
 
                   <div className=" card-payments">
@@ -14558,40 +14700,51 @@ Indian Muslim Association, Hong Kong`;
 
                   {/* Add Donation Form Modal */}
                   {showDonationForm && (
-                    <div
-                      className="admin-members-form-overlay"
-                      onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                          setIsDonationSubmitting(false);
-                          setShowDonationForm(false);
-                          setDonationForm({
-                            donorName: "",
-                            isMember: false,
-                            memberId: "",
-                            phone: "",
-                            donationType: "",
-                            amount: "",
-                            payment_type: "",
-                            method: "",
-                            receiver_name: "",
-                            date: "",
-                            notes: "",
-                            reference: "",
-                            screenshot: "",
-                          });
-                          setDonationImageFile(null);
-                          setDonationImagePreview(null);
-                          setDonationMemberSearch("");
-                          setShowDonationMemberDropdown(false);
-                          setShowDonationPaymentMethodDropdown(false);
-                        }
+                    <Modal
+                      isOpen={showDonationForm}
+                      onClose={() => {
+                        setDonationFieldErrors({
+                          donorName: false,
+                          donationType: false,
+                          amount: false,
+                          payment_type: false,
+                          method: false,
+                          receiver_name: false,
+                          date: false,
+                          screenshot: false,
+                        });
+                        setCurrentInvalidDonationField(null);
+                        setIsDonationSubmitting(false);
+                        setShowDonationForm(false);
+                        setDonationForm({
+                          donorName: "",
+                          isMember: false,
+                          memberId: "",
+                          phone: "",
+                          donationType: "",
+                          customDonationType: "",
+                          amount: "",
+                          payment_type: "",
+                          method: "",
+                          customMethod: "",
+                          receiver_name: "",
+                          date: "",
+                          notes: "",
+                          reference: "",
+                          screenshot: "",
+                        });
+                        setDonationImageFile(null);
+                        setDonationImagePreview(null);
+                        setDonationMemberSearch("");
+                        setShowDonationMemberDropdown(false);
+                        setShowDonationPaymentMethodDropdown(false);
                       }}
+                      title={null}
+                      size="lg"
+                      ariaLabel="Add donation"
+                      contentClassName="admin-members-form-container"
                     >
-                      <div
-                        className="admin-members-form-container"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="modal-header">
+                      <div className="modal-header">
                           <h4 className="modal-title">
                             <i className="fas fa-heart" aria-hidden="true"></i>
                             Add Donation
@@ -15851,8 +16004,7 @@ Indian Muslim Association, Hong Kong`;
                             </button>
                           </div>
                         </form>
-                      </div>
-                    </div>
+                    </Modal>
                   )}
 
                   {/* Total Donation Card */}
@@ -18086,28 +18238,26 @@ Indian Muslim Association, Hong Kong`;
                   </div>
                   {/* Add Admin Modal */}
                   {showAdminForm && (
-                    <div
-                      className="admin-members-form-overlay"
-                      onClick={(e) => {
-                        if (e.target === e.currentTarget) {
-                          setShowAdminForm(false);
-                          setShowAddAdminPassword(false);
-                          setAdminEmailError("");
-                          setAdminFieldErrors({
-                            name: false,
-                            email: false,
-                            phone: false,
-                            password: false,
-                          });
-                          setCurrentInvalidAdminField(null);
-                        }
+                    <Modal
+                      isOpen={showAdminForm}
+                      onClose={() => {
+                        setShowAdminForm(false);
+                        setShowAddAdminPassword(false);
+                        setAdminEmailError("");
+                        setAdminFieldErrors({
+                          name: false,
+                          email: false,
+                          phone: false,
+                          password: false,
+                        });
+                        setCurrentInvalidAdminField(null);
                       }}
+                      title={null}
+                      size="md"
+                      ariaLabel="Add admin"
+                      contentClassName="admin-members-form-container"
                     >
-                      <div
-                        className="admin-members-form-container"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="modal-header">
+                      <div className="modal-header">
                           <h4 className="modal-title">
                             <i className="fas fa-user-plus" aria-hidden="true"></i>
                             Add New Admin
@@ -18406,8 +18556,7 @@ Indian Muslim Association, Hong Kong`;
                             </button>
                           </div>
                         </form>
-                      </div>
-                    </div>
+                    </Modal>
                   )}
                 </article>
               )}
@@ -18417,31 +18566,29 @@ Indian Muslim Association, Hong Kong`;
 
         {/* Payment Modal */}
         {showPaymentModal && paymentModalInvoice && (
-          <div
-            className="admin-members-form-overlay"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowPaymentModal(false);
-                setPaymentModalInvoice(null);
-                setPaymentModalData({
-                  payment_type: "",
-                  method: "",
-                  receiver_name: "",
-                  imageFile: null,
-                  imagePreview: null,
-                  imageUrl: "",
-                  reference: "",
-                  selectedAdminId: "",
-                  adminMobile: "",
-                });
-              }
+          <Modal
+            isOpen={isModalOpen('paymentModal') && showPaymentModal && paymentModalInvoice}
+            onClose={() => {
+              setShowPaymentModal(false);
+              setPaymentModalInvoice(null);
+              setPaymentModalData({
+                payment_type: "",
+                method: "",
+                receiver_name: "",
+                imageFile: null,
+                imagePreview: null,
+                imageUrl: "",
+                reference: "",
+                selectedAdminId: "",
+                adminMobile: "",
+              });
+              closeAllModals();
             }}
+            title={null}
+            size="lg"
+            ariaLabel="Pay invoice"
+            contentClassName="card admin-members-form-container"
           >
-            <div
-              className="card admin-members-form-container"
-
-              onClick={(e) => e.stopPropagation()}
-            >
               <div className="modal-header">
                 <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: "600" }}>
                   <i className="fas fa-money-bill-wave" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
@@ -18764,68 +18911,6 @@ Indian Muslim Association, Hong Kong`;
                     />
                   </div>
                 )}
-
-                {/* Admin Selection - Hidden as requested */}
-                {/* {(paymentModalData.payment_type === "cash" || paymentModalData.payment_type === "online") && (
-                  <div style={{ marginBottom: "2px" }}>
-                    <div style={{ marginBottom: "2px" }}>
-                      <label style={{
-                        display: "block",
-                        fontSize: "0.875rem",
-                        fontWeight: "600",
-                        color: "#333",
-                        marginBottom: "8px"
-                      }}>
-                        Choose Admin <span style={{ color: "#ef4444" }}>*</span>
-                      </label>
-                      <select
-                        value={paymentModalData.selectedAdminId}
-                        onChange={(e) => {
-                          setPaymentModalData({ ...paymentModalData, selectedAdminId: e.target.value });
-                          if (paymentModalErrors.selectedAdminId || currentInvalidPaymentModalField === "selectedAdminId") {
-                            setPaymentModalErrors(prev => ({ ...prev, selectedAdminId: false }));
-                            if (currentInvalidPaymentModalField === "selectedAdminId") {
-                              setCurrentInvalidPaymentModalField(null);
-                            }
-                          }
-                        }}
-                        style={{
-                          width: "100%",
-                          padding: "10px 12px",
-                          border: paymentModalErrors.selectedAdminId && currentInvalidPaymentModalField === "selectedAdminId" ? "2px solid #ef4444" : "1px solid #e0e0e0",
-                          borderRadius: "8px",
-                          fontSize: "0.875rem",
-                          background: "#fff",
-                          outline: "none",
-                          cursor: "pointer",
-                          transition: "border-color 0.2s"
-                        }}
-                        onFocus={(e) => {
-                          if (!paymentModalErrors.selectedAdminId || currentInvalidPaymentModalField !== "selectedAdminId") {
-                            e.target.style.borderColor = "#5a31ea";
-                            e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                          }
-                        }}
-                        onBlur={(e) => {
-                          if (paymentModalErrors.selectedAdminId && currentInvalidPaymentModalField === "selectedAdminId") {
-                            e.target.style.borderColor = "#ef4444";
-                            e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
-                          } else {
-                            e.target.style.borderColor = "#e0e0e0";
-                            e.target.style.boxShadow = "none";
-                          }
-                        }}
-                      >
-                        <option value="">Select an admin</option>
-                        {admins.filter(admin => admin.status === "Active").map((admin) => (
-                          <option key={admin.id} value={admin.id}>
-                            {admin.name} ({admin.phone || '-'})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                )} */}
 
                 {/* Attachment Upload - Required for both payment methods */}
                 {(paymentModalData.payment_type === "cash" || paymentModalData.payment_type === "online") && (
@@ -19211,21 +19296,20 @@ Indian Muslim Association, Hong Kong`;
                   )}
                 </div>
               </div>
-            </div>
-          </div>
+          </Modal>
         )}
 
         {/* Reminder Log Details Modal */}
         {selectedReminderLogItem && (
-          <div
-            className="admin-members-form-overlay"
-            onClick={() => setSelectedReminderLogItem(null)}
+          <Modal
+            isOpen={Boolean(selectedReminderLogItem)}
+            onClose={() => setSelectedReminderLogItem(null)}
+            title={null}
+            size="lg"
+            ariaLabel="Reminder log details"
+            contentClassName="admin-members-form-container reminder-log-modal-card"
           >
-            <div
-              className="admin-members-form-container reminder-log-modal-card"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="admin-members-form-header">
+            <div className="admin-members-form-header">
                 <div className="admin-members-form-header-top">
                   <h3 className="admin-members-form-title">
                     <i className="fas fa-eye"></i>
@@ -19355,26 +19439,23 @@ Indian Muslim Association, Hong Kong`;
                   </div>
                 )}
               </div>
-            </div>
-          </div>
+          </Modal>
         )}
 
         {/* Payment Details Modal */}
         {showPaymentDetailsModal && selectedPaymentDetails && (
-          <div
-            className="modal-overlay"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowPaymentDetailsModal(false);
-                setSelectedPaymentDetails(null);
-              }
+          <Modal
+            isOpen={showPaymentDetailsModal && selectedPaymentDetails}
+            onClose={() => {
+              setShowPaymentDetailsModal(false);
+              setSelectedPaymentDetails(null);
             }}
+            title={null}
+            size="lg"
+            ariaLabel="Payment details"
+            contentClassName="card modal-container"
           >
-            <div
-              className="card modal-container"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="modal-header mb-2xl">
+            <div className="modal-header mb-2xl">
                 <h3 className="modal-title">
                   <i className="fas fa-receipt icon-spacing-sm text-primary"></i>
                   Payment Details
@@ -19595,27 +19676,24 @@ Indian Muslim Association, Hong Kong`;
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
+          </Modal>
         )}
 
         {/* Password Reset Modal */}
         {showPasswordResetModal && selectedPasswordResetRequest && (
-          <div
-            className="modal-overlay"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowPasswordResetModal(false);
-                setSelectedPasswordResetRequest(null);
-                setPasswordResetForm({ newPassword: "" });
-              }
+          <Modal
+            isOpen={showPasswordResetModal && selectedPasswordResetRequest}
+            onClose={() => {
+              setShowPasswordResetModal(false);
+              setSelectedPasswordResetRequest(null);
+              setPasswordResetForm({ newPassword: "" });
             }}
+            title={null}
+            size="sm"
+            ariaLabel="Password reset"
+            contentClassName="card modal-container modal-container-500"
           >
-            <div
-              className="card modal-container modal-container-500"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="modal-header">
+            <div className="modal-header">
                 <h4 className="modal-title">
                   <i className="fas fa-key" aria-hidden="true"></i>
                   Set New Password
@@ -19702,29 +19780,28 @@ Indian Muslim Association, Hong Kong`;
                   </button>
                 </div>
               </form>
-            </div>
-          </div>
+          </Modal>
         )}
 
         {/* Import Preview Modal */}
         {showImportPreview && (
-          <div
-            className="modal-overlay"
-            onClick={(e) => {
-              if (e.target === e.currentTarget && !isImporting) {
+          <Modal
+            isOpen={showImportPreview}
+            onClose={() => {
+              if (!isImporting) {
                 setShowImportPreview(false);
                 setImportPreviewData([]);
                 setImportErrors([]);
                 setImportFileName("");
               }
             }}
+            title={null}
+            size="lg"
+            ariaLabel="Import preview"
+            contentClassName="card modal-container"
+            contentStyle={{ maxWidth: "90vw", width: "1000px", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" }}
           >
-            <div
-              className="card modal-container"
-              style={{ maxWidth: "90vw", width: "1000px", maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column" }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="modal-header" style={{ flexShrink: 0 }}>
+            <div className="modal-header" style={{ flexShrink: 0 }}>
                 <h4 className="modal-title">
                   <i className="fas fa-file-import" aria-hidden="true" style={{ marginRight: "8px" }}></i>
                   Import Preview - {importFileName}
@@ -19909,312 +19986,237 @@ Indian Muslim Association, Hong Kong`;
                   )}
                 </button>
               </div>
-            </div>
-          </div>
+          </Modal>
         )}
 
         {/* Image Popup Modal */}
-        {showImagePopup && (
-          <div
-            className="modal-overlay modal-overlay-high"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowImagePopup(false);
-                setSelectedImageUrl("");
-              }
+        <Modal
+          isOpen={showImagePopup}
+          title={null}
+          onClose={() => {
+            setShowImagePopup(false);
+            setSelectedImageUrl("");
+          }}
+          size="lg"
+          overlayStyle={{
+            background: "rgba(0, 0, 0, 0.8)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+          }}
+          contentClassName=""
+          contentStyle={{
+            position: "relative",
+            maxWidth: "90vw",
+            maxHeight: "90vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "transparent",
+            boxShadow: "none",
+            padding: 0,
+          }}
+        >
+          <img
+            src={selectedImageUrl}
+            alt="Donation proof"
+            style={{
+              maxWidth: "100%",
+              maxHeight: "90vh",
+              borderRadius: "8px",
+              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.5)",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setShowImagePopup(false);
+              setSelectedImageUrl("");
             }}
             style={{
-              background: "rgba(0, 0, 0, 0.8)",
+              position: "absolute",
+              bottom: "16px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: "40px",
+              height: "40px",
+              borderRadius: "50%",
+              background: "#ffffff",
+              border: "none",
+              cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              zIndex: 10000
+              fontSize: "1.5rem",
+              fontWeight: "bold",
+              color: "#000",
+              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+              transition: "all 0.2s ease",
+              zIndex: 10001,
             }}
+            onMouseEnter={(e) => {
+              e.target.style.background = "#f5f5f5";
+              e.target.style.transform = "translateX(-50%) scale(1.1)";
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = "#ffffff";
+              e.target.style.transform = "translateX(-50%) scale(1)";
+            }}
+            aria-label="Close"
           >
-            <div
-              style={{
-                position: "relative",
-                maxWidth: "90vw",
-                maxHeight: "90vh",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center"
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <img
-                src={selectedImageUrl}
-                alt="Donation proof"
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: "90vh",
-                  borderRadius: "8px",
-                  boxShadow: "0 4px 20px rgba(0, 0, 0, 0.5)"
-                }}
-              />
+            ×
+          </button>
+        </Modal>
+
+        {/* PDF Options Modal */}
+        <Modal
+          isOpen={showPdfOptionsModal && (selectedPdfInvoice || selectedPdfDonation)}
+          title={null}
+          onClose={() => {
+            setShowPdfOptionsModal(false);
+            setSelectedPdfInvoice(null);
+            setSelectedPdfDonation(null);
+          }}
+          size="sm"
+          contentClassName="admin-members-form-container"
+          contentStyle={{ maxWidth: "500px" }}
+        >
+          <div className="admin-members-form-header">
+            <div className="admin-members-form-header-top">
+              <h3 className="admin-members-form-title">
+                <i className="fas fa-file-pdf" style={{ marginRight: "8px", color: "#ef4444" }}></i>
+                PDF Receipt Options
+              </h3>
               <button
-                type="button"
+                className="admin-members-form-close"
                 onClick={() => {
-                  setShowImagePopup(false);
-                  setSelectedImageUrl("");
+                  setShowPdfOptionsModal(false);
+                  setSelectedPdfInvoice(null);
+                  setSelectedPdfDonation(null);
                 }}
-                style={{
-                  position: "absolute",
-                  bottom: "16px",
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  width: "40px",
-                  height: "40px",
-                  borderRadius: "50%",
-                  background: "#ffffff",
-                  border: "none",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "1.5rem",
-                  fontWeight: "bold",
-                  color: "#000",
-                  boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
-                  transition: "all 0.2s ease",
-                  zIndex: 10001
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.background = "#f5f5f5";
-                  e.target.style.transform = "translateX(-50%) scale(1.1)";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = "#ffffff";
-                  e.target.style.transform = "translateX(-50%) scale(1)";
-                }}
-                
                 aria-label="Close"
+                style={{ color: "#6b7280" }}
               >
-                ×
+                <i className="fa-solid fa-times" />
               </button>
             </div>
           </div>
-        )}
 
-        {/* PDF Options Modal */}
-        {showPdfOptionsModal && (selectedPdfInvoice || selectedPdfDonation) && (
-          <div
-            className="modal-overlay modal-overlay-high"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowPdfOptionsModal(false);
-                setSelectedPdfInvoice(null);
-                setSelectedPdfDonation(null);
-              }
-            }}
-            style={{
-              background: "rgba(0, 0, 0, 0.5)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 10000,
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              padding: "20px"
-            }}
-          >
-            <div
-              className="card"
-              style={{
-                background: "#fff",
-                borderRadius: "12px",
-                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
-                padding: "24px",
-                minWidth: "300px",
-                maxWidth: "400px",
-                width: "100%"
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{ marginBottom: "20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <h3 style={{ margin: 0, fontSize: "1.25rem", fontWeight: "600", color: "#333", display: "flex", alignItems: "center", gap: "10px" }}>
-                  <i className="fas fa-file-pdf" style={{ fontSize: "1.2rem", color: "#ef4444" }}></i>
-                  PDF Receipt Options
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPdfOptionsModal(false);
-                    setSelectedPdfInvoice(null);
-                    setSelectedPdfDonation(null);
-                  }}
-                  style={{
-                    width: "32px",
-                    height: "32px",
-                    borderRadius: "50%",
-                    background: "#f3f4f6",
-                    border: "none",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "1.2rem",
-                    fontWeight: "bold",
-                    color: "#666",
-                    transition: "all 0.2s ease"
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.background = "#e5e7eb";
-                    e.target.style.transform = "scale(1.1)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.background = "#f3f4f6";
-                    e.target.style.transform = "scale(1)";
-                  }}
-                  aria-label="Close"
-                >
-                  ×
-                </button>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const apiUrl = import.meta.env.VITE_API_URL;
-                    let pdfUrl, downloadName;
-                    if (selectedPdfInvoice) {
-                      const viewerParam = selectedPdfInvoice.memberId ? `?viewerMemberId=${encodeURIComponent(selectedPdfInvoice.memberId)}` : '';
-                      const invoiceDbId = selectedPdfInvoice._id || selectedPdfInvoice.id;
-                      if (!invoiceDbId || /^INV-/i.test(String(invoiceDbId))) {
-                        console.error("❌ Blocked PDF request with invalid invoice id:", invoiceDbId);
-                        showToast("PDF requests require a valid invoice _id.", "error");
-                        return;
-                      }
-                      pdfUrl = `${apiUrl}/api/invoices/${invoiceDbId}/pdf-receipt/download${viewerParam}`;
-                      downloadName = `Invoice_Receipt_${selectedPdfInvoice.id}.pdf`;
-                    } else if (selectedPdfDonation) {
-                      pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download`;
-                      downloadName = `Donation_Receipt_${selectedPdfDonation._id || selectedPdfDonation.id}.pdf`;
+          <div style={{ padding: "0 24px 24px" }}>
+            <p style={{ marginBottom: "16px", color: "#6b7280", fontSize: "0.875rem", lineHeight: 1.5 }}>
+              Open the PDF receipt in your browser (new tab).
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => {
+                  const apiUrl = import.meta.env.VITE_API_URL || "";
+                  let pdfUrl;
+                  if (selectedPdfInvoice) {
+                    pdfUrl = resolveReceiptPdfUrl(selectedPdfInvoice.receiptPdfUrl);
+                    if (!pdfUrl) {
+                      showToast("Receipt PDF is not available for this invoice.", "error");
+                      return;
                     }
-                    
-                    await downloadPdfFile(
-                      pdfUrl,
-                      downloadName,
-                      () => {
-                        setShowPdfOptionsModal(false);
-                        setSelectedPdfInvoice(null);
-                        setSelectedPdfDonation(null);
-                        showToast('Opening PDF receipt...', 'success');
-                      },
-                      () => {
-                        showToast('Failed to open PDF receipt', 'error');
-                      }
-                    );
-                  }}
-                  style={{
-                    padding: "14px 20px",
-                    fontSize: "1rem",
-                    background: "#3b82f6",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "10px",
-                    fontWeight: "500",
-                    transition: "all 0.2s ease"
-                  }}
-                  onMouseEnter={(e) => e.target.style.background = "#2563eb"}
-                  onMouseLeave={(e) => e.target.style.background = "#3b82f6"}
-                >
-                  <i className="fas fa-eye" style={{ fontSize: "1rem" }}></i>
-                  View PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const apiUrl = import.meta.env.VITE_API_URL;
-                    let pdfUrl, downloadName;
-                    if (selectedPdfInvoice) {
-                      const viewerParam = selectedPdfInvoice.memberId ? `?viewerMemberId=${encodeURIComponent(selectedPdfInvoice.memberId)}` : '';
-                      const invoiceDbId = selectedPdfInvoice._id || selectedPdfInvoice.id;
-                      if (!invoiceDbId || /^INV-/i.test(String(invoiceDbId))) {
-                        console.error("❌ Blocked PDF request with invalid invoice id:", invoiceDbId);
-                        showToast("PDF requests require a valid invoice _id.", "error");
-                        return;
-                      }
-                      pdfUrl = `${apiUrl}/api/invoices/${invoiceDbId}/pdf-receipt/download${viewerParam}`;
-                      downloadName = `Invoice_Receipt_${selectedPdfInvoice.id}.pdf`;
-                    } else if (selectedPdfDonation) {
-                      pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download`;
-                      downloadName = `Donation_Receipt_${selectedPdfDonation._id || selectedPdfDonation.id}.pdf`;
-                    }
-                    
-                    await downloadPdfFile(
-                      pdfUrl,
-                      downloadName,
-                      () => {
-                        setShowPdfOptionsModal(false);
-                        setSelectedPdfInvoice(null);
-                        setSelectedPdfDonation(null);
-                        showToast('Downloading PDF receipt...', 'success');
-                      },
-                      () => {
-                        showToast('Failed to download PDF receipt', 'error');
-                      }
-                    );
-                  }}
-                  style={{
-                    padding: "14px 20px",
-                    fontSize: "1rem",
-                    background: "#10b981",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "10px",
-                    fontWeight: "500",
-                    transition: "all 0.2s ease"
-                  }}
-                  onMouseEnter={(e) => e.target.style.background = "#059669"}
-                  onMouseLeave={(e) => e.target.style.background = "#10b981"}
-                >
-                  <i className="fas fa-download" style={{ fontSize: "1rem" }}></i>
-                  Download PDF
-                </button>
-              </div>
+                    // Ensure inline view
+                    pdfUrl = pdfUrl.includes('?') ? `${pdfUrl}&mode=view` : `${pdfUrl}?mode=view`;
+                  } else if (selectedPdfDonation) {
+                    pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download?mode=view`;
+                  }
+
+                  window.open(pdfUrl, "_blank");
+                  setShowPdfOptionsModal(false);
+                  setSelectedPdfInvoice(null);
+                  setSelectedPdfDonation(null);
+                  showToast('Opening PDF receipt...', 'success');
+                }}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px"
+                }}
+              >
+                <i className="fas fa-eye"></i>
+                Open PDF
+              </button>
             </div>
           </div>
-        )}
+        </Modal>
+
+        {/* Subscription Change Confirmation Modal */}
+        {/* Subscription Change Confirmation Modal */}
+        <Modal
+          isOpen={isModalOpen('subscriptionChangeConfirmation')}
+          title={null}
+          onClose={cancelSubscriptionTypeChange}
+          size="sm"
+          contentClassName="admin-members-form-container"
+          contentStyle={{ maxWidth: "500px" }}
+        >
+          <div className="admin-members-form-header">
+            <div className="admin-members-form-header-top">
+              <h3 className="admin-members-form-title">
+                <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px" }}></i>
+                Confirm Subscription Change
+              </h3>
+              <button
+                className="admin-members-form-close"
+                onClick={cancelSubscriptionTypeChange}
+                aria-label="Close"
+              >
+                <i className="fa-solid fa-times" />
+              </button>
+            </div>
+          </div>
+
+          <div style={{ padding: "0 24px 24px" }}>
+            <div style={{ fontSize: "0.95rem", color: "#374151", lineHeight: 1.5, marginBottom: "20px" }}>
+              <p style={{ marginTop: 0 }}>
+                Changing the subscription type may change the Member ID (for example: AM → LM).
+              </p>
+              <p style={{ marginBottom: 0 }}>
+                All old invoices will remain linked to this member.
+              </p>
+              <p style={{ marginBottom: 0 }}>
+                This change cannot be undone.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button type="button" className="secondary-btn" onClick={cancelSubscriptionTypeChange}>
+                Cancel
+              </button>
+              <button type="button" className="primary-btn" onClick={confirmSubscriptionTypeChange}>
+                Confirm Change
+              </button>
+            </div>
+          </div>
+        </Modal>
 
         {/* PDF Viewer Modal */}
         {showPdfModal && selectedPdfUrl && (
-          <div
-            className="modal-overlay modal-overlay-high"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowPdfModal(false);
-                setSelectedPdfUrl("");
-                setPdfLoading(true);
-                // Reset loading state after modal closes
-                setTimeout(() => setPdfLoading(true), 100);
-              }
+          <Modal
+            isOpen={showPdfModal && selectedPdfUrl}
+            onClose={() => {
+              setShowPdfModal(false);
+              setSelectedPdfUrl("");
+              setPdfLoading(true);
+              // Reset loading state after modal closes
+              setTimeout(() => setPdfLoading(true), 100);
             }}
-            style={{
+            title={null}
+            size="lg"
+            ariaLabel="PDF receipt viewer"
+            contentClassName=""
+            overlayStyle={{
               background: "rgba(0, 0, 0, 0.8)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               zIndex: 10000,
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              padding: "20px"
             }}
           >
             <div
@@ -20229,7 +20231,6 @@ Indian Muslim Association, Hong Kong`;
                 flexDirection: "column",
                 overflow: "hidden"
               }}
-              onClick={(e) => e.stopPropagation()}
             >
               <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
               <div
@@ -20250,6 +20251,7 @@ Indian Muslim Association, Hong Kong`;
                   <button
                     type="button"
                     onClick={async () => {
+                      const popup = window.open("about:blank", "_blank");
                       // Extract filename from URL or use default
                       const urlParts = selectedPdfUrl.split('/');
                       const filename = urlParts[urlParts.length - 1] || 'Receipt.pdf';
@@ -20262,7 +20264,8 @@ Indian Muslim Association, Hong Kong`;
                         },
                         () => {
                           showToast('Failed to download PDF receipt', 'error');
-                        }
+                        },
+                        popup
                       );
                     }}
                     style={{
@@ -20381,283 +20384,236 @@ Indian Muslim Association, Hong Kong`;
                 )}
               </div>
             </div>
-          </div>
+          </Modal>
         )}
 
         {/* Payment Confirmation Modal */}
-        {showPaymentConfirmationModal && paymentConfirmationInvoice && (
-          <div
-            className="admin-members-form-overlay"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowPaymentConfirmationModal(false);
-                setPaymentConfirmationInvoice(null);
-                setPaymentConfirmationChannels({ email: false, whatsapp: false });
-              }
-            }}
-          >
-            <div className="admin-members-form-container" style={{ maxWidth: "500px" }}>
-              <div className="admin-members-form-header">
-                <div className="admin-members-form-header-top">
-                  <h3 className="admin-members-form-title">
-                    <i className="fas fa-paper-plane" style={{ marginRight: "8px" }}></i>
-                    Send Payment Confirmation
-                  </h3>
-                  <button
-                    className="admin-members-form-close"
-                    onClick={() => {
-                      setShowPaymentConfirmationModal(false);
-                      setPaymentConfirmationInvoice(null);
-                      setPaymentConfirmationChannels({ email: false, whatsapp: false });
-                    }}
-                    aria-label="Close"
-                  >
-                    <i className="fa-solid fa-times" />
-                  </button>
-                </div>
-              </div>
+        <Modal
+          isOpen={isModalOpen('paymentConfirmation') && paymentConfirmationInvoice}
+          title={null}
+          onClose={() => {
+            cancelConfirmModal();
+          }}
+          size="sm"
+          contentClassName="admin-members-form-container"
+          contentStyle={{ maxWidth: "500px" }}
+        >
+          <div className="admin-members-form-header">
+            <div className="admin-members-form-header-top">
+              <h3 className="admin-members-form-title">
+                <i className="fas fa-paper-plane" style={{ marginRight: "8px" }}></i>
+                Send Payment Confirmation
+              </h3>
+              <button
+                className="admin-members-form-close"
+                onClick={() => {
+                  cancelConfirmModal();
+                }}
+                aria-label="Close"
+              >
+                <i className="fa-solid fa-times" />
+              </button>
+            </div>
+          </div>
 
-              <div style={{ padding: "0 24px 24px" }}>
-                <p style={{ marginBottom: "24px", color: "#6b7280", fontSize: "0.875rem" }}>
-                  Invoice #{paymentConfirmationInvoice.id} has been marked as paid. Choose how you want to send the payment confirmation:
-                </p>
+          <div style={{ padding: "0 24px 24px" }}>
+            <p style={{ marginBottom: "24px", color: "#6b7280", fontSize: "0.875rem" }}>
+              Invoice #{paymentConfirmationInvoice?.id || paymentConfirmationInvoice?._id || "N/A"} has been marked as paid. Choose how you want to send the payment confirmation:
+            </p>
 
+            <div style={{ 
+              display: "flex", 
+              gap: "12px", 
+              marginBottom: "24px",
+              flexWrap: "wrap"
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentConfirmationChannels(prev => ({
+                    ...prev,
+                    email: !prev.email
+                  }));
+                }}
+                style={{
+                  flex: 1,
+                  minWidth: "200px",
+                  padding: "16px 20px",
+                  border: `2px solid ${paymentConfirmationChannels.email ? "#5a31ea" : "#e5e7eb"}`,
+                  borderRadius: "8px",
+                  background: paymentConfirmationChannels.email ? "#f3f0ff" : "#ffffff",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  display: "none",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "8px",
+                  textAlign: "center"
+                }}
+                onMouseEnter={(e) => {
+                  if (!paymentConfirmationChannels.email) {
+                    e.target.style.borderColor = "#5a31ea";
+                    e.target.style.background = "#f9fafb";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!paymentConfirmationChannels.email) {
+                    e.target.style.borderColor = "#e5e7eb";
+                    e.target.style.background = "#ffffff";
+                  }
+                }}
+              >
                 <div style={{ 
-                  display: "flex", 
-                  gap: "12px", 
-                  marginBottom: "24px",
-                  flexWrap: "wrap"
+                  width: "24px", 
+                  height: "24px", 
+                  borderRadius: "50%",
+                  background: paymentConfirmationChannels.email ? "#5a31ea" : "#e5e7eb",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  transition: "all 0.2s ease"
                 }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPaymentConfirmationChannels(prev => ({
-                        ...prev,
-                        email: !prev.email
-                      }));
-                    }}
-                    style={{
-                      flex: 1,
-                      minWidth: "200px",
-                      padding: "16px 20px",
-                      border: `2px solid ${paymentConfirmationChannels.email ? "#5a31ea" : "#e5e7eb"}`,
-                      borderRadius: "8px",
-                      background: paymentConfirmationChannels.email ? "#f3f0ff" : "#ffffff",
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                      display: "none",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: "8px",
-                      textAlign: "center"
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!paymentConfirmationChannels.email) {
-                        e.target.style.borderColor = "#5a31ea";
-                        e.target.style.background = "#f9fafb";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!paymentConfirmationChannels.email) {
-                        e.target.style.borderColor = "#e5e7eb";
-                        e.target.style.background = "#ffffff";
-                      }
-                    }}
-                  >
-                    <div style={{ 
-                      width: "24px", 
-                      height: "24px", 
-                      borderRadius: "50%",
-                      background: paymentConfirmationChannels.email ? "#5a31ea" : "#e5e7eb",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      transition: "all 0.2s ease"
-                    }}>
-                      {paymentConfirmationChannels.email && (
-                        <i className="fas fa-check" style={{ color: "#ffffff", fontSize: "12px" }}></i>
-                      )}
-                    </div>
-                    <div>
-                      <div style={{ 
-                        fontWeight: "600", 
-                        color: paymentConfirmationChannels.email ? "#5a31ea" : "#1a1a1a",
-                        marginBottom: "4px",
-                        fontSize: "1rem"
-                      }}>
-                        <i className="fas fa-envelope" style={{ marginRight: "8px" }}></i>
-                        Email
-                      </div>
-                      <div style={{ 
-                        fontSize: "0.75rem", 
-                        color: "#6b7280",
-                        lineHeight: "1.4"
-                      }}>
-                        Send with PDF receipt
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPaymentConfirmationChannels(prev => ({
-                        ...prev,
-                        whatsapp: !prev.whatsapp
-                      }));
-                    }}
-                    style={{
-                      flex: 1,
-                      minWidth: "200px",
-                      padding: "16px 20px",
-                      border: `2px solid ${paymentConfirmationChannels.whatsapp ? "#25D366" : "#e5e7eb"}`,
-                      borderRadius: "8px",
-                      background: paymentConfirmationChannels.whatsapp ? "#e6f7ed" : "#ffffff",
-                      cursor: "pointer",
-                      transition: "all 0.2s ease",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: "8px",
-                      textAlign: "center"
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!paymentConfirmationChannels.whatsapp) {
-                        e.target.style.borderColor = "#25D366";
-                        e.target.style.background = "#f9fafb";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!paymentConfirmationChannels.whatsapp) {
-                        e.target.style.borderColor = "#e5e7eb";
-                        e.target.style.background = "#ffffff";
-                      }
-                    }}
-                  >
-                    <div style={{ 
-                      width: "24px", 
-                      height: "24px", 
-                      borderRadius: "50%",
-                      background: paymentConfirmationChannels.whatsapp ? "#25D366" : "#e5e7eb",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      transition: "all 0.2s ease"
-                    }}>
-                      {paymentConfirmationChannels.whatsapp && (
-                        <i className="fas fa-check" style={{ color: "#ffffff", fontSize: "12px" }}></i>
-                      )}
-                    </div>
-                    <div>
-                      <div style={{ 
-                        fontWeight: "600", 
-                        color: paymentConfirmationChannels.whatsapp ? "#25D366" : "#1a1a1a",
-                        marginBottom: "4px",
-                        fontSize: "1rem"
-                      }}>
-                        <i className="fab fa-whatsapp" style={{ marginRight: "8px" }}></i>
-                        WhatsApp
-                      </div>
-                      <div style={{ 
-                        fontSize: "0.75rem", 
-                        color: "#6b7280",
-                        lineHeight: "1.4"
-                      }}>
-                        Send confirmation message
-                      </div>
-                    </div>
-                  </button>
+                  {paymentConfirmationChannels.email && (
+                    <i className="fas fa-check" style={{ color: "#ffffff", fontSize: "12px" }}></i>
+                  )}
                 </div>
+                <div>
+                  <div style={{ 
+                    fontWeight: "600", 
+                    color: paymentConfirmationChannels.email ? "#5a31ea" : "#1a1a1a",
+                    marginBottom: "4px",
+                    fontSize: "1rem"
+                  }}>
+                    <i className="fas fa-envelope" style={{ marginRight: "8px" }}></i>
+                    Email
+                  </div>
+                  <div style={{ 
+                    fontSize: "0.75rem", 
+                    color: "#6b7280",
+                    lineHeight: "1.4"
+                  }}>
+                    Send with PDF receipt
+                  </div>
+                </div>
+              </button>
 
-                <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-                  <button
-                    type="button"
-                    className="secondary-btn"
-                    onClick={() => {
-                      setShowPaymentConfirmationModal(false);
-                      setPaymentConfirmationInvoice(null);
-                      setPaymentConfirmationChannels({ email: false, whatsapp: false });
-                    }}
-                    disabled={sendingPaymentConfirmation}
-                  >
-                    Skip
-                  </button>
-                  <button
-                    type="button"
-                    className="primary-btn"
-                    onClick={async () => {
-                      if (!paymentConfirmationChannels.email && !paymentConfirmationChannels.whatsapp) {
-                        showToast("Please select at least one channel", "error");
-                        return;
-                      }
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentConfirmationChannels(prev => ({
+                    ...prev,
+                    whatsapp: !prev.whatsapp
+                  }));
+                  setSelectedConfirmationChannel(prev => prev === 'whatsapp' ? null : 'whatsapp');
+                }}
+                style={{
+                  flex: 1,
+                  minWidth: "200px",
+                  padding: "16px 20px",
+                  border: `2px solid ${paymentConfirmationChannels.whatsapp ? "#25D366" : "#e5e7eb"}`,
+                  borderRadius: "8px",
+                  background: paymentConfirmationChannels.whatsapp ? "#e6f7ed" : "#ffffff",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "8px",
+                  textAlign: "center"
+                }}
+                onMouseEnter={(e) => {
+                  if (!paymentConfirmationChannels.whatsapp) {
+                    e.target.style.borderColor = "#25D366";
+                    e.target.style.background = "#f9fafb";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!paymentConfirmationChannels.whatsapp) {
+                    e.target.style.borderColor = "#e5e7eb";
+                    e.target.style.background = "#ffffff";
+                  }
+                }}
+              >
+                <div style={{ 
+                  width: "24px", 
+                  height: "24px", 
+                  borderRadius: "50%",
+                  background: paymentConfirmationChannels.whatsapp ? "#25D366" : "#e5e7eb",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  transition: "all 0.2s ease"
+                }}>
+                  {paymentConfirmationChannels.whatsapp && (
+                    <i className="fas fa-check" style={{ color: "#ffffff", fontSize: "12px" }}></i>
+                  )}
+                </div>
+                <div>
+                  <div style={{ 
+                    fontWeight: "600", 
+                    color: paymentConfirmationChannels.whatsapp ? "#25D366" : "#1a1a1a",
+                    marginBottom: "4px",
+                    fontSize: "1rem"
+                  }}>
+                    <i className="fab fa-whatsapp" style={{ marginRight: "8px" }}></i>
+                    WhatsApp
+                  </div>
+                  <div style={{ 
+                    fontSize: "0.75rem", 
+                    color: "#6b7280",
+                    lineHeight: "1.4"
+                  }}>
+                    Opens WhatsApp in a new tab with your payment confirmation message pre-filled. You can review and send it from there.
+                  </div>
+                </div>
+              </button>
+            </div>
 
-                      setSendingPaymentConfirmation(true);
-                      const apiUrl = import.meta.env.DEV
-                        ? ""
-                        : import.meta.env.VITE_API_URL || "";
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => {
+                  cancelConfirmModal();
+                }}
+                disabled={sendingPaymentConfirmation}
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={async () => {
+                  if (!selectedConfirmationChannel) {
+                    showToast("Please select a channel", "error");
+                    return;
+                  }
 
-                      const confirmationInvoiceId = String(paymentConfirmationInvoice?._id || "").trim();
-                      if (!confirmationInvoiceId || /^INV-/i.test(confirmationInvoiceId)) {
-                        console.error("❌ Blocked payment confirmation request with invalid invoice id:", confirmationInvoiceId);
-                        showToast("Payment confirmation requires a valid invoice _id.", "error");
-                        setSendingPaymentConfirmation(false);
-                        return;
-                      }
+                  // We only support WhatsApp in this flow (email button is hidden)
+                  const useWhatsApp = selectedConfirmationChannel === 'whatsapp';
+                  if (!useWhatsApp) {
+                    showToast("Please select WhatsApp to continue", "error");
+                    return;
+                  }
 
-                      let emailSuccess = false;
+                  setSendingPaymentConfirmation(true);
+                  const apiUrl = import.meta.env.DEV
+                    ? ""
+                    : import.meta.env.VITE_API_URL || "";
+
+                  const confirmationInvoiceId = String(paymentConfirmationInvoice?._id || "").trim();
+                  if (!confirmationInvoiceId || /^INV-/i.test(confirmationInvoiceId)) {
+                    console.error("❌ Blocked payment confirmation request with invalid invoice id:", confirmationInvoiceId);
+                    showToast("Payment confirmation requires a valid invoice _id.", "error");
+                    setSendingPaymentConfirmation(false);
+                    return;
+                  }
+
                       let whatsappSuccess = false;
                       const errors = [];
 
-                      // Send Email first (if selected)
-                      if (paymentConfirmationChannels.email) {
-                        try {
-                          console.log('📧 Sending payment confirmation email...');
-                          const emailResponse = await fetch(`${apiUrl}/api/invoices/${confirmationInvoiceId}/send-payment-confirmation`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                          });
-
-                          if (emailResponse.ok) {
-                            const emailData = await emailResponse.json();
-                            if (emailData.success) {
-                              emailSuccess = true;
-                              console.log('Payment confirmation email sent:', emailData.message);
-                              showToast('Email sent successfully!', 'success');
-                            } else {
-                              // Check if it's a warning (email not configured) vs actual error
-                              if (emailData.warning) {
-                                console.warn('⚠️ Email warning:', emailData.message, emailData.details);
-                                errors.push(`Email: ${emailData.message || 'Email not configured'}`);
-                                showToast(`⚠️ ${emailData.message || 'Email not configured'}. ${emailData.details || ''}`, 'error');
-                              } else {
-                                errors.push(`Email: ${emailData.message || emailData.error || 'Failed to send'}`);
-                                showToast(`Email: ${emailData.message || emailData.error || 'Failed to send'}`, 'error');
-                              }
-                            }
-                          } else {
-                            const errorData = await emailResponse.json().catch(() => ({}));
-                            const errorMessage = errorData.error || errorData.message || `HTTP ${emailResponse.status}: Failed to send email`;
-                            errors.push(`Email: ${errorMessage}`);
-                            console.error('❌ Email sending failed:', errorData);
-                            showToast(`Email: ${errorMessage}`, 'error');
-                          }
-                        } catch (error) {
-                          console.error('Error sending payment confirmation email:', error);
-                          errors.push(`Email: ${error.message || 'Failed to send'}`);
-                          showToast(`Email: ${error.message || 'Failed to send'}`, 'error');
-                        }
-                      }
-
-                      // Wait a moment after email is sent before opening WhatsApp
-                      // This ensures email is sent first, then WhatsApp opens
-                      if (paymentConfirmationChannels.email) {
-                        // Wait for email to complete (success or failure)
-                        await new Promise(resolve => setTimeout(resolve, 800)); // Small delay to ensure email is processed
-                        console.log('📧 Email process completed, proceeding to WhatsApp...');
-                      }
-
-                      // Open WhatsApp after email is sent (if selected)
-                      if (paymentConfirmationChannels.whatsapp) {
+                      // Open WhatsApp (only channel we surface here)
+                      if (useWhatsApp) {
                         console.log('📱 Opening WhatsApp...');
                         try {
                           // Store the member ID to avoid stale closure issues
@@ -20711,32 +20667,9 @@ Indian Muslim Association, Hong Kong`;
                               payment = payments.find(p => p.invoiceId === paymentInvoiceId);
                             }
                             
-                            // Determine invoice ID for receipt link handling
-                            const invoiceId = targetInvoiceDbId || latestInvoice?._id || paymentConfirmationInvoice?._id || null;
-
-                            // Trigger PDF generation to keep backend workflow intact
-                            if (invoiceId) {
-                              if (/^INV-/i.test(String(invoiceId))) {
-                                console.error("❌ Blocked PDF generation with business invoice number:", invoiceId);
-                                showToast("PDF generation requires a valid invoice _id.", "error");
-                              } else {
-                                try {
-                                  const viewerParam = (latestInvoice?.memberId || paymentConfirmationInvoice?.memberId)
-                                    ? `?viewerMemberId=${encodeURIComponent(latestInvoice?.memberId || paymentConfirmationInvoice?.memberId)}`
-                                    : '';
-                                  const pdfResponse = await fetch(`${apiUrl}/api/invoices/${invoiceId}/pdf-receipt${viewerParam}`, {
-                                    method: 'GET',
-                                  });
-
-                                  if (pdfResponse.ok) {
-                                    await pdfResponse.json().catch(() => null);
-                                  }
-                                } catch (pdfError) {
-                                  console.error('Error generating PDF for WhatsApp:', pdfError);
-                                  // Continue even if PDF generation fails; message fallback is handled via invoiceId
-                                }
-                              }
-                            }
+                            const receiptPdfLink = resolveReceiptPdfUrl(
+                              latestInvoice?.receiptPdfUrl || paymentConfirmationInvoice?.receiptPdfUrl || ""
+                            );
                             
                             // Helper function to convert number to words
                             const numberToWords = (num) => {
@@ -20869,10 +20802,6 @@ Renewal confirmed for Year ${invoiceYear || '____'}
 
 Thank you for supporting the IMA community!`;
 
-                            const receiptPdfLink = invoiceId
-                              ? `${import.meta.env.VITE_API_URL || window.location.origin}/api/invoices/${invoiceId}/pdf-receipt/options`
-                              : null;
-
                             if (receiptPdfLink) {
                               message += `\n\nReceipt PDF:\n${receiptPdfLink}`;
                             }
@@ -20964,34 +20893,14 @@ Thank you for supporting the IMA community!${receiptPdfLink ? `\n\nReceipt PDF:\
 
                       setSendingPaymentConfirmation(false);
 
-                      // Show success/error messages
-                      const successMessages = [];
-                      if (emailSuccess) successMessages.push("Email sent");
-                      if (whatsappSuccess) successMessages.push("WhatsApp opened");
-
-                      // Only show combined message if both were attempted
-                      if (paymentConfirmationChannels.email && paymentConfirmationChannels.whatsapp) {
-                        if (emailSuccess && whatsappSuccess) {
-                          showToast(`Email sent successfully! WhatsApp opened.`, "success");
-                        } else if (emailSuccess && !whatsappSuccess) {
-                          showToast(`Email sent successfully! ${errors.filter(e => e.includes('WhatsApp')).join('; ') || 'WhatsApp could not be opened'}`, "warning");
-                        } else if (!emailSuccess && whatsappSuccess) {
-                          showToast(`⚠️ Email failed, but WhatsApp opened. ${errors.filter(e => e.includes('Email')).join('; ')}`, "warning");
-                        }
-                      } else if (successMessages.length > 0) {
-                        showToast(`Payment confirmation sent: ${successMessages.join(", ")}`, "success");
-                      }
-
-                      if (errors.length > 0 && !(paymentConfirmationChannels.email && paymentConfirmationChannels.whatsapp)) {
+                      if (whatsappSuccess) {
+                        showToast("WhatsApp opened with your message. You can send it there.", "success");
+                        closeAllModals();
+                      } else if (errors.length > 0) {
                         showToast(`Some errors: ${errors.join("; ")}`, "error");
                       }
-
-                      // Close modal
-                      setShowPaymentConfirmationModal(false);
-                      setPaymentConfirmationInvoice(null);
-                      setPaymentConfirmationChannels({ email: false, whatsapp: false });
                     }}
-                    disabled={sendingPaymentConfirmation}
+                    disabled={sendingPaymentConfirmation || !selectedConfirmationChannel}
                   >
                     {sendingPaymentConfirmation ? (
                       <>
@@ -21007,9 +20916,7 @@ Thank you for supporting the IMA community!${receiptPdfLink ? `\n\nReceipt PDF:\
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+        </Modal>
 
         {/* Donation Confirmation Modal */}
         {showDonationConfirmationModal && donationConfirmationDonation && (() => {
@@ -21024,17 +20931,19 @@ Thank you for supporting the IMA community!${receiptPdfLink ? `\n\nReceipt PDF:\
           })();
 
           return (
-            <div
-              className="admin-members-form-overlay"
-              onClick={(e) => {
-                if (e.target === e.currentTarget) {
-                  setShowDonationConfirmationModal(false);
-                  setDonationConfirmationDonation(null);
-                  setDonationConfirmationChannel({ whatsapp: false });
-                }
+            <Modal
+              isOpen={showDonationConfirmationModal && donationConfirmationDonation}
+              onClose={() => {
+                setShowDonationConfirmationModal(false);
+                setDonationConfirmationDonation(null);
+                setDonationConfirmationChannel({ whatsapp: false });
               }}
+              title={null}
+              size="sm"
+              ariaLabel="Donation confirmation"
+              contentClassName="admin-members-form-container"
+              contentStyle={{ maxWidth: "500px" }}
             >
-              <div className="admin-members-form-container" style={{ maxWidth: "500px" }}>
                 <div className="admin-members-form-header">
                   <div className="admin-members-form-header-top">
                     <h3 className="admin-members-form-title">
@@ -21235,8 +21144,7 @@ ${downloadUrl}`;
                     </button>
                   </div>
                 </div>
-              </div>
-            </div>
+            </Modal>
           );
         })()}
 

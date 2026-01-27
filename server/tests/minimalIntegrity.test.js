@@ -46,7 +46,7 @@ describe("Minimal financial integrity", () => {
 
   test("core invoice/member invariants hold", async () => {
     const [members, invoices] = await Promise.all([
-      UserModel.find({}, { id: 1, balance: 1 }).lean(),
+      UserModel.find({}, { id: 1, balance: 1, previousDisplayIds: 1 }).lean(),
       InvoiceModel.find(
         { archived: { $ne: true } },
         { _id: 0, id: 1, memberId: 1, status: 1, amount: 1, period: 1 }
@@ -57,9 +57,15 @@ describe("Minimal financial integrity", () => {
       throw new Error("No members available; cannot validate integrity");
     }
 
-    const memberIds = new Set(
-      members.map((member) => normalizeMemberId(member.id)).filter(Boolean)
-    );
+    const memberIds = new Set();
+    members.forEach((member) => {
+      const currentId = normalizeMemberId(member.id);
+      if (currentId) memberIds.add(currentId);
+      const previousIds = Array.isArray(member.previousDisplayIds)
+        ? member.previousDisplayIds.map((entry) => normalizeMemberId(entry?.id)).filter(Boolean)
+        : [];
+      previousIds.forEach((prevId) => memberIds.add(prevId));
+    });
 
     const rule1Issues = invoices
       .filter((invoice) => {

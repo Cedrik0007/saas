@@ -9,6 +9,7 @@ import PaymentModel from "../models/Payment.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { sendAccountApprovalEmail } from "../utils/emailHelpers.js";
 import { emitMemberUpdate } from "../config/socket.js";
+import { getNextSequence } from "../utils/sequence.js";
 
 const router = express.Router();
 
@@ -37,6 +38,63 @@ const formatMemberIdForSave = (rawValue) => {
   return normalized;
 };
 
+const normalizeSubscriptionTypeValue = (rawValue) => {
+  if (!rawValue) return "Annual Member";
+  const trimmed = String(rawValue).trim();
+  if (!trimmed) return "Annual Member";
+  if (trimmed === "Annual Member") return "Annual Member";
+  if (trimmed === "Lifetime Janaza Fund Member") return "Lifetime Janaza Fund Member";
+  if (trimmed === "Lifetime Membership") return "Lifetime Membership";
+  const lowered = trimmed.toLowerCase();
+  if (lowered.includes("annual") || lowered.includes("yearly")) return "Annual Member";
+  if (lowered.includes("lifetime membership")) return "Lifetime Membership";
+  if (lowered.includes("lifetime")) return "Lifetime Janaza Fund Member";
+  return "Annual Member";
+};
+
+const getDisplayIdPrefix = (subscriptionType) =>
+  normalizeSubscriptionTypeValue(subscriptionType) === "Annual Member" ? "AM" : "LM";
+
+const buildNextDisplayId = async (prefix) => {
+  const key = prefix === "AM" ? "memberDisplayAM" : "memberDisplayLM";
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const seq = await getNextSequence(key);
+    const candidate = `${prefix}${seq}`;
+    const existing = await UserModel.findOne({ id: candidate }).select("_id");
+    if (!existing) {
+      return candidate;
+    }
+  }
+  throw new Error("Failed to generate a unique display ID.");
+};
+
+const parseCurrencyAmount = (value) => {
+  if (value === null || value === undefined) return 0;
+  const numeric = parseFloat(String(value).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const getLatestCompletedPaymentAmount = async (member) => {
+  if (!member) return 0;
+
+  const previousIds = Array.isArray(member.previousDisplayIds)
+    ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+    : [];
+
+  const memberIdCandidates = [member.id, ...previousIds].filter(Boolean);
+
+  const payment = await PaymentModel.findOne({
+    status: { $in: ["Completed", "Paid"] },
+    $or: [
+      member?._id ? { memberRef: member._id } : null,
+      memberIdCandidates.length > 0 ? { memberId: { $in: memberIdCandidates } } : null,
+    ].filter(Boolean),
+  }).sort({ createdAt: -1 });
+
+  if (!payment) return 0;
+  return parseCurrencyAmount(payment.amount);
+};
+
 const findMemberByIdentifier = async (identifier) => {
   if (!identifier || (typeof identifier !== "string" && typeof identifier !== "number")) {
     return null;
@@ -50,12 +108,27 @@ const findMemberByIdentifier = async (identifier) => {
   const normalizedCandidate = normalizeMemberIdValue(identifierStr);
   let member = null;
 
+  // Try display ID (AM/LM) or previous display IDs first
   if (normalizedCandidate && normalizedCandidate !== "NOT ASSIGNED") {
-    member = await UserModel.findOne({ id: normalizedCandidate });
+    member = await UserModel.findOne({
+      $or: [
+        { id: normalizedCandidate },
+        { "previousDisplayIds.id": normalizedCandidate },
+      ],
+    });
   }
 
+  // Try MongoDB ObjectId
   if (!member && Types.ObjectId.isValid(identifierStr)) {
     member = await UserModel.findById(identifierStr);
+  }
+
+  // Try memberNo (numeric identifier)
+  if (!member && /^\d+$/.test(identifierStr)) {
+    const memberNoValue = parseInt(identifierStr, 10);
+    if (!isNaN(memberNoValue)) {
+      member = await UserModel.findOne({ memberNo: memberNoValue });
+    }
   }
 
   return member;
@@ -122,13 +195,19 @@ router.get("/count", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     await ensureConnection();
+    if (Object.prototype.hasOwnProperty.call(req.body, "id")) {
+      return res.status(400).json({ message: "Member display ID cannot be updated manually." });
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, "memberNo")) {
+      return res.status(400).json({ message: "memberNo is immutable and cannot be updated." });
+    }
     const member = await findMemberByIdentifier(req.params.id);
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
     }
     res.json(member);
   } catch (error) {
-    console.error("Error fetching member:", error);
+    const originalMemberId = isDisallowedMemberIdValue(targetMember.id) ? null : (targetMember.id || null);
     res.status(500).json({ error: error.message });
   }
 });
@@ -137,6 +216,10 @@ router.get("/:id", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     await ensureConnection();
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "memberNo")) {
+      return res.status(400).json({ message: "memberNo is generated by the backend and cannot be provided." });
+    }
     
     // Validate required fields
     const errors = [];
@@ -211,7 +294,9 @@ router.post("/", async (req, res) => {
     }
     
     let memberId = null;
-    if (Object.prototype.hasOwnProperty.call(req.body, "id")) {
+    const allowManualId = req.body.allowManualId === true;
+
+    if (allowManualId && Object.prototype.hasOwnProperty.call(req.body, "id")) {
       if (isDisallowedMemberIdValue(req.body.id)) {
         return res.status(400).json({ message: "Member ID cannot be empty or 'Not Assigned'." });
       }
@@ -223,6 +308,12 @@ router.post("/", async (req, res) => {
           return res.status(400).json({ message: "Member ID already exists" });
         }
       }
+    }
+
+    if (!memberId) {
+      const subscriptionType = req.body.subscriptionType || "Annual Member";
+      const prefix = getDisplayIdPrefix(subscriptionType);
+      memberId = await buildNextDisplayId(prefix);
     }
     
     // Check if email already exists (only if email is provided)
@@ -273,7 +364,10 @@ router.post("/", async (req, res) => {
       }
     }
 
+    const memberNo = await getNextSequence("memberNo");
+
     const newMember = new UserModel({
+      memberNo,
       ...(memberId ? { id: memberId } : {}),
       name: req.body.name || '',
       email: (req.body.email || '').trim().toLowerCase(),
@@ -334,12 +428,17 @@ router.post("/", async (req, res) => {
       }
 
       const existingInvoice = await InvoiceModel.findOne({
-        memberId: savedMember.id,
+        $or: [
+          { memberRef: savedMember._id },
+          { memberNo: savedMember.memberNo },
+          { memberId: savedMember.id },
+        ],
         period: invoicePeriod,
         status: { $ne: "Rejected" }
       });
 
       if (!existingInvoice) {
+        const invoiceNo = await getNextSequence("invoiceNo");
         const invoiceAmount = `HK$${fees.totalFee}`;
         let dueDate = new Date();
         
@@ -374,8 +473,10 @@ router.post("/", async (req, res) => {
         }
 
         const invoiceData = {
+          invoiceNo,
           id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
           memberRef: savedMember._id,
+          memberNo: savedMember.memberNo,
           memberId: savedMember.id,
           memberName: savedMember.name,
           memberEmail: savedMember.email,
@@ -450,6 +551,12 @@ router.put("/:id/approve", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     await ensureConnection();
+    if (Object.prototype.hasOwnProperty.call(req.body, "id")) {
+      return res.status(400).json({ message: "Member display ID cannot be updated manually." });
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, "memberNo")) {
+      return res.status(400).json({ message: "memberNo is immutable and cannot be updated." });
+    }
     const identifier = req.params.id;
     const targetMember = await findMemberByIdentifier(identifier);
     if (!targetMember) {
@@ -464,6 +571,9 @@ router.put("/:id", async (req, res) => {
                             req.body.payment_proof || req.body.lastPayment || req.body.nextDue;
     
     if (hasPaymentFields) {
+      if (Object.prototype.hasOwnProperty.call(req.body, "subscriptionType")) {
+        return res.status(400).json({ message: "Subscription changes must be done via the member edit flow." });
+      }
       // This is a payment update - allow payment-related fields
       const allowedPaymentFields = [
         'payment_status', 
@@ -530,7 +640,7 @@ router.put("/:id", async (req, res) => {
 
       res.json(member);
     } else {
-      const allowedFields = ['id', 'name', 'email', 'phone', 'native', 'status', 'password'];
+      const allowedFields = ['name', 'email', 'phone', 'native', 'status', 'password', 'subscriptionType', 'subscriptionYear'];
       const updateData = {};
       for (const field of allowedFields) {
         if (Object.prototype.hasOwnProperty.call(req.body, field)) {
@@ -546,51 +656,49 @@ router.put("/:id", async (req, res) => {
         updateData.email = updateData.email.trim().toLowerCase();
       }
 
-      if (Object.prototype.hasOwnProperty.call(updateData, 'id')) {
-        if (updateData.id === null) {
-          updateData.id = null;
-        } else if (isDisallowedMemberIdValue(updateData.id)) {
-          return res.status(400).json({ message: "Member ID cannot be empty or 'Not Assigned'." });
+      let updateOptions = { new: true, runValidators: true };
+      const updateOps = { $set: { ...updateData } };
+
+      if (Object.prototype.hasOwnProperty.call(updateData, "subscriptionType")) {
+        const currentType = normalizeSubscriptionTypeValue(targetMember.subscriptionType);
+        const requestedType = normalizeSubscriptionTypeValue(updateData.subscriptionType);
+        if (requestedType === currentType) {
+          delete updateOps.$set.subscriptionType;
         } else {
-          const normalizedIncomingId = formatMemberIdForSave(updateData.id);
-          if (normalizedIncomingId) {
-            updateData.id = normalizedIncomingId;
-          } else {
-            delete updateData.id;
+          if (currentType === "Annual Member" && requestedType === "Lifetime Membership") {
+            const latestPaymentAmount = await getLatestCompletedPaymentAmount(targetMember);
+            if (latestPaymentAmount < 5000) {
+              return res.status(400).json({
+                message: "Annual to Lifetime upgrade requires a payment of at least HK$5000.",
+              });
+            }
           }
-        }
-      }
+          updateOps.$set.subscriptionType = requestedType;
+          const currentPrefix = getDisplayIdPrefix(currentType);
+          const nextPrefix = getDisplayIdPrefix(requestedType);
 
-      if (updateData.id && updateData.id !== originalMemberId) {
-        const existingMember = await UserModel.findOne({ id: updateData.id });
-        if (existingMember) {
-          return res.status(400).json({ message: "Member ID already exists" });
-        }
+          if (currentPrefix !== nextPrefix) {
+            const newDisplayId = await buildNextDisplayId(nextPrefix);
+            updateOps.$set.id = newDisplayId;
+            updateOptions = { ...updateOptions, allowDisplayIdUpdate: true };
 
-        if (originalMemberId) {
-          try {
-            await InvoiceModel.updateMany(
-              { memberId: originalMemberId },
-              { $set: { memberId: updateData.id } }
-            );
-
-            await PaymentModel.updateMany(
-              { memberId: originalMemberId },
-              { $set: { memberId: updateData.id } }
-            );
-
-            console.log(`✓ Updated member ID from ${originalMemberId} to ${updateData.id} in related records`);
-          } catch (updateError) {
-            console.error("Error updating related records with new member ID:", updateError);
-            return res.status(500).json({ message: "Failed to update related records" });
+            if (originalMemberId) {
+              updateOps.$push = {
+                previousDisplayIds: {
+                  id: originalMemberId,
+                  subscriptionType: currentType,
+                  changedAt: new Date(),
+                },
+              };
+            }
           }
         }
       }
 
       const member = await UserModel.findOneAndUpdate(
         memberQuery,
-        { $set: updateData },
-        { new: true, runValidators: true }
+        updateOps,
+        updateOptions
       );
 
       if (!member) {
@@ -653,53 +761,38 @@ router.delete("/:id", async (req, res) => {
   try {
     await ensureConnection();
     
-    const memberId = req.params.id;
+    const identifier = req.params.id;
     
-    // Find the member first to confirm they exist
-    const member = await UserModel.findOne({ id: memberId });
+    // Find the member using flexible identifier resolution
+    // Supports: MongoDB _id, display ID (AM/LM), memberNo
+    const member = await findMemberByIdentifier(identifier);
 
     if (!member) {
-      return res.status(404).json({ message: "Member not found" });
+      return res.status(404).json({ 
+        message: "Member not found",
+        identifier: identifier
+      });
     }
 
-    // Import emit functions for real-time updates
-    const { emitInvoiceUpdate, emitPaymentUpdate } = await import("../config/socket.js");
-
-    // Find all invoices for this member before deleting (for Socket.io events)
-    const memberInvoices = await InvoiceModel.find({ memberId: memberId });
-    
-    // Delete all invoices for this member (by memberId)
-    const invoiceDeleteResult = await InvoiceModel.deleteMany({ memberId: memberId });
-    console.log(`Deleted ${invoiceDeleteResult.deletedCount} invoice(s) for member ${memberId}`);
-    
-    // Emit delete events for each invoice
-    for (const invoice of memberInvoices) {
-      emitInvoiceUpdate('deleted', { id: invoice.id || invoice._id });
-    }
-
-    // Find all payments for this member before deleting (for Socket.io events)
-    const memberPayments = await PaymentModel.find({ memberId: memberId });
-    
-    // Delete all payments for this member (by memberId)
-    const paymentDeleteResult = await PaymentModel.deleteMany({ memberId: memberId });
-    console.log(`Deleted ${paymentDeleteResult.deletedCount} payment(s) for member ${memberId}`);
-    
-    // Emit delete events for each payment
-    for (const payment of memberPayments) {
-      emitPaymentUpdate('deleted', { id: payment.id || payment._id });
-    }
-
-    // Note: Donations are NOT deleted - they are preserved for record keeping
-
-    // Finally delete the member
-    await UserModel.findOneAndDelete({ id: memberId });
+    // Delete only the member (invoices and payments are preserved)
+    await UserModel.findByIdAndDelete(member._id);
 
     // Emit Socket.io event for real-time update
-    emitMemberUpdate('deleted', { id: memberId });
+    emitMemberUpdate('deleted', { 
+      id: member.id || member._id,
+      _id: member._id 
+    });
 
-    console.log(`✓ Member ${member.name} (${memberId}) deleted with ${invoiceDeleteResult.deletedCount} invoice(s) and ${paymentDeleteResult.deletedCount} payment(s). Donations preserved.`);
+    console.log(`✓ Member ${member.name} (${member.id || member._id}) deleted. Invoices and payments preserved.`);
 
-    res.status(204).send();
+    res.status(200).json({ 
+      message: "Member deleted successfully",
+      member: {
+        id: member.id,
+        _id: member._id,
+        name: member.name
+      }
+    });
   } catch (error) {
     console.error("Error deleting member:", error);
     res.status(500).json({ error: error.message });

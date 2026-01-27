@@ -10,6 +10,7 @@ import { calculateAndUpdateMemberBalance } from "./utils/balance.js";
 import UserModel from "./models/User.js";
 import { initializeSocket } from "./config/socket.js";
 import { ensureInvoiceCollectionValidator, runStartupIntegrityChecks, verifyMemberIdUniqueIndex } from "./utils/dataIntegrity.js";
+import { getPublicApiBaseUrl } from "./utils/receiptLinks.js";
 
 // Import routes
 import membersRoutes from "./routes/members.js";
@@ -27,6 +28,10 @@ import adminSecurityRoutes from "./routes/adminSecurity.js";
 
 dotenv.config();
 
+if (process.env.NODE_ENV === "production" && !getPublicApiBaseUrl()) {
+  console.warn("⚠ PUBLIC_API_BASE_URL is not set in production. Receipt links will be missing.");
+}
+
 const app = express();
 const server = createServer(app);
 const PORT = process.env.PORT || 4000;
@@ -34,7 +39,8 @@ const PORT = process.env.PORT || 4000;
 // Middleware
 const allowedOrigins = [
   "https://admin.imahk.org",
-  "http://localhost:5173"
+  "http://localhost:5173",
+  "http://localhost:5174"
 ];
 
 app.use(cors({
@@ -121,7 +127,11 @@ app.use((err, req, res, next) => {
   console.error('Global error handler:', err);
 
   const requestOrigin = req.headers?.origin;
-  if (requestOrigin === "https://admin.imahk.org" || requestOrigin === "http://localhost:5173") {
+  if (
+    requestOrigin === "https://admin.imahk.org"
+    || requestOrigin === "http://localhost:5173"
+    || requestOrigin === "http://localhost:5174"
+  ) {
     res.setHeader("Access-Control-Allow-Origin", requestOrigin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }

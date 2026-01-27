@@ -13,6 +13,8 @@ import EmailTemplateModel from "../models/EmailTemplate.js";
 import { generateUniqueMessageId, createEmailTransporter } from "../config/email.js";
 import { sendPaymentApprovalEmail } from "../utils/emailHelpers.js";
 import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
+import { getNextSequence } from "../utils/sequence.js";
+import { getReceiptDownloadUrl } from "../utils/receiptLinks.js";
 import nodemailer from "nodemailer";
 
 const router = express.Router();
@@ -38,10 +40,34 @@ const assertValidMemberId = (memberIdValue) => {
 const resolveInvoiceByParam = async (invoiceParam) => {
   const normalized = String(invoiceParam || "").trim();
   if (!normalized) return null;
+  
+  // Try Mongo _id first
   if (objectIdRegex.test(normalized)) {
-    return InvoiceModel.findById(normalized);
+    const invoice = await InvoiceModel.findById(normalized);
+    if (invoice) {
+      console.log(`✓ Resolved invoice by _id: ${invoice._id} -> business id: ${invoice.id}`);
+      return invoice;
+    }
   }
-  return InvoiceModel.findOne({ id: normalized });
+  
+  // Try business invoice id (e.g., INV-2024-001)
+  let invoice = await InvoiceModel.findOne({ id: normalized });
+  if (invoice) {
+    console.log(`✓ Resolved invoice by business id: ${invoice.id} -> _id: ${invoice._id}`);
+    return invoice;
+  }
+  
+  // Try receipt number (e.g., 123, 456) for paid invoices
+  if (/^\d+$/.test(normalized)) {
+    invoice = await InvoiceModel.findOne({ receiptNumber: normalized });
+    if (invoice) {
+      console.log(`✓ Resolved invoice by receiptNumber: ${invoice.receiptNumber} -> _id: ${invoice._id}, business id: ${invoice.id}`);
+      return invoice;
+    }
+  }
+  
+  console.warn(`⚠ Could not resolve invoice with param: ${normalized}`);
+  return null;
 };
 
 const getInvoiceRouteId = (invoiceDoc) => invoiceDoc?._id?.toString() || invoiceDoc?.id;
@@ -51,42 +77,39 @@ const filterInvoicesWithExistingMembers = async (invoiceDocs = []) => {
     return invoiceDocs;
   }
 
-  const uniqueMemberIds = [
-    ...new Set(
-      invoiceDocs
-        .map((invoice) => normalizeMemberId(invoice?.memberId))
-        .filter(Boolean)
-    ),
-  ];
+  // Do not drop invoices from responses to avoid hiding legacy data.
+  return invoiceDocs;
+};
 
-  if (uniqueMemberIds.length === 0) {
-    return invoiceDocs;
+const resolveMemberByParam = async (memberParam) => {
+  const normalized = String(memberParam || "").trim();
+  if (!normalized) return null;
+
+  if (objectIdRegex.test(normalized)) {
+    return UserModel.findById(normalized);
   }
 
-  const existingMembers = await UserModel.find({ id: { $in: uniqueMemberIds } }).select("id");
-  const existingIds = new Set(existingMembers.map((member) => normalizeMemberId(member.id)));
-
-  const sanitizedInvoices = [];
-  let blockedCount = 0;
-
-  invoiceDocs.forEach((invoice) => {
-    const normalizedInvoiceMemberId = normalizeMemberId(invoice?.memberId);
-    if (!normalizedInvoiceMemberId || !existingIds.has(normalizedInvoiceMemberId)) {
-      const invoiceIdentifier = invoice?.id || invoice?._id || "unknown";
-      console.warn(
-        `[DATA INTEGRITY] Invoice ${invoiceIdentifier} references missing memberId "${invoice?.memberId}". Blocking from response.`
-      );
-      blockedCount += 1;
-      return;
-    }
-    sanitizedInvoices.push(invoice);
+  return UserModel.findOne({
+    $or: [
+      { id: normalized },
+      { "previousDisplayIds.id": normalized },
+    ],
   });
+};
 
-  if (blockedCount > 0) {
-    console.warn(`[DATA INTEGRITY] Blocked ${blockedCount} invoice(s) referencing non-existent memberIds from GET /api/invoices.`);
-  }
+const buildInvoiceMemberMatch = (member) => {
+  const previousIds = Array.isArray(member?.previousDisplayIds)
+    ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+    : [];
+  const memberIdCandidates = [member?.id, ...previousIds].filter(Boolean).map(String);
 
-  return sanitizedInvoices;
+  return {
+    $or: [
+      member?._id ? { memberRef: member._id } : null,
+      member?.memberNo ? { memberNo: member.memberNo } : null,
+      memberIdCandidates.length > 0 ? { memberId: { $in: memberIdCandidates } } : null,
+    ].filter(Boolean),
+  };
 };
 
 // GET all invoices
@@ -94,8 +117,16 @@ router.get("/", async (req, res) => {
   try {
     await ensureConnection();
     const allInvoices = await InvoiceModel.find({}).sort({ createdAt: -1 });
-    const sanitizedInvoices = await filterInvoicesWithExistingMembers(allInvoices);
-    res.json(sanitizedInvoices);
+    const responsePayload = allInvoices.map((invoice) => {
+      const invoiceObj = invoice?.toObject ? invoice.toObject() : invoice;
+      return {
+        ...invoiceObj,
+        receiptPdfUrl: invoiceObj?._id
+          ? getReceiptDownloadUrl(invoiceObj._id)
+          : null,
+      };
+    });
+    res.json(responsePayload);
   } catch (error) {
     console.error("Error fetching invoices:", error);
     res.status(500).json({ error: error.message });
@@ -107,20 +138,27 @@ router.get("/member/:memberId", async (req, res) => {
   try {
     await ensureConnection();
 
-    let memberId;
-    try {
-      memberId = assertValidMemberId(req.params.memberId);
-    } catch (validationError) {
-      return res.status(validationError.status || 400).json({ error: validationError.message });
+    const memberId = String(req.params.memberId || "").trim();
+    if (!memberId) {
+      return res.status(400).json({ error: "memberId is required" });
     }
 
-    const memberExists = await UserModel.findOne({ id: memberId }).select("id");
+    const memberExists = await resolveMemberByParam(memberId);
     if (!memberExists) {
       return res.status(404).json({ error: `Member with ID "${memberId}" not found.` });
     }
 
-    const memberInvoices = await InvoiceModel.find({ memberId }).sort({ createdAt: -1 });
-    res.json(memberInvoices);
+    const memberInvoices = await InvoiceModel.find(buildInvoiceMemberMatch(memberExists)).sort({ createdAt: -1 });
+    const responsePayload = memberInvoices.map((invoice) => {
+      const invoiceObj = invoice?.toObject ? invoice.toObject() : invoice;
+      return {
+        ...invoiceObj,
+        receiptPdfUrl: invoiceObj?._id
+          ? getReceiptDownloadUrl(invoiceObj._id)
+          : null,
+      };
+    });
+    res.json(responsePayload);
   } catch (error) {
     console.error("Error fetching member invoices:", error);
     res.status(500).json({ error: error.message });
@@ -131,6 +169,10 @@ router.get("/member/:memberId", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     await ensureConnection();
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "invoiceNo")) {
+      return res.status(400).json({ error: "invoiceNo is generated by the backend and cannot be provided." });
+    }
 
     if (Object.prototype.hasOwnProperty.call(req.body, "memberName") || Object.prototype.hasOwnProperty.call(req.body, "memberEmail")) {
       return res.status(400).json({
@@ -160,6 +202,7 @@ router.post("/", async (req, res) => {
 
     const memberId = memberExists.id;
     const memberRef = memberExists._id;
+    const memberNo = memberExists.memberNo;
     req.body.memberId = memberId;
     console.log(`✓ Invoice creation: Validated member exists (id=${memberExists.id}, name=${memberExists.name})`);
 
@@ -173,7 +216,7 @@ router.post("/", async (req, res) => {
 
     // Check for existing invoice for the same member and period (prevent duplicates)
     const existingInvoice = await InvoiceModel.findOne({
-      memberId,
+      ...buildInvoiceMemberMatch(memberExists),
       period: req.body.period,
       status: { $ne: "Rejected" } // Allow re-creating only if previous one was rejected
     });
@@ -211,13 +254,17 @@ router.post("/", async (req, res) => {
       }
     }
 
+    const invoiceNo = await getNextSequence("invoiceNo");
+
     const invoiceData = {
+      invoiceNo,
       id: `INV-2025-${Math.floor(100 + Math.random() * 900)}`,
       ...req.body,
       membershipFee,
       janazaFee,
       amount: `HK$${totalFee.toFixed(2)}`,
       memberRef,
+      memberNo,
       memberId,
       due: dueDate, // Always set due date at creation
       status: req.body.status || "Unpaid",
@@ -230,8 +277,9 @@ router.post("/", async (req, res) => {
     await newInvoice.save();
 
     // Update member balance if invoice is unpaid
-    if (invoiceData.memberId && (invoiceData.status === "Unpaid" || invoiceData.status === "Overdue")) {
-      await calculateAndUpdateMemberBalance(invoiceData.memberId);
+    const balanceIdentifier = invoiceData.memberRef || invoiceData.memberNo || invoiceData.memberId;
+    if (balanceIdentifier && (invoiceData.status === "Unpaid" || invoiceData.status === "Overdue")) {
+      await calculateAndUpdateMemberBalance(balanceIdentifier);
     }
 
     // Emit Socket.io event for real-time update
@@ -484,10 +532,27 @@ router.post("/send-reminder", async (req, res) => {
     // Save to ReminderLog database
     try {
       // Get member's unpaid invoices to determine reminder type
-      const unpaidInvoices = memberId ? await InvoiceModel.find({
-        memberId: memberId,
-        status: { $in: ['Unpaid', 'Overdue'] }
-      }) : [];
+      let unpaidInvoices = [];
+      if (memberId) {
+        let memberForReminder = null;
+        try {
+          memberForReminder = await resolveMember(memberId);
+        } catch (resolveError) {
+          memberForReminder = null;
+        }
+
+        if (memberForReminder) {
+          unpaidInvoices = await InvoiceModel.find({
+            ...buildInvoiceMemberMatch(memberForReminder),
+            status: { $in: ['Unpaid', 'Overdue'] }
+          });
+        } else {
+          unpaidInvoices = await InvoiceModel.find({
+            memberId: memberId,
+            status: { $in: ['Unpaid', 'Overdue'] }
+          });
+        }
+      }
 
       const reminderType = unpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming';
 
@@ -572,6 +637,7 @@ router.put("/:id", async (req, res) => {
 
       updateData.memberId = memberExists.id;
       updateData.memberRef = memberExists._id;
+      updateData.memberNo = memberExists.memberNo;
     }
 
     if (Object.prototype.hasOwnProperty.call(updateData, "status")) {
@@ -592,7 +658,9 @@ router.put("/:id", async (req, res) => {
     // Update member balance if status, amount, or memberId changed
     const statusChanged = oldInvoice.status !== updatedInvoice.status;
     const amountChanged = oldInvoice.amount !== updatedInvoice.amount;
-    const memberChanged = oldInvoice.memberId !== updatedInvoice.memberId;
+    const memberChanged = oldInvoice.memberId !== updatedInvoice.memberId ||
+      String(oldInvoice.memberRef || "") !== String(updatedInvoice.memberRef || "") ||
+      oldInvoice.memberNo !== updatedInvoice.memberNo;
 
     // Check if invoice was marked as paid (status changed from Unpaid/Overdue to Paid)
     const wasUnpaid = oldInvoice.status === "Unpaid" || oldInvoice.status === "Overdue";
@@ -604,23 +672,25 @@ router.put("/:id", async (req, res) => {
       // - Member changed, OR
       // - Invoice was unpaid/overdue (needs recalculation when paid), OR
       // - Invoice is now unpaid/overdue (needs recalculation)
-      if (oldInvoice.memberId) {
+      const oldMemberIdentifier = oldInvoice.memberRef || oldInvoice.memberNo || oldInvoice.memberId;
+      if (oldMemberIdentifier) {
         if (memberChanged || wasUnpaid || markedAsPaid ||
           updatedInvoice.status === "Unpaid" || updatedInvoice.status === "Overdue") {
-          await calculateAndUpdateMemberBalance(oldInvoice.memberId);
+          await calculateAndUpdateMemberBalance(oldMemberIdentifier);
         }
       }
 
       // Recalculate balance for new member if member changed and invoice is unpaid
-      if (updatedInvoice.memberId && memberChanged) {
+      const newMemberIdentifier = updatedInvoice.memberRef || updatedInvoice.memberNo || updatedInvoice.memberId;
+      if (newMemberIdentifier && memberChanged) {
         if (updatedInvoice.status === "Unpaid" || updatedInvoice.status === "Overdue") {
-          await calculateAndUpdateMemberBalance(updatedInvoice.memberId);
+          await calculateAndUpdateMemberBalance(newMemberIdentifier);
         }
       }
 
       // If invoice was marked as paid, also recalculate for the member (in case member didn't change)
-      if (markedAsPaid && updatedInvoice.memberId) {
-        await calculateAndUpdateMemberBalance(updatedInvoice.memberId);
+      if (markedAsPaid && newMemberIdentifier) {
+        await calculateAndUpdateMemberBalance(newMemberIdentifier);
       }
     }
 
@@ -654,9 +724,10 @@ router.delete("/:id", async (req, res) => {
     }
 
     // Update member balance after deletion if invoice was unpaid
-    if (deletedInvoice.memberId &&
+    const deletedMemberIdentifier = deletedInvoice.memberRef || deletedInvoice.memberNo || deletedInvoice.memberId;
+    if (deletedMemberIdentifier &&
       (deletedInvoice.status === "Unpaid" || deletedInvoice.status === "Overdue")) {
-      await calculateAndUpdateMemberBalance(deletedInvoice.memberId);
+      await calculateAndUpdateMemberBalance(deletedMemberIdentifier);
     }
 
     // Emit Socket.io event for real-time update
@@ -685,7 +756,7 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
       return res.status(400).json({ message: "Invoice is not marked as paid. Current status: " + invoice.status });
     }
 
-    const member = await UserModel.findOne({ id: invoice.memberId });
+    const member = await resolveMember(invoice.memberRef || invoice.memberNo || invoice.memberId);
     if (!member) {
       return res.status(404).json({ message: "Member not found" });
     }
@@ -773,24 +844,22 @@ router.get("/:id/pdf-receipt/options", async (req, res) => {
   try {
     await ensureConnection();
 
-    const invoice = await InvoiceModel.findOne({ id: req.params.id });
+    const invoiceParam = String(req.params.id || "").trim();
+    console.log(`↘ PDF options requested for invoice id: ${invoiceParam}`);
+
+    const invoice = await resolveInvoiceByParam(invoiceParam);
     if (!invoice) {
-      return res.status(404).send(`
-        <html>
-          <head><title>Invoice Not Found</title></head>
-          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-            <h2>Invoice Not Found</h2>
-            <p>The requested invoice could not be found.</p>
-          </body>
-        </html>
-      `);
+      console.warn(`⚠ Invoice not found for PDF options: ${invoiceParam}`);
+      return res.status(404).json({ error: "Invoice not found" });
     }
+
+    console.log(`✓ Resolved invoice for PDF options: ${invoice._id} (${invoice.id})`);
 
     // Get protocol correctly (handle proxy/load balancer)
     const protocol = req.get('X-Forwarded-Proto') || req.protocol || 'https';
     const host = req.get('host');
     const apiBaseUrl = `${protocol}://${host}`;
-    const invoiceRouteId = getInvoiceRouteId(invoice);
+    const invoiceRouteId = invoice._id;
     // View PDF - use the same download endpoint but will open in browser instead of downloading
     // We'll add a query parameter to indicate viewing mode
     const viewUrl = `${apiBaseUrl}/api/invoices/${invoiceRouteId}/pdf-receipt/view`;
@@ -810,7 +879,6 @@ router.get("/:id/pdf-receipt/options", async (req, res) => {
             box-sizing: border-box;
           }
           body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
@@ -935,10 +1003,16 @@ router.get("/:id/pdf-receipt/download", async (req, res) => {
 
     await ensureConnection();
 
-    const invoice = await resolveInvoiceByParam(req.params.id);
+    const invoiceParam = String(req.params.id || "").trim();
+    console.log(`↘ PDF receipt download requested for invoice param: "${invoiceParam}"`);
+
+    const invoice = await resolveInvoiceByParam(invoiceParam);
     if (!invoice) {
-      return res.status(404).json({ error: "Invoice not found" });
+      console.error(`❌ Invoice not found for PDF download - param: "${invoiceParam}"`);
+      return res.status(404).json({ error: "Invoice not found for PDF download" });
     }
+
+    console.log(`✓ Resolved invoice for PDF download: _id=${invoice._id}, business id=${invoice.id}, receiptNumber=${invoice.receiptNumber || 'N/A'}`);
 
     // Optional: validate that the viewer (UI) is the member the invoice belongs to
     const viewerMemberId = req.query.viewerMemberId || req.headers['x-viewer-member-id'];
@@ -953,7 +1027,7 @@ router.get("/:id/pdf-receipt/download", async (req, res) => {
       return res.status(400).json({ error: "Invoice is not marked as paid. Current status: " + invoice.status });
     }
 
-    const member = await UserModel.findOne({ id: invoice.memberId });
+    const member = await resolveMember(invoice.memberRef || invoice.memberNo || invoice.memberId);
     if (!member) {
       return res.status(404).json({ error: "Member not found" });
     }
@@ -980,16 +1054,19 @@ router.get("/:id/pdf-receipt/download", async (req, res) => {
       method: invoice.method || 'Payment',
       date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
       reference: invoice.reference || invoice.id,
-      screenshot: invoice.screenshot || invoice.payment_proof || null,
     };
 
     // Generate PDF receipt - use receipt number from invoice if available
     const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
     const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData, invoice.receiptNumber);
 
-    // Set headers for PDF download
+    // Determine Content-Disposition based on mode query param
+    const mode = req.query.mode || 'download'; // 'view' or 'download'
+    const disposition = mode === 'view' ? 'inline' : 'attachment';
+    
+    // Set headers for PDF
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Receipt_${invoice.id}.pdf"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="Receipt_${invoice.id}.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
     
     // Send PDF buffer directly
@@ -999,13 +1076,6 @@ router.get("/:id/pdf-receipt/download", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 
-  console.log("🔥 RECEIPT CHECK", {
-  invoiceId: invoice.id,
-  invoiceMemberId: invoice.memberId,
-  memberId: member.id,
-  memberName: member.name
-});
-
 });
 
 // GET generate PDF receipt and return URL for download
@@ -1013,10 +1083,16 @@ router.get("/:id/pdf-receipt", async (req, res) => {
   try {
     await ensureConnection();
 
-    const invoice = await resolveInvoiceByParam(req.params.id);
+    const invoiceParam = String(req.params.id || "").trim();
+    console.log(`↘ PDF receipt generation requested for invoice id: ${invoiceParam}`);
+
+    const invoice = await resolveInvoiceByParam(invoiceParam);
     if (!invoice) {
+      console.warn(`⚠ Invoice not found for PDF receipt generation: ${invoiceParam}`);
       return res.status(404).json({ error: "Invoice not found" });
     }
+
+    console.log(`✓ Resolved invoice for PDF receipt generation: ${invoice._id} (${invoice.id})`);
 
     // Allow both "Paid" and "Completed" statuses
     const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
@@ -1030,7 +1106,7 @@ router.get("/:id/pdf-receipt", async (req, res) => {
       return res.status(400).json({ error: "Invoice does not belong to the requested member. PDF generation blocked." });
     }
 
-    const member = await UserModel.findOne({ id: invoice.memberId });
+    const member = await resolveMember(invoice.memberRef || invoice.memberNo || invoice.memberId);
     if (!member) {
       return res.status(404).json({ error: "Member not found" });
     }
@@ -1052,7 +1128,6 @@ router.get("/:id/pdf-receipt", async (req, res) => {
       method: invoice.method || 'Payment',
       date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
       reference: invoice.reference || invoice.id,
-      screenshot: invoice.screenshot || invoice.payment_proof || null,
     };
 
     // Generate PDF receipt - use receipt number from invoice if available
@@ -1124,10 +1199,17 @@ router.get("/:id/pdf-receipt/view", async (req, res) => {
   try {
     await ensureConnection();
 
-    const invoice = await resolveInvoiceByParam(req.params.id);
+    const invoiceParam = String(req.params.id || "").trim();
+    console.log(`↘ PDF receipt view requested for invoice id: ${invoiceParam}`);
+
+    const invoice = await resolveInvoiceByParam(invoiceParam);
     if (!invoice) {
+      console.warn(`⚠ Invoice not found for PDF receipt view: ${invoiceParam}`);
       return res.status(404).json({ error: "Invoice not found" });
     }
+
+    console.log(`✓ Resolved invoice for PDF receipt view: ${invoice._id} (${invoice.id})`);
+
 
     // Allow both "Paid" and "Completed" statuses
     const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
@@ -1141,7 +1223,7 @@ router.get("/:id/pdf-receipt/view", async (req, res) => {
       return res.status(400).json({ error: "Invoice does not belong to the requested member. PDF generation blocked." });
     }
 
-    const member = await UserModel.findOne({ id: invoice.memberId });
+    const member = await resolveMember(invoice.memberRef || invoice.memberNo || invoice.memberId);
     if (!member) {
       return res.status(404).json({ error: "Member not found" });
     }
@@ -1163,7 +1245,6 @@ router.get("/:id/pdf-receipt/view", async (req, res) => {
       method: invoice.method || 'Payment',
       date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
       reference: invoice.reference || invoice.id,
-      screenshot: invoice.screenshot || invoice.payment_proof || null,
     };
 
     // Generate PDF receipt - use receipt number from invoice if available

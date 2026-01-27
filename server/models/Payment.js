@@ -1,7 +1,17 @@
 import mongoose from "mongoose";
 
 const PaymentSchema = new mongoose.Schema({
-  invoiceRef: { type: mongoose.Schema.Types.ObjectId, ref: "invoices" },
+  paymentNo: {
+    type: Number,
+    immutable: true,
+  },
+  invoiceRef: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "invoices",
+    required: function () {
+      return this.isNew;
+    },
+  },
   memberRef: { type: mongoose.Schema.Types.ObjectId, ref: "users" },
   invoiceId: String,
   memberId: String,
@@ -23,9 +33,39 @@ const PaymentSchema = new mongoose.Schema({
   approvedAt: Date, // When approved
   rejectedBy: String, // Admin who rejected
   rejectedAt: Date, // When rejected
+  receiptNumber: { type: String, default: null },
 }, {
   timestamps: true
 });
+
+PaymentSchema.index({ paymentNo: 1 }, { unique: true, sparse: true });
+
+const isUpdatingField = (update, field) => {
+  if (!update) return false;
+  if (update.$set && Object.prototype.hasOwnProperty.call(update.$set, field)) return true;
+  if (update.$unset && Object.prototype.hasOwnProperty.call(update.$unset, field)) return true;
+  if (update.$inc && Object.prototype.hasOwnProperty.call(update.$inc, field)) return true;
+  if (update.$setOnInsert && Object.prototype.hasOwnProperty.call(update.$setOnInsert, field)) return true;
+  return Object.prototype.hasOwnProperty.call(update, field);
+};
+
+const rejectPaymentNoUpdate = function (next) {
+  try {
+    const update = this.getUpdate ? this.getUpdate() : null;
+    if (isUpdatingField(update, "paymentNo")) {
+      const error = new Error("paymentNo is immutable and cannot be updated.");
+      error.statusCode = 400;
+      throw error;
+    }
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+};
+
+PaymentSchema.pre("findOneAndUpdate", rejectPaymentNoUpdate);
+PaymentSchema.pre("updateOne", rejectPaymentNoUpdate);
+PaymentSchema.pre("updateMany", rejectPaymentNoUpdate);
 
 const PaymentModel = mongoose.model("payments", PaymentSchema);
 

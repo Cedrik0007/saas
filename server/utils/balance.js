@@ -1,46 +1,103 @@
+import mongoose from "mongoose";
 import { ensureConnection } from "../config/database.js";
 import InvoiceModel from "../models/Invoice.js";
 import UserModel from "../models/User.js";
 
+const objectIdRegex = /^[a-f\d]{24}$/i;
+
+const normalizeValue = (value) => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
+const resolveMemberForBalance = async (identifier, session) => {
+  const normalized = normalizeValue(identifier);
+  if (!normalized) return null;
+
+  const sessionOptions = session ? { session } : {};
+
+  if (objectIdRegex.test(normalized)) {
+    return UserModel.findById(normalized, null, sessionOptions);
+  }
+
+  const numericCandidate = Number.parseInt(normalized, 10);
+  const memberNoQuery = Number.isNaN(numericCandidate) ? null : { memberNo: numericCandidate };
+
+  return UserModel.findOne(
+    {
+      $or: [
+        { id: normalized },
+        { "previousDisplayIds.id": normalized },
+        memberNoQuery,
+      ].filter(Boolean),
+    },
+    null,
+    sessionOptions
+  );
+};
+
+const buildInvoiceMemberMatch = (member) => {
+  const previousIds = Array.isArray(member?.previousDisplayIds)
+    ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+    : [];
+
+  const memberIdCandidates = [member?.id, ...previousIds].filter(Boolean).map(String);
+
+  return {
+    $or: [
+      member?._id ? { memberRef: member._id } : null,
+      member?.memberNo ? { memberNo: member.memberNo } : null,
+      memberIdCandidates.length > 0 ? { memberId: { $in: memberIdCandidates } } : null,
+    ].filter(Boolean),
+  };
+};
+
 // Helper function to calculate and update member balance from unpaid invoices
-export async function calculateAndUpdateMemberBalance(memberId) {
+export async function calculateAndUpdateMemberBalance(memberIdentifier, options = {}) {
   try {
     await ensureConnection();
-    
-    // Get all unpaid invoices for this member from MongoDB
-    const unpaidInvoices = await InvoiceModel.find({
-      memberId: memberId,
-      status: { $in: ["Unpaid", "Overdue"] }
-    });
-    
-    // Calculate total outstanding
+
+    const session = options.session || null;
+    const member = await resolveMemberForBalance(memberIdentifier, session);
+
+    if (!member) {
+      throw new Error("Member not found for balance update.");
+    }
+
+    const invoiceMatch = buildInvoiceMemberMatch(member);
+
+    const unpaidInvoices = await InvoiceModel.find(
+      {
+        ...invoiceMatch,
+        status: { $in: ["Unpaid", "Overdue"] },
+      },
+      null,
+      session ? { session } : {}
+    );
+
     const outstandingTotal = unpaidInvoices.reduce((sum, inv) => {
-      // Handle both "$" and "HK$" formats
-      const amount = parseFloat(inv.amount.replace(/HK\$|\$/g, "").replace(",", "")) || 0;
+      const amount = parseFloat(String(inv.amount || "").replace(/HK\$|\$/g, "").replace(",", "")) || 0;
       return sum + amount;
     }, 0);
-    
-    // Format balance string
+
     let balanceString = `HK$${outstandingTotal.toFixed(2)}`;
     if (outstandingTotal === 0) {
       balanceString = "HK$0";
     } else {
-      // Check if any are overdue
       const hasOverdue = unpaidInvoices.some(inv => inv.status === "Overdue");
       balanceString += hasOverdue ? " Overdue" : " Outstanding";
     }
-    
-    // Update member balance in MongoDB
+
     await UserModel.findOneAndUpdate(
-      { id: memberId },
+      { _id: member._id },
       { $set: { balance: balanceString } },
-      { new: true }
+      { new: true, ...(session ? { session } : {}) }
     );
-    
-    console.log(`✓ Updated balance for member ${memberId}: ${balanceString}`);
+
+    console.log(`✓ Updated balance for member ${member.id || member._id}: ${balanceString}`);
     return balanceString;
   } catch (error) {
-    console.error(`Error updating balance for member ${memberId}:`, error);
+    console.error(`Error updating balance for member ${memberIdentifier}:`, error);
     throw error;
   }
 }

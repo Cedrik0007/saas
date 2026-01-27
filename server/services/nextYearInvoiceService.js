@@ -3,6 +3,22 @@ import InvoiceModel from "../models/Invoice.js";
 import UserModel from "../models/User.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { calculateFees, shouldChargeMembershipFee, shouldChargeJanazaFee, SUBSCRIPTION_TYPES } from "../utils/subscriptionTypes.js";
+import { getNextSequence } from "../utils/sequence.js";
+
+const buildInvoiceMemberMatch = (member) => {
+  const previousIds = Array.isArray(member?.previousDisplayIds)
+    ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+    : [];
+  const memberIdCandidates = [member?.id, ...previousIds].filter(Boolean).map(String);
+
+  return {
+    $or: [
+      member?._id ? { memberRef: member._id } : null,
+      member?.memberNo ? { memberNo: member.memberNo } : null,
+      memberIdCandidates.length > 0 ? { memberId: { $in: memberIdCandidates } } : null,
+    ].filter(Boolean),
+  };
+};
 
 /**
  * Extract year from invoice period string
@@ -52,7 +68,7 @@ async function createNextYearInvoice(member, lastPaidYear, subscriptionType) {
     
     // Check if invoice for next year already exists
     const existingInvoice = await InvoiceModel.findOne({
-      memberId: member.id,
+      ...buildInvoiceMemberMatch(member),
       period: { $regex: String(nextYear), $options: 'i' },
       status: { $ne: "Rejected" }
     });
@@ -107,9 +123,13 @@ async function createNextYearInvoice(member, lastPaidYear, subscriptionType) {
     }
 
     // Create invoice
+    const invoiceNo = await getNextSequence("invoiceNo");
+
     const invoiceData = {
+      invoiceNo,
       id: `INV-${nextYear}-${Math.floor(100 + Math.random() * 900)}`,
       memberRef: member._id,
+      memberNo: member.memberNo,
       memberId: member.id,
       memberName: member.name,
       memberEmail: member.email,

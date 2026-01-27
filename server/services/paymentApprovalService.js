@@ -5,6 +5,23 @@ import InvoiceModel from "../models/Invoice.js";
 import UserModel from "../models/User.js";
 import { getNextReceiptNumberStrict } from "../utils/receiptCounter.js";
 import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
+import { getNextSequence } from "../utils/sequence.js";
+import { getReceiptDownloadUrl } from "../utils/receiptLinks.js";
+
+const buildInvoiceMemberMatch = (member) => {
+  const previousIds = Array.isArray(member?.previousDisplayIds)
+    ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+    : [];
+  const memberIdCandidates = [member?.id, ...previousIds].filter(Boolean).map(String);
+
+  return {
+    $or: [
+      member?._id ? { memberRef: member._id } : null,
+      member?.memberNo ? { memberNo: member.memberNo } : null,
+      memberIdCandidates.length > 0 ? { memberId: { $in: memberIdCandidates } } : null,
+    ].filter(Boolean),
+  };
+};
 
 export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adminName }) {
   await ensureConnection();
@@ -51,12 +68,17 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
         payment.invoiceId = invoice.id;
       }
 
+      if (payment.paymentNo === undefined || payment.paymentNo === null) {
+        payment.paymentNo = await getNextSequence("paymentNo", { session });
+      }
+
       payment.status = "Completed";
       payment.approvedBy = adminId || adminName || "Admin";
       payment.approvedAt = new Date();
-      await payment.save({ session });
 
       const receiptNumber = await getNextReceiptNumberStrict({ session });
+      payment.receiptNumber = receiptNumber;
+      await payment.save({ session });
 
       const invoiceUpdate = {
         status: "Paid",
@@ -64,6 +86,10 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
         method: payment.method,
         reference: payment.reference,
         screenshot: payment.screenshot,
+        receiver_name: payment.receiver_name || null,
+        last_payment_date: payment.approvedAt,
+        memberRef: member?._id,
+        memberNo: member?.memberNo,
       };
 
       if (payment.paidToAdmin) {
@@ -86,6 +112,30 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
       }
 
       invoice = updatedInvoice;
+      invoice.receiptPdfUrl = getReceiptDownloadUrl(invoice._id);
+
+      // Update member balance atomically inside the transaction
+      const unpaidInvoices = await InvoiceModel.find(
+        {
+          ...buildInvoiceMemberMatch(member),
+          status: { $in: ["Unpaid", "Overdue"] },
+        },
+        null,
+        { session }
+      );
+
+      const outstandingTotal = unpaidInvoices.reduce((sum, inv) => {
+        const amount = parseFloat(String(inv.amount || "").replace(/HK\$|\$/g, "").replace(",", "")) || 0;
+        return sum + amount;
+      }, 0);
+
+      let balanceString = `HK$${outstandingTotal.toFixed(2)}`;
+      if (outstandingTotal === 0) {
+        balanceString = "HK$0";
+      } else {
+        const hasOverdue = unpaidInvoices.some(inv => inv.status === "Overdue");
+        balanceString += hasOverdue ? " Overdue" : " Outstanding";
+      }
 
       // AUTOMATIC NEXT DUE DATE UPDATE LOGIC
       let nextDueYear = null;
@@ -119,6 +169,7 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
           last_payment_date: new Date(),
           next_due_date: newNextDueDate,
           nextDue: nextDueStr,
+          balance: balanceString,
         };
 
         if (isLifetimeMembershipFullPayment) {
@@ -133,7 +184,7 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
       } else {
         await UserModel.findOneAndUpdate(
           { _id: member._id },
-          { $set: { payment_status: "paid", last_payment_date: new Date() } },
+          { $set: { payment_status: "paid", last_payment_date: new Date(), balance: balanceString } },
           { session }
         );
       }
@@ -185,7 +236,10 @@ export async function approveInvoicePayment({
         year: "numeric",
       });
 
+      const receiptNumber = await getNextReceiptNumberStrict({ session });
+
       payment = new PaymentModel({
+        paymentNo: await getNextSequence("paymentNo", { session }),
         invoiceRef: invoice._id,
         memberRef: member._id,
         invoiceId: invoice.id || undefined,
@@ -205,21 +259,23 @@ export async function approveInvoicePayment({
         paidToAdminName,
         approvedBy: approvedBy || "Admin",
         approvedAt: paymentDate,
+        receiptNumber,
       });
 
       await payment.save({ session });
 
-      const receiptNumber = await getNextReceiptNumberStrict({ session });
-
       const invoiceUpdate = {
         status: "Paid",
-        receiptNumber,
+        receiptNumber: payment.receiptNumber,
         method,
         reference,
         screenshot: screenshot || null,
         payment_mode: paymentType || null,
         payment_proof: screenshot || null,
-        last_payment_date: paymentDate,
+        last_payment_date: payment.approvedAt,
+        receiver_name: payment.receiver_name || null,
+        memberRef: member?._id,
+        memberNo: member?.memberNo,
       };
 
       if (paidToAdmin) {
@@ -242,6 +298,29 @@ export async function approveInvoicePayment({
       }
 
       invoice = updatedInvoice;
+      invoice.receiptPdfUrl = getReceiptDownloadUrl(invoice._id);
+
+      const unpaidInvoices = await InvoiceModel.find(
+        {
+          ...buildInvoiceMemberMatch(member),
+          status: { $in: ["Unpaid", "Overdue"] },
+        },
+        null,
+        { session }
+      );
+
+      const outstandingTotal = unpaidInvoices.reduce((sum, inv) => {
+        const amount = parseFloat(String(inv.amount || "").replace(/HK\$|\$/g, "").replace(",", "")) || 0;
+        return sum + amount;
+      }, 0);
+
+      let balanceString = `HK$${outstandingTotal.toFixed(2)}`;
+      if (outstandingTotal === 0) {
+        balanceString = "HK$0";
+      } else {
+        const hasOverdue = unpaidInvoices.some(inv => inv.status === "Overdue");
+        balanceString += hasOverdue ? " Overdue" : " Outstanding";
+      }
 
       // AUTOMATIC NEXT DUE DATE UPDATE LOGIC
       let nextDueYear = null;
@@ -286,6 +365,7 @@ export async function approveInvoicePayment({
           payment_proof: screenshot || null,
           lastPayment: lastPaymentDisplay,
           nextDue: nextDueDisplay,
+          balance: balanceString,
         };
 
         if (isLifetimeMembershipFullPayment) {
@@ -307,6 +387,7 @@ export async function approveInvoicePayment({
               last_payment_date: paymentDate,
               payment_proof: screenshot || null,
               lastPayment: lastPaymentDisplay,
+              balance: balanceString,
             },
           },
           { session, new: true }

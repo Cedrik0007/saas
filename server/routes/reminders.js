@@ -31,13 +31,36 @@ const assertValidMemberId = (value, contextLabel = "memberId") => {
 };
 
 const findMemberOrThrow = async (memberId) => {
-  const member = await UserModel.findOne({ id: memberId });
+  const normalized = normalizeMemberId(memberId);
+  const member = objectIdRegex.test(normalized)
+    ? await UserModel.findById(normalized)
+    : await UserModel.findOne({
+        $or: [
+          { id: normalized },
+          { "previousDisplayIds.id": normalized },
+        ],
+      });
   if (!member) {
     const error = new Error(`Member with ID "${memberId}" not found.`);
     error.status = 404;
     throw error;
   }
   return member;
+};
+
+const buildInvoiceMemberMatch = (member) => {
+  const previousIds = Array.isArray(member?.previousDisplayIds)
+    ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+    : [];
+  const memberIdCandidates = [member?.id, ...previousIds].filter(Boolean).map(String);
+
+  return {
+    $or: [
+      member?._id ? { memberRef: member._id } : null,
+      member?.memberNo ? { memberNo: member.memberNo } : null,
+      memberIdCandidates.length > 0 ? { memberId: { $in: memberIdCandidates } } : null,
+    ].filter(Boolean),
+  };
 };
 
 // POST endpoint to trigger reminder check manually
@@ -121,7 +144,7 @@ router.post("/send", async (req, res) => {
       
       for (const member of members) {
         const unpaidInvoices = await InvoiceModel.find({
-          memberId: member.id,
+          ...buildInvoiceMemberMatch(member),
           status: { $in: ['Unpaid', 'Overdue'] }
         });
 
@@ -172,7 +195,7 @@ router.post("/send", async (req, res) => {
       }
 
       const unpaidInvoices = await InvoiceModel.find({
-        memberId: member.id,
+        ...buildInvoiceMemberMatch(member),
         status: { $in: ['Unpaid', 'Overdue'] }
       });
 
@@ -319,14 +342,19 @@ router.post("/retry", async (req, res) => {
     setTransporter(transporter);
 
     // Find the member
-    const member = await UserModel.findOne({ id: reminderLog.memberId });
+    const member = await UserModel.findOne({
+      $or: [
+        { id: reminderLog.memberId },
+        { "previousDisplayIds.id": reminderLog.memberId },
+      ],
+    });
     if (!member) {
       return res.status(404).json({ error: "Member not found" });
     }
 
     // Find unpaid invoices
     const unpaidInvoices = await InvoiceModel.find({
-      memberId: member.id,
+      ...buildInvoiceMemberMatch(member),
       status: { $in: ['Unpaid', 'Overdue'] }
     });
 

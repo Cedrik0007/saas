@@ -63,7 +63,7 @@ describe("Member ID invariants", () => {
     expect(stored[1].id).toBeUndefined();
   });
 
-  test("updating member from null to valid ID succeeds", async () => {
+  test("updating member from null to valid ID is rejected", async () => {
     const createResponse = await request(app)
       .post("/api/members")
       .send({ name: "Member C", phone: "+85290000002" });
@@ -76,8 +76,8 @@ describe("Member ID invariants", () => {
       .put(`/api/members/${memberId}`)
       .send({ id: "AM701" });
 
-    expect(updateResponse.status).toBe(200);
-    expect(updateResponse.body.id).toBe("AM701");
+    expect(updateResponse.status).toBe(400);
+    expect(updateResponse.body.message).toMatch(/display id cannot be updated manually/i);
   });
 
   test("duplicate non-null member IDs are rejected", async () => {
@@ -97,7 +97,7 @@ describe("Member ID invariants", () => {
       .send({ id: "AM702" });
 
     expect(updateResponse.status).toBe(400);
-    expect(updateResponse.body.message).toMatch(/member id already exists/i);
+    expect(updateResponse.body.message).toMatch(/display id cannot be updated manually/i);
   });
 
   test("'Not Assigned' is rejected at the API level", async () => {
@@ -117,6 +117,6 @@ describe("Member ID invariants", () => {
       .send({ id: "Not Assigned" });
 
     expect(updateResponse.status).toBe(400);
-    expect(updateResponse.body.message).toMatch(/not assigned/i);
+    expect(updateResponse.body.message).toMatch(/display id cannot be updated manually/i);
   });
 });

@@ -367,9 +367,13 @@ router.get("/:id/pdf-receipt/download", async (req, res) => {
     const { generateDonationReceiptPDF } = await import("../utils/pdfReceipt.js");
     const pdfBuffer = await generateDonationReceiptPDF(donationData, member);
 
-    // Set headers for PDF download
+    // Determine Content-Disposition based on mode query param
+    const mode = req.query.mode || 'download'; // 'view' or 'download'
+    const disposition = mode === 'view' ? 'inline' : 'attachment';
+    
+    // Set headers for PDF
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Donation_Receipt_${donationData._id || donationData.id}.pdf"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="Donation_Receipt_${donationData._id || donationData.id}.pdf"`);
     res.setHeader('Content-Length', pdfBuffer.length);
     
     // Send PDF buffer directly

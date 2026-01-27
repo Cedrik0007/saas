@@ -4,6 +4,22 @@ import InvoiceModel from "../models/Invoice.js";
 import PaymentModel from "../models/Payment.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { calculateFees, shouldChargeMembershipFee, shouldChargeJanazaFee, SUBSCRIPTION_TYPES } from "../utils/subscriptionTypes.js";
+import { getNextSequence } from "../utils/sequence.js";
+
+const buildInvoiceMemberMatch = (member) => {
+  const previousIds = Array.isArray(member?.previousDisplayIds)
+    ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+    : [];
+  const memberIdCandidates = [member?.id, ...previousIds].filter(Boolean).map(String);
+
+  return {
+    $or: [
+      member?._id ? { memberRef: member._id } : null,
+      member?.memberNo ? { memberNo: member.memberNo } : null,
+      memberIdCandidates.length > 0 ? { memberId: { $in: memberIdCandidates } } : null,
+    ].filter(Boolean),
+  };
+};
 
 // Helper function to create a subscription invoice
 async function createSubscriptionInvoice(member, subscriptionType, customPeriod = null) {
@@ -29,7 +45,7 @@ async function createSubscriptionInvoice(member, subscriptionType, customPeriod 
 
     // Final check for existing invoice for the same member and period (prevent duplicates)
     const existingInvoice = await InvoiceModel.findOne({
-      memberId: member.id,
+      ...buildInvoiceMemberMatch(member),
       period: invoicePeriod,
       status: { $ne: "Rejected" }
     });
@@ -66,9 +82,13 @@ async function createSubscriptionInvoice(member, subscriptionType, customPeriod 
     }
 
     // Create invoice
+    const invoiceNo = await getNextSequence("invoiceNo");
+
     const invoiceData = {
+      invoiceNo,
       id: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
       memberRef: member._id,
+      memberNo: member.memberNo,
       memberId: member.id,
       memberName: member.name,
       memberEmail: member.email,
@@ -123,7 +143,7 @@ export async function generateSubscriptionInvoices() {
         if (!lastPayment) {
           // No payment found, check if they have any unpaid invoice first
           const unpaidInvoice = await InvoiceModel.findOne({
-            memberId: member.id,
+            ...buildInvoiceMemberMatch(member),
             status: { $in: ["Unpaid", "Pending Verification", "Overdue"] }
           }).sort({ createdAt: -1 });
 
@@ -136,7 +156,7 @@ export async function generateSubscriptionInvoices() {
 
           // No unpaid invoice, check if they have any invoice
           const lastInvoice = await InvoiceModel.findOne({
-            memberId: member.id
+            ...buildInvoiceMemberMatch(member)
           }).sort({ createdAt: -1 });
 
           if (!lastInvoice) {
@@ -198,7 +218,7 @@ export async function generateSubscriptionInvoices() {
         if (shouldCreate) {
           const currentMonth = now.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
           const existingUnpaid = await InvoiceModel.findOne({
-            memberId: member.id,
+            ...buildInvoiceMemberMatch(member),
             status: { $in: ['Unpaid', 'Overdue'] },
             period: { $regex: currentMonth, $options: 'i' }
           });

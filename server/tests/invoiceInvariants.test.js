@@ -85,12 +85,15 @@ describe("Invoice data invariants", () => {
 
   test("saving and updating an invoice strips memberName and memberEmail", async () => {
     const member = await UserModel.create({
+      memberNo: 1001,
       id: "IMA2001",
       name: "Test Member",
     });
 
     await InvoiceModel.create({
       id: "INV-TEST-1",
+      memberRef: member._id,
+      memberNo: member.memberNo,
       memberId: member.id,
       amount: "HK$0",
       period: "2025",
@@ -120,12 +123,15 @@ describe("Invoice data invariants", () => {
 
   test("marking an invoice as paid directly is rejected", async () => {
     const member = await UserModel.create({
+      memberNo: 1002,
       id: "IMA2002",
       name: "Receipt Test",
     });
 
     await InvoiceModel.create({
       id: "INV-TEST-2",
+      memberRef: member._id,
+      memberNo: member.memberNo,
       memberId: member.id,
       amount: "HK$100",
       period: "2025 Membership",
@@ -142,6 +148,7 @@ describe("Invoice data invariants", () => {
 
   test("payment approval marks invoice paid and assigns receipt number", async () => {
     const member = await UserModel.create({
+      memberNo: 1003,
       id: "IMA2004",
       name: "Approval Test",
       subscriptionType: "Annual Member",
@@ -149,6 +156,8 @@ describe("Invoice data invariants", () => {
 
     await InvoiceModel.create({
       id: "INV-TEST-4",
+      memberRef: member._id,
+      memberNo: member.memberNo,
       memberId: member.id,
       amount: "HK$100",
       period: "2025 Membership",
@@ -156,6 +165,7 @@ describe("Invoice data invariants", () => {
     });
 
     const payment = await PaymentModel.create({
+      invoiceRef: (await InvoiceModel.findOne({ id: "INV-TEST-4" }))._id,
       invoiceId: "INV-TEST-4",
       memberId: member.id,
       amount: "HK$100",
@@ -177,12 +187,15 @@ describe("Invoice data invariants", () => {
 
   test("attempting to clear a paid invoice receipt is rejected", async () => {
     const member = await UserModel.create({
+      memberNo: 1004,
       id: "IMA2003",
       name: "Receipt Guard",
     });
 
     await InvoiceModel.create({
       id: "INV-TEST-3",
+      memberRef: member._id,
+      memberNo: member.memberNo,
       memberId: member.id,
       amount: "HK$120",
       period: "2025 Membership",
@@ -190,6 +203,7 @@ describe("Invoice data invariants", () => {
     });
 
     const payment = await PaymentModel.create({
+      invoiceRef: (await InvoiceModel.findOne({ id: "INV-TEST-3" }))._id,
       invoiceId: "INV-TEST-3",
       memberId: member.id,
       amount: "HK$120",
