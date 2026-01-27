@@ -313,6 +313,8 @@ function AdminPage() {
       setPaymentConfirmationChannels({ email: false, whatsapp: false });
       setSelectedConfirmationChannel(null);
       setPendingSubscriptionType(null);
+      setPendingSubscriptionTypePrev(null);
+      setEditInitialSubscriptionType(null);
       setConfirmationDialog({ ...confirmationDialogDefaults });
     };
     
@@ -451,6 +453,10 @@ function AdminPage() {
     });
     const [currentInvalidField, setCurrentInvalidField] = useState(null); // Track which field to highlight
 
+    const isEditMode = Boolean(editingMember?._id || editingMember?.memberNo);
+    const [editInitialSubscriptionType, setEditInitialSubscriptionType] = useState(null);
+    const [pendingSubscriptionTypePrev, setPendingSubscriptionTypePrev] = useState(null);
+
     const [isMemberSubmitting, setIsMemberSubmitting] = useState(false);
     const [isDonationSubmitting, setIsDonationSubmitting] = useState(false);
 
@@ -569,7 +575,7 @@ function AdminPage() {
     const isMemberFormValid = () => {
       const fieldOrder = editingMember
         ? ["name", "phone"] // Edit Member: validate basic fields (email is optional, dates are optional)
-        : ["name", "id", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields and id
+        : ["name", "phone", "nextDue", "lastPayment"]; // Add Member: dates validated, ID auto-generated
 
       for (const field of fieldOrder) {
         const error = validateMemberField(field, memberForm[field]);
@@ -585,7 +591,7 @@ function AdminPage() {
       // Define field order for validation (only validate fields that exist in the form)
       const fieldOrder = editingMember
         ? ["name", "phone"] // Edit Member: validate basic fields (email is optional, dates are optional)
-        : ["name", "id", "email", "phone", "nextDue", "lastPayment"]; // Add Member: includes date fields and id
+        : ["name", "phone", "nextDue", "lastPayment"]; // Add Member: dates validated, ID auto-generated
 
       // Clear all errors first
       setMemberFieldErrors({
@@ -616,22 +622,14 @@ function AdminPage() {
             if (fieldIndex === 0) {
               // Name field - first required text input
               targetInput = formElement.querySelector('input[type="text"][required]');
-            } else if (fieldIndex === 1 && !editingMember) {
-              // ID field - member ID input (only in Add Member form)
-              const idInput = formElement.querySelector('input[placeholder*="4-digit"]') ||
-                             formElement.querySelector('input[placeholder*="Enter 4-digit"]');
-              targetInput = idInput;
-            } else if ((fieldIndex === 1 && editingMember) || (fieldIndex === 2 && !editingMember)) {
-              // Email field
-              targetInput = formElement.querySelector('input[type="email"]');
-            } else if ((fieldIndex === 2 && editingMember) || (fieldIndex === 3 && !editingMember)) {
+            } else if (fieldIndex === 1) {
               // Phone field - focus on phone input
               targetInput = formElement.querySelector('input[type="tel"]');
-            } else if ((fieldIndex === 3 && editingMember) || (fieldIndex === 4 && !editingMember)) {
+            } else if (fieldIndex === 2) {
               // nextDue field - first date input
               const dateInputs = formElement.querySelectorAll('input[type="date"]');
               targetInput = dateInputs[0];
-            } else if ((fieldIndex === 4 && editingMember) || (fieldIndex === 5 && !editingMember)) {
+            } else if (fieldIndex === 3) {
               // lastPayment field - second date input
               const dateInputs = formElement.querySelectorAll('input[type="date"]');
               targetInput = dateInputs[1];
@@ -669,14 +667,28 @@ function AdminPage() {
         value = rawValue.replace(/\D/g, "");
       } else if (field === "subscriptionType") {
         const normalizedType = normalizeSubscriptionType(rawValue);
-        const currentType = normalizeSubscriptionType(memberForm.subscriptionType);
+        const currentType = normalizeSubscriptionType(
+          memberForm.subscriptionType || editInitialSubscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER
+        );
+        const isAnnualToLifetime =
+          isEditMode &&
+          currentType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER &&
+          normalizedType !== currentType &&
+          normalizedType.startsWith("Lifetime");
 
-        if (normalizedType !== currentType) {
+        if (isAnnualToLifetime) {
+          setPendingSubscriptionTypePrev(currentType);
           setPendingSubscriptionType(normalizedType);
-          // Replace member form with subscription change confirmation (modal replacement pattern)
           openConfirmModal('subscriptionChangeConfirmation');
+          return;
         }
 
+        const nextBalance = getSubscriptionBalancePreset(normalizedType);
+        setMemberForm(prev => ({
+          ...prev,
+          subscriptionType: normalizedType,
+          balance: nextBalance,
+        }));
         return;
       }
 
@@ -1099,10 +1111,19 @@ function AdminPage() {
 
       closeAllModals();
       setPendingSubscriptionType(null);
+      setPendingSubscriptionTypePrev(null);
     };
 
     const cancelSubscriptionTypeChange = () => {
+      if (pendingSubscriptionTypePrev) {
+        setMemberForm(prev => ({
+          ...prev,
+          subscriptionType: pendingSubscriptionTypePrev,
+          balance: getSubscriptionBalancePreset(pendingSubscriptionTypePrev),
+        }));
+      }
       setPendingSubscriptionType(null);
+      setPendingSubscriptionTypePrev(null);
       cancelConfirmModal();
     };
 
@@ -4411,18 +4432,18 @@ Indian Muslim Association, Hong Kong`;
       try {
         setIsMemberSubmitting(true);
 
-        // Prepare member data - include ID if manually entered (at least 2 characters)
+        // Prepare member data - IDs are now generated server-side
         const memberData = { ...memberForm };
-        const rawMemberId = (memberForm.id || "").trim();
-        const isNotAssigned = rawMemberId.toLowerCase() === "not assigned";
-        if (!rawMemberId || rawMemberId.length < 2 || isNotAssigned) {
-          delete memberData.id;
-        } else {
-          memberData.id = rawMemberId.toUpperCase();
-        }
+        delete memberData.id;
+        delete memberData.memberNo;
+        delete memberData._id;
         memberData.subscriptionType = normalizeSubscriptionType(memberData.subscriptionType);
         
         const newMember = await addMember(memberData);
+
+        if (!newMember?.id) {
+          throw new Error("Member ID missing from server response. Please try again.");
+        }
 
 
 
@@ -4452,6 +4473,9 @@ Indian Muslim Association, Hong Kong`;
           lastPayment: false,
         });
         setCurrentInvalidField(null);
+        setPendingSubscriptionType(null);
+        setPendingSubscriptionTypePrev(null);
+        setEditInitialSubscriptionType(null);
         setShowMemberForm(false);
         showToast("Member added successfully!", "success");
       } catch (error) {
@@ -4474,6 +4498,9 @@ Indian Muslim Association, Hong Kong`;
       });
       setCurrentInvalidField(null);
       setEditingMember(member);
+      setPendingSubscriptionType(null);
+      setPendingSubscriptionTypePrev(null);
+      setEditInitialSubscriptionType(normalizeSubscriptionType(member.subscriptionType));
       // Include all fields from add member form - use actual values from member object
       const rawMemberId = member.id || "";
       const sanitizedMemberId = String(rawMemberId).trim().toLowerCase() === "not assigned" ? "" : rawMemberId;
@@ -4578,6 +4605,9 @@ Indian Muslim Association, Hong Kong`;
         const performUpdate = async () => {
           await updateMember(editingMember._id, updateData);
           setEditingMember(null);
+          setEditInitialSubscriptionType(null);
+          setPendingSubscriptionType(null);
+          setPendingSubscriptionTypePrev(null);
           setMemberForm({
             name: "",
             email: "",
@@ -6415,6 +6445,9 @@ Indian Muslim Association, Hong Kong`;
                             setShowMemberForm(true);
                             openModal('memberForm');
                             setEditingMember(null);
+                            setEditInitialSubscriptionType(null);
+                            setPendingSubscriptionType(null);
+                            setPendingSubscriptionTypePrev(null);
                             // Reset form with balance matching default subscription type
                             setMemberForm({
                               id: "",
@@ -6452,6 +6485,9 @@ Indian Muslim Association, Hong Kong`;
                           lastPayment: false,
                         });
                         setCurrentInvalidField(null);
+                        setPendingSubscriptionType(null);
+                        setPendingSubscriptionTypePrev(null);
+                        setEditInitialSubscriptionType(null);
                         setShowMemberForm(false);
                         setEditingMember(null);
                         closeAllModals();
@@ -6481,6 +6517,9 @@ Indian Muslim Association, Hong Kong`;
                                   lastPayment: false,
                                 });
                                 setCurrentInvalidField(null);
+                                setPendingSubscriptionType(null);
+                                setPendingSubscriptionTypePrev(null);
+                                setEditInitialSubscriptionType(null);
                                 setShowMemberForm(false);
                                 setEditingMember(null);
                               }}
@@ -6547,37 +6586,34 @@ Indian Muslim Association, Hong Kong`;
                             </label>
 
                             {!editingMember && (
-  <label>
-    <span>
-      <i
-        className="fas fa-id-card admin-members-form-icon"
-        style={{ marginRight: "8px" }}
-        aria-hidden="true"
-      ></i>
-      Member ID
-    </span>
+                              <label>
+                                <span>
+                                  <i
+                                    className="fas fa-id-card admin-members-form-icon"
+                                    style={{ marginRight: "8px" }}
+                                    aria-hidden="true"
+                                  ></i>
+                                  Member ID
+                                </span>
 
-    <input
-      type="text"
-      value={(memberForm.id && String(memberForm.id).trim().toLowerCase() === "not assigned") ? "" : (memberForm.id ?? "")}
-      onChange={(e) => {
-        const value = e.target.value; // allow anything
-        setMemberForm(prev => ({ ...prev, id: value }));
-
-        if (memberFieldErrors.id) {
-          setMemberFieldErrors(prev => ({ ...prev, id: false }));
-          if (currentInvalidField === "id") {
-            setCurrentInvalidField(null);
-          }
-        }
-      }}
-      placeholder="Enter Member ID (eg: AM001)"
-      style={{
-        border: memberFieldErrors.id ? "2px solid #ef4444" : undefined
-      }}
-    />
-  </label>
-)}
+                                <input
+                                  type="text"
+                                  value="Auto-generated (AM/LM)"
+                                  disabled
+                                  readOnly
+                                  placeholder="Member ID will be auto-generated"
+                                  style={{
+                                    background: "#f9fafb",
+                                    color: "#6b7280",
+                                    cursor: "not-allowed",
+                                  }}
+                                  aria-readonly="true"
+                                />
+                                <span style={{ display: "block", marginTop: "4px", color: "#6b7280", fontSize: "12px" }}>
+                                  Display IDs are assigned automatically from the subscription type (AM/LM).
+                                </span>
+                              </label>
+                            )}
 
                             {/* <label>
                               <span>

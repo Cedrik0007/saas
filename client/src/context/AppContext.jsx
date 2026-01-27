@@ -604,6 +604,11 @@ export function AppProvider({ children }) {
   // CRUD Operations for Members (Server-based) with Optimistic Updates
   const addMember = async (member) => {
     const normalizedMemberInput = normalizeMemberRecord(member);
+    const payload = { ...normalizedMemberInput };
+    delete payload.id;
+    delete payload.memberNo;
+    delete payload._id;
+    delete payload.allowManualId;
     const requestKey = `add-member-${Date.now()}`;
     
     // Optimistic update - update UI immediately
@@ -618,7 +623,7 @@ export function AppProvider({ children }) {
       const response = await fetch(`${apiBaseUrl}/api/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(normalizedMemberInput),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -639,6 +644,10 @@ export function AppProvider({ children }) {
         return await response.json();
       });
       const normalizedResponse = normalizeMemberRecord(newMember);
+
+      if (!normalizedResponse?.id) {
+        throw new Error("Member ID missing in server response. Please try again.");
+      }
       
       // Replace optimistic member with real one
       // Also remove any duplicate members that might have been added via Socket.io
