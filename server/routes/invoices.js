@@ -767,6 +767,7 @@ router.post("/:id/send-payment-confirmation", async (req, res) => {
   }
 });
 
+
 // GET PDF options page (view/download options)
 router.get("/:id/pdf-receipt/options", async (req, res) => {
   try {

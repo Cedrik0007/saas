@@ -4656,13 +4656,13 @@ Indian Muslim Association, Hong Kong`;
       showToast("Invoice created successfully!");
     };
 
-   const updateInvoiceInSelectedTable = (updatedInvoice) => {
+   const updateInvoiceInSelectedTable = (updatedInvoice, receiverName) => {
   if (!updatedInvoice?._id) return;
 
   setSelectedMemberInvoices(prev =>
     prev.map(inv =>
       inv._id === updatedInvoice._id
-        ? { ...inv, ...updatedInvoice }
+        ? { ...inv, ...updatedInvoice, receiver_name: receiverName ?? updatedInvoice.receiver_name }
         : inv
     )
   );
@@ -4759,8 +4759,11 @@ Indian Muslim Association, Hong Kong`;
         const approvedInvoice = approvalResult?.invoice || null;
         const approvedMember = approvalResult?.member || null;
 
-        if (approvedInvoice) {
-  updateInvoiceInSelectedTable(approvedInvoice);
+     if (approvedInvoice) {
+  updateInvoiceInSelectedTable(
+    approvedInvoice,
+    paymentModalData.receiver_name // pass the latest receiver name from modal
+  );
 }
 
         // Step 2: Store member ID for later use (avoid stale closure)
@@ -7708,7 +7711,7 @@ Indian Muslim Association, Hong Kong`;
                                                 style={{ color: "#ef4444" }}
                                                 onClick={(event) => {
                                                   event.stopPropagation();
-                                                  handleDeleteMember(member.id);
+                                                  handleDeleteMember(member._id);
                                                 }}
                                                 aria-label="Delete member"
                                               >
@@ -20659,7 +20662,7 @@ Indian Muslim Association, Hong Kong`;
                         try {
                           // Store the member ID to avoid stale closure issues
                           const targetMemberId = paymentConfirmationInvoice.memberId;
-                          const targetInvoiceDbId = paymentConfirmationInvoice._id;
+                          const targetInvoiceDbId = paymentConfirmationInvoice.id;
                           
                           // Fetch fresh member data to ensure we have the correct member
                           let member = null;
