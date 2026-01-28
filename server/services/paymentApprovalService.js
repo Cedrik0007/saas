@@ -6,7 +6,7 @@ import UserModel from "../models/User.js";
 import { getNextReceiptNumberStrict } from "../utils/receiptCounter.js";
 import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
 import { getNextSequence } from "../utils/sequence.js";
-import { getReceiptWhatsAppUrl } from "../utils/receiptLinks.js";
+import { getReceiptDownloadUrl, getReceiptWhatsAppUrl } from "../utils/receiptLinks.js";
 
 const buildInvoiceMemberMatch = (member) => {
   const previousIds = Array.isArray(member?.previousDisplayIds)
@@ -298,7 +298,13 @@ export async function approveInvoicePayment({
       }
 
       invoice = updatedInvoice;
-      invoice.receiptPdfUrl = getReceiptDownloadUrl(invoice._id);
+      // Receipt link should never block payment approval.
+      try {
+        invoice.receiptPdfUrl = getReceiptDownloadUrl(invoice._id) || getReceiptWhatsAppUrl(invoice._id);
+      } catch (receiptError) {
+        console.warn("⚠ Failed to build receipt URL during payment approval:", receiptError);
+        invoice.receiptPdfUrl = getReceiptWhatsAppUrl(invoice._id) || null;
+      }
 
       const unpaidInvoices = await InvoiceModel.find(
         {
