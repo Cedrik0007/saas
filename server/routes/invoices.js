@@ -14,7 +14,7 @@ import { generateUniqueMessageId, createEmailTransporter } from "../config/email
 import { sendPaymentApprovalEmail } from "../utils/emailHelpers.js";
 import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
 import { getNextSequence } from "../utils/sequence.js";
-import { getReceiptDownloadUrl } from "../utils/receiptLinks.js";
+import { getReceiptWhatsAppUrl } from "../utils/receiptLinks.js";
 import nodemailer from "nodemailer";
 
 const router = express.Router();
@@ -122,7 +122,7 @@ router.get("/", async (req, res) => {
       return {
         ...invoiceObj,
         receiptPdfUrl: invoiceObj?._id
-          ? getReceiptDownloadUrl(invoiceObj._id)
+          ? getReceiptWhatsAppUrl(invoiceObj._id)
           : null,
       };
     });
@@ -164,7 +164,7 @@ router.get("/member/:memberId", async (req, res) => {
       return {
         ...invoiceObj,
         receiptPdfUrl: invoiceObj?._id
-          ? getReceiptDownloadUrl(invoiceObj._id)
+          ? getReceiptWhatsAppUrl(invoiceObj._id)
           : null,
       };
     });
@@ -1232,12 +1232,6 @@ router.get("/:id/pdf-receipt/view", async (req, res) => {
       return res.status(400).json({ error: "Invoice is not marked as paid. Current status: " + invoice.status });
     }
 
-    const viewerMemberId = req.query.viewerMemberId || req.headers['x-viewer-member-id'];
-    if (viewerMemberId && invoice.memberId !== String(viewerMemberId)) {
-      console.error(`Invoice-member mismatch on view: invoiceId=${invoice.id} invoice.memberId=${invoice.memberId} viewerMemberId=${viewerMemberId} requester=${req.ip}`);
-      return res.status(400).json({ error: "Invoice does not belong to the requested member. PDF generation blocked." });
-    }
-
     const member = await resolveMember(invoice.memberRef || invoice.memberNo || invoice.memberId);
     if (!member) {
       return res.status(404).json({ error: "Member not found" });
@@ -1269,12 +1263,68 @@ router.get("/:id/pdf-receipt/view", async (req, res) => {
     // Set headers for PDF view (inline instead of attachment)
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="Receipt_${invoice.id}.pdf"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Length', pdfBuffer.length);
     
     // Send PDF buffer directly
     res.send(pdfBuffer);
   } catch (error) {
     console.error("Error viewing PDF receipt:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET WhatsApp-safe PDF receipt (public, inline, no downloads/redirects)
+router.get("/:id/pdf-receipt/whatsapp", async (req, res) => {
+  try {
+    await ensureConnection();
+
+    const invoiceParam = String(req.params.id || "").trim();
+    console.log(`↘ PDF receipt WhatsApp view requested for invoice id: ${invoiceParam}`);
+
+    const invoice = await resolveInvoiceByParam(invoiceParam);
+    if (!invoice) {
+      console.warn(`⚠ Invoice not found for PDF receipt WhatsApp view: ${invoiceParam}`);
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    // Allow both "Paid" and "Completed" statuses
+    const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
+    if (!isPaid) {
+      return res.status(400).json({ error: "Invoice is not marked as paid. Current status: " + invoice.status });
+    }
+
+    const member = await resolveMember(invoice.memberRef || invoice.memberNo || invoice.memberId);
+    if (!member) {
+      return res.status(404).json({ error: "Member not found" });
+    }
+
+    const payment = await PaymentModel.findOne({
+      invoiceId: invoice.id
+    }).sort({ createdAt: -1 });
+
+    const paymentData = payment ? {
+      ...payment.toObject(),
+      screenshot: payment.screenshot || invoice.screenshot || invoice.payment_proof || null,
+    } : {
+      invoiceId: invoice.id,
+      amount: invoice.amount,
+      method: invoice.method || 'Payment',
+      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      reference: invoice.reference || invoice.id,
+    };
+
+    const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
+    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData, invoice.receiptNumber);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Receipt_${invoice.id}.pdf"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Length', pdfBuffer.length);
+
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error("Error serving WhatsApp PDF receipt:", error);
     res.status(500).json({ error: error.message });
   }
 });

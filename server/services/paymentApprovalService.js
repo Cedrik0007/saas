@@ -6,7 +6,7 @@ import UserModel from "../models/User.js";
 import { getNextReceiptNumberStrict } from "../utils/receiptCounter.js";
 import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
 import { getNextSequence } from "../utils/sequence.js";
-import { getReceiptDownloadUrl } from "../utils/receiptLinks.js";
+import { getReceiptWhatsAppUrl } from "../utils/receiptLinks.js";
 
 const buildInvoiceMemberMatch = (member) => {
   const previousIds = Array.isArray(member?.previousDisplayIds)
@@ -112,7 +112,7 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
       }
 
       invoice = updatedInvoice;
-      invoice.receiptPdfUrl = getReceiptDownloadUrl(invoice._id);
+      invoice.receiptPdfUrl = getReceiptWhatsAppUrl(invoice._id);
 
       // Update member balance atomically inside the transaction
       const unpaidInvoices = await InvoiceModel.find(

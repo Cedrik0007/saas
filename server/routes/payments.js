@@ -8,7 +8,7 @@ import { sendPaymentApprovalEmail, sendPaymentRejectionEmail } from "../utils/em
 import { emitInvoiceUpdate, emitMemberUpdate, emitPaymentUpdate } from "../config/socket.js";
 import { approveInvoicePayment, approvePaymentAndMarkInvoicePaid } from "../services/paymentApprovalService.js";
 import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
-import { getReceiptDownloadUrl } from "../utils/receiptLinks.js";
+import { getReceiptWhatsAppUrl } from "../utils/receiptLinks.js";
 
 const router = express.Router();
 const objectIdRegex = /^[a-f\d]{24}$/i;
@@ -190,7 +190,7 @@ router.post("/approve-invoice", async (req, res) => {
     }
 
     const receiptPdfUrl = invoice?._id
-      ? getReceiptDownloadUrl(invoice._id)
+      ? getReceiptWhatsAppUrl(invoice._id)
       : null;
     res.json({ success: true, payment, invoice, member, receiptPdfUrl });
   } catch (error) {
@@ -226,7 +226,7 @@ router.put("/:id/approve", async (req, res) => {
     emitPaymentUpdate('updated', payment);
 
     const receiptPdfUrl = invoice?._id
-      ? getReceiptDownloadUrl(invoice._id)
+      ? getReceiptWhatsAppUrl(invoice._id)
       : null;
     res.json({ success: true, payment, invoice, receiptPdfUrl });
   } catch (error) {
