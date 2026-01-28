@@ -6,11 +6,13 @@ import { ensureConnection } from "../config/database.js";
 import UserModel from "../models/User.js";
 import InvoiceModel from "../models/Invoice.js";
 import PaymentModel from "../models/Payment.js";
+import DisplayIdCounterModel from "../models/DisplayIdCounter.js";
+import CounterModel from "../models/Counter.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { sendAccountApprovalEmail } from "../utils/emailHelpers.js";
 import { emitMemberUpdate } from "../config/socket.js";
-import { getNextSequence } from "../utils/sequence.js";
 import { SUBSCRIPTION_TYPES, calculateFees } from "../utils/subscriptionTypes.js";
+import { getNextReceiptNumberStrict } from "../utils/receiptCounter.js";
 
 const router = express.Router();
 
@@ -62,17 +64,54 @@ const normalizeSubscriptionTypeValue = (rawValue) => {
 const getDisplayIdPrefix = (subscriptionType) =>
   normalizeSubscriptionTypeValue(subscriptionType) === "Annual Member" ? "AM" : "LM";
 
-const buildNextDisplayId = async (prefix) => {
-  const key = prefix === "AM" ? "memberDisplayAM" : "memberDisplayLM";
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const seq = await getNextSequence(key);
-    const candidate = `${prefix}${seq}`;
-    const existing = await UserModel.findOne({ id: candidate }).select("_id");
-    if (!existing) {
-      return candidate;
-    }
+const buildNextDisplayId = async (prefix, options = {}) => {
+  const session = options?.session;
+  if (options && Object.prototype.hasOwnProperty.call(options, "session") && !session) {
+    throw new Error("buildNextDisplayId requires a session when options.session is provided");
   }
-  throw new Error("Failed to generate a unique display ID.");
+
+  const normalizedPrefix = String(prefix || "").trim().toUpperCase();
+  if (!normalizedPrefix) {
+    throw new Error("buildNextDisplayId requires a non-empty prefix");
+  }
+
+  const counter = await DisplayIdCounterModel.findOneAndUpdate(
+    { _id: normalizedPrefix },
+    { $inc: { seq: 1 } },
+    {
+      upsert: true,
+      new: true,
+      session,
+      setDefaultsOnInsert: true,
+    }
+  );
+
+  const seq = counter?.seq;
+  if (!Number.isFinite(seq)) {
+    throw new Error("Failed to allocate next display ID sequence.");
+  }
+
+  return `${normalizedPrefix}${seq}`;
+};
+
+const buildPreviousDisplayIdEntry = (member, displayId) => {
+  const normalized = normalizeMemberIdValue(displayId);
+  if (!normalized || normalized === "NOT ASSIGNED") {
+    return null;
+  }
+
+  const alreadyPresent = Array.isArray(member?.previousDisplayIds)
+    ? member.previousDisplayIds.some((entry) => normalizeMemberIdValue(entry?.id) === normalized)
+    : false;
+  if (alreadyPresent) {
+    return null;
+  }
+
+  return {
+    id: normalized,
+    subscriptionType: normalizeSubscriptionTypeValue(member?.subscriptionType),
+    changedAt: new Date(),
+  };
 };
 
 const parseCurrencyAmount = (value) => {
@@ -146,26 +185,44 @@ router.get("/", async (req, res) => {
   try {
     await ensureConnection();
     const members = await UserModel.find({}).sort({ createdAt: -1 }).lean();
-    const memberIds = members
-      .map((member) => member?.id)
-      .filter((value) => typeof value === "string" && value.trim().length > 0);
+    const aliasToCurrentId = new Map();
+    members.forEach((member) => {
+      const currentId = typeof member?.id === "string" ? member.id.trim() : "";
+      if (currentId) {
+        aliasToCurrentId.set(currentId, currentId);
+      }
+
+      const prevIds = Array.isArray(member?.previousDisplayIds)
+        ? member.previousDisplayIds
+          .map((entry) => (typeof entry?.id === "string" ? entry.id.trim() : ""))
+          .filter(Boolean)
+        : [];
+      prevIds.forEach((prev) => {
+        if (prev && currentId) {
+          aliasToCurrentId.set(prev, currentId);
+        }
+      });
+    });
+
+    const memberIdAliases = Array.from(aliasToCurrentId.keys()).filter(Boolean);
 
     const latestInvoiceYearByMember = {};
-    if (memberIds.length > 0) {
-      const invoices = await InvoiceModel.find({ memberId: { $in: memberIds } })
+    if (memberIdAliases.length > 0) {
+      const invoices = await InvoiceModel.find({ memberId: { $in: memberIdAliases } })
         .select("memberId period")
         .lean();
 
       invoices.forEach((invoice) => {
-        const memberId = typeof invoice?.memberId === "string" ? invoice.memberId.trim() : "";
-        if (!memberId) return;
+        const rawMemberId = typeof invoice?.memberId === "string" ? invoice.memberId.trim() : "";
+        if (!rawMemberId) return;
+        const canonicalMemberId = aliasToCurrentId.get(rawMemberId) || rawMemberId;
         const yearMatch = String(invoice?.period || "").match(/\d{4}/);
         if (!yearMatch) return;
         const yearValue = parseInt(yearMatch[0], 10);
         if (Number.isNaN(yearValue)) return;
-        const existing = latestInvoiceYearByMember[memberId];
+        const existing = latestInvoiceYearByMember[canonicalMemberId];
         if (!existing || yearValue > existing) {
-          latestInvoiceYearByMember[memberId] = yearValue;
+          latestInvoiceYearByMember[canonicalMemberId] = yearValue;
         }
       });
     }
@@ -183,6 +240,215 @@ router.get("/", async (req, res) => {
   } catch (error) {
     console.error("Error fetching members:", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// POST controlled subscription upgrade flow
+// - Validates current subscriptionType is Annual Member
+// - Generates a new LM displayId
+// - Pushes old id into previousDisplayIds
+// - Keeps memberNo unchanged
+// - Does not touch invoices
+router.post("/:id/upgrade-subscription", async (req, res) => {
+  let session;
+  try {
+    await ensureConnection();
+
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "memberNo")) {
+      return res.status(400).json({ message: "memberNo must not be provided for upgrades." });
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "id")) {
+      return res.status(400).json({ message: "Member display ID is controlled by the upgrade flow and cannot be provided." });
+    }
+
+    const memberObjectId = String(req.params.id || "").trim();
+    if (!Types.ObjectId.isValid(memberObjectId)) {
+      return res.status(400).json({ message: "Member upgrade requires the Mongo _id." });
+    }
+
+    const requestedRaw =
+      (typeof req.body?.toSubscriptionType === "string" && req.body.toSubscriptionType.trim())
+      || (typeof req.body?.subscriptionType === "string" && req.body.subscriptionType.trim())
+      || "";
+    const requestedType = normalizeSubscriptionTypeValue(requestedRaw);
+
+    if (!requestedRaw) {
+      return res.status(400).json({ message: "toSubscriptionType is required" });
+    }
+
+    if (requestedType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+      return res.status(400).json({ message: "Upgrade target must be a Lifetime subscription type" });
+    }
+
+    if (!ALLOWED_SUBSCRIPTION_TYPES.includes(requestedType)) {
+      return res.status(400).json({ message: `Unsupported subscriptionType: ${requestedRaw}` });
+    }
+
+    session = await mongoose.startSession();
+    session.startTransaction();
+
+    const member = await UserModel.findById(memberObjectId).session(session);
+    if (!member) {
+      await session.abortTransaction();
+      return res.status(404).json({ message: "Member not found" });
+    }
+
+    const originalMemberNo = member.memberNo;
+
+    const currentType = normalizeSubscriptionTypeValue(member.subscriptionType);
+    if (currentType !== SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: `Only Annual Member subscriptions can be upgraded via this endpoint (current: ${currentType}).`,
+      });
+    }
+
+    const dbCurrentType = normalizeSubscriptionTypeValue(member.subscriptionType);
+    if (dbCurrentType !== SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+      await session.abortTransaction();
+      return res.status(409).json({
+        message: `Member subscriptionType changed concurrently (current: ${dbCurrentType}). Refresh and try again.`,
+      });
+    }
+
+    const oldDisplayId = isDisallowedMemberIdValue(member.id) ? null : member.id;
+    const newDisplayId = await buildNextDisplayId("LM", { session });
+
+    const previousEntry = oldDisplayId ? buildPreviousDisplayIdEntry(member, oldDisplayId) : null;
+    if (previousEntry) {
+      member.previousDisplayIds = [...(Array.isArray(member.previousDisplayIds) ? member.previousDisplayIds : []), previousEntry];
+    }
+
+    member.subscriptionType = requestedType;
+    member.id = newDisplayId;
+
+    if (member.memberNo !== originalMemberNo) {
+      const err = new Error("memberNo must not change during upgrade.");
+      err.statusCode = 500;
+      throw err;
+    }
+
+    await member.save({ session });
+
+    // Auto-create an invoice for upgrades (must be in the same transaction)
+    // - Annual -> Lifetime Membership: create 1 unpaid invoice charging lifetime membership fee (upgrade year)
+    // - Annual -> Lifetime Janaza Fund Member: create 1 paid invoice with amount 0 (upgrade year)
+    const upgradeYear = new Date().getFullYear();
+    const period = String(upgradeYear);
+
+    const invoiceNoCounter = await CounterModel.findOneAndUpdate(
+      { key: "invoiceNo" },
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true, setDefaultsOnInsert: true, session }
+    );
+    if (!invoiceNoCounter) {
+      throw new Error("Failed to generate invoiceNo");
+    }
+    const invoiceNo = invoiceNoCounter.seq;
+
+    const dueDate = new Date();
+    dueDate.setFullYear(dueDate.getFullYear() + 1);
+    const dueDateFormatted = dueDate.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).replace(",", "");
+
+    let invoiceStatus = "Unpaid";
+    let invoiceType = "lifetime_membership";
+    let membershipFee = 0;
+    let janazaFee = 0;
+    let invoiceAmountNumber = 0;
+    let receiptNumber = null;
+
+    if (requestedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
+      const fees = calculateFees(SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP, false);
+      membershipFee = Number(fees?.membershipFee || 0);
+      janazaFee = 0;
+      invoiceAmountNumber = membershipFee;
+      invoiceStatus = "Unpaid";
+      invoiceType = "lifetime_membership";
+    } else if (requestedType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
+      const fees = calculateFees(SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER, false);
+      membershipFee = 0;
+      janazaFee = Number(fees?.janazaFee || 0);
+      invoiceAmountNumber = 0;
+      invoiceStatus = "Paid";
+      invoiceType = "janaza";
+      receiptNumber = await getNextReceiptNumberStrict({ session });
+    } else {
+      throw new Error(`Unsupported upgrade target for auto-invoice: ${requestedType}`);
+    }
+
+    if (!Number.isFinite(invoiceAmountNumber) || invoiceAmountNumber < 0) {
+      throw new Error("Invalid invoice amount for upgrade invoice");
+    }
+
+    // Do not create duplicate upgrade invoices for the same member + year + type.
+    const existingUpgradeInvoice = await InvoiceModel.findOne(
+      {
+        memberRef: member._id,
+        period,
+        invoiceType,
+        status: { $ne: "Rejected" },
+      },
+      null,
+      { session }
+    );
+    if (existingUpgradeInvoice) {
+      const err = new Error("Upgrade invoice already exists for this member and year.");
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const invoiceData = {
+      invoiceNo,
+      id: `INV-${upgradeYear}-${invoiceNo}`,
+      memberRef: member._id,
+      memberNo: originalMemberNo,
+      memberId: member.id,
+      memberName: member.name,
+      memberEmail: member.email,
+      receiver_name: String(member?.name || "").trim() || "Member",
+      period,
+      amount: `HK$${invoiceAmountNumber.toFixed(2)}`,
+      membershipFee,
+      janazaFee,
+      invoiceType,
+      status: invoiceStatus,
+      due: dueDateFormatted,
+      method: "",
+      reference: "",
+      receiptNumber,
+    };
+
+    const newInvoice = new InvoiceModel(invoiceData);
+    await newInvoice.save({ session });
+
+    await calculateAndUpdateMemberBalance(member._id.toString(), { session });
+
+    await session.commitTransaction();
+
+    const refreshed = await UserModel.findById(member._id);
+    emitMemberUpdate("updated", refreshed);
+    res.json(refreshed);
+  } catch (error) {
+    if (session) {
+      try {
+        await session.abortTransaction();
+      } catch {
+        // ignore
+      }
+    }
+    console.error("Error upgrading member subscription:", error);
+    if (error.code === 11000) {
+      return res.status(409).json({ message: "Failed to generate a unique display ID. Please retry." });
+    }
+    res.status(500).json({ error: error.message });
+  } finally {
+    if (session) {
+      session.endSession();
+    }
   }
 });
 
@@ -221,6 +487,7 @@ router.get("/:id", async (req, res) => {
 
 // POST create new member
 router.post("/", async (req, res) => {
+  let session;
   try {
     await ensureConnection();
 
@@ -313,14 +580,18 @@ router.post("/", async (req, res) => {
       });
     }
     
+    session = await mongoose.startSession();
+    session.startTransaction();
+
     const subscriptionType = normalizedSubscriptionType;
     const prefix = getDisplayIdPrefix(subscriptionType);
-    const memberId = await buildNextDisplayId(prefix);
+    const memberId = await buildNextDisplayId(prefix, { session });
     
     // Check if email already exists (only if email is provided)
     if (req.body.email && req.body.email.trim()) {
-      const existingEmail = await UserModel.findOne({ email: req.body.email.trim().toLowerCase() });
+      const existingEmail = await UserModel.findOne({ email: req.body.email.trim().toLowerCase() }).session(session);
     if (existingEmail) {
+      await session.abortTransaction();
       return res.status(400).json({ message: "Email already exists" });
       }
     }
@@ -331,8 +602,9 @@ router.post("/", async (req, res) => {
       const cleaned = phoneStr.replace(/[^\d+]/g, "");
       const normalizedPhone = cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
       
-      const existingPhone = await UserModel.findOne({ phone: normalizedPhone });
+      const existingPhone = await UserModel.findOne({ phone: normalizedPhone }).session(session);
       if (existingPhone) {
+        await session.abortTransaction();
         return res.status(400).json({ message: "Phone number already exists" });
       }
     }
@@ -365,7 +637,15 @@ router.post("/", async (req, res) => {
       }
     }
 
-    const memberNo = await getNextSequence("memberNo");
+    const memberNoCounter = await CounterModel.findOneAndUpdate(
+      { key: "memberNo" },
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true, setDefaultsOnInsert: true, session }
+    );
+    if (!memberNoCounter) {
+      throw new Error("Failed to generate memberNo");
+    }
+    const memberNo = memberNoCounter.seq;
 
     const newMember = new UserModel({
       memberNo,
@@ -393,7 +673,27 @@ router.post("/", async (req, res) => {
       payment_proof: null,
     });
 
-    const savedMember = await newMember.save();
+    let savedMember;
+    try {
+      savedMember = await newMember.save({ session });
+    } catch (saveError) {
+      if (saveError?.code === 11000 && saveError?.keyPattern?.id) {
+        const retryMemberId = await buildNextDisplayId(prefix, { session });
+        newMember.id = retryMemberId;
+        try {
+          savedMember = await newMember.save({ session });
+        } catch (retryError) {
+          if (retryError?.code === 11000 && retryError?.keyPattern?.id) {
+            const err = new Error("Failed to generate a unique Member ID. Please try again.");
+            err.statusCode = 409;
+            throw err;
+          }
+          throw retryError;
+        }
+      } else {
+        throw saveError;
+      }
+    }
 
     // Determine the invoice period first to check for duplicates accurately
     const invoiceSubscriptionType = subscriptionType;
@@ -404,7 +704,7 @@ router.post("/", async (req, res) => {
     // Set member fees based on subscription type
     savedMember.membershipFee = fees.membershipFee;
     savedMember.janazaFee = fees.janazaFee;
-    await savedMember.save();
+    await savedMember.save({ session });
 
     if (savedMember.id) {
       let invoicePeriod = 'Lifetime Subscription';
@@ -433,10 +733,18 @@ router.post("/", async (req, res) => {
         ],
         period: invoicePeriod,
         status: { $ne: "Rejected" }
-      });
+      }).session(session);
 
       if (!existingInvoice) {
-        const invoiceNo = await getNextSequence("invoiceNo");
+        const invoiceNoCounter = await CounterModel.findOneAndUpdate(
+          { key: "invoiceNo" },
+          { $inc: { seq: 1 } },
+          { upsert: true, new: true, setDefaultsOnInsert: true, session }
+        );
+        if (!invoiceNoCounter) {
+          throw new Error("Failed to generate invoiceNo");
+        }
+        const invoiceNo = invoiceNoCounter.seq;
         const invoiceAmount = `HK$${fees.totalFee}`;
         let dueDate = new Date();
         
@@ -490,7 +798,7 @@ router.post("/", async (req, res) => {
         };
 
         const newInvoice = new InvoiceModel(invoiceData);
-        await newInvoice.save();
+        await newInvoice.save({ session });
         console.log(`✓ Invoice created for new member ${savedMember.name} (${savedMember.id}): ${invoiceData.id}`);
       } else {
         console.log(`⚠ Invoice already exists for member ${savedMember.name} (${savedMember.id}), skipping duplicate creation`);
@@ -498,6 +806,8 @@ router.post("/", async (req, res) => {
     } else {
       console.log(`ℹ Member ${savedMember.name} created without Member ID. Skipping automatic invoice generation until an ID is assigned.`);
     }
+
+    await session.commitTransaction();
 
     let updatedMember;
     if (savedMember.id) {
@@ -512,12 +822,26 @@ router.post("/", async (req, res) => {
 
     res.status(201).json(updatedMember);
   } catch (error) {
+    if (session) {
+      try {
+        await session.abortTransaction();
+      } catch {
+        // ignore
+      }
+    }
     console.error("Error creating member:", error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
     if (error.code === 11000) {
       const duplicateField = error.keyPattern?.id ? "Member ID" : "Email";
-      return res.status(400).json({ message: `${duplicateField} already exists` });
+      return res.status(error.keyPattern?.id ? 409 : 400).json({ message: `${duplicateField} already exists` });
     }
     res.status(500).json({ error: error.message });
+  } finally {
+    if (session) {
+      session.endSession();
+    }
   }
 });
 
@@ -663,33 +987,17 @@ router.put("/:id", async (req, res) => {
         if (requestedType === currentType) {
           delete updateOps.$set.subscriptionType;
         } else {
-          if (currentType === "Annual Member" && requestedType === "Lifetime Membership") {
-            const latestPaymentAmount = await getLatestCompletedPaymentAmount(targetMember);
-            if (latestPaymentAmount < 5000) {
-              return res.status(400).json({
-                message: "Annual to Lifetime upgrade requires a payment of at least HK$5000.",
-              });
-            }
-          }
-          updateOps.$set.subscriptionType = requestedType;
           const currentPrefix = getDisplayIdPrefix(currentType);
           const nextPrefix = getDisplayIdPrefix(requestedType);
 
+          // Any subscription change that would change the displayId prefix must use the controlled upgrade flow.
           if (currentPrefix !== nextPrefix) {
-            const newDisplayId = await buildNextDisplayId(nextPrefix);
-            updateOps.$set.id = newDisplayId;
-            updateOptions = { ...updateOptions, allowDisplayIdUpdate: true };
-
-            if (originalMemberId) {
-              updateOps.$push = {
-                previousDisplayIds: {
-                  id: originalMemberId,
-                  subscriptionType: currentType,
-                  changedAt: new Date(),
-                },
-              };
-            }
+            return res.status(400).json({
+              message: "Subscription changes that affect display ID must use POST /api/members/:id/upgrade-subscription.",
+            });
           }
+
+          updateOps.$set.subscriptionType = requestedType;
         }
       }
 

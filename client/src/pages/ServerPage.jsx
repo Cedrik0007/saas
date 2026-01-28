@@ -26,6 +26,7 @@ export function ServerPage() {
     fetchPaymentMethods,
     addMember,
     updateMember,
+    upgradeMemberSubscription,
     deleteMember,
     addAdminUser,
     updateAdminUser,
@@ -45,6 +46,7 @@ export function ServerPage() {
   const [editingItem, setEditingItem] = useState(null);
   const [notieMessage, setNotieMessage] = useState(null);
   const [notieType, setNotieType] = useState("success");
+  const [notieDuration, setNotieDuration] = useState(3000);
 
     const mongoObjectIdRegex = /^[a-f\d]{24}$/i;
 
@@ -123,9 +125,14 @@ export function ServerPage() {
     fetchPaymentMethods();
   }, []);
 
-  const showToast = (message, type = "success") => {
+  const showToast = (message, type = "success", durationMs) => {
     setNotieMessage(message);
     setNotieType(type);
+    setNotieDuration(
+      typeof durationMs === "number"
+        ? durationMs
+        : (type === "error" ? 5000 : 3000)
+    );
   };
 
   const handleLogout = () => {
@@ -165,8 +172,31 @@ export function ServerPage() {
         showToast("Member data not available. Please refresh the page.", "error");
         return;
       }
-      await updateMember(editingItem._id, payload);
-      showToast("Member updated successfully!");
+
+      const originalType = normalizeSubscriptionType(editingItem.subscriptionType);
+      const requestedType = normalizeSubscriptionType(payload.subscriptionType);
+      const isAnnualToLifetimeUpgrade =
+        originalType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER
+        && requestedType !== SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+
+      if (isAnnualToLifetimeUpgrade) {
+        const { subscriptionType: _ignored, ...rest } = payload;
+        const upgraded = await upgradeMemberSubscription(editingItem._id, requestedType);
+        if (Object.keys(rest).length > 0) {
+          await updateMember(editingItem._id, rest);
+        }
+        const newDisplayId = upgraded?.id ? String(upgraded.id).trim() : "";
+        showToast(
+          newDisplayId
+            ? `Membership upgraded to Lifetime successfully. New ID: ${newDisplayId}`
+            : "Membership upgraded to Lifetime successfully.",
+          "success",
+          3000
+        );
+      } else {
+        await updateMember(editingItem._id, payload);
+        showToast("Member updated successfully!", "success", 3000);
+      }
       setShowForm(false);
       setEditingItem(null);
       resetMemberForm();
@@ -555,7 +585,7 @@ export function ServerPage() {
         message={notieMessage}
         type={notieType}
         onClose={() => setNotieMessage(null)}
-        duration={6000}
+        duration={notieDuration}
       />
 
       <main className="server-main server-main--sticky-header">

@@ -126,6 +126,7 @@ function AdminPage() {
       setSelectedMember,
       addMember,
       updateMember,
+      upgradeMemberSubscription,
       deleteMember,
       addInvoice,
       updateInvoice,
@@ -328,6 +329,7 @@ function AdminPage() {
     const [editingMember, setEditingMember] = useState(null);
     const [notieMessage, setNotieMessage] = useState(null);
     const [notieType, setNotieType] = useState("success");
+    const [notieDuration, setNotieDuration] = useState(3000);
     const [lastCreatedInvoice, setLastCreatedInvoice] = useState(null);
     const [showInvoiceSuccessCard, setShowInvoiceSuccessCard] = useState(false);
 
@@ -1096,22 +1098,88 @@ function AdminPage() {
       return balancePresets[normalizedType] || "250";
     };
 
-    const confirmSubscriptionTypeChange = () => {
+    const confirmSubscriptionTypeChange = async () => {
       if (!pendingSubscriptionType) {
         cancelConfirmModal();
         return;
       }
 
-      const nextBalance = getSubscriptionBalancePreset(pendingSubscriptionType);
-      setMemberForm(prev => ({
-        ...prev,
-        subscriptionType: pendingSubscriptionType,
-        balance: nextBalance,
-      }));
+      // If we're adding a new member (no editingMember), this is just a form change.
+      if (!editingMember?._id) {
+        const nextBalance = getSubscriptionBalancePreset(pendingSubscriptionType);
+        setMemberForm((prev) => ({
+          ...prev,
+          subscriptionType: pendingSubscriptionType,
+          balance: nextBalance,
+        }));
 
-      closeAllModals();
-      setPendingSubscriptionType(null);
-      setPendingSubscriptionTypePrev(null);
+        closeAllModals();
+        setPendingSubscriptionType(null);
+        setPendingSubscriptionTypePrev(null);
+        return;
+      }
+
+      const currentSubscriptionType = String((pendingSubscriptionTypePrev || editingMember?.subscriptionType) || "").trim();
+      const isAnnualToLifetimeUpgrade =
+        currentSubscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER
+        && pendingSubscriptionType !== SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+
+      // For anything other than Annual -> Lifetime, keep existing behavior.
+      if (!isAnnualToLifetimeUpgrade) {
+        const nextBalance = getSubscriptionBalancePreset(pendingSubscriptionType);
+        setMemberForm((prev) => ({
+          ...prev,
+          subscriptionType: pendingSubscriptionType,
+          balance: nextBalance,
+        }));
+
+        closeAllModals();
+        setPendingSubscriptionType(null);
+        setPendingSubscriptionTypePrev(null);
+        return;
+      }
+
+      if (isSubscriptionUpgradeSubmitting) {
+        return;
+      }
+
+      setIsSubscriptionUpgradeSubmitting(true);
+      try {
+        // Always upgrade Annual -> Lifetime to "Lifetime Membership" (controlled backend flow)
+        await upgradeMemberSubscription(editingMember._id, SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP);
+
+        const apiUrl = import.meta.env.DEV ? "" : (import.meta.env.VITE_API_URL || "");
+        const refreshedResponse = await fetch(`${apiUrl}/api/members/${encodeURIComponent(editingMember._id)}`);
+        if (!refreshedResponse.ok) {
+          const errorData = await refreshedResponse.json().catch(() => ({}));
+          const message = errorData.message || errorData.error || "Failed to refresh member after upgrade";
+          throw new Error(message);
+        }
+        const refreshedMember = await refreshedResponse.json();
+
+        showToast("Membership upgraded to Lifetime successfully.", "success", 3000);
+
+        setEditingMember(refreshedMember);
+        setMemberForm((prev) => ({
+          ...prev,
+          id: refreshedMember?.id || prev.id,
+          subscriptionType: SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP,
+          balance: getSubscriptionBalancePreset(SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP),
+        }));
+        if (selectedMember?._id && String(selectedMember._id) === String(refreshedMember?._id)) {
+          setSelectedMember(refreshedMember);
+          refreshSelectedMemberInvoices(refreshedMember);
+        }
+
+        closeAllModals();
+        setPendingSubscriptionType(null);
+        setPendingSubscriptionTypePrev(null);
+      } catch (error) {
+        console.error("Subscription upgrade failed:", error);
+        showToast("Upgrade failed. Please try again.", "error", 5000);
+      } finally {
+        setIsSubscriptionUpgradeSubmitting(false);
+      }
     };
 
     const cancelSubscriptionTypeChange = () => {
@@ -1196,6 +1264,7 @@ function AdminPage() {
     const [pdfLoading, setPdfLoading] = useState(true); // PDF loading state
     const [showSubscriptionChangeConfirm, setShowSubscriptionChangeConfirm] = useState(false);
     const [pendingSubscriptionType, setPendingSubscriptionType] = useState(null);
+    const [isSubscriptionUpgradeSubmitting, setIsSubscriptionUpgradeSubmitting] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu toggle
 
     // Payment form state
@@ -4196,10 +4265,14 @@ Indian Muslim Association, Hong Kong`;
       }
     };
 
-    const showToast = (message, type = "success") => {
+    const showToast = (message, type = "success", durationMs) => {
       setNotieMessage(message);
       setNotieType(type);
-      setTimeout(() => setNotieMessage(null), 1000);
+      setNotieDuration(
+        typeof durationMs === "number"
+          ? durationMs
+          : (type === "error" ? 5000 : 3000)
+      );
     };
 
     // Show confirmation dialog
@@ -4636,9 +4709,52 @@ Indian Muslim Association, Hong Kong`;
         };
 
         if (updateData.subscriptionType) {
+          const requestedType = normalizeSubscriptionType(updateData.subscriptionType);
+          const isAnnualToLifetimeUpgrade =
+            originalSubscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER
+            && requestedType !== SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+
+          const performUpgradeFlow = async () => {
+            // Split out subscriptionType so the upgrade is handled by the controlled endpoint.
+            const { subscriptionType: _ignored, ...restUpdates } = updateData;
+            const upgraded = await upgradeMemberSubscription(editingMember._id, requestedType);
+            if (Object.keys(restUpdates).length > 0) {
+              await updateMember(editingMember._id, restUpdates);
+            }
+
+            setEditingMember(null);
+            setEditInitialSubscriptionType(null);
+            setPendingSubscriptionType(null);
+            setPendingSubscriptionTypePrev(null);
+            setMemberForm({
+              name: "",
+              email: "",
+              phone: "",
+              native: "",
+              password: "",
+              status: "Active",
+              balance: "500",
+              nextDue: getTodayDate(),
+              lastPayment: "",
+              subscriptionType: SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
+              subscriptionYear: new Date().getFullYear().toString(),
+            });
+            setMemberFieldErrors({
+              name: false,
+              id: false,
+              email: false,
+              phone: false,
+              nextDue: false,
+              lastPayment: false,
+            });
+            setCurrentInvalidField(null);
+            setShowMemberForm(false);
+            showToast("Membership upgraded to Lifetime successfully.", "success", 3000);
+          };
+
           showConfirmation(
             "Changing subscription will generate a new display ID and keep old invoices/payments unchanged. Continue?",
-            performUpdate,
+            isAnnualToLifetimeUpgrade ? performUpgradeFlow : performUpdate,
             null,
             "Confirm"
           );
@@ -6031,7 +6147,7 @@ Indian Muslim Association, Hong Kong`;
           message={notieMessage}
           type={notieType}
           onClose={() => setNotieMessage(null)}
-          duration={6000}
+          duration={notieDuration}
         />
 
         <main className="admin-main admin-main--sticky-header">
@@ -20203,6 +20319,7 @@ Indian Muslim Association, Hong Kong`;
                 className="admin-members-form-close"
                 onClick={cancelSubscriptionTypeChange}
                 aria-label="Close"
+                disabled={isSubscriptionUpgradeSubmitting}
               >
                 <i className="fa-solid fa-times" />
               </button>
@@ -20222,10 +20339,10 @@ Indian Muslim Association, Hong Kong`;
               </p>
             </div>
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-              <button type="button" className="secondary-btn" onClick={cancelSubscriptionTypeChange}>
+              <button type="button" className="secondary-btn" onClick={cancelSubscriptionTypeChange} disabled={isSubscriptionUpgradeSubmitting}>
                 Cancel
               </button>
-              <button type="button" className="primary-btn" onClick={confirmSubscriptionTypeChange}>
+              <button type="button" className="primary-btn" onClick={confirmSubscriptionTypeChange} disabled={isSubscriptionUpgradeSubmitting}>
                 Confirm Change
               </button>
             </div>

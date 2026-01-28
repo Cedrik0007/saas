@@ -726,6 +726,45 @@ export function AppProvider({ children }) {
     }
   };
 
+  const upgradeMemberSubscription = async (id, toSubscriptionType) => {
+    if (!id) {
+      throw new Error("Missing member id for upgrade.");
+    }
+    if (!toSubscriptionType || typeof toSubscriptionType !== "string") {
+      throw new Error("toSubscriptionType is required.");
+    }
+
+    const requestKey = `upgrade-member-subscription-${id}-${Date.now()}`;
+
+    const upgraded = await makeRequest(requestKey, async () => {
+      const response = await fetch(`${apiBaseUrl}/api/members/${encodeURIComponent(id)}/upgrade-subscription`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toSubscriptionType }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData.message || errorData.error || "Failed to upgrade subscription";
+        throw new Error(message);
+      }
+
+      return await response.json();
+    });
+
+    // Refresh member data after upgrade (ensures UI gets the new displayId immediately)
+    const refreshResponse = await fetch(`${apiBaseUrl}/api/members/${encodeURIComponent(upgraded?._id || id)}`);
+    const refreshed = refreshResponse.ok ? await refreshResponse.json() : upgraded;
+    const normalizedResult = normalizeMemberRecord(refreshed);
+
+    setMembers(prev => prev.map(m => {
+      const matches = m._id ? String(m._id) === String(normalizedResult._id) : m.id === normalizedResult.id;
+      return matches ? normalizedResult : m;
+    }));
+
+    return normalizedResult;
+  };
+
   const deleteMember = async (id) => {
     if (!id) {
       console.error("Missing member _id for delete.");
@@ -1201,6 +1240,7 @@ export function AppProvider({ children }) {
     setSelectedMember,
     addMember,
     updateMember,
+    upgradeMemberSubscription,
     deleteMember,
     addInvoice,
     updateInvoice,

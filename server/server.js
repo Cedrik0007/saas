@@ -34,7 +34,7 @@ if (process.env.NODE_ENV === "production" && !getPublicApiBaseUrl()) {
 
 const app = express();
 const server = createServer(app);
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4001;
 
 // Middleware
 const allowedOrigins = [
@@ -167,7 +167,14 @@ async function initializeAllMemberBalances() {
     const allMembers = await UserModel.find({});
     
     for (const member of allMembers) {
-      await calculateAndUpdateMemberBalance(member.id);
+      try {
+        await calculateAndUpdateMemberBalance(member?.id, {
+          skipInvalidIdentifier: true,
+          allowMissingMember: true,
+        });
+      } catch (error) {
+        console.error(`Error initializing member balance (memberId=${member?.id || ""}):`, error);
+      }
     }
     
     console.log(`✓ Initialized balances for ${allMembers.length} members`);

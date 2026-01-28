@@ -57,10 +57,23 @@ export async function calculateAndUpdateMemberBalance(memberIdentifier, options 
   try {
     await ensureConnection();
 
+    const normalizedIdentifier = normalizeValue(memberIdentifier);
+    const isNotAssigned = normalizedIdentifier.toUpperCase() === "NOT ASSIGNED";
+    if (!normalizedIdentifier || isNotAssigned) {
+      if (options?.skipInvalidIdentifier) {
+        return null;
+      }
+      throw new Error("Member identifier is required for balance update.");
+    }
+
     const session = options.session || null;
-    const member = await resolveMemberForBalance(memberIdentifier, session);
+    const member = await resolveMemberForBalance(normalizedIdentifier, session);
 
     if (!member) {
+      if (options?.allowMissingMember) {
+        console.warn(`⚠ Member not found for balance update (identifier=${normalizedIdentifier}). Skipping.`);
+        return null;
+      }
       throw new Error("Member not found for balance update.");
     }
 

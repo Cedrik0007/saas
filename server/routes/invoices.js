@@ -142,13 +142,23 @@ router.get("/member/:memberId", async (req, res) => {
     if (!memberId) {
       return res.status(400).json({ error: "memberId is required" });
     }
+    if (!objectIdRegex.test(memberId)) {
+      return res.status(400).json({ error: "memberId must be the Mongo _id for invoice history lookups." });
+    }
 
-    const memberExists = await resolveMemberByParam(memberId);
+    const memberExists = await UserModel.findById(memberId);
     if (!memberExists) {
       return res.status(404).json({ error: `Member with ID "${memberId}" not found.` });
     }
 
-    const memberInvoices = await InvoiceModel.find(buildInvoiceMemberMatch(memberExists)).sort({ createdAt: -1 });
+    const previousIds = Array.isArray(memberExists?.previousDisplayIds)
+      ? memberExists.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+      : [];
+    const validIds = Array.from(
+      new Set([memberExists?.id, ...previousIds].filter(Boolean).map((value) => String(value).trim()).filter(Boolean))
+    );
+
+    const memberInvoices = await InvoiceModel.find({ memberId: { $in: validIds } }).sort({ createdAt: -1 });
     const responsePayload = memberInvoices.map((invoice) => {
       const invoiceObj = invoice?.toObject ? invoice.toObject() : invoice;
       return {
@@ -205,6 +215,10 @@ router.post("/", async (req, res) => {
     const memberNo = memberExists.memberNo;
     req.body.memberId = memberId;
     console.log(`✓ Invoice creation: Validated member exists (id=${memberExists.id}, name=${memberExists.name})`);
+
+    const receiverName = String(req.body.receiver_name || "").trim()
+      || String(memberExists?.name || "").trim()
+      || "Member";
 
     const { membershipFee, janazaFee, totalFee } =
       calculateFees(memberExists.subscriptionType, memberExists.lifetimeMembershipPaid);
@@ -266,6 +280,7 @@ router.post("/", async (req, res) => {
       memberRef,
       memberNo,
       memberId,
+      receiver_name: receiverName,
       due: dueDate, // Always set due date at creation
       status: req.body.status || "Unpaid",
     };
