@@ -1,3 +1,36 @@
+/* Temporary highlight for the most recently created row (UI-only) */
+.new-row-highlight {
+  background-color: #ede9fe;
+  animation: fadeOutHighlight 4s ease-out forwards;
+}
+
+@keyframes fadeOutHighlight {
+  from {
+    background-color: #ede9fe;
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+/* Desktop table: apply to cells so it wins over any row inline background */
+.data-table__row.new-row-highlight > td {
+  background-color: #ede9fe;
+  animation: fadeOutHighlight 4s ease-out forwards;
+}
+
+/* Mobile cards */
+.mobile-table-card.new-row-highlight {
+  background-color: #ede9fe;
+  animation: fadeOutHighlight 4s ease-out forwards;
+}
+
+/* Member Details invoices: grouping titles (UI-only) */
+.invoice-group-title {
+  margin: 14px 0 8px;
+  font-weight: 700;
+  color: #111827;
+}
 :root {
   --bg: #ffffff;
   --surface: #ffffff;

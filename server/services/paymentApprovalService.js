@@ -7,6 +7,7 @@ import { getNextReceiptNumberStrict } from "../utils/receiptCounter.js";
 import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
 import { getNextSequence } from "../utils/sequence.js";
 import { getReceiptDownloadUrl, getReceiptWhatsAppUrl } from "../utils/receiptLinks.js";
+import { normalizeSubscriptionType, SUBSCRIPTION_TYPES } from "../utils/subscriptionTypes.js";
 
 const buildInvoiceMemberMatch = (member) => {
   const previousIds = Array.isArray(member?.previousDisplayIds)
@@ -156,13 +157,13 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
         const day = String(newNextDueDate.getDate()).padStart(2, "0");
         const nextDueStr = `${year}-${month}-${day}`;
 
-        const isLifetimeMembershipFullPayment = member.subscriptionType === "Lifetime Membership"
-          && !member.lifetimeMembershipPaid
-          && (
-            invoice.invoiceType === "lifetime_membership" ||
-            invoice.amount === "HK$5250" ||
-            invoice.membershipFee === 5000
-          );
+        const normalizedMemberType = normalizeSubscriptionType(member?.subscriptionType);
+        const membershipFeeNumber = Number(invoice?.membershipFee || 0);
+        const invoiceAmountNumber = parseFloat(String(invoice?.amount || "").replace(/[^0-9.]/g, "")) || 0;
+        const isLifetimeMembershipFullPayment =
+          normalizedMemberType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND &&
+          !member.lifetimeMembershipPaid &&
+          (invoice.invoiceType === "lifetime_membership" || membershipFeeNumber >= 5000 || invoiceAmountNumber >= 5000);
 
         const memberUpdate = {
           payment_status: "paid",
@@ -174,6 +175,7 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
 
         if (isLifetimeMembershipFullPayment) {
           memberUpdate.lifetimeMembershipPaid = true;
+          memberUpdate.janazaOnly = false;
         }
 
         await UserModel.findOneAndUpdate(
@@ -355,13 +357,13 @@ export async function approveInvoicePayment({
           year: "numeric",
         }).replace(",", "");
 
-        const isLifetimeMembershipFullPayment = member.subscriptionType === "Lifetime Membership"
-          && !member.lifetimeMembershipPaid
-          && (
-            invoice.invoiceType === "lifetime_membership" ||
-            invoice.amount === "HK$5250" ||
-            invoice.membershipFee === 5000
-          );
+        const normalizedMemberType = normalizeSubscriptionType(member?.subscriptionType);
+        const membershipFeeNumber = Number(invoice?.membershipFee || 0);
+        const invoiceAmountNumber = parseFloat(String(invoice?.amount || "").replace(/[^0-9.]/g, "")) || 0;
+        const isLifetimeMembershipFullPayment =
+          normalizedMemberType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND &&
+          !member.lifetimeMembershipPaid &&
+          (invoice.invoiceType === "lifetime_membership" || membershipFeeNumber >= 5000 || invoiceAmountNumber >= 5000);
 
         const memberUpdate = {
           payment_status: "paid",
@@ -376,6 +378,7 @@ export async function approveInvoicePayment({
 
         if (isLifetimeMembershipFullPayment) {
           memberUpdate.lifetimeMembershipPaid = true;
+          memberUpdate.janazaOnly = false;
         }
 
         member = await UserModel.findByIdAndUpdate(

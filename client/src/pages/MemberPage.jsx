@@ -194,12 +194,20 @@ export function MemberPage() {
   // Get unpaid invoices for current member only
   const getUnpaidInvoices = () => {
     if (!currentMember) return [];
+
+    const previousIds = Array.isArray(currentMember.previousDisplayIds)
+      ? currentMember.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+      : [];
+    const memberIdCandidates = [currentMember.id, ...previousIds].filter(Boolean);
+
     return invoices.filter((inv) => {
       const effectiveStatus = getEffectiveInvoiceStatus(inv);
-      const isMemberInvoice = 
-        inv.memberId === currentMember.id || 
-        inv.memberEmail === currentMember.email || 
-        inv.memberName === currentMember.name;
+
+      const isMemberInvoice =
+        (currentMember.memberNo && inv.memberNo && String(inv.memberNo) === String(currentMember.memberNo)) ||
+        (inv.memberId && memberIdCandidates.includes(inv.memberId)) ||
+        (inv.memberEmail && currentMember.email && inv.memberEmail === currentMember.email) ||
+        (inv.memberName && currentMember.name && inv.memberName === currentMember.name);
       
       return (
         isMemberInvoice &&

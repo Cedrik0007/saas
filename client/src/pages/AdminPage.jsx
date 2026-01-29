@@ -11,26 +11,22 @@ import { Modal } from "../components/Modal.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import jsPDF from "jspdf";
+import Select from "react-select";
 import { statusClass } from "../statusClasses";
 import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
 import {
   SUBSCRIPTION_TYPES,
   SUBSCRIPTION_TYPE_OPTIONS,
   SUBSCRIPTION_TYPE_AMOUNTS,
+  getSubscriptionTypeDisplayParts,
   normalizeSubscriptionType,
 } from "../constants/subscriptionTypes.js";
 
 
 // Format subscription type for display (remove amount for table display)
 function formatSubscriptionType(subscriptionType) {
-    if (!subscriptionType) return 'Lifetime';
-    if (subscriptionType === 'Lifetime Janaza Fund Member') {
-      return 'Lifetime Member Janaza fund';
-    }
-    if (subscriptionType === 'Lifetime Membership') {
-      return 'Lifetime membership Janaza fund';
-    }
-    return subscriptionType; // Annual Member or other types stay as is
+    if (!subscriptionType) return '-';
+    return normalizeSubscriptionType(subscriptionType);
 }
 
 const extractYearFromValue = (value) => {
@@ -55,7 +51,16 @@ const deriveSubscriptionYearForMember = (member) => {
 const buildInvoiceFormDefaults = (member) => {
   const fallbackType = SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
   const normalizedType = normalizeSubscriptionType(member?.subscriptionType) || fallbackType;
-  const amount = SUBSCRIPTION_TYPE_AMOUNTS[normalizedType] ?? SUBSCRIPTION_TYPE_AMOUNTS[fallbackType];
+  let amount = SUBSCRIPTION_TYPE_AMOUNTS[normalizedType] ?? SUBSCRIPTION_TYPE_AMOUNTS[fallbackType];
+
+  // Invoice rules: Lifetime Member + Janaza Fund charges HK$5250 once, then HK$250/year.
+  if (
+    normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND &&
+    member &&
+    member.lifetimeMembershipPaid === false
+  ) {
+    amount = 5250;
+  }
   const subscriptionYear = deriveSubscriptionYearForMember(member);
 
   return {
@@ -156,6 +161,45 @@ function AdminPage() {
 
     const navigate = useNavigate();
 
+    // UI-only: temporarily highlight the newest member row when a new member appears.
+    // - No backend/API changes
+    // - No new calls; relies on existing `members` updates after create
+    // - No persistence (clears on refresh)
+    const [newestMemberHighlightKey, setNewestMemberHighlightKey] = useState(null);
+    const lastSeenNewestMemberKeyRef = useRef(null);
+    const lastSeenMembersCountRef = useRef(null);
+    const newestMemberHighlightTimeoutRef = useRef(null);
+
+    const isArchivedMember = (member) => {
+      if (!member) return false;
+      const statusLower = String(member.status || "").trim().toLowerCase();
+      return Boolean(member.archived) || Boolean(member.isArchived) || statusLower === "archived";
+    };
+
+    const getMemberHighlightKey = (member) => {
+      if (!member) return null;
+      return String(member._id || member.id || member.memberNo || "").trim() || null;
+    };
+
+    const getNewestMember = (membersList) => {
+      if (!Array.isArray(membersList) || membersList.length === 0) return null;
+      const activeMembers = membersList.filter((m) => !isArchivedMember(m));
+      if (activeMembers.length === 0) return null;
+      return [...activeMembers].sort((a, b) => {
+        const aCreated = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bCreated = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+        if (aCreated !== bCreated) return bCreated - aCreated;
+
+        const aNoRaw = a?.memberNo;
+        const bNoRaw = b?.memberNo;
+        const aNo = typeof aNoRaw === "number" ? aNoRaw : parseInt(String(aNoRaw || ""), 10);
+        const bNo = typeof bNoRaw === "number" ? bNoRaw : parseInt(String(bNoRaw || ""), 10);
+        if (!Number.isNaN(aNo) && !Number.isNaN(bNo) && aNo !== bNo) return bNo - aNo;
+
+        return String(b?._id || "").localeCompare(String(a?._id || ""));
+      })[0];
+    };
+
     // Check for authentication token on mount (defense in depth)
     useEffect(() => {
       const token = sessionStorage.getItem('authToken');
@@ -164,6 +208,56 @@ function AdminPage() {
         return;
       }
     }, [navigate]);
+
+    useEffect(() => {
+      const membersCount = Array.isArray(members) ? members.length : 0;
+      const newestMember = getNewestMember(members);
+      const newestKey = getMemberHighlightKey(newestMember);
+      if (!newestKey) {
+        if (lastSeenMembersCountRef.current === null) {
+          lastSeenMembersCountRef.current = membersCount;
+        }
+        return;
+      }
+
+      // Avoid highlighting on initial load / refresh.
+      if (lastSeenNewestMemberKeyRef.current === null || lastSeenMembersCountRef.current === null) {
+        lastSeenNewestMemberKeyRef.current = newestKey;
+        lastSeenMembersCountRef.current = membersCount;
+        return;
+      }
+
+      const previousNewestKey = lastSeenNewestMemberKeyRef.current;
+      const previousCount = lastSeenMembersCountRef.current;
+      const newestChanged = newestKey !== previousNewestKey;
+      const countIncreased = membersCount > previousCount;
+
+      lastSeenNewestMemberKeyRef.current = newestKey;
+      lastSeenMembersCountRef.current = membersCount;
+
+      // Highlight ONLY after creating a new member: detect a transition where
+      // the newest record changes AND the members list length increases.
+      if (newestChanged && countIncreased) {
+        setNewestMemberHighlightKey(newestKey);
+
+        if (newestMemberHighlightTimeoutRef.current) {
+          clearTimeout(newestMemberHighlightTimeoutRef.current);
+        }
+
+        newestMemberHighlightTimeoutRef.current = setTimeout(() => {
+          setNewestMemberHighlightKey(null);
+          newestMemberHighlightTimeoutRef.current = null;
+        }, 4000);
+      }
+    }, [members]);
+
+    useEffect(() => {
+      return () => {
+        if (newestMemberHighlightTimeoutRef.current) {
+          clearTimeout(newestMemberHighlightTimeoutRef.current);
+        }
+      };
+    }, []);
 
     // Get current admin role from sessionStorage and normalize legacy values
     const rawAdminRole = sessionStorage.getItem('adminRole') || 'Viewer';
@@ -672,13 +766,12 @@ function AdminPage() {
         const currentType = normalizeSubscriptionType(
           memberForm.subscriptionType || editInitialSubscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER
         );
-        const isAnnualToLifetime =
+        const requiresIdChangeConfirmation =
           isEditMode &&
           currentType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER &&
-          normalizedType !== currentType &&
-          normalizedType.startsWith("Lifetime");
+          normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
 
-        if (isAnnualToLifetime) {
+        if (requiresIdChangeConfirmation) {
           setPendingSubscriptionTypePrev(currentType);
           setPendingSubscriptionType(normalizedType);
           openConfirmModal('subscriptionChangeConfirmation');
@@ -1092,10 +1185,112 @@ function AdminPage() {
       const normalizedType = normalizeSubscriptionType(subscriptionType);
       const balancePresets = {
         [SUBSCRIPTION_TYPES.ANNUAL_MEMBER]: "500",
-        [SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER]: "250",
-        [SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP]: "5250",
+        [SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND]: "250",
+        [SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND]: "5250",
       };
-      return balancePresets[normalizedType] || "250";
+      return balancePresets[normalizedType] || "500";
+    };
+
+    const getInvoiceAmountCurrentYear = (subscriptionType, { isNewMember, member } = {}) => {
+      const normalizedType = normalizeSubscriptionType(subscriptionType);
+      if (normalizedType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) return 500;
+      if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND) return 250;
+
+      if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
+        if (isNewMember) return 5250;
+
+        const currentYear = String(new Date().getFullYear());
+        const currentId = member?.id ? String(member.id).trim() : "";
+        const memberNo = member?.memberNo != null ? String(member.memberNo) : "";
+        const previousIds = new Set(
+          Array.isArray(member?.previousDisplayIds)
+            ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+            : []
+        );
+
+        const hasUnpaid5250 = Array.isArray(invoices) && invoices.some((inv) => {
+          const amount = Number(String(inv?.amount ?? "").replace(/[^0-9.]/g, ""));
+          if (amount !== 5250) return false;
+
+          const status = String(inv?.status ?? "").trim().toLowerCase();
+          if (status === "paid") return false;
+
+          const period = String(inv?.period ?? "");
+          if (!period.includes(currentYear)) return false;
+
+          const invMemberNo = inv?.memberNo != null ? String(inv.memberNo) : "";
+          const invMemberId = inv?.memberId != null ? String(inv.memberId).trim() : "";
+
+          const matchesByNo = memberNo && invMemberNo && invMemberNo === memberNo;
+          const matchesById = currentId && invMemberId && invMemberId === currentId;
+          const matchesByPreviousId = invMemberId && previousIds.has(invMemberId);
+
+          return matchesByNo || matchesById || matchesByPreviousId;
+        });
+
+        return hasUnpaid5250 ? 5250 : 250;
+      }
+
+      return 500;
+    };
+
+    const formatSubscriptionTypeOptionLabel = (option) => {
+      const { name, amountText } = getSubscriptionTypeDisplayParts(option?.value);
+      return (
+        <span style={{ whiteSpace: "nowrap" }}>
+          <span style={{ fontWeight: 500, color: "#111827" }}>{name}</span>
+          <span style={{ fontSize: 12, color: "#6B7280" }}>{amountText}</span>
+        </span>
+      );
+    };
+
+    const subscriptionTypeSelectStyles = {
+      control: (base, state) => ({
+        ...base,
+        width: "100%",
+        minHeight: 42,
+        borderRadius: 8,
+        borderColor: state.isFocused ? "#5a31ea" : "#e0e0e0",
+        boxShadow: state.isFocused ? "0 0 0 3px rgba(90, 49, 234, 0.1)" : "none",
+        cursor: "pointer",
+        "&:hover": {
+          borderColor: state.isFocused ? "#5a31ea" : "#d1d5db",
+        },
+      }),
+      valueContainer: (base) => ({
+        ...base,
+        padding: "2px 12px",
+      }),
+      singleValue: (base) => ({
+        ...base,
+        margin: 0,
+      }),
+      indicatorSeparator: (base) => ({
+        ...base,
+        display: "none",
+      }),
+      dropdownIndicator: (base) => ({
+        ...base,
+        padding: 8,
+      }),
+      menu: (base) => ({
+        ...base,
+        zIndex: 9999,
+      }),
+      option: (base, state) => ({
+        ...base,
+        whiteSpace: "nowrap",
+        backgroundColor: state.isSelected ? "#E5E7EB" : (state.isFocused ? "#F3F4F6" : "#FFFFFF"),
+        color: "#111827",
+        ":active": {
+          ...base[":active"],
+          backgroundColor: "#E5E7EB",
+        },
+      }),
+      singleValue: (base) => ({
+        ...base,
+        color: "#111827",
+      }),
     };
 
     const confirmSubscriptionTypeChange = async () => {
@@ -1122,7 +1317,7 @@ function AdminPage() {
       const currentSubscriptionType = String((pendingSubscriptionTypePrev || editingMember?.subscriptionType) || "").trim();
       const isAnnualToLifetimeUpgrade =
         currentSubscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER
-        && pendingSubscriptionType !== SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+        && pendingSubscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
 
       // For anything other than Annual -> Lifetime, keep existing behavior.
       if (!isAnnualToLifetimeUpgrade) {
@@ -1145,8 +1340,8 @@ function AdminPage() {
 
       setIsSubscriptionUpgradeSubmitting(true);
       try {
-        // Always upgrade Annual -> Lifetime to "Lifetime Membership" (controlled backend flow)
-        await upgradeMemberSubscription(editingMember._id, SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP);
+        // Upgrade Annual -> Lifetime Member + Janaza Fund (controlled backend flow)
+        await upgradeMemberSubscription(editingMember._id, SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND);
 
         const apiUrl = import.meta.env.DEV ? "" : (import.meta.env.VITE_API_URL || "");
         const refreshedResponse = await fetch(`${apiUrl}/api/members/${encodeURIComponent(editingMember._id)}`);
@@ -1157,15 +1352,18 @@ function AdminPage() {
         }
         const refreshedMember = await refreshedResponse.json();
 
-        showToast("Membership upgraded to Lifetime successfully.", "success", 3000);
+        showToast("Membership upgraded to Lifetime Member + Janaza Fund successfully.", "success", 3000);
 
         setEditingMember(refreshedMember);
         setMemberForm((prev) => ({
           ...prev,
           id: refreshedMember?.id || prev.id,
-          subscriptionType: SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP,
-          balance: getSubscriptionBalancePreset(SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP),
+          subscriptionType: SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND,
+          balance: getSubscriptionBalancePreset(SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND),
         }));
+
+        // UI-only: backend auto-creates an invoice on upgrade; refresh invoice state so it shows immediately.
+        fetchInvoices();
         if (selectedMember?._id && String(selectedMember._id) === String(refreshedMember?._id)) {
           setSelectedMember(refreshedMember);
           refreshSelectedMemberInvoices(refreshedMember);
@@ -1229,6 +1427,7 @@ function AdminPage() {
     const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("All"); // All, Paid, Unpaid, Overdue, Pending
     const [invoiceSearchTerm, setInvoiceSearchTerm] = useState(""); // Search filter for invoices
     const [invoiceYearFilter, setInvoiceYearFilter] = useState("All"); // Year filter for invoices
+    const [invoiceSubscriptionTypeFilter, setInvoiceSubscriptionTypeFilter] = useState("All"); // All, Annual Member, Lifetime Janaza Fund, Lifetime Member + Janaza Fund
     const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
     const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
     const [transactionMethodFilter, setTransactionMethodFilter] = useState("All"); // Payment method filter for transactions: All, Cash, FPS, Alipay, Bank Deposit, Other
@@ -1238,7 +1437,7 @@ function AdminPage() {
     const [memberSearchTerm, setMemberSearchTerm] = useState(""); // Search filter for members
     const [memberStatusFilter, setMemberStatusFilter] = useState("All"); // Status filter for members
     const [memberYearFilter, setMemberYearFilter] = useState("All"); // Year filter for members
-    const [memberTypeFilter, setMemberTypeFilter] = useState("All"); // Member type filter: All, Annual Member, Lifetime Member
+    const [memberTypeFilter, setMemberTypeFilter] = useState("All"); // Member type filter: All, Annual Member, Lifetime Member + Janaza Fund
     const [memberSortConfig, setMemberSortConfig] = useState({ column: "Member ID", direction: "asc" });
     const [memberSortByOutstanding, setMemberSortByOutstanding] = useState("none"); // Sort by outstanding amount
     const [memberNotes, setMemberNotes] = useState(() => {
@@ -1905,10 +2104,16 @@ function AdminPage() {
           .filter(Boolean)),
       ]);
 
+      const memberNoStr = matchingMember?.memberNo != null ? String(matchingMember.memberNo).trim() : "";
+
       const filteredInvoices = invoicesArray.filter((inv) => {
         if (!inv) return false;
         const invMemberIdStr = String(inv.memberId || "").trim();
-        return memberAliases.has(invMemberIdStr);
+
+        const invMemberNoStr = inv?.memberNo != null ? String(inv.memberNo).trim() : "";
+        const matchesByNo = memberNoStr && invMemberNoStr && invMemberNoStr === memberNoStr;
+        const matchesById = invMemberIdStr && memberAliases.has(invMemberIdStr);
+        return matchesByNo || matchesById;
       });
       
       console.log(`getMemberInvoices for ${memberIdStr}: found ${filteredInvoices.length} invoices out of ${invoicesArray.length} total`);
@@ -2241,7 +2446,9 @@ function AdminPage() {
       const collected = paymentsTotal + donationsTotalInRange;
 
       // Calculate expected revenue based on members and their subscription types
-      // Annual Member: HK$500/year, Lifetime Janaza Fund Member: HK$250/year, Lifetime Membership: HK$5,250 first year then HK$250/year
+      // Dashboard rule: show ONLY the current yearly payable amount
+      // Annual Member: HK$500/year
+      // Lifetime Member + Janaza Fund: HK$250/year
       const activeMembers = members.filter(m => m.status === 'Active');
       let expected = 0;
 
@@ -2256,25 +2463,11 @@ function AdminPage() {
         const yearsCount = Math.ceil(yearsInRange);
         
         if (subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
-          // Annual Member: HK$500 per year (HK$250 membership + HK$250 Janaza)
           expected += yearsCount * 500;
-        } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
-          // Lifetime Janaza Fund Member: HK$250 per year (HK$0 membership + HK$250 Janaza)
+        } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
           expected += yearsCount * 250;
-        } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
-          // Lifetime Membership: HK$5,250 first year (HK$5,000 membership one-time + HK$250 Janaza), then HK$250/year
-          if (!member.lifetimeMembershipPaid && yearsCount > 0) {
-            expected += 5250; // First year
-            if (yearsCount > 1) {
-              expected += (yearsCount - 1) * 250; // Subsequent years (Janaza only)
-            }
-          } else {
-            // Lifetime membership already paid, only Janaza fee
-            expected += yearsCount * 250;
-          }
         } else {
-          // Default/Lifetime: HK$250 per year
-          expected += yearsCount * 250;
+          expected += yearsCount * 500;
         }
       });
 
@@ -3858,7 +4051,7 @@ Indian Muslim Association, Hong Kong`;
           const totalDueFormatted = formatCurrency(totalDue);
 
           // Determine member category based on invoice amount
-          // If amount is 250 = Lifetime Member Janaza fund - HK$250, if 500 = Annual Member, if 5250 = Lifetime membership Janaza fund - HK$5000+HK$250
+          // Use only official membership type names (no amounts in labels)
           let memberCategory = 'Annual Member';
           if (memberUnpaidInvoices.length > 0) {
             const firstInvoice = memberUnpaidInvoices[0];
@@ -3866,9 +4059,9 @@ Indian Muslim Association, Hong Kong`;
               const amountStr = String(firstInvoice.amount).replace(/HK\$|\$|,/g, '').trim();
               const amountNum = parseFloat(amountStr) || 0;
               if (amountNum === 250) {
-                memberCategory = 'Lifetime Member Janaza fund - HK$250';
+                memberCategory = 'Lifetime Member + Janaza Fund';
               } else if (amountNum === 5250) {
-                memberCategory = 'Lifetime membership Janaza fund - HK$5000+HK$250';
+                memberCategory = 'Lifetime Member + Janaza Fund';
               } else if (amountNum === 500) {
                 memberCategory = 'Annual Member';
               }
@@ -4058,6 +4251,7 @@ Indian Muslim Association, Hong Kong`;
 
       const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
       const memberBusinessId = member.id ? String(member.id).trim() : "";
+      const memberNoStr = member?.memberNo != null ? String(member.memberNo).trim() : "";
       const memberPreviousIds = Array.isArray(member.previousDisplayIds)
         ? member.previousDisplayIds.map((entry) => String(entry?.id || "").trim()).filter(Boolean)
         : [];
@@ -4068,8 +4262,14 @@ Indian Muslim Association, Hong Kong`;
         const response = await fetch(`${apiUrl}/api/invoices`);
         if (response.ok) {
           const invoices = await response.json();
-          const memberInvoices = memberAliases.size > 0
-            ? invoices.filter((invoice) => memberAliases.has(String(invoice.memberId || "").trim()))
+          const memberInvoices = (memberAliases.size > 0 || memberNoStr)
+            ? invoices.filter((invoice) => {
+              const invoiceMemberId = String(invoice?.memberId || "").trim();
+              const invoiceMemberNo = invoice?.memberNo != null ? String(invoice.memberNo).trim() : "";
+              const matchesByNo = memberNoStr && invoiceMemberNo && invoiceMemberNo === memberNoStr;
+              const matchesById = invoiceMemberId && memberAliases.has(invoiceMemberId);
+              return matchesByNo || matchesById;
+            })
             : [];
           console.log(`✓ Refreshed ${memberInvoices.length} invoices for member ${memberBusinessId || member._id}`);
           setSelectedMemberInvoices(memberInvoices);
@@ -4510,6 +4710,7 @@ Indian Muslim Association, Hong Kong`;
         delete memberData.id;
         delete memberData.memberNo;
         delete memberData._id;
+        delete memberData.balance;
         memberData.subscriptionType = normalizeSubscriptionType(memberData.subscriptionType);
         
         const newMember = await addMember(memberData);
@@ -4641,12 +4842,6 @@ Indian Muslim Association, Hong Kong`;
           updateData.subscriptionYear = memberForm.subscriptionYear;
         }
         
-        // Compare balance (convert to string for comparison)
-        const originalBalance = originalMember.balance ? originalMember.balance.replace(/[^0-9.]/g, '') : "500";
-        if (memberForm.balance !== originalBalance) {
-          updateData.balance = memberForm.balance;
-        }
-        
         // Compare start date (nextDue)
         const originalStartDate = originalMember.start_date ? new Date(originalMember.start_date).toISOString().split('T')[0] : getTodayDate();
         if (memberForm.nextDue !== originalStartDate) {
@@ -4710,14 +4905,15 @@ Indian Muslim Association, Hong Kong`;
 
         if (updateData.subscriptionType) {
           const requestedType = normalizeSubscriptionType(updateData.subscriptionType);
-          const isAnnualToLifetimeUpgrade =
+          const requiresIdChangeConfirmation =
             originalSubscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER
-            && requestedType !== SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+            && requestedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
 
           const performUpgradeFlow = async () => {
             // Split out subscriptionType so the upgrade is handled by the controlled endpoint.
             const { subscriptionType: _ignored, ...restUpdates } = updateData;
-            const upgraded = await upgradeMemberSubscription(editingMember._id, requestedType);
+            const upgradedMemberDbId = editingMember._id;
+            const upgraded = await upgradeMemberSubscription(editingMember._id, SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND);
             if (Object.keys(restUpdates).length > 0) {
               await updateMember(editingMember._id, restUpdates);
             }
@@ -4749,16 +4945,24 @@ Indian Muslim Association, Hong Kong`;
             });
             setCurrentInvalidField(null);
             setShowMemberForm(false);
-            showToast("Membership upgraded to Lifetime successfully.", "success", 3000);
+            showToast("Membership upgraded to Lifetime Member + Janaza Fund successfully.", "success", 3000);
+
+            // UI-only: backend auto-creates an invoice on upgrade; refresh invoice state so it shows immediately.
+            fetchInvoices();
+            if (selectedMember?._id && String(selectedMember._id) === String(upgradedMemberDbId)) {
+              refreshSelectedMemberInvoices(selectedMember);
+            }
           };
 
-          showConfirmation(
-            "Changing subscription will generate a new display ID and keep old invoices/payments unchanged. Continue?",
-            isAnnualToLifetimeUpgrade ? performUpgradeFlow : performUpdate,
-            null,
-            "Confirm"
-          );
-          return;
+          if (requiresIdChangeConfirmation) {
+            showConfirmation(
+              "Changing subscription will generate a new display ID and keep old invoices/payments unchanged. Continue?",
+              performUpgradeFlow,
+              null,
+              "Confirm"
+            );
+            return;
+          }
         }
 
         await performUpdate();
@@ -4969,11 +5173,19 @@ Indian Muslim Association, Hong Kong`;
   if (!updatedInvoice?._id) return;
 
   setSelectedMemberInvoices(prev =>
-    prev.map(inv =>
-      inv._id === updatedInvoice._id
-        ? { ...inv, ...updatedInvoice, receiver_name: receiverName ?? updatedInvoice.receiver_name }
-        : inv
-    )
+      prev.map(inv => {
+        if (inv._id !== updatedInvoice._id) return inv;
+
+        // UI-only safety: don't clobber subscriptionType with empty/undefined from partial updates
+        const merged = {
+          ...inv,
+          ...updatedInvoice,
+          ...(receiverName ? { receiver_name: receiverName } : {}),
+        };
+        merged.subscriptionType = merged.subscriptionType || inv.subscriptionType;
+
+        return merged;
+      })
   );
 };
 
@@ -5132,6 +5344,13 @@ Indian Muslim Association, Hong Kong`;
         console.error('Error marking invoice as paid:', error);
         showToast(error.message || "Failed to mark invoice as paid", "error");
       }
+    };
+
+    const handleOpenPdf = (invoiceDbId) => {
+      const apiUrl = import.meta.env.VITE_API_URL || "";
+      const invoiceIdValue = String(invoiceDbId || "").trim();
+      if (!invoiceIdValue) return;
+      window.open(`${apiUrl}/api/invoices/${invoiceIdValue}/pdf-receipt/view`, "_blank");
     };
 
 
@@ -5717,6 +5936,14 @@ Indian Muslim Association, Hong Kong`;
 
       const targetMemberDbId = String(memberToView._id).trim();
       const targetMemberBusinessId = String(memberToView.id || "").trim();
+      const targetMemberNo = memberToView?.memberNo != null ? String(memberToView.memberNo).trim() : "";
+      const targetMemberPreviousDisplayIds = Array.isArray(memberToView?.previousDisplayIds)
+        ? memberToView.previousDisplayIds.map((entry) => String(entry?.id || "").trim()).filter(Boolean)
+        : [];
+      const targetMemberIdAliases = new Set([
+        targetMemberBusinessId,
+        ...targetMemberPreviousDisplayIds,
+      ].filter(Boolean));
       console.log(`Viewing member details for: ${targetMemberDbId} - ${memberToView.name}`);
 
       // Reset state when switching members - CRITICAL to prevent showing old data
@@ -5738,9 +5965,15 @@ Indian Muslim Association, Hong Kong`;
         const invoicesResponse = await fetch(`${apiUrl}/api/invoices`);
           if (invoicesResponse.ok) {
             const allInvoices = await invoicesResponse.json();
-            const memberInvoices = targetMemberBusinessId
-              ? allInvoices.filter((invoice) => String(invoice.memberId || "").trim() === targetMemberBusinessId)
-              : [];
+            const memberInvoices = allInvoices.filter((invoice) => {
+              if (!invoice) return false;
+
+              const invoiceMemberId = String(invoice?.memberId || "").trim();
+              const invoiceMemberNo = invoice?.memberNo != null ? String(invoice.memberNo).trim() : "";
+              const matchesByNo = targetMemberNo && invoiceMemberNo && invoiceMemberNo === targetMemberNo;
+              const matchesById = invoiceMemberId && targetMemberIdAliases.has(invoiceMemberId);
+              return matchesByNo || matchesById;
+            });
             console.log(`✓ Fetched ${memberInvoices.length} invoices for member ${targetMemberBusinessId || targetMemberDbId}`);
           if (shouldBlockMemberDetailForMissingInvoices(memberToView, memberInvoices)) {
             setSelectedMember(null);
@@ -5750,11 +5983,17 @@ Indian Muslim Association, Hong Kong`;
           }
           setSelectedMemberInvoices(memberInvoices);
         } else {
-          console.warn(`Failed to fetch invoices for member ${targetMemberId}:`, invoicesResponse.status);
+          console.warn(
+            `Failed to fetch invoices for member ${targetMemberBusinessId || targetMemberDbId}:`,
+            invoicesResponse.status
+          );
           setSelectedMemberInvoices([]);
         }
       } catch (error) {
-        console.error(`Error fetching invoices for member ${targetMemberId}:`, error);
+        console.error(
+          `Error fetching invoices for member ${targetMemberBusinessId || targetMemberDbId}:`,
+          error
+        );
         setSelectedMemberInvoices([]);
       } finally {
         setLoadingMemberInvoices(false);
@@ -5847,83 +6086,109 @@ Indian Muslim Association, Hong Kong`;
           contentClassName="admin-members-form-container"
           contentStyle={{ maxWidth: "500px" }}
         >
-          <div className="admin-members-form-header">
-            <div className="admin-members-form-header-top">
-              <h3 className="admin-members-form-title">
-                <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px" }}></i>
-                Confirm Action
-              </h3>
-              <button
-                className="admin-members-form-close"
-                onClick={handleConfirmationCancel}
-                disabled={confirmationDialog.isProcessing}
-                aria-label="Close"
-              >
-                <i className="fa-solid fa-times" />
-              </button>
-            </div>
-          </div>
+          {(() => {
+            const confirmText = String(confirmationDialog.confirmButtonText || "Confirm").toLowerCase();
+            const messageText = String(confirmationDialog.message || "").toLowerCase();
 
-          <div style={{ padding: "0 24px 24px" }}>
-            <p style={{ marginBottom: "20px", color: "#374151", fontSize: "0.95rem", lineHeight: 1.5 }}>
-              {confirmationDialog.message}
-            </p>
-            {confirmationDialog.requirePassword && (
-              <div style={{ marginBottom: "20px", width: "100%" }}>
-                <label className="mono-label" style={{ width: "100%" }}>
-                  <span>Admin password confirmation</span>
-                  <input
-                    type="password"
-                    value={confirmationDialog.password}
-                    className="mono-input"
-                    onChange={handleConfirmationPasswordChange}
-                    placeholder="Enter your password to continue"
-                    autoComplete="current-password"
-                    autoCapitalize="off"
-                    autoCorrect="off"
-                    spellCheck="false"
-                    disabled={confirmationDialog.isProcessing}
-                    data-lpignore="true"
-                    data-form-type="password"
-                  />
-                </label>
-                <p style={{ fontSize: "0.78rem", color: "#6b7280", marginTop: "6px" }}>
-                  For security, please confirm with your admin password before deleting.
-                </p>
-              </div>
-            )}
-            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-              <button
-                className="secondary-btn"
-                type="button"
-                onClick={handleConfirmationCancel}
-                disabled={confirmationDialog.isProcessing}
-              >
-                Cancel
-              </button>
-              <button
-                className="primary-btn"
-                type="button"
-                onClick={handleConfirmationConfirm}
-                disabled={confirmationDialog.isProcessing}
-                style={{
-                  background: "#ef4444",
-                  borderColor: "#ef4444",
-                  boxShadow: "0 2px 8px rgba(239, 68, 68, 0.3)"
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.background = "#dc2626";
-                  e.target.style.boxShadow = "0 4px 12px rgba(239, 68, 68, 0.4)";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.background = "#ef4444";
-                  e.target.style.boxShadow = "0 2px 8px rgba(239, 68, 68, 0.3)";
-                }}
-              >
-                {confirmationDialog.isProcessing ? "Validating..." : (confirmationDialog.confirmButtonText || "Confirm")}
-              </button>
-            </div>
-          </div>
+            const isDestructiveAction =
+              confirmationDialog.requirePassword ||
+              /\b(delete|archive|remove|disable)\b/.test(confirmText) ||
+              /\b(delete|archive|remove|disable)\b/.test(messageText);
+
+            const confirmButtonStyle = isDestructiveAction
+              ? {
+                background: "#ef4444",
+                borderColor: "#ef4444",
+                boxShadow: "0 2px 8px rgba(239, 68, 68, 0.3)",
+              }
+              : undefined;
+
+            const handleConfirmMouseEnter = isDestructiveAction
+              ? (e) => {
+                e.target.style.background = "#dc2626";
+                e.target.style.boxShadow = "0 4px 12px rgba(239, 68, 68, 0.4)";
+              }
+              : undefined;
+
+            const handleConfirmMouseLeave = isDestructiveAction
+              ? (e) => {
+                e.target.style.background = "#ef4444";
+                e.target.style.boxShadow = "0 2px 8px rgba(239, 68, 68, 0.3)";
+              }
+              : undefined;
+
+            return (
+              <>
+                <div className="admin-members-form-header">
+                  <div className="admin-members-form-header-top">
+                    <h3 className="admin-members-form-title">
+                      <i className="fas fa-exclamation-triangle" style={{ marginRight: "8px" }}></i>
+                      Confirm Action
+                    </h3>
+                    <button
+                      className="admin-members-form-close"
+                      onClick={handleConfirmationCancel}
+                      disabled={confirmationDialog.isProcessing}
+                      aria-label="Close"
+                    >
+                      <i className="fa-solid fa-times" />
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ padding: "0 24px 24px" }}>
+                  <p style={{ marginBottom: "20px", color: "#374151", fontSize: "0.95rem", lineHeight: 1.5 }}>
+                    {confirmationDialog.message}
+                  </p>
+                  {confirmationDialog.requirePassword && (
+                    <div style={{ marginBottom: "20px", width: "100%" }}>
+                      <label className="mono-label" style={{ width: "100%" }}>
+                        <span>Admin password confirmation</span>
+                        <input
+                          type="password"
+                          value={confirmationDialog.password}
+                          className="mono-input"
+                          onChange={handleConfirmationPasswordChange}
+                          placeholder="Enter your password to continue"
+                          autoComplete="current-password"
+                          autoCapitalize="off"
+                          autoCorrect="off"
+                          spellCheck="false"
+                          disabled={confirmationDialog.isProcessing}
+                          data-lpignore="true"
+                          data-form-type="password"
+                        />
+                      </label>
+                      <p style={{ fontSize: "0.78rem", color: "#6b7280", marginTop: "6px" }}>
+                        For security, please confirm with your admin password before deleting.
+                      </p>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                    <button
+                      className="secondary-btn"
+                      type="button"
+                      onClick={handleConfirmationCancel}
+                      disabled={confirmationDialog.isProcessing}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="primary-btn"
+                      type="button"
+                      onClick={handleConfirmationConfirm}
+                      disabled={confirmationDialog.isProcessing}
+                      style={confirmButtonStyle}
+                      onMouseEnter={handleConfirmMouseEnter}
+                      onMouseLeave={handleConfirmMouseLeave}
+                    >
+                      {confirmationDialog.isProcessing ? "Validating..." : (confirmationDialog.confirmButtonText || "Confirm")}
+                    </button>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </Modal>
 
         {/* Template Preview Modal */}
@@ -6971,39 +7236,45 @@ Indian Muslim Association, Hong Kong`;
                                   <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
                                   Subscription Type
                                 </span>
-                                <select
-                                  value={memberForm.subscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER}
-                                  onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
-                                  style={{
-                                    width: "100%",
-                                    padding: "10px 12px",
-                                    borderRadius: "8px",
-                                    border: "1px solid #e0e0e0",
-                                    fontSize: "0.9375rem",
-                                    background: "#fff",
-                                    outline: "none",
-                                    cursor: "pointer",
-                                    appearance: "none",
-                                    WebkitAppearance: "none",
-                                    MozAppearance: "none",
-                                    backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E\")",
-                                    backgroundRepeat: "no-repeat",
-                                    backgroundPosition: "right 12px center",
-                                    paddingRight: "36px",
-                                    transition: "all 0.2s ease"
-                                  }}
-                                >
-                                  {SUBSCRIPTION_TYPE_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
+                                <Select
+                                  inputId="admin-member-subscription-type"
+                                  isSearchable={false}
+                                  options={SUBSCRIPTION_TYPE_OPTIONS}
+                                  value={
+                                    SUBSCRIPTION_TYPE_OPTIONS.find(
+                                      (opt) => opt.value === (memberForm.subscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER)
+                                    )
+                                  }
+                                  onChange={(opt) => handleMemberFieldChange("subscriptionType", opt?.value)}
+                                  formatOptionLabel={formatSubscriptionTypeOptionLabel}
+                                  styles={subscriptionTypeSelectStyles}
+                                />
                                 {editingMember && normalizeSubscriptionType(editingMember.subscriptionType) !== memberForm.subscriptionType && (
                                   <div style={{ marginTop: "6px", fontSize: "0.8rem", color: "#6b7280" }}>
                                     Will become {getPreviewDisplayId(memberForm.subscriptionType)}
                                   </div>
                                 )}
+                              </label>
+
+                              <label>
+                                <span>
+                                  <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                  Invoice Amount (Current Year)
+                                </span>
+                                <input
+                                  type="number"
+                                  inputMode="numeric"
+                                  value={getInvoiceAmountCurrentYear(memberForm.subscriptionType, { isNewMember: false, member: editingMember })}
+                                  readOnly
+                                  style={{
+                                    background: "#f9fafb",
+                                    cursor: "not-allowed",
+                                    color: "#666"
+                                  }}
+                                />
+                                <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 4 }}>
+                                  This is the amount that will be billed for the selected subscription for the current year.
+                                </div>
                               </label>
 
                               <label>
@@ -7047,85 +7318,19 @@ Indian Muslim Association, Hong Kong`;
                                   <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
                                   Subscription Type
                                 </span>
-                                <div 
-                                  style={{ position: "relative" }}
-                                  onMouseEnter={(e) => {
-                                    const tooltip = e.currentTarget.querySelector('.subscription-details-tooltip');
-                                    if (tooltip) tooltip.style.opacity = '1';
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    const tooltip = e.currentTarget.querySelector('.subscription-details-tooltip');
-                                    if (tooltip) tooltip.style.opacity = '0';
-                                  }}
-                                >
-                                <select
-                                    value={memberForm.subscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER}
-                                  onChange={(e) => handleMemberFieldChange("subscriptionType", e.target.value)}
-                                    style={{
-                                      width: "100%",
-                                      padding: "10px 12px",
-                                      borderRadius: "8px",
-                                      border: "1px solid #e0e0e0",
-                                      fontSize: "0.9375rem",
-                                      background: "#fff",
-                                      outline: "none",
-                                      cursor: "pointer",
-                                      appearance: "none",
-                                      WebkitAppearance: "none",
-                                      MozAppearance: "none",
-                                      backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E\")",
-                                      backgroundRepeat: "no-repeat",
-                                      backgroundPosition: "right 12px center",
-                                      paddingRight: "36px",
-                                      transition: "all 0.2s ease"
-                                    }}
-                                    onFocus={(e) => {
-                                      e.target.style.borderColor = "#5a31ea";
-                                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                                      const tooltip = e.target.parentElement.querySelector('.subscription-details-tooltip');
-                                      if (tooltip) tooltip.style.opacity = '1';
-                                    }}
-                                    onBlur={(e) => {
-                                      e.target.style.borderColor = "#e0e0e0";
-                                      e.target.style.boxShadow = "none";
-                                      const tooltip = e.target.parentElement.querySelector('.subscription-details-tooltip');
-                                      if (tooltip) tooltip.style.opacity = '0';
-                                    }}
-                                  >
-                                    {SUBSCRIPTION_TYPE_OPTIONS.map((option) => (
-                                      <option key={option.value} value={option.value}>
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                </select>
-                                  <div style={{
-                                    position: "absolute",
-                                    top: "100%",
-                                    left: 0,
-                                    right: 0,
-                                    marginTop: "4px",
-                                    padding: "8px 12px",
-                                    background: "#f8f9ff",
-                                    borderRadius: "6px",
-                                    fontSize: "0.75rem",
-                                    color: "#666",
-                                    opacity: 0,
-                                    pointerEvents: "none",
-                                    transition: "opacity 0.2s ease",
-                                    zIndex: 1000,
-                                    border: "1px solid #e5e7eb"
-                                  }} className="subscription-details-tooltip">
-                                    {memberForm.subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER && (
-                                      <div>Membership: HK$250/year + Janaza: HK$250/year</div>
-                            )}
-                                    {memberForm.subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER && (
-                                      <div>Membership: HK$0 + Janaza: HK$250/year</div>
-                                    )}
-                                    {memberForm.subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && (
-                                      <div>Membership: HK$5,000 (one-time) + Janaza: HK$250/year, then HK$250/year</div>
-                                    )}
-                                  </div>
-                                </div>
+                                <Select
+                                  inputId="admin-member-subscription-type-create"
+                                  isSearchable={false}
+                                  options={SUBSCRIPTION_TYPE_OPTIONS}
+                                  value={
+                                    SUBSCRIPTION_TYPE_OPTIONS.find(
+                                      (opt) => opt.value === (memberForm.subscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER)
+                                    )
+                                  }
+                                  onChange={(opt) => handleMemberFieldChange("subscriptionType", opt?.value)}
+                                  formatOptionLabel={formatSubscriptionTypeOptionLabel}
+                                  styles={subscriptionTypeSelectStyles}
+                                />
                             </label>
 
                               <label>
@@ -7146,12 +7351,12 @@ Indian Muslim Association, Hong Kong`;
                               <label>
                                 <span>
                                   <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
-                                  Balance
+                                  Invoice Amount (Current Year)
                                 </span>
                                 <input
                                   type="number"
                                   inputMode="numeric"
-                                  value={memberForm.balance}
+                                  value={getInvoiceAmountCurrentYear(memberForm.subscriptionType, { isNewMember: true })}
                                   readOnly
                                   style={{
                                     background: "#f9fafb",
@@ -7159,6 +7364,9 @@ Indian Muslim Association, Hong Kong`;
                                     color: "#666"
                                   }}
                                 />
+                                <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 4 }}>
+                                  This is the amount that will be billed for the selected subscription for the current year.
+                                </div>
                               </label>
                               </>
                             )}
@@ -7472,14 +7680,10 @@ Indian Muslim Association, Hong Kong`;
                             
                             const subscriptionType = normalizeSubscriptionType(member.subscriptionType);
                             
-                            if (memberTypeFilter === "Annual Member") {
+                            if (memberTypeFilter === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
                               return subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
-                            } else if (memberTypeFilter === "Lifetime Member") {
-                              // Lifetime members include both canonical lifetime categories
-                              return (
-                                subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP ||
-                                subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER
-                              );
+                            } else if (memberTypeFilter === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
+                              return subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
                             }
                             
                             return false;
@@ -7503,7 +7707,7 @@ Indian Muslim Association, Hong Kong`;
 
                         const isOwner = currentAdminRole === "Owner";
 
-                        const isYearFilterDisabled = memberTypeFilter === "Lifetime Member";
+                        const isYearFilterDisabled = memberTypeFilter === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
 
                         return (
                           <>
@@ -7521,8 +7725,8 @@ Indian Muslim Association, Hong Kong`;
                                 }}>
                                   {[
                                     { value: "All", label: "All" },
-                                    { value: "Annual Member", label: "Annual Member" },
-                                    { value: "Lifetime Member", label: "Lifetime Member" },
+                                    { value: SUBSCRIPTION_TYPES.ANNUAL_MEMBER, label: SUBSCRIPTION_TYPES.ANNUAL_MEMBER },
+                                    { value: SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND, label: SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND },
                                   ].map((option) => (
                                     <button
                                       key={option.value}
@@ -7885,6 +8089,8 @@ Indian Muslim Association, Hong Kong`;
                                     "Actions",
                                   ]}
                                   rows={paginatedMembers.map((member) => {
+                                    const highlightKey = getMemberHighlightKey(member);
+                                    const shouldAllowHighlight = !isArchivedMember(member);
                                     // Derive outstanding numeric amount
                                     const balanceStr = member.balance?.toString() || "";
                                     const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0) || 0;
@@ -7940,6 +8146,11 @@ Indian Muslim Association, Hong Kong`;
                                     const memberIdDisplay = hasMemberId ? String(member.id) : "Not Assigned";
 
                                     const rowData = {
+                                      id: member._id || member.id || member.memberNo,
+                                      _rowClassName:
+                                        shouldAllowHighlight && highlightKey && newestMemberHighlightKey && highlightKey === newestMemberHighlightKey
+                                          ? "new-row-highlight"
+                                          : undefined,
                                       "Name": member.name,
                                       "Member ID": memberIdDisplay,
                                       "Mobile": member.phone || "-",
@@ -8448,18 +8659,22 @@ Indian Muslim Association, Hong Kong`;
                               </div>
                             );
                           }
-                          
-                          // Calculate pagination
-                          const totalPages = Math.ceil(allMemberInvoices.length / memberDetailInvoicesPageSize) || 1;
-                          const currentPage = Math.min(memberDetailInvoicesPage, totalPages);
-                          const startIndex = (currentPage - 1) * memberDetailInvoicesPageSize;
-                          const endIndex = startIndex + memberDetailInvoicesPageSize;
-                          const paginatedInvoices = allMemberInvoices.slice(startIndex, endIndex);
-                          
-                          return (
-                            <>
-                        <Table
-                          columns={[
+
+                          // REQUIRED: split invoices into two arrays using exact string matches.
+                          // No normalization/mapping; do not wrap/replace invoice objects.
+                          const lifetimeInvoices = allMemberInvoices.filter(
+                            (invoice) => invoice?.subscriptionType === "Lifetime Member + Janaza Fund"
+                          );
+                          const annualInvoices = allMemberInvoices.filter(
+                            (invoice) => invoice?.subscriptionType === "Annual Member"
+                          );
+
+                          // REQUIRED: Annual-only (never upgraded) member shows only one table and no group titles.
+                          const isUpgradedMember =
+                            Array.isArray(selectedMember?.previousDisplayIds) &&
+                            selectedMember.previousDisplayIds.length > 0;
+
+                          const invoiceColumns = [
                             // "Invoice #",
                             "Receipt No",
                             "Year",
@@ -8467,68 +8682,68 @@ Indian Muslim Association, Hong Kong`;
                             "Amount",
                             "Status",
                             "Due Date",
-                                  "Receiver Name",
+                            "Receiver Name",
                             "Actions",
-                          ]}
-                                rows={paginatedInvoices.map((invoice) => {
+                          ];
+
+                          const buildInvoiceRow = (invoice) => {
+                            // UI-only: preserve full invoice object for table rendering.
+                            // If a partial update dropped subscriptionType, fall back to the selected member at render-time.
+                            const invoiceForTable = {
+                              ...invoice,
+                              subscriptionType: invoice?.subscriptionType ?? selectedMember?.subscriptionType,
+                            };
                             const effectiveStatus = getEffectiveInvoiceStatus(invoice);
                             const isUnpaid = effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
-                            const isPaid =
-                              effectiveStatus === "Paid" ||
-                              effectiveStatus === "Completed";
-                            
+                            const isPaid = effectiveStatus === "Paid" || effectiveStatus === "Completed";
+
                             // Find related payment to get receiver name
                             const invoiceId = invoice.id || invoice._id;
-                            const relatedPayment = (paymentHistory || []).find(p => {
+                            const relatedPayment = (paymentHistory || []).find((p) => {
                               const paymentInvoiceId = p.invoiceId?.toString() || "";
-                              return paymentInvoiceId === invoiceId?.toString() || 
-                                     paymentInvoiceId === invoice.id?.toString() ||
-                                     paymentInvoiceId === invoice._id?.toString();
+                              return (
+                                paymentInvoiceId === invoiceId?.toString() ||
+                                paymentInvoiceId === invoice.id?.toString() ||
+                                paymentInvoiceId === invoice._id?.toString()
+                              );
                             });
-                            // const receiverName = relatedPayment?.receiver_name || relatedPayment?.paidToAdminName || invoice.receiver_name || invoice.paidToAdminName || "-";
                             const receiverName = relatedPayment?.receiver_name || "-";
 
                             // Display invoice's own stored due date (never auto-updated)
-                            // Each invoice has its own due_date set at creation time and never changes
                             const getDueDateDisplay = () => {
-                              // Always use the invoice's own 'due' field - it's stored per invoice and never changes
-                              // Never calculate or use today's date - always use the stored invoice.due value
                               if (!invoice.due) {
-                                return '-';
+                                return "-";
                               }
-                              
-                              // Backend stores due date as "DD MMM YYYY" format (e.g., "01 Jan 2026")
-                              // If it's already a formatted string, return it as-is
-                              if (typeof invoice.due === 'string') {
-                                // Check if it's already in a readable format (contains month name or date separators)
-                                if (invoice.due.includes('/') || invoice.due.includes('-') || 
-                                    /[A-Za-z]{3}/.test(invoice.due)) {
-                                  // It's already formatted (e.g., "01 Jan 2026" or "01/01/2026" or "2026-01-01")
+
+                              if (typeof invoice.due === "string") {
+                                if (
+                                  invoice.due.includes("/") ||
+                                  invoice.due.includes("-") ||
+                                  /[A-Za-z]{3}/.test(invoice.due)
+                                ) {
                                   return invoice.due;
                                 }
-                                
-                                // Try to parse and format if it's a date string
+
                                 try {
                                   const date = new Date(invoice.due);
                                   if (!isNaN(date.getTime())) {
-                                    // Format as DD/MM/YYYY for consistency
-                                    return date.toLocaleDateString('en-GB', {
-                                      day: '2-digit',
-                                      month: '2-digit',
-                                      year: 'numeric'
+                                    return date.toLocaleDateString("en-GB", {
+                                      day: "2-digit",
+                                      month: "2-digit",
+                                      year: "numeric",
                                     });
                                   }
                                 } catch (e) {
-                                  // If parsing fails, return the original value
+                                  // ignore
                                 }
                               }
-                              
-                              // Fallback: return the original value
-                              return invoice.due || '-';
+
+                              return invoice.due || "-";
                             };
 
-                            // UI requirement: subscription labels always reflect the member record, never historical invoice data.
-                            const subscriptionType = memberSubscriptionTypeLabel || "Not Assigned";
+                            // REQUIRED: Always render subscription type from the invoice data used for the table.
+                            const subscriptionType = invoiceForTable?.subscriptionType || "-";
+
                             const amountDisplay = (() => {
                               if (invoice.amount == null) {
                                 return "HK$0.00";
@@ -8544,7 +8759,6 @@ Indian Muslim Association, Hong Kong`;
                               return rawAmount;
                             })();
 
-
                             return {
                               "Invoice #": invoice.id,
                               "Receipt No": isPaid ? invoice.receiptNumber : "-",
@@ -8554,7 +8768,7 @@ Indian Muslim Association, Hong Kong`;
                                   <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
                                     <span>{subscriptionType}</span>
                                   </div>
-                                )
+                                ),
                               },
                               Amount: amountDisplay,
                               Status: {
@@ -8566,36 +8780,38 @@ Indian Muslim Association, Hong Kong`;
                               },
                               "Due Date": getDueDateDisplay(),
                               "Receiver Name": receiverName,
-                              Screenshot: invoice.screenshot ? {
-                                render: () => (
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setSelectedImageUrl(invoice.screenshot);
-                                      setShowImagePopup(true);
-                                    }}
-                                    style={{
-                                      background: "none",
-                                      border: "none",
-                                      color: "#000",
-                                      textDecoration: "none",
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "6px",
-                                      cursor: "pointer",
-                                      padding: 0,
-                                      fontSize: "inherit"
-                                    }}
-                                    aria-label="View screenshot"
-                                  >
-                                    <Tooltip text="View screenshot" position="top">
-                                    <i className="fas fa-image" aria-hidden="true"></i>
-                                    </Tooltip>
-                                    <span>View</span>
-                                  </button>
-                                )
-                              } : "-",
+                              Screenshot: invoice.screenshot
+                                ? {
+                                  render: () => (
+                                    <button
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setSelectedImageUrl(invoice.screenshot);
+                                        setShowImagePopup(true);
+                                      }}
+                                      style={{
+                                        background: "none",
+                                        border: "none",
+                                        color: "#000",
+                                        textDecoration: "none",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "6px",
+                                        cursor: "pointer",
+                                        padding: 0,
+                                        fontSize: "inherit",
+                                      }}
+                                      aria-label="View screenshot"
+                                    >
+                                      <Tooltip text="View screenshot" position="top">
+                                        <i className="fas fa-image" aria-hidden="true"></i>
+                                      </Tooltip>
+                                      <span>View</span>
+                                    </button>
+                                  ),
+                                }
+                                : "-",
                               Actions: {
                                 render: () => (
                                   <div className="flex gap-sm flex-wrap justify-center">
@@ -8604,62 +8820,62 @@ Indian Muslim Association, Hong Kong`;
                                         {/* Unpaid invoices: Show Pay and Delete buttons */}
                                         {isUnpaid && (
                                           <>
-                                      <button
-                                        className="primary-btn"
-                                        style={{
-                                          padding: "4px 10px",
-                                          fontSize: "0.85rem",
-                                          background: "#10b981",
-                                          border: "none",
-                                          color: "#ffffff",
-                                          fontWeight: "600",
-                                          borderRadius: "4px",
-                                          cursor: "pointer",
-                                          transition: "all 0.2s ease",
-                                          boxShadow: "0 2px 4px rgba(16, 185, 129, 0.3)"
-                                        }}
-                                        onMouseEnter={(e) => {
-                                          e.target.style.background = "#059669";
-                                          e.target.style.boxShadow = "0 4px 8px rgba(16, 185, 129, 0.4)";
-                                        }}
-                                        onMouseLeave={(e) => {
-                                          e.target.style.background = "#10b981";
-                                          e.target.style.boxShadow = "0 2px 4px rgba(16, 185, 129, 0.3)";
-                                        }}
-                                        onClick={() => {
-                                          setPaymentModalInvoice(invoice);
-                                          setPaymentModalData({
-                                            paymentMethod: "",
-                                            imageFile: null,
-                                            imagePreview: null,
-                                            imageUrl: invoice.screenshot || "",
-                                            reference: "",
-                                            selectedAdminId: "",
-                                            adminMobile: "",
-                                          });
+                                            <button
+                                              className="primary-btn"
+                                              style={{
+                                                padding: "4px 10px",
+                                                fontSize: "0.85rem",
+                                                background: "#10b981",
+                                                border: "none",
+                                                color: "#ffffff",
+                                                fontWeight: "600",
+                                                borderRadius: "4px",
+                                                cursor: "pointer",
+                                                transition: "all 0.2s ease",
+                                                boxShadow: "0 2px 4px rgba(16, 185, 129, 0.3)",
+                                              }}
+                                              onMouseEnter={(e) => {
+                                                e.target.style.background = "#059669";
+                                                e.target.style.boxShadow = "0 4px 8px rgba(16, 185, 129, 0.4)";
+                                              }}
+                                              onMouseLeave={(e) => {
+                                                e.target.style.background = "#10b981";
+                                                e.target.style.boxShadow = "0 2px 4px rgba(16, 185, 129, 0.3)";
+                                              }}
+                                              onClick={() => {
+                                                setPaymentModalInvoice(invoice);
+                                                setPaymentModalData({
+                                                  paymentMethod: "",
+                                                  imageFile: null,
+                                                  imagePreview: null,
+                                                  imageUrl: invoice.screenshot || "",
+                                                  reference: "",
+                                                  selectedAdminId: "",
+                                                  adminMobile: "",
+                                                });
                                                 setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
-                                          setCurrentInvalidPaymentModalField(null);
-                                          setShowPaymentModal(true);
+                                                setCurrentInvalidPaymentModalField(null);
+                                                setShowPaymentModal(true);
                                                 openModal('paymentModal');
-                                        }}
-                                      >
-                                        Pay
-                                      </button>
-                                      <ActionIcon
-                                        icon="fa-trash"
-                                        tooltip="Delete Invoice"
-                                        variant="delete"
-                                        ariaLabel="Delete Invoice"
-                                        onClick={() => {
-                                          showConfirmation(
-                                            `Delete invoice ${invoice.id}? This cannot be undone.`,
-                                            () => handleDeleteInvoice(invoice._id, { skipConfirmation: true }),
-                                            null,
-                                            "Delete",
-                                            { requirePassword: true }
-                                          );
-                                        }}
-                                      />
+                                              }}
+                                            >
+                                              Pay
+                                            </button>
+                                            <ActionIcon
+                                              icon="fa-trash"
+                                              tooltip="Delete Invoice"
+                                              variant="delete"
+                                              ariaLabel="Delete Invoice"
+                                              onClick={() => {
+                                                showConfirmation(
+                                                  `Delete invoice ${invoice.id}? This cannot be undone.`,
+                                                  () => handleDeleteInvoice(invoice._id, { skipConfirmation: true }),
+                                                  null,
+                                                  "Delete",
+                                                  { requirePassword: true }
+                                                );
+                                              }}
+                                            />
                                           </>
                                         )}
                                         {/* Paid invoices: Show Send, PDF, and Delete buttons as circular icons */}
@@ -8684,8 +8900,10 @@ Indian Muslim Association, Hong Kong`;
                                               onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
-                                                setSelectedPdfInvoice(invoice);
-                                                setShowPdfOptionsModal(true);
+                                                const apiUrl = import.meta.env.VITE_API_URL || "";
+                                                const invoiceParam = invoice?._id || invoice?.id;
+                                                const pdfUrl = `${apiUrl}/api/invoices/${invoiceParam}/pdf-receipt/view`;
+                                                window.open(pdfUrl, "_blank");
                                               }}
                                             />
                                             <ActionIcon
@@ -8711,18 +8929,39 @@ Indian Muslim Association, Hong Kong`;
                                 ),
                               },
                             };
-                          })}
-                        />
-                        {totalPages > 0 && allMemberInvoices.length > 0 && (
-                          <Pagination
-                            currentPage={currentPage}
-                            totalPages={totalPages}
-                            onPageChange={setMemberDetailInvoicesPage}
-                            pageSize={memberDetailInvoicesPageSize}
-                            onPageSizeChange={setMemberDetailInvoicesPageSize}
-                            totalItems={allMemberInvoices.length}
-                          />
-                        )}
+                          };
+                          
+                          return (
+                            <>
+
+                              {!isUpgradedMember ? (
+                                <Table
+                                  columns={invoiceColumns}
+                                  rows={allMemberInvoices.map(buildInvoiceRow)}
+                                />
+                              ) : (
+                                <>
+                                  {lifetimeInvoices.length > 0 && (
+                                    <>
+                                      <div className="invoice-group-title">Lifetime Member + Janaza Fund</div>
+                                      <Table
+                                        columns={invoiceColumns}
+                                        rows={lifetimeInvoices.map(buildInvoiceRow)}
+                                      />
+                                    </>
+                                  )}
+
+                                  {annualInvoices.length > 0 && (
+                                    <>
+                                      <div className="invoice-group-title">Annual Member (Previous)</div>
+                                      <Table
+                                        columns={invoiceColumns}
+                                        rows={annualInvoices.map(buildInvoiceRow)}
+                                      />
+                                    </>
+                                  )}
+                                </>
+                              )}
                       </>
                     );
                   })()}
@@ -9194,7 +9433,7 @@ Indian Muslim Association, Hong Kong`;
                     <div>
                       {renderBreadcrumb("invoice-builder")}
                       <h3><i className="fas fa-file-invoice" style={{ marginRight: "10px" }}></i>Invoice Builder</h3>
-                      <p>Create invoices for Lifetime or Yearly + Janaza Fund subscriptions.</p>
+                      <p>Create invoices for Annual Member and Lifetime Member + Janaza Fund subscriptions.</p>
                     </div>
                   </header>
 
@@ -9628,14 +9867,11 @@ Indian Muslim Association, Hong Kong`;
                             pointerEvents: "none",
                             transition: "opacity 0.2s ease"
                           }} className="invoice-details-tooltip">
-                            {invoiceForm.invoiceType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER && (
-                              <div>Membership: HK$250 + Janaza: HK$250</div>
+                            {normalizeSubscriptionType(invoiceForm.invoiceType) === SUBSCRIPTION_TYPES.ANNUAL_MEMBER && (
+                              <div>Payable: HK$500/year</div>
                             )}
-                            {invoiceForm.invoiceType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER && (
-                              <div>Membership: HK$0 + Janaza: HK$250</div>
-                            )}
-                            {invoiceForm.invoiceType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && (
-                              <div>Membership: HK$5,000 (one-time) + Janaza: HK$250</div>
+                            {normalizeSubscriptionType(invoiceForm.invoiceType) === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND && (
+                              <div>Payable: HK$250/year</div>
                             )}
                           </div>
                         )}
@@ -13579,6 +13815,12 @@ Indian Muslim Association, Hong Kong`;
                   <div className="card-invoices">
                     <div className="table-wrapper">
                       {(() => {
+                        const INVOICE_SUBSCRIPTION_TYPES = {
+                          ANNUAL_MEMBER: "Annual Member",
+                          LIFETIME_JANAZA_FUND: "Lifetime Janaza Fund",
+                          LIFETIME_MEMBER_PLUS_JANAZA_FUND: "Lifetime Member + Janaza Fund",
+                        };
+
                         // Filter invoices to only show those belonging to members in the members list
                         let filteredInvoices = (invoices || []).filter(invoice => 
                           isInvoiceMemberInList(invoice)
@@ -13605,6 +13847,13 @@ Indian Muslim Association, Hong Kong`;
                             const yearMatch = periodStr.match(/\d{4}/);
                             const invoiceYear = yearMatch ? yearMatch[0] : "";
                             return invoiceYear === invoiceYearFilter;
+                          });
+                        }
+
+                        // Filter invoices by subscription type (exact match only)
+                        if (invoiceSubscriptionTypeFilter !== "All") {
+                          filteredInvoices = filteredInvoices.filter((invoice) => {
+                            return String(invoice?.subscriptionType || "").trim() === invoiceSubscriptionTypeFilter;
                           });
                         }
 
@@ -13870,6 +14119,41 @@ Indian Muslim Association, Hong Kong`;
                                   </div>
                                 </div>
                               </div>
+
+                              <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "16px" }}>
+                                <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Subscription:</label>
+                                <select
+                                  value={invoiceSubscriptionTypeFilter}
+                                  onChange={(e) => {
+                                    setInvoiceSubscriptionTypeFilter(e.target.value);
+                                    setInvoicesPage(1);
+                                  }}
+                                  style={{
+                                    padding: "8px 12px",
+                                    borderRadius: "4px",
+                                    border: "1px solid #e5e7eb",
+                                    background: "#ffffff",
+                                    fontSize: "0.875rem",
+                                    fontWeight: "500",
+                                    outline: "none",
+                                    transition: "border-color 0.2s",
+                                    minWidth: "240px",
+                                  }}
+                                  onFocus={(e) => {
+                                    e.target.style.borderColor = "#5a31ea";
+                                    e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                  }}
+                                  onBlur={(e) => {
+                                    e.target.style.borderColor = "#e5e7eb";
+                                    e.target.style.boxShadow = "none";
+                                  }}
+                                >
+                                  <option value="All">All</option>
+                                  <option value={INVOICE_SUBSCRIPTION_TYPES.ANNUAL_MEMBER}>Annual Member</option>
+                                  <option value={INVOICE_SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND}>Lifetime Janaza Fund</option>
+                                  <option value={INVOICE_SUBSCRIPTION_TYPES.LIFETIME_MEMBER_PLUS_JANAZA_FUND}>Lifetime Member + Janaza Fund</option>
+                                </select>
+                              </div>
                               </div>
 
                               {/* Invoice Search Filter (Right) */}
@@ -14066,6 +14350,19 @@ Indian Muslim Association, Hong Kong`;
                                                   }
                                                 }}
                                               />
+                                              {isPaid && (
+                                                <ActionIcon
+                                                  icon="fa-file-pdf"
+                                                  tooltip="Open PDF Receipt"
+                                                  variant="pdf"
+                                                  ariaLabel="Open PDF Receipt"
+                                                  onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    handleOpenPdf(invoice._id);
+                                                  }}
+                                                />
+                                              )}
                                               {!isPaid && (
                                                 <ActionIcon
                                                   icon="fa-trash"
@@ -16721,8 +17018,10 @@ Indian Muslim Association, Hong Kong`;
                                             onClick={(e) => {
                                               e.preventDefault();
                                               e.stopPropagation();
-                                              setSelectedPdfDonation(donation);
-                                              setShowPdfOptionsModal(true);
+                                              const apiUrl = import.meta.env.VITE_API_URL || "";
+                                              const donationParam = donation?._id || donation?.id;
+                                              const pdfUrl = `${apiUrl}/api/donations/${donationParam}/pdf-receipt/view`;
+                                              window.open(pdfUrl, "_blank");
                                             }}
                                             title="PDF Options"
                                           >
@@ -20025,7 +20324,7 @@ Indian Muslim Association, Hong Kong`;
                             {member.native || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                           </td>
                           <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
-                            {formatSubscriptionType(member.subscriptionType) || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}
+                            {formatSubscriptionType(member.subscriptionType) || <span style={{ color: "#999", fontStyle: "italic" }}>Annual Member</span>}
                           </td>
                           <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
                             {member.subscriptionYear || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
@@ -20082,7 +20381,7 @@ Indian Muslim Association, Hong Kong`;
                                 {errorRow.data.phone || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                               </td>
                               <td style={{ padding: "12px", borderRight: "1px solid #ffcdd2", color: "#333" }}>
-                                {formatSubscriptionType(errorRow.data.subscriptionType) || <span style={{ color: "#999", fontStyle: "italic" }}>Lifetime</span>}
+                                {formatSubscriptionType(errorRow.data.subscriptionType) || <span style={{ color: "#999", fontStyle: "italic" }}>Annual Member</span>}
                               </td>
                               <td style={{ padding: "12px", color: "#c62828" }}>
                                 <ul style={{ margin: 0, paddingLeft: "20px" }}>
@@ -20267,13 +20566,15 @@ Indian Muslim Association, Hong Kong`;
                   const apiUrl = import.meta.env.VITE_API_URL || "";
                   let pdfUrl;
                   if (selectedPdfInvoice) {
-                    pdfUrl = resolveReceiptPdfUrl(selectedPdfInvoice.receiptPdfUrl);
-                    if (!pdfUrl) {
-                      showToast("Receipt PDF is not available for this invoice.", "error");
+                    const memberId = selectedMember?.id;
+                    if (!memberId) {
+                      showToast("Member ID is missing. Cannot generate PDF receipt.", "error");
                       return;
                     }
-                    // Ensure inline view
-                    pdfUrl = pdfUrl.includes('?') ? `${pdfUrl}&mode=view` : `${pdfUrl}?mode=view`;
+
+                    const invoiceParam = selectedPdfInvoice._id || selectedPdfInvoice.id;
+
+                    pdfUrl = `${apiUrl}/api/invoices/${invoiceParam}/pdf-receipt/view?viewerMemberId=${encodeURIComponent(memberId)}`;
                   } else if (selectedPdfDonation) {
                     pdfUrl = `${apiUrl}/api/donations/${selectedPdfDonation._id || selectedPdfDonation.id}/pdf-receipt/download?mode=view`;
                   }
@@ -20933,11 +21234,11 @@ Indian Muslim Association, Hong Kong`;
                             });
                             
                             // Determine receipt type based on amount
-                            // HK$250 = Lifetime Member - Janaza Fund Receipt
+                            // HK$250 = Lifetime Member + Janaza Fund Receipt
                             // HK$500 = Membership Renewal Receipt
                             const isJanazaFund = amountNum === 250 || amountNum === 250.00;
                             const receiptTitle = isJanazaFund 
-                              ? 'Lifetime Member - Janaza Fund Receipt' 
+                              ? 'Lifetime Member + Janaza Fund Receipt' 
                               : 'Membership Renewal Receipt';
                             
                             // Create WhatsApp message

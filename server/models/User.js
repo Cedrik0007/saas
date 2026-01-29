@@ -47,6 +47,9 @@ const UserSchema = new mongoose.Schema({
   membershipFee: { type: Number, default: 0 }, // Annual membership fee (HK$)
   janazaFee: { type: Number, default: 250 }, // Annual Janaza fund fee (HK$)
   lifetimeMembershipPaid: { type: Boolean, default: false }, // Whether lifetime membership fee has been paid
+  // Legacy-only: Janaza-only members pay HK$250/year without the HK$5,000 lifetime fee.
+  // We keep a single official lifetime subscriptionType and use this flag to differentiate.
+  janazaOnly: { type: Boolean, default: false },
   // Payment management fields
   start_date: { type: Date, default: null },
   payment_status: { type: String, default: "unpaid" }, // unpaid, paid

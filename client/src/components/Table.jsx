@@ -321,11 +321,16 @@ export function Table({
             const name = getName(row, columns) || "View Details";
             const statusInfo = getStatusInfo(row, columns);
             const keyMetric = getKeyMetric(row, columns);
+
+            const extraRowClassName = typeof row?._rowClassName === "string" ? row._rowClassName.trim() : "";
+            const mobileRowClassName = ["mobile-table-card", statusInfo.borderClass, extraRowClassName]
+              .filter(Boolean)
+              .join(" ");
             
             return (
               <div 
                 key={`mobile-row-${rowIndex}`} 
-                className={`mobile-table-card ${statusInfo.borderClass}`}
+                className={mobileRowClassName}
                 style={row._rowStyle || {}}
                 onClick={() => setSelectedCardIndex(rowIndex)}
               >
@@ -483,6 +488,10 @@ export function Table({
           const rowClassNames = ["data-table__row"];
           if (row._onRowClick) {
             rowClassNames.push("data-table__row--clickable");
+          }
+
+          if (typeof row?._rowClassName === "string" && row._rowClassName.trim()) {
+            rowClassNames.push(row._rowClassName.trim());
           }
           
           const handleRowClick = (event) => {

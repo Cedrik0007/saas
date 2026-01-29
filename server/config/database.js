@@ -3,15 +3,25 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://0741sanjai_db_user:L11x9pdm3tHuOJE9@members.mmnf0pe.mongodb.net/subscriptionmanager";
-
 const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
   throw new Error("MONGODB_URI is not defined. Fix your .env file.");
 }
 
-console.log("MONGO URI USED:", MONGODB_URI);
+const redactMongoUri = (uri) => {
+  try {
+    const parsed = new URL(uri);
+    // Preserve scheme/host/db, strip credentials + query
+    const dbPath = parsed.pathname || "";
+    return `${parsed.protocol}//${parsed.host}${dbPath}`;
+  } catch {
+    // Fallback: strip credentials in the common scheme://user:pass@host form
+    return String(uri).replace(/:\/\/.*@/, "://***@");
+  }
+};
+
+console.log("MONGO URI USED:", redactMongoUri(MONGODB_URI));
 
 
 

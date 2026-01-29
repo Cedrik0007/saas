@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
@@ -6,7 +6,8 @@ import { Table } from "../components/Table.jsx";
 import { Notie } from "../components/Notie.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
-import { SUBSCRIPTION_TYPES, SUBSCRIPTION_TYPE_OPTIONS, normalizeSubscriptionType } from "../constants/subscriptionTypes.js";
+import Select from "react-select";
+import { SUBSCRIPTION_TYPES, SUBSCRIPTION_TYPE_OPTIONS, getSubscriptionTypeDisplayParts, normalizeSubscriptionType } from "../constants/subscriptionTypes.js";
 
 export function ServerPage() {
   const {
@@ -47,6 +48,42 @@ export function ServerPage() {
   const [notieMessage, setNotieMessage] = useState(null);
   const [notieType, setNotieType] = useState("success");
   const [notieDuration, setNotieDuration] = useState(3000);
+
+  // UI-only: temporarily highlight the newest member row when a new member appears.
+  const [newestMemberHighlightKey, setNewestMemberHighlightKey] = useState(null);
+  const lastSeenNewestMemberKeyRef = useRef(null);
+  const lastSeenMembersCountRef = useRef(null);
+  const newestMemberHighlightTimeoutRef = useRef(null);
+
+  const isArchivedMember = (member) => {
+    if (!member) return false;
+    const statusLower = String(member.status || "").trim().toLowerCase();
+    return Boolean(member.archived) || Boolean(member.isArchived) || statusLower === "archived";
+  };
+
+  const getMemberHighlightKey = (member) => {
+    if (!member) return null;
+    return String(member._id || member.id || member.memberNo || "").trim() || null;
+  };
+
+  const getNewestMember = (membersList) => {
+    if (!Array.isArray(membersList) || membersList.length === 0) return null;
+    const activeMembers = membersList.filter((m) => !isArchivedMember(m));
+    if (activeMembers.length === 0) return null;
+    return [...activeMembers].sort((a, b) => {
+      const aCreated = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bCreated = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (aCreated !== bCreated) return bCreated - aCreated;
+
+      const aNoRaw = a?.memberNo;
+      const bNoRaw = b?.memberNo;
+      const aNo = typeof aNoRaw === "number" ? aNoRaw : parseInt(String(aNoRaw || ""), 10);
+      const bNo = typeof bNoRaw === "number" ? bNoRaw : parseInt(String(bNoRaw || ""), 10);
+      if (!Number.isNaN(aNo) && !Number.isNaN(bNo) && aNo !== bNo) return bNo - aNo;
+
+      return String(b?._id || "").localeCompare(String(a?._id || ""));
+    })[0];
+  };
 
     const mongoObjectIdRegex = /^[a-f\d]{24}$/i;
 
@@ -125,6 +162,55 @@ export function ServerPage() {
     fetchPaymentMethods();
   }, []);
 
+  useEffect(() => {
+    const membersCount = Array.isArray(members) ? members.length : 0;
+    const newestMember = getNewestMember(members);
+    const newestKey = getMemberHighlightKey(newestMember);
+    if (!newestKey) {
+      if (lastSeenMembersCountRef.current === null) {
+        lastSeenMembersCountRef.current = membersCount;
+      }
+      return;
+    }
+
+    // Avoid highlighting on initial load / refresh.
+    if (lastSeenNewestMemberKeyRef.current === null || lastSeenMembersCountRef.current === null) {
+      lastSeenNewestMemberKeyRef.current = newestKey;
+      lastSeenMembersCountRef.current = membersCount;
+      return;
+    }
+
+    const previousNewestKey = lastSeenNewestMemberKeyRef.current;
+    const previousCount = lastSeenMembersCountRef.current;
+    const newestChanged = newestKey !== previousNewestKey;
+    const countIncreased = membersCount > previousCount;
+
+    lastSeenNewestMemberKeyRef.current = newestKey;
+    lastSeenMembersCountRef.current = membersCount;
+
+    // Highlight ONLY after creating a new member.
+    if (newestChanged && countIncreased) {
+      setNewestMemberHighlightKey(newestKey);
+
+      if (newestMemberHighlightTimeoutRef.current) {
+        clearTimeout(newestMemberHighlightTimeoutRef.current);
+      }
+
+      newestMemberHighlightTimeoutRef.current = setTimeout(() => {
+        setNewestMemberHighlightKey(null);
+        newestMemberHighlightTimeoutRef.current = null;
+      }, 4000);
+    }
+  }, [members]);
+
+  useEffect(() => {
+    return () => {
+      if (newestMemberHighlightTimeoutRef.current) {
+        clearTimeout(newestMemberHighlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const showToast = (message, type = "success", durationMs) => {
     setNotieMessage(message);
     setNotieType(type);
@@ -133,6 +219,99 @@ export function ServerPage() {
         ? durationMs
         : (type === "error" ? 5000 : 3000)
     );
+  };
+
+  const getInvoiceAmountCurrentYear = (subscriptionType, { isNewMember, member } = {}) => {
+    const normalizedType = normalizeSubscriptionType(subscriptionType);
+    if (normalizedType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) return 500;
+    if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND) return 250;
+
+    if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
+      if (isNewMember) return 5250;
+
+      const currentYear = String(new Date().getFullYear());
+      const currentId = member?.id ? String(member.id).trim() : "";
+      const memberNo = member?.memberNo != null ? String(member.memberNo) : "";
+      const previousIds = new Set(
+        Array.isArray(member?.previousDisplayIds)
+          ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
+          : []
+      );
+
+      const hasUnpaid5250 = Array.isArray(invoices) && invoices.some((inv) => {
+        const amount = Number(String(inv?.amount ?? "").replace(/[^0-9.]/g, ""));
+        if (amount !== 5250) return false;
+
+        const status = String(inv?.status ?? "").trim().toLowerCase();
+        if (status === "paid") return false;
+
+        const period = String(inv?.period ?? "");
+        if (!period.includes(currentYear)) return false;
+
+        const invMemberNo = inv?.memberNo != null ? String(inv.memberNo) : "";
+        const invMemberId = inv?.memberId != null ? String(inv.memberId).trim() : "";
+
+        const matchesByNo = memberNo && invMemberNo && invMemberNo === memberNo;
+        const matchesById = currentId && invMemberId && invMemberId === currentId;
+        const matchesByPreviousId = invMemberId && previousIds.has(invMemberId);
+
+        return matchesByNo || matchesById || matchesByPreviousId;
+      });
+
+      return hasUnpaid5250 ? 5250 : 250;
+    }
+
+    return 500;
+  };
+
+  const formatSubscriptionTypeOptionLabel = (option) => {
+    const { name, amountText } = getSubscriptionTypeDisplayParts(option?.value);
+    return (
+      <span style={{ whiteSpace: "nowrap" }}>
+        <span style={{ fontWeight: 500, color: "#111827" }}>{name}</span>
+        <span style={{ fontSize: 12, color: "#6B7280" }}>{amountText}</span>
+      </span>
+    );
+  };
+
+  const subscriptionTypeSelectStyles = {
+    control: (base, state) => ({
+      ...base,
+      minHeight: 38,
+      borderRadius: 6,
+      borderColor: state.isFocused ? "#5a31ea" : "#e5e7eb",
+      boxShadow: state.isFocused ? "0 0 0 3px rgba(90, 49, 234, 0.1)" : "none",
+      cursor: "pointer",
+      "&:hover": {
+        borderColor: state.isFocused ? "#5a31ea" : "#d1d5db",
+      },
+    }),
+    valueContainer: (base) => ({
+      ...base,
+      padding: "0 10px",
+    }),
+    indicatorSeparator: (base) => ({
+      ...base,
+      display: "none",
+    }),
+    menu: (base) => ({
+      ...base,
+      zIndex: 9999,
+    }),
+    option: (base, state) => ({
+      ...base,
+      whiteSpace: "nowrap",
+      backgroundColor: state.isSelected ? "#E5E7EB" : (state.isFocused ? "#F3F4F6" : "#FFFFFF"),
+      color: "#111827",
+      ":active": {
+        ...base[":active"],
+        backgroundColor: "#E5E7EB",
+      },
+    }),
+    singleValue: (base) => ({
+      ...base,
+      color: "#111827",
+    }),
   };
 
   const handleLogout = () => {
@@ -151,6 +330,7 @@ export function ServerPage() {
         ...memberForm,
         subscriptionType: normalizeSubscriptionType(memberForm.subscriptionType),
       };
+      delete payload.balance;
       await addMember(payload);
       showToast("Member added successfully!");
       setShowForm(false);
@@ -168,6 +348,7 @@ export function ServerPage() {
         ...memberForm,
         subscriptionType: normalizeSubscriptionType(memberForm.subscriptionType),
       };
+      delete payload.balance;
       if (!editingItem?._id) {
         showToast("Member data not available. Please refresh the page.", "error");
         return;
@@ -175,13 +356,13 @@ export function ServerPage() {
 
       const originalType = normalizeSubscriptionType(editingItem.subscriptionType);
       const requestedType = normalizeSubscriptionType(payload.subscriptionType);
-      const isAnnualToLifetimeUpgrade =
+      const requiresIdChangeConfirmation =
         originalType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER
-        && requestedType !== SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+        && requestedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
 
-      if (isAnnualToLifetimeUpgrade) {
+      if (requiresIdChangeConfirmation) {
         const { subscriptionType: _ignored, ...rest } = payload;
-        const upgraded = await upgradeMemberSubscription(editingItem._id, requestedType);
+        const upgraded = await upgradeMemberSubscription(editingItem._id, SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND);
         if (Object.keys(rest).length > 0) {
           await updateMember(editingItem._id, rest);
         }
@@ -742,13 +923,17 @@ export function ServerPage() {
                           </select>
                         </label>
                         <label>
-                          <span><i className="fas fa-dollar-sign server-form-icon"></i>Balance</span>
+                          <span><i className="fas fa-dollar-sign server-form-icon"></i>Invoice Amount (Current Year)</span>
                           <input
-                            type="text"
-                            value={memberForm.balance}
-                            onChange={(e) => setMemberForm({ ...memberForm, balance: e.target.value })}
+                            type="number"
+                            inputMode="numeric"
+                            value={getInvoiceAmountCurrentYear(memberForm.subscriptionType, { isNewMember: !editingItem, member: editingItem })}
+                            readOnly
                             className="mono-input"
                           />
+                          <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 4 }}>
+                            This is the amount that will be billed for the selected subscription for the current year.
+                          </div>
                         </label>
                         <label>
                           <span><i className="fas fa-calendar server-form-icon"></i>Next Due</span>
@@ -770,17 +955,19 @@ export function ServerPage() {
                         </label>
                         <label>
                           <span><i className="fas fa-id-card server-form-icon"></i>Subscription Type</span>
-                          <select
-                            value={memberForm.subscriptionType}
-                            onChange={(e) => setMemberForm({ ...memberForm, subscriptionType: normalizeSubscriptionType(e.target.value) })}
-                            className="mono-input"
-                          >
-                            {SUBSCRIPTION_TYPE_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
+                          <Select
+                            inputId="server-member-subscription-type"
+                            isSearchable={false}
+                            options={SUBSCRIPTION_TYPE_OPTIONS}
+                            value={
+                              SUBSCRIPTION_TYPE_OPTIONS.find(
+                                (opt) => opt.value === (memberForm.subscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER)
+                              )
+                            }
+                            onChange={(opt) => setMemberForm({ ...memberForm, subscriptionType: normalizeSubscriptionType(opt?.value) })}
+                            formatOptionLabel={formatSubscriptionTypeOptionLabel}
+                            styles={subscriptionTypeSelectStyles}
+                          />
                         </label>
                         <div className="server-form-actions">
                           <button type="button" className="secondary-btn" onClick={handleCancelForm}>
@@ -797,7 +984,15 @@ export function ServerPage() {
                   <div className="server-table-container">
                     <Table
                     columns={["ID", "Name", "Email", "Phone", "Status", "Balance", "Actions"]}
-                    rows={members.map((member) => ({
+                    rows={members.map((member) => {
+                      const highlightKey = getMemberHighlightKey(member);
+                      const shouldAllowHighlight = !isArchivedMember(member);
+                      return {
+                      id: member._id || member.id || member.memberNo,
+                      _rowClassName:
+                        shouldAllowHighlight && highlightKey && newestMemberHighlightKey && highlightKey === newestMemberHighlightKey
+                          ? "new-row-highlight"
+                          : undefined,
                       ID: member.id,
                       Name: member.name,
                       Email: member.email,
@@ -834,7 +1029,8 @@ export function ServerPage() {
                           </div>
                         ),
                       },
-                    }))}
+                      };
+                    })}
                     />
                   </div>
                 </>

@@ -16,7 +16,7 @@ export function SignupPage() {
     phone: "",
     password: "",
     confirmPassword: "",
-    subscriptionType: SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER,
+    subscriptionType: SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
   });
   // All errors now use Notie
   const [loading, setLoading] = useState(false);
@@ -316,19 +316,27 @@ export function SignupPage() {
                 <div className="signup-subscription-grid">
                   <button
                     type="button"
-                    onClick={() => setForm({ ...form, subscriptionType: SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER })}
-                    className={`signup-subscription-button ${form.subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER ? "signup-subscription-button--active" : "signup-subscription-button--default"}`}
-                  >
-                    <div className="signup-subscription-button-title">Lifetime Janaza Fund Member</div>
-                    <div className="signup-subscription-button-price">HK$250/year</div>
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setForm({ ...form, subscriptionType: SUBSCRIPTION_TYPES.ANNUAL_MEMBER })}
                     className={`signup-subscription-button ${form.subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER ? "signup-subscription-button--active" : "signup-subscription-button--default"}`}
                   >
                     <div className="signup-subscription-button-title">Annual Member</div>
                     <div className="signup-subscription-button-price">HK$500/year</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, subscriptionType: SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND })}
+                    className={`signup-subscription-button ${form.subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND ? "signup-subscription-button--active" : "signup-subscription-button--default"}`}
+                  >
+                    <div className="signup-subscription-button-title">Lifetime Janaza Fund</div>
+                    <div className="signup-subscription-button-price">HK$250/year</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, subscriptionType: SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND })}
+                    className={`signup-subscription-button ${form.subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND ? "signup-subscription-button--active" : "signup-subscription-button--default"}`}
+                  >
+                    <div className="signup-subscription-button-title">Lifetime Member + Janaza Fund</div>
+                    <div className="signup-subscription-button-price">HK$5250 first year</div>
                   </button>
                 </div>
               </label>

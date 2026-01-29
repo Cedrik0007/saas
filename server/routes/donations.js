@@ -78,12 +78,19 @@ router.get("/:id/pdf-receipt", async (req, res) => {
     // Convert Mongoose document to plain object
     const donationData = donation.toObject ? donation.toObject() : donation;
 
-    // Get member if donation is from a member
+    // Get member if donation is from a member (support previous display IDs)
     let member = null;
     if (donationData.isMember && donationData.memberId) {
-      member = await UserModel.findOne({ id: donationData.memberId });
-      if (member && member.toObject) {
-        member = member.toObject();
+      member = await UserModel.findOne({
+        $or: [
+          { id: donationData.memberId },
+          { "previousDisplayIds.id": donationData.memberId },
+        ],
+      });
+
+      if (member) {
+        member = member.toObject ? member.toObject() : member;
+        member = { ...member, id: member?.id };
       }
     }
 

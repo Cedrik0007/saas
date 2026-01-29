@@ -1073,7 +1073,18 @@ router.get("/:id/pdf-receipt/download", async (req, res) => {
 
     // Generate PDF receipt - use receipt number from invoice if available
     const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
-    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData, invoice.receiptNumber);
+    const memberPayload = {
+      ...(typeof member?.toObject === "function" ? member.toObject() : member),
+      id: typeof member?.get === "function" ? member.get("id") : member?.id,
+      subscriptionType: member?.subscriptionType,
+    };
+
+    const invoicePayload = {
+      ...(typeof invoice?.toObject === "function" ? invoice.toObject() : invoice),
+    };
+    delete invoicePayload.subscriptionType;
+
+    const pdfBuffer = await generatePaymentReceiptPDF(memberPayload, invoicePayload, paymentData, invoice.receiptNumber);
 
     // Determine Content-Disposition based on mode query param
     const mode = req.query.mode || 'download'; // 'view' or 'download'
@@ -1147,7 +1158,18 @@ router.get("/:id/pdf-receipt", async (req, res) => {
 
     // Generate PDF receipt - use receipt number from invoice if available
     const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
-    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData, invoice.receiptNumber);
+    const memberPayload = {
+      ...(typeof member?.toObject === "function" ? member.toObject() : member),
+      id: typeof member?.get === "function" ? member.get("id") : member?.id,
+      subscriptionType: member?.subscriptionType,
+    };
+
+    const invoicePayload = {
+      ...(typeof invoice?.toObject === "function" ? invoice.toObject() : invoice),
+    };
+    delete invoicePayload.subscriptionType;
+
+    const pdfBuffer = await generatePaymentReceiptPDF(memberPayload, invoicePayload, paymentData, invoice.receiptNumber);
 
     // Upload PDF to Cloudinary if configured
     if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
@@ -1258,14 +1280,28 @@ router.get("/:id/pdf-receipt/view", async (req, res) => {
 
     // Generate PDF receipt - use receipt number from invoice if available
     const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
-    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData, invoice.receiptNumber);
+    const memberPayload = {
+      ...(typeof member?.toObject === "function" ? member.toObject() : member),
+      id: typeof member?.get === "function" ? member.get("id") : member?.id,
+      subscriptionType: member?.subscriptionType,
+    };
 
-    // Set headers for PDF view (inline instead of attachment)
+    const invoicePayload = {
+      ...(typeof invoice?.toObject === "function" ? invoice.toObject() : invoice),
+    };
+    delete invoicePayload.subscriptionType;
+
+    const pdfBuffer = await generatePaymentReceiptPDF(memberPayload, invoicePayload, paymentData, invoice.receiptNumber);
+
+    // Set headers for PDF view (inline instead of attachment, with caching disabled)
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="Receipt_${invoice.id}.pdf"`);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Length', pdfBuffer.length);
-    
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     // Send PDF buffer directly
     res.send(pdfBuffer);
   } catch (error) {
@@ -1315,7 +1351,18 @@ router.get("/:id/pdf-receipt/whatsapp", async (req, res) => {
     };
 
     const { generatePaymentReceiptPDF } = await import("../utils/pdfReceipt.js");
-    const pdfBuffer = await generatePaymentReceiptPDF(member, invoice, paymentData, invoice.receiptNumber);
+    const memberPayload = {
+      ...(typeof member?.toObject === "function" ? member.toObject() : member),
+      id: typeof member?.get === "function" ? member.get("id") : member?.id,
+      subscriptionType: member?.subscriptionType,
+    };
+
+    const invoicePayload = {
+      ...(typeof invoice?.toObject === "function" ? invoice.toObject() : invoice),
+    };
+    delete invoicePayload.subscriptionType;
+
+    const pdfBuffer = await generatePaymentReceiptPDF(memberPayload, invoicePayload, paymentData, invoice.receiptNumber);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="Receipt_${invoice.id}.pdf"`);

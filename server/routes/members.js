@@ -11,7 +11,7 @@ import CounterModel from "../models/Counter.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { sendAccountApprovalEmail } from "../utils/emailHelpers.js";
 import { emitMemberUpdate } from "../config/socket.js";
-import { SUBSCRIPTION_TYPES, calculateFees } from "../utils/subscriptionTypes.js";
+import { SUBSCRIPTION_TYPES, calculateFees, calculateFeesForMember, normalizeSubscriptionType } from "../utils/subscriptionTypes.js";
 import { getNextReceiptNumberStrict } from "../utils/receiptCounter.js";
 
 const router = express.Router();
@@ -23,8 +23,7 @@ const { Types } = mongoose;
 
 const ALLOWED_SUBSCRIPTION_TYPES = [
   SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
-  SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER,
-  SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP,
+  SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND,
 ];
 
 const normalizeMemberIdValue = (rawValue = "") => {
@@ -47,22 +46,10 @@ const formatMemberIdForSave = (rawValue) => {
   return normalized;
 };
 
-const normalizeSubscriptionTypeValue = (rawValue) => {
-  if (!rawValue) return "Annual Member";
-  const trimmed = String(rawValue).trim();
-  if (!trimmed) return "Annual Member";
-  if (trimmed === "Annual Member") return "Annual Member";
-  if (trimmed === "Lifetime Janaza Fund Member") return "Lifetime Janaza Fund Member";
-  if (trimmed === "Lifetime Membership") return "Lifetime Membership";
-  const lowered = trimmed.toLowerCase();
-  if (lowered.includes("annual") || lowered.includes("yearly")) return "Annual Member";
-  if (lowered.includes("lifetime membership")) return "Lifetime Membership";
-  if (lowered.includes("lifetime")) return "Lifetime Janaza Fund Member";
-  return "Annual Member";
-};
+const normalizeSubscriptionTypeValue = (rawValue) => normalizeSubscriptionType(rawValue);
 
 const getDisplayIdPrefix = (subscriptionType) =>
-  normalizeSubscriptionTypeValue(subscriptionType) === "Annual Member" ? "AM" : "LM";
+  normalizeSubscriptionTypeValue(subscriptionType) === SUBSCRIPTION_TYPES.ANNUAL_MEMBER ? "AM" : "LM";
 
 const buildNextDisplayId = async (prefix, options = {}) => {
   const session = options?.session;
@@ -184,7 +171,9 @@ const findMemberByIdentifier = async (identifier) => {
 router.get("/", async (req, res) => {
   try {
     await ensureConnection();
-    const members = await UserModel.find({}).sort({ createdAt: -1 }).lean();
+    const includeArchived = String(req.query?.includeArchived || "").trim().toLowerCase() === "true";
+    const query = includeArchived ? {} : { status: { $ne: "Archived" } };
+    const members = await UserModel.find(query).sort({ createdAt: -1 }).lean();
     const aliasToCurrentId = new Map();
     members.forEach((member) => {
       const currentId = typeof member?.id === "string" ? member.id.trim() : "";
@@ -277,7 +266,7 @@ router.post("/:id/upgrade-subscription", async (req, res) => {
     }
 
     if (requestedType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
-      return res.status(400).json({ message: "Upgrade target must be a Lifetime subscription type" });
+      return res.status(400).json({ message: "Upgrade target must be Lifetime Member + Janaza Fund" });
     }
 
     if (!ALLOWED_SUBSCRIPTION_TYPES.includes(requestedType)) {
@@ -291,6 +280,11 @@ router.post("/:id/upgrade-subscription", async (req, res) => {
     if (!member) {
       await session.abortTransaction();
       return res.status(404).json({ message: "Member not found" });
+    }
+
+    if (String(member.status || "").trim().toLowerCase() === "archived") {
+      await session.abortTransaction();
+      return res.status(400).json({ message: "Archived members cannot be upgraded." });
     }
 
     const originalMemberNo = member.memberNo;
@@ -321,6 +315,7 @@ router.post("/:id/upgrade-subscription", async (req, res) => {
 
     member.subscriptionType = requestedType;
     member.id = newDisplayId;
+    member.janazaOnly = false;
 
     if (member.memberNo !== originalMemberNo) {
       const err = new Error("memberNo must not change during upgrade.");
@@ -331,8 +326,8 @@ router.post("/:id/upgrade-subscription", async (req, res) => {
     await member.save({ session });
 
     // Auto-create an invoice for upgrades (must be in the same transaction)
-    // - Annual -> Lifetime Membership: create 1 unpaid invoice charging lifetime membership fee (upgrade year)
-    // - Annual -> Lifetime Janaza Fund Member: create 1 paid invoice with amount 0 (upgrade year)
+    // Rule: Annual -> Lifetime Member + Janaza Fund
+    // - Generate ONE invoice only: HK$5250 (first payment/upgrade)
     const upgradeYear = new Date().getFullYear();
     const period = String(upgradeYear);
 
@@ -354,31 +349,17 @@ router.post("/:id/upgrade-subscription", async (req, res) => {
       year: "numeric",
     }).replace(",", "");
 
-    let invoiceStatus = "Unpaid";
-    let invoiceType = "lifetime_membership";
-    let membershipFee = 0;
-    let janazaFee = 0;
-    let invoiceAmountNumber = 0;
-    let receiptNumber = null;
-
-    if (requestedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
-      const fees = calculateFees(SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP, false);
-      membershipFee = Number(fees?.membershipFee || 0);
-      janazaFee = 0;
-      invoiceAmountNumber = membershipFee;
-      invoiceStatus = "Unpaid";
-      invoiceType = "lifetime_membership";
-    } else if (requestedType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
-      const fees = calculateFees(SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER, false);
-      membershipFee = 0;
-      janazaFee = Number(fees?.janazaFee || 0);
-      invoiceAmountNumber = 0;
-      invoiceStatus = "Paid";
-      invoiceType = "janaza";
-      receiptNumber = await getNextReceiptNumberStrict({ session });
-    } else {
-      throw new Error(`Unsupported upgrade target for auto-invoice: ${requestedType}`);
-    }
+    const fees = calculateFeesForMember({
+      subscriptionType: SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND,
+      lifetimeMembershipPaid: false,
+      janazaOnly: false,
+    });
+    const membershipFee = Number(fees?.membershipFee || 0);
+    const janazaFee = Number(fees?.janazaFee || 0);
+    const invoiceAmountNumber = Number(fees?.totalFee || 0);
+    const invoiceStatus = "Unpaid";
+    const invoiceType = "lifetime_membership";
+    const receiptNumber = null;
 
     if (!Number.isFinite(invoiceAmountNumber) || invoiceAmountNumber < 0) {
       throw new Error("Invalid invoice amount for upgrade invoice");
@@ -414,6 +395,7 @@ router.post("/:id/upgrade-subscription", async (req, res) => {
       amount: `HK$${invoiceAmountNumber.toFixed(2)}`,
       membershipFee,
       janazaFee,
+      subscriptionType: SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND,
       invoiceType,
       status: invoiceStatus,
       due: dueDateFormatted,
@@ -456,7 +438,8 @@ router.post("/:id/upgrade-subscription", async (req, res) => {
 router.get("/count", async (req, res) => {
   try {
     await ensureConnection();
-    const count = await UserModel.countDocuments();
+    const includeArchived = String(req.query?.includeArchived || "").trim().toLowerCase() === "true";
+    const count = await UserModel.countDocuments(includeArchived ? {} : { status: { $ne: "Archived" } });
     res.json({ total: count })
   } catch (error) {
     console.error("Error fetching members:", error);
@@ -491,9 +474,15 @@ router.post("/", async (req, res) => {
   try {
     await ensureConnection();
 
-    if (Object.prototype.hasOwnProperty.call(req.body, "id")) {
-      return res.status(400).json({ message: "Member ID is generated automatically and cannot be provided." });
+    const hasMemberId = Object.prototype.hasOwnProperty.call(req.body, "id");
+    if (hasMemberId && isDisallowedMemberIdValue(req.body.id)) {
+      const normalized = normalizeMemberIdValue(req.body.id);
+      if (normalized === "NOT ASSIGNED") {
+        return res.status(400).json({ message: "Member ID cannot be Not Assigned." });
+      }
+      return res.status(400).json({ message: "Member ID cannot be empty." });
     }
+
     if (Object.prototype.hasOwnProperty.call(req.body, "memberNo")) {
       return res.status(400).json({ message: "memberNo is generated by the backend and cannot be provided." });
     }
@@ -512,9 +501,15 @@ router.post("/", async (req, res) => {
     const subscriptionTypeInput = typeof req.body.subscriptionType === "string" ? req.body.subscriptionType.trim() : "";
     const normalizedSubscriptionType = normalizeSubscriptionTypeValue(subscriptionTypeInput || SUBSCRIPTION_TYPES.ANNUAL_MEMBER);
 
-    if (!subscriptionTypeInput) {
-      errors.push("Subscription type is required.");
-    } else if (!ALLOWED_SUBSCRIPTION_TYPES.includes(normalizedSubscriptionType)) {
+    // Legacy-only selection: "Lifetime Janaza Fund" should not create a new DB subscriptionType.
+    // We store the official lifetime type and set janazaOnly=true so billing stays HK$250/year.
+    const loweredSubscriptionTypeInput = subscriptionTypeInput.toLowerCase();
+    const janazaOnly = !!subscriptionTypeInput
+      && loweredSubscriptionTypeInput.includes("lifetime")
+      && loweredSubscriptionTypeInput.includes("janaza")
+      && !loweredSubscriptionTypeInput.includes("+");
+
+    if (subscriptionTypeInput && !ALLOWED_SUBSCRIPTION_TYPES.includes(normalizedSubscriptionType)) {
       errors.push("Invalid subscription type.");
     }
     
@@ -579,20 +574,45 @@ router.post("/", async (req, res) => {
         errors: errors 
       });
     }
-    
-    session = await mongoose.startSession();
-    session.startTransaction();
+
+    // Transactions require a replica set / mongos. MongoMemoryServer (standalone) will fail.
+    let supportsTransactions = false;
+    try {
+      const admin = mongoose.connection.db?.admin();
+      const hello = admin ? await admin.command({ hello: 1 }) : null;
+      supportsTransactions = !!hello?.setName;
+    } catch {
+      try {
+        const admin = mongoose.connection.db?.admin();
+        const isMaster = admin ? await admin.command({ isMaster: 1 }) : null;
+        supportsTransactions = !!isMaster?.setName;
+      } catch {
+        supportsTransactions = false;
+      }
+    }
+
+    if (supportsTransactions) {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    }
 
     const subscriptionType = normalizedSubscriptionType;
-    const prefix = getDisplayIdPrefix(subscriptionType);
-    const memberId = await buildNextDisplayId(prefix, { session });
+    let memberId = hasMemberId ? formatMemberIdForSave(req.body.id) : undefined;
+    if (!memberId) {
+      const prefix = getDisplayIdPrefix(subscriptionType);
+      memberId = await buildNextDisplayId(prefix, session ? { session } : {});
+    }
     
     // Check if email already exists (only if email is provided)
     if (req.body.email && req.body.email.trim()) {
-      const existingEmail = await UserModel.findOne({ email: req.body.email.trim().toLowerCase() }).session(session);
-    if (existingEmail) {
-      await session.abortTransaction();
-      return res.status(400).json({ message: "Email already exists" });
+      const emailQuery = UserModel.findOne({ email: req.body.email.trim().toLowerCase() });
+      if (session) emailQuery.session(session);
+      const existingEmail = await emailQuery;
+      if (existingEmail) {
+        if (session) {
+          await session.abortTransaction();
+        }
+        return res.status(400).json({ message: "Email already exists" });
       }
     }
     
@@ -602,9 +622,13 @@ router.post("/", async (req, res) => {
       const cleaned = phoneStr.replace(/[^\d+]/g, "");
       const normalizedPhone = cleaned.startsWith("+") ? cleaned : `+${cleaned}`;
       
-      const existingPhone = await UserModel.findOne({ phone: normalizedPhone }).session(session);
+      const phoneQuery = UserModel.findOne({ phone: normalizedPhone });
+      if (session) phoneQuery.session(session);
+      const existingPhone = await phoneQuery;
       if (existingPhone) {
-        await session.abortTransaction();
+        if (session) {
+          await session.abortTransaction();
+        }
         return res.status(400).json({ message: "Phone number already exists" });
       }
     }
@@ -640,12 +664,19 @@ router.post("/", async (req, res) => {
     const memberNoCounter = await CounterModel.findOneAndUpdate(
       { key: "memberNo" },
       { $inc: { seq: 1 } },
-      { upsert: true, new: true, setDefaultsOnInsert: true, session }
+      { upsert: true, new: true, setDefaultsOnInsert: true, ...(session ? { session } : {}) }
     );
     if (!memberNoCounter) {
       throw new Error("Failed to generate memberNo");
     }
     const memberNo = memberNoCounter.seq;
+
+    const lifetimeMembershipPaid = !!req.body.lifetimeMembershipPaid;
+    const fees = calculateFeesForMember({
+      subscriptionType,
+      lifetimeMembershipPaid,
+      janazaOnly,
+    });
 
     const newMember = new UserModel({
       memberNo,
@@ -661,9 +692,10 @@ router.post("/", async (req, res) => {
       lastPayment: req.body.lastPayment || '',
       subscriptionType,
       // Subscription fee fields - set based on subscription type
-      membershipFee: req.body.membershipFee !== undefined ? req.body.membershipFee : 0,
-      janazaFee: req.body.janazaFee !== undefined ? req.body.janazaFee : 250,
-      lifetimeMembershipPaid: req.body.lifetimeMembershipPaid || false,
+      membershipFee: fees.membershipFee,
+      janazaFee: fees.janazaFee,
+      lifetimeMembershipPaid,
+      janazaOnly,
       // Payment management fields - set defaults on creation
       start_date: startDate,
       payment_status: 'unpaid',
@@ -674,50 +706,24 @@ router.post("/", async (req, res) => {
     });
 
     let savedMember;
-    try {
-      savedMember = await newMember.save({ session });
-    } catch (saveError) {
-      if (saveError?.code === 11000 && saveError?.keyPattern?.id) {
-        const retryMemberId = await buildNextDisplayId(prefix, { session });
-        newMember.id = retryMemberId;
-        try {
-          savedMember = await newMember.save({ session });
-        } catch (retryError) {
-          if (retryError?.code === 11000 && retryError?.keyPattern?.id) {
-            const err = new Error("Failed to generate a unique Member ID. Please try again.");
-            err.statusCode = 409;
-            throw err;
-          }
-          throw retryError;
-        }
-      } else {
-        throw saveError;
-      }
-    }
+    savedMember = await newMember.save(session ? { session } : undefined);
 
     // Determine the invoice period first to check for duplicates accurately
     const invoiceSubscriptionType = subscriptionType;
-    
-    // Calculate fees based on subscription type
-    const fees = calculateFees(invoiceSubscriptionType, savedMember.lifetimeMembershipPaid || false);
-    
-    // Set member fees based on subscription type
-    savedMember.membershipFee = fees.membershipFee;
-    savedMember.janazaFee = fees.janazaFee;
-    await savedMember.save({ session });
+    const normalizedInvoiceSubscriptionType = normalizeSubscriptionType(invoiceSubscriptionType);
 
     if (savedMember.id) {
       let invoicePeriod = 'Lifetime Subscription';
-      if (invoiceSubscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+      if (normalizedInvoiceSubscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
         invoicePeriod = 'Annual Member Subscription';
-      } else if (invoiceSubscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
-        invoicePeriod = 'Lifetime Janaza Fund Member Subscription';
-      } else if (invoiceSubscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
-        invoicePeriod = savedMember.lifetimeMembershipPaid 
-          ? 'Lifetime Membership - Janaza Fund'
-          : 'Lifetime Membership - Full Payment';
-      } else if (invoiceSubscriptionType === 'Yearly + Janaza Fund') {
-        invoicePeriod = 'Yearly Subscription + Janaza Fund';
+      } else if (normalizedInvoiceSubscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
+        if (savedMember.janazaOnly) {
+          invoicePeriod = 'Lifetime Janaza Fund';
+        } else {
+          invoicePeriod = savedMember.lifetimeMembershipPaid
+            ? 'Lifetime Member + Janaza Fund - Janaza Fund'
+            : 'Lifetime Member + Janaza Fund - Full Payment';
+        }
       }
       
       // If subscriptionYear is provided, use it as the period
@@ -725,7 +731,7 @@ router.post("/", async (req, res) => {
         invoicePeriod = req.body.subscriptionYear;
       }
 
-      const existingInvoice = await InvoiceModel.findOne({
+      const existingInvoiceQuery = InvoiceModel.findOne({
         $or: [
           { memberRef: savedMember._id },
           { memberNo: savedMember.memberNo },
@@ -733,13 +739,15 @@ router.post("/", async (req, res) => {
         ],
         period: invoicePeriod,
         status: { $ne: "Rejected" }
-      }).session(session);
+      });
+      if (session) existingInvoiceQuery.session(session);
+      const existingInvoice = await existingInvoiceQuery;
 
       if (!existingInvoice) {
         const invoiceNoCounter = await CounterModel.findOneAndUpdate(
           { key: "invoiceNo" },
           { $inc: { seq: 1 } },
-          { upsert: true, new: true, setDefaultsOnInsert: true, session }
+          { upsert: true, new: true, setDefaultsOnInsert: true, ...(session ? { session } : {}) }
         );
         if (!invoiceNoCounter) {
           throw new Error("Failed to generate invoiceNo");
@@ -774,7 +782,11 @@ router.post("/", async (req, res) => {
           invoiceType = "janaza";
         }
         
-        if (invoiceSubscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && !savedMember.lifetimeMembershipPaid) {
+        if (
+          normalizedInvoiceSubscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND &&
+          !savedMember.lifetimeMembershipPaid &&
+          !savedMember.janazaOnly
+        ) {
           invoiceType = "lifetime_membership";
         }
 
@@ -798,7 +810,7 @@ router.post("/", async (req, res) => {
         };
 
         const newInvoice = new InvoiceModel(invoiceData);
-        await newInvoice.save({ session });
+        await newInvoice.save(session ? { session } : undefined);
         console.log(`✓ Invoice created for new member ${savedMember.name} (${savedMember.id}): ${invoiceData.id}`);
       } else {
         console.log(`⚠ Invoice already exists for member ${savedMember.name} (${savedMember.id}), skipping duplicate creation`);
@@ -807,7 +819,9 @@ router.post("/", async (req, res) => {
       console.log(`ℹ Member ${savedMember.name} created without Member ID. Skipping automatic invoice generation until an ID is assigned.`);
     }
 
-    await session.commitTransaction();
+    if (session) {
+      await session.commitTransaction();
+    }
 
     let updatedMember;
     if (savedMember.id) {
@@ -855,6 +869,10 @@ router.put("/:id/approve", async (req, res) => {
       return res.status(404).json({ message: "Member not found" });
     }
 
+    if (String(member.status || "").trim().toLowerCase() === "archived") {
+      return res.status(400).json({ message: "Archived members cannot be approved." });
+    }
+
     // Update member status to Active
     member.status = "Active";
     await member.save();
@@ -883,6 +901,10 @@ router.put("/:id", async (req, res) => {
     const targetMember = await findMemberByIdentifier(identifier);
     if (!targetMember) {
       return res.status(404).json({ message: "Member not found" });
+    }
+
+    if (String(targetMember.status || "").trim().toLowerCase() === "archived") {
+      return res.status(400).json({ message: "Archived members are read-only." });
     }
     const memberQuery = { _id: targetMember._id };
     const originalMemberId = isDisallowedMemberIdValue(targetMember.id) ? null : (targetMember.id || null);
@@ -983,9 +1005,27 @@ router.put("/:id", async (req, res) => {
 
       if (Object.prototype.hasOwnProperty.call(updateData, "subscriptionType")) {
         const currentType = normalizeSubscriptionTypeValue(targetMember.subscriptionType);
-        const requestedType = normalizeSubscriptionTypeValue(updateData.subscriptionType);
+        const rawRequestedSubscription = typeof updateData.subscriptionType === "string" ? updateData.subscriptionType.trim() : "";
+        const requestedType = normalizeSubscriptionTypeValue(rawRequestedSubscription);
+
+        const rawLower = rawRequestedSubscription.toLowerCase();
+        const requestedJanazaOnly = !!rawRequestedSubscription
+          && rawLower.includes("lifetime")
+          && rawLower.includes("janaza")
+          && !rawLower.includes("+");
+
+        const desiredJanazaOnly = requestedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND
+          ? requestedJanazaOnly
+          : false;
+
         if (requestedType === currentType) {
           delete updateOps.$set.subscriptionType;
+
+          // Even if the normalized type doesn't change, allow switching between
+          // "Lifetime Janaza Fund" and "Lifetime Member + Janaza Fund" via janazaOnly.
+          if (!!targetMember.janazaOnly !== desiredJanazaOnly) {
+            updateOps.$set.janazaOnly = desiredJanazaOnly;
+          }
         } else {
           const currentPrefix = getDisplayIdPrefix(currentType);
           const nextPrefix = getDisplayIdPrefix(requestedType);
@@ -998,7 +1038,17 @@ router.put("/:id", async (req, res) => {
           }
 
           updateOps.$set.subscriptionType = requestedType;
+          updateOps.$set.janazaOnly = desiredJanazaOnly;
         }
+
+        // Keep member fee fields consistent with the requested selection.
+        const nextFees = calculateFeesForMember({
+          subscriptionType: requestedType === currentType ? currentType : requestedType,
+          lifetimeMembershipPaid: !!targetMember.lifetimeMembershipPaid,
+          janazaOnly: desiredJanazaOnly,
+        });
+        updateOps.$set.membershipFee = Number(nextFees?.membershipFee || 0);
+        updateOps.$set.janazaFee = Number(nextFees?.janazaFee || 0);
       }
 
       const member = await UserModel.findOneAndUpdate(
@@ -1080,8 +1130,24 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
-    // Delete only the member (invoices and payments are preserved)
-    await UserModel.findByIdAndDelete(member._id);
+    // Archive-only: never hard-delete members.
+    if (String(member.status || "").trim().toLowerCase() === "archived") {
+      return res.status(200).json({
+        message: "Member is already archived",
+        member: {
+          id: member.id,
+          _id: member._id,
+          name: member.name,
+          status: member.status,
+        },
+      });
+    }
+
+    await UserModel.findByIdAndUpdate(
+      member._id,
+      { $set: { status: "Archived" } },
+      { new: true }
+    );
 
     // Emit Socket.io event for real-time update
     emitMemberUpdate('deleted', { 
@@ -1089,10 +1155,10 @@ router.delete("/:id", async (req, res) => {
       _id: member._id 
     });
 
-    console.log(`✓ Member ${member.name} (${member.id || member._id}) deleted. Invoices and payments preserved.`);
+    console.log(`✓ Member ${member.name} (${member.id || member._id}) archived. Invoices and payments preserved.`);
 
     res.status(200).json({ 
-      message: "Member deleted successfully",
+      message: "Member archived successfully",
       member: {
         id: member.id,
         _id: member._id,
@@ -1236,7 +1302,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
               email: email || '',
               phone: phoneIndex !== -1 ? (values[phoneIndex]?.trim() || '') : '',
               native: nativeIndex !== -1 ? (values[nativeIndex]?.trim().replace(/[^a-zA-Z\s]/g, '') || '') : '',
-              subscriptionType: subscriptionTypeIndex !== -1 ? (values[subscriptionTypeIndex]?.trim() || 'Lifetime') : 'Lifetime',
+              subscriptionType: subscriptionTypeIndex !== -1 ? (values[subscriptionTypeIndex]?.trim() || SUBSCRIPTION_TYPES.ANNUAL_MEMBER) : SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
               subscriptionYear: subscriptionYear || '',
               start_date: startDate.toISOString().split('T')[0],
             }
@@ -1265,7 +1331,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
             phone: finalPhone,
             native: nativeIndex !== -1 ? (values[nativeIndex]?.trim().replace(/[^a-zA-Z\s]/g, '') || '') : '',
             status: statusIndex !== -1 ? (values[statusIndex]?.trim() || 'Active') : 'Active',
-            subscriptionType: subscriptionTypeIndex !== -1 ? (values[subscriptionTypeIndex]?.trim() || 'Lifetime') : 'Lifetime',
+            subscriptionType: subscriptionTypeIndex !== -1 ? (values[subscriptionTypeIndex]?.trim() || SUBSCRIPTION_TYPES.ANNUAL_MEMBER) : SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
             subscriptionYear: subscriptionYear || null,
             start_date: startDate.toISOString().split('T')[0], // Format as YYYY-MM-DD
             payment_status: 'unpaid',
@@ -1424,7 +1490,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
               email: email || '',
               phone: phoneIndex !== -1 ? String(row[phoneIndex] || '').trim() : '',
               native: nativeIndex !== -1 ? String(row[nativeIndex] || '').trim().replace(/[^a-zA-Z\s]/g, '') : '',
-              subscriptionType: subscriptionTypeIndex !== -1 ? String(row[subscriptionTypeIndex] || 'Lifetime').trim() : 'Lifetime',
+              subscriptionType: subscriptionTypeIndex !== -1 ? String(row[subscriptionTypeIndex] || SUBSCRIPTION_TYPES.ANNUAL_MEMBER).trim() : SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
               subscriptionYear: subscriptionYear || '',
               start_date: startDate.toISOString().split('T')[0],
             }
@@ -1453,7 +1519,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
             phone: finalPhone,
             native: nativeIndex !== -1 ? String(row[nativeIndex] || '').trim().replace(/[^a-zA-Z\s]/g, '') : '',
             status: statusIndex !== -1 ? String(row[statusIndex] || 'Active').trim() : 'Active',
-            subscriptionType: subscriptionTypeIndex !== -1 ? String(row[subscriptionTypeIndex] || 'Lifetime').trim() : 'Lifetime',
+            subscriptionType: subscriptionTypeIndex !== -1 ? String(row[subscriptionTypeIndex] || SUBSCRIPTION_TYPES.ANNUAL_MEMBER).trim() : SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
             subscriptionYear: subscriptionYear || null,
             start_date: startDate.toISOString().split('T')[0], // Format as YYYY-MM-DD
             payment_status: 'unpaid',
@@ -1492,7 +1558,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
             name: member.name || '',
             email: member.email || '',
             phone: member.phone || '',
-            subscriptionType: member.subscriptionType || 'Lifetime',
+            subscriptionType: member.subscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
               subscriptionYear: member.subscriptionYear || '',
             start_date: member.start_date || '',
           }
@@ -1542,7 +1608,8 @@ router.post("/import", upload.single("file"), async (req, res) => {
               name: member.name || '',
               email: member.email || '',
               phone: member.phone || '',
-              subscriptionType: member.subscriptionType || 'Lifetime',
+              subscriptionType: member.subscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
+              
               subscriptionYear: member.subscriptionYear || '',
               start_date: member.start_date || '',
             }

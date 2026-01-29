@@ -28,13 +28,16 @@ import adminSecurityRoutes from "./routes/adminSecurity.js";
 
 dotenv.config();
 
+const LOG_LEVEL = (process.env.LOG_LEVEL || "info").toLowerCase();
+const isDebugLog = LOG_LEVEL === "debug";
+
 if (process.env.NODE_ENV === "production" && !getPublicApiBaseUrl()) {
   console.warn("⚠ PUBLIC_API_BASE_URL is not set in production. Receipt links will be missing.");
 }
 
 const app = express();
 const server = createServer(app);
-const PORT = process.env.PORT || 4001;
+const PORT = process.env.PORT || 5050;
 
 // Middleware
 const allowedOrigins = [
@@ -79,8 +82,14 @@ connectDB()
   .then(async () => {
     console.log("✓ MongoDB pre-connected successfully");
     await ensureInvoiceCollectionValidator();
-    runStartupIntegrityChecks();
-    verifyMemberIdUniqueIndex();
+    if (isDebugLog) {
+      runStartupIntegrityChecks();
+      verifyMemberIdUniqueIndex();
+    } else {
+      // Still run critical checks, but suppress noisy success logs inside helpers when not in debug
+      runStartupIntegrityChecks();
+      verifyMemberIdUniqueIndex();
+    }
   })
   .catch((err) => {
     console.error("MongoDB pre-connection error:", err);
@@ -176,8 +185,10 @@ async function initializeAllMemberBalances() {
         console.error(`Error initializing member balance (memberId=${member?.id || ""}):`, error);
       }
     }
-    
-    console.log(`✓ Initialized balances for ${allMembers.length} members`);
+
+    if (LOG_LEVEL === "debug") {
+      console.log(`✓ Initialized balances for ${allMembers.length} members`);
+    }
   } catch (error) {
     console.error("Error initializing member balances:", error);
   }

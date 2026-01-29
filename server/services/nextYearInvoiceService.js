@@ -2,7 +2,7 @@ import { ensureConnection } from "../config/database.js";
 import InvoiceModel from "../models/Invoice.js";
 import UserModel from "../models/User.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
-import { calculateFees, shouldChargeMembershipFee, shouldChargeJanazaFee, SUBSCRIPTION_TYPES } from "../utils/subscriptionTypes.js";
+import { calculateFeesForMember, normalizeSubscriptionType, SUBSCRIPTION_TYPES } from "../utils/subscriptionTypes.js";
 import { getNextSequence } from "../utils/sequence.js";
 
 const buildInvoiceMemberMatch = (member) => {
@@ -78,25 +78,22 @@ async function createNextYearInvoice(member, lastPaidYear, subscriptionType) {
       return null;
     }
 
-    // Calculate fees based on subscription type and whether lifetime membership is paid
-    const fees = calculateFees(subscriptionType, member.lifetimeMembershipPaid || false);
+    // Calculate fees based on the member record (supports janazaOnly)
+    const fees = calculateFeesForMember(member);
     const invoiceAmount = `HK$${fees.totalFee}`;
     
     // Determine invoice period
     let invoicePeriod = String(nextYear);
-    if (subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+    const normalizedType = normalizeSubscriptionType(member?.subscriptionType || subscriptionType);
+
+    if (normalizedType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
       invoicePeriod = `${nextYear} Annual Member Subscription`;
-    } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
-      invoicePeriod = `${nextYear} Lifetime Janaza Fund Member Subscription`;
-    } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
-      invoicePeriod = member.lifetimeMembershipPaid 
-        ? `${nextYear} Lifetime Membership - Janaza Fund`
-        : `${nextYear} Lifetime Membership - Full Payment`;
     } else {
-      // Legacy support
-      invoicePeriod = subscriptionType === 'Yearly + Janaza Fund' 
-        ? `${nextYear} Yearly Subscription + Janaza Fund`
-        : `${nextYear} Lifetime Subscription`;
+      invoicePeriod = member?.janazaOnly
+        ? `${nextYear} Lifetime Janaza Fund`
+        : member?.lifetimeMembershipPaid
+          ? `${nextYear} Lifetime Member + Janaza Fund - Janaza Fund`
+          : `${nextYear} Lifetime Member + Janaza Fund - Full Payment`;
     }
 
     // Calculate due date (Jan 1st of the year after next year)
@@ -117,8 +114,13 @@ async function createNextYearInvoice(member, lastPaidYear, subscriptionType) {
       invoiceType = "janaza";
     }
     
-    // Special case for lifetime membership first payment
-    if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && !member.lifetimeMembershipPaid) {
+    // Special case for lifetime membership first payment (HK$5,000 lifetime fee outstanding)
+    if (
+      normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND &&
+      !member?.lifetimeMembershipPaid &&
+      !member?.janazaOnly &&
+      fees.membershipFee > 0
+    ) {
       invoiceType = "lifetime_membership";
     }
 

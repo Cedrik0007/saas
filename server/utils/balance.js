@@ -106,8 +106,9 @@ export async function calculateAndUpdateMemberBalance(memberIdentifier, options 
       { $set: { balance: balanceString } },
       { new: true, ...(session ? { session } : {}) }
     );
-
-    console.log(`✓ Updated balance for member ${member.id || member._id}: ${balanceString}`);
+    if ((process.env.LOG_LEVEL || "info").toLowerCase() === "debug") {
+      console.log(`✓ Updated balance for member ${member.id || member._id}: ${balanceString}`);
+    }
     return balanceString;
   } catch (error) {
     console.error(`Error updating balance for member ${memberIdentifier}:`, error);

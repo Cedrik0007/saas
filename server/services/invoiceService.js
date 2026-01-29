@@ -3,7 +3,7 @@ import UserModel from "../models/User.js";
 import InvoiceModel from "../models/Invoice.js";
 import PaymentModel from "../models/Payment.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
-import { calculateFees, shouldChargeMembershipFee, shouldChargeJanazaFee, SUBSCRIPTION_TYPES } from "../utils/subscriptionTypes.js";
+import { calculateFeesForMember, normalizeSubscriptionType, SUBSCRIPTION_TYPES } from "../utils/subscriptionTypes.js";
 import { getNextSequence } from "../utils/sequence.js";
 
 const buildInvoiceMemberMatch = (member) => {
@@ -24,22 +24,24 @@ const buildInvoiceMemberMatch = (member) => {
 // Helper function to create a subscription invoice
 async function createSubscriptionInvoice(member, subscriptionType, customPeriod = null) {
   try {
-    // Calculate fees based on subscription type and whether lifetime membership is paid
-    const fees = calculateFees(subscriptionType, member.lifetimeMembershipPaid || false);
+    // Calculate fees based on the member record (supports janazaOnly)
+    const fees = calculateFeesForMember(member);
     const invoiceAmount = `HK$${fees.totalFee}`;
     
     // Determine invoice period
     let invoicePeriod = customPeriod;
     if (!invoicePeriod) {
-      if (subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+      const normalizedType = normalizeSubscriptionType(subscriptionType);
+      if (normalizedType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
         invoicePeriod = 'Annual Member Subscription';
-      } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
-        invoicePeriod = 'Lifetime Janaza Fund Member Subscription';
-      } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
-        invoicePeriod = member.lifetimeMembershipPaid ? 'Lifetime Membership - Janaza Fund' : 'Lifetime Membership - Full Payment';
       } else {
-        // Legacy support
-        invoicePeriod = subscriptionType === 'Yearly + Janaza Fund' ? 'Yearly Subscription + Janaza Fund' : 'Lifetime Subscription';
+        if (member?.janazaOnly) {
+          invoicePeriod = 'Lifetime Janaza Fund';
+        } else {
+          invoicePeriod = member?.lifetimeMembershipPaid
+            ? 'Lifetime Member + Janaza Fund - Janaza Fund'
+            : 'Lifetime Member + Janaza Fund - Full Payment';
+        }
       }
     }
 
@@ -76,8 +78,14 @@ async function createSubscriptionInvoice(member, subscriptionType, customPeriod 
       invoiceType = "janaza";
     }
     
-    // Special case for lifetime membership first payment
-    if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && !member.lifetimeMembershipPaid) {
+    // Special case for lifetime membership first payment (HK$5,000 lifetime fee outstanding)
+    const normalizedTypeForInvoice = normalizeSubscriptionType(member?.subscriptionType);
+    if (
+      normalizedTypeForInvoice === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND &&
+      !member?.lifetimeMembershipPaid &&
+      !member?.janazaOnly &&
+      fees.membershipFee > 0
+    ) {
       invoiceType = "lifetime_membership";
     }
 
@@ -124,7 +132,7 @@ export async function generateSubscriptionInvoices() {
     console.log('\n🔄 ===== Starting automatic invoice generation =====');
     await ensureConnection();
 
-    // Get all active members
+    // Get all active members (exclude archived)
     const activeMembers = await UserModel.find({ status: 'Active' });
     console.log(`📋 Found ${activeMembers.length} active members to check`);
 
@@ -133,7 +141,7 @@ export async function generateSubscriptionInvoices() {
 
     for (const member of activeMembers) {
       try {
-        const subscriptionType = member.subscriptionType || 'Lifetime';
+        const subscriptionType = member.subscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
 
         // Find the last paid payment for this member
         const lastPayment = await PaymentModel.findOne({
@@ -199,19 +207,15 @@ export async function generateSubscriptionInvoices() {
           const monthYear = now.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
           
           // Determine period name based on subscription type
-          if (subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+          const normalizedType = normalizeSubscriptionType(subscriptionType);
+          if (normalizedType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
             periodName = `${monthYear} Annual Member Subscription`;
-          } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER) {
-            periodName = `${monthYear} Lifetime Janaza Fund Member Subscription`;
-          } else if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP) {
-            periodName = member.lifetimeMembershipPaid 
-              ? `${monthYear} Lifetime Membership - Janaza Fund`
-              : `${monthYear} Lifetime Membership - Full Payment`;
           } else {
-            // Legacy support
-            periodName = subscriptionType === 'Yearly + Janaza Fund'
-              ? `${monthYear} Yearly Subscription + Janaza Fund`
-              : `${monthYear} Lifetime Subscription`;
+            periodName = member?.janazaOnly
+              ? `${monthYear} Lifetime Janaza Fund`
+              : member?.lifetimeMembershipPaid
+                ? `${monthYear} Lifetime Member + Janaza Fund - Janaza Fund`
+                : `${monthYear} Lifetime Member + Janaza Fund - Full Payment`;
           }
         }
 

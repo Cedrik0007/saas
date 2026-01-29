@@ -4,10 +4,53 @@
  */
 
 export const SUBSCRIPTION_TYPES = {
+  // Official (locked) names
   ANNUAL_MEMBER: "Annual Member",
-  LIFETIME_JANAZA_FUND_MEMBER: "Lifetime Janaza Fund Member",
-  LIFETIME_MEMBERSHIP: "Lifetime Membership",
+  LIFETIME_MEMBER_JANAZA_FUND: "Lifetime Member + Janaza Fund",
+
+  // Legacy aliases (kept for backward compatibility in code + old data)
+  LIFETIME_JANAZA_FUND_MEMBER: "Lifetime Member + Janaza Fund",
+  LIFETIME_MEMBERSHIP: "Lifetime Member + Janaza Fund",
 };
+
+const OFFICIAL_TYPES = new Set([
+  SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
+  SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND,
+]);
+
+/**
+ * Normalize legacy/variant subscription type strings to the locked official values.
+ * This does NOT rewrite database values; it's for calculations + display mapping.
+ */
+export function normalizeSubscriptionType(rawValue) {
+  if (rawValue === null || rawValue === undefined) {
+    return SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+  }
+
+  const asString = String(rawValue);
+  if (OFFICIAL_TYPES.has(asString)) {
+    return asString;
+  }
+
+  const trimmed = asString.trim();
+  if (OFFICIAL_TYPES.has(trimmed)) {
+    return trimmed;
+  }
+
+  const lowered = trimmed.toLowerCase();
+
+  // Annual variants
+  if (lowered.includes('annual') || lowered.includes('yearly')) {
+    return SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+  }
+
+  // Any lifetime/janaza variants normalize to the single official lifetime type
+  if (lowered.includes('lifetime') || lowered.includes('janaza')) {
+    return SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
+  }
+
+  return SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+}
 
 /**
  * Get subscription type configuration
@@ -15,47 +58,31 @@ export const SUBSCRIPTION_TYPES = {
  * @returns {Object} Configuration object with membershipFee, janazaFee, and description
  */
 export function getSubscriptionConfig(subscriptionType) {
-  switch (subscriptionType) {
+  const normalizedType = normalizeSubscriptionType(subscriptionType);
+
+  switch (normalizedType) {
     case SUBSCRIPTION_TYPES.ANNUAL_MEMBER:
       return {
-        membershipFee: 250, // HK$250 per year
-        janazaFee: 250, // HK$250 per year
+        membershipFee: 500, // HK$500 per year
+        janazaFee: 0, // No janaza fund fee for Annual Members
         totalFee: 500, // HK$500 per year
-        description: "Annual Member - Membership fee: HK$250/year, Janaza fund fee: HK$250/year",
+        description: "Annual Member - HK$500/year",
         membershipRenews: true,
-        janazaRenews: true,
+        janazaRenews: false,
       };
-    
-    case SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND_MEMBER:
-      return {
-        membershipFee: 0, // No membership fee
-        janazaFee: 250, // HK$250 per year
-        totalFee: 250, // HK$250 per year
-        description: "Lifetime Janaza Fund Member - Membership fee: HK$0, Janaza fund fee: HK$250/year",
-        membershipRenews: false,
-        janazaRenews: true,
-      };
-    
-    case SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP:
+
+    case SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND:
       return {
         membershipFee: 5000, // HK$5,000 one-time payment
         janazaFee: 250, // HK$250 per year
-        totalFee: 5250, // HK$5,250 (first year), then HK$250/year
-        description: "Lifetime Membership - Membership fee: HK$5,000 (one-time), Janaza fund fee: HK$250/year",
+        totalFee: 5250, // HK$5,250 (first year/upgrade), then HK$250/year
+        description: "Lifetime Member + Janaza Fund - HK$5,000 (one-time) + HK$250/year",
         membershipRenews: false,
         janazaRenews: true,
       };
     
     default:
-      // Legacy "Lifetime" subscription type (backward compatibility)
-      return {
-        membershipFee: 0,
-        janazaFee: 250,
-        totalFee: 250,
-        description: "Lifetime Subscription - HK$250/year",
-        membershipRenews: false,
-        janazaRenews: true,
-      };
+      return getSubscriptionConfig(SUBSCRIPTION_TYPES.ANNUAL_MEMBER);
   }
 }
 
@@ -66,10 +93,11 @@ export function getSubscriptionConfig(subscriptionType) {
  * @returns {Object} Object with membershipFee, janazaFee, and totalFee
  */
 export function calculateFees(subscriptionType, lifetimeMembershipPaid = false) {
-  const config = getSubscriptionConfig(subscriptionType);
-  
-  // If lifetime membership is already paid, only charge Janaza fee
-  if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && lifetimeMembershipPaid) {
+  const normalizedType = normalizeSubscriptionType(subscriptionType);
+  const config = getSubscriptionConfig(normalizedType);
+
+  // If lifetime membership is already paid, only charge the yearly Janaza fee
+  if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND && lifetimeMembershipPaid) {
     return {
       membershipFee: 0,
       janazaFee: config.janazaFee,
@@ -85,18 +113,43 @@ export function calculateFees(subscriptionType, lifetimeMembershipPaid = false) 
 }
 
 /**
+ * Calculate fees using the member record (supports janazaOnly without changing stored subscriptionType values).
+ * @param {Object} member
+ * @returns {{membershipFee:number, janazaFee:number, totalFee:number}}
+ */
+export function calculateFeesForMember(member) {
+  const normalizedType = normalizeSubscriptionType(member?.subscriptionType);
+  const config = getSubscriptionConfig(normalizedType);
+
+  if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
+    const janazaOnly = !!member?.janazaOnly;
+    const lifetimeMembershipPaid = !!member?.lifetimeMembershipPaid;
+
+    if (janazaOnly || lifetimeMembershipPaid) {
+      return {
+        membershipFee: 0,
+        janazaFee: config.janazaFee,
+        totalFee: config.janazaFee,
+      };
+    }
+  }
+
+  return {
+    membershipFee: config.membershipFee,
+    janazaFee: config.janazaFee,
+    totalFee: config.totalFee,
+  };
+}
+
+/**
  * Check if membership fee should be charged for renewal
  * @param {string} subscriptionType - Subscription type name
  * @param {boolean} lifetimeMembershipPaid - Whether lifetime membership fee has been paid
  * @returns {boolean}
  */
 export function shouldChargeMembershipFee(subscriptionType, lifetimeMembershipPaid = false) {
-  const config = getSubscriptionConfig(subscriptionType);
-  
-  if (subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBERSHIP && lifetimeMembershipPaid) {
-    return false; // Already paid lifetime membership
-  }
-  
+  const normalizedType = normalizeSubscriptionType(subscriptionType);
+  const config = getSubscriptionConfig(normalizedType);
   return config.membershipRenews;
 }
 
@@ -106,7 +159,20 @@ export function shouldChargeMembershipFee(subscriptionType, lifetimeMembershipPa
  * @returns {boolean}
  */
 export function shouldChargeJanazaFee(subscriptionType) {
-  const config = getSubscriptionConfig(subscriptionType);
+  const normalizedType = normalizeSubscriptionType(subscriptionType);
+  const config = getSubscriptionConfig(normalizedType);
   return config.janazaRenews;
+}
+
+/**
+ * Dashboard/member list display rule:
+ * Show ONLY the current yearly payable amount (never show HK$5,000).
+ */
+export function getYearlyPayableAmount(subscriptionType) {
+  const normalizedType = normalizeSubscriptionType(subscriptionType);
+  if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
+    return 250;
+  }
+  return 500;
 }
 

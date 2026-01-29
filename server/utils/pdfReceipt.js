@@ -1,3 +1,5 @@
+
+
 import PDFDocument from 'pdfkit';
 import { ensureConnection } from '../config/database.js';
 import UserModel from '../models/User.js';
@@ -83,6 +85,7 @@ export function numberToWords(num) {
 export async function generatePaymentReceiptPDF(member, invoice, payment, receiptNo = null) {
   return new Promise(async (resolve, reject) => {
     try {
+      console.log('🚨 RUNTIME pdfReceipt.js LOADED — MEMBER ID:', member?.id);
       // CRITICAL VALIDATION: Ensure member matches invoice
       if (!member) {
         console.error(`❌ RECEIPT GENERATION ERROR: Member object is required`);
@@ -92,21 +95,61 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
         console.error(`❌ RECEIPT GENERATION ERROR: Invoice object is required`);
         throw new Error('Invoice object is required for receipt generation');
       }
-      if (member.id !== invoice.memberId) {
+
+      // VALIDATION RULES (ANY ONE is sufficient):
+      // 1) invoice.memberNo === member.memberNo (primary)
+      // 2) invoice.memberId === member.id
+      // 3) invoice.memberId exists in member.previousDisplayIds[].id
+      const normalizeMemberNo = (value) => {
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        const parsed = Number(String(value).trim());
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+
+      const invoiceMemberNo = normalizeMemberNo(invoice?.memberNo);
+      const memberNo = normalizeMemberNo(member?.memberNo);
+
+      const invoiceMemberId = typeof invoice?.memberId === 'string'
+        ? invoice.memberId
+        : (invoice?.memberId === null || invoice?.memberId === undefined ? '' : String(invoice.memberId));
+      const memberDisplayId = typeof member?.id === 'string'
+        ? member.id
+        : (member?.id === null || member?.id === undefined ? '' : String(member.id));
+
+      const previousDisplayIds = Array.isArray(member?.previousDisplayIds)
+        ? member.previousDisplayIds
+            .map((entry) => {
+              if (!entry) return '';
+              if (typeof entry.id === 'string') return entry.id;
+              if (entry.id === null || entry.id === undefined) return '';
+              return String(entry.id);
+            })
+            .filter(Boolean)
+        : [];
+
+      const matchesByMemberNo = invoiceMemberNo !== null && memberNo !== null && invoiceMemberNo === memberNo;
+      const matchesByCurrentDisplayId = Boolean(invoiceMemberId) && Boolean(memberDisplayId) && invoiceMemberId === memberDisplayId;
+      const matchesByPreviousDisplayId = Boolean(invoiceMemberId) && previousDisplayIds.includes(invoiceMemberId);
+
+      if (!matchesByMemberNo && !matchesByCurrentDisplayId && !matchesByPreviousDisplayId) {
         console.error(
-          `❌ RECEIPT GENERATION ERROR: Member ID mismatch detected!
-           Expected invoice.memberId to match member.id
-           member.id = "${member.id}"
-           invoice.memberId = "${invoice.memberId}"
-           invoice.id = "${invoice.id}"
-           member.name = "${member.name}"
-           This indicates data corruption or incorrect member lookup.`
+          `❌ RECEIPT GENERATION ERROR: Member mismatch detected!
+           invoice.id = "${invoice?.id}"
+           invoice.memberNo = "${invoice?.memberNo}"
+           member.memberNo = "${member?.memberNo}"
+           invoice.memberId = "${invoice?.memberId}"
+           member.id = "${member?.id}"
+           member.name = "${member?.name}"`
         );
-        throw new Error(`Member ID mismatch: Cannot generate receipt when member.id (${member.id}) does not match invoice.memberId (${invoice.memberId})`);
+        throw new Error('Member mismatch: invoice does not belong to this member');
       }
-      
-      console.log(`✓ Receipt generation validated: member.id=${member.id} matches invoice.memberId=${invoice.memberId} for invoice ${invoice.id}`);
-      console.log(`  Member: ${member.name}, Invoice Amount: ${invoice.amount}`);
+
+      console.log(
+        `✓ Receipt generation validated for invoice ${invoice?.id || 'N/A'} ` +
+        `(match: ${matchesByMemberNo ? 'memberNo' : matchesByCurrentDisplayId ? 'currentId' : 'previousId'})`
+      );
+      console.log(`  Member: ${member?.name}, Invoice Amount: ${invoice?.amount}`);
       
       const doc = new PDFDocument({ 
         size: 'A4',
@@ -273,6 +316,14 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
 
       currentY += (responsiveHeightUnit * 4);
 
+      const isBlankReceiptField = (value) => {
+        if (value === null || value === undefined) return true;
+        if (typeof value === 'string') return value.trim().length === 0;
+        return false;
+      };
+
+      const displayReceiptField = (value) => (isBlankReceiptField(value) ? '-' : String(value));
+
       // Prepare data
       // Only use receipt number if provided or exists in invoice - do NOT generate new one if empty
       const receiptNoValue = receiptNo || invoice?.receiptNumber || null;
@@ -283,29 +334,42 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       });
       // CRITICAL: Use ONLY the member object passed, never fall back to invoice.memberName
       // The member object MUST be fetched using invoice.memberId before calling this function
-      const memberName = member?.name || 'N/A';
-      const memberId = member?.id || 'N/A';
-      
-      // Subscription type must always come from the member record (single source of truth)
-      const memberSubscriptionTypeRaw = typeof member?.subscriptionType === 'string'
-        ? member.subscriptionType.trim()
-        : (member?.subscriptionType ?? '');
-      const invoiceSubscriptionTypeRaw = typeof invoice?.subscriptionType === 'string'
-        ? invoice.subscriptionType.trim()
-        : (invoice?.invoiceType ?? '');
-      const subscriptionType = (memberSubscriptionTypeRaw && String(memberSubscriptionTypeRaw))
-        || (invoiceSubscriptionTypeRaw && String(invoiceSubscriptionTypeRaw))
-        || 'Not Assigned';
-      const isLifetimeSubscription = typeof subscriptionType === 'string' && subscriptionType.toLowerCase().includes('lifetime');
+      let memberName = displayReceiptField(member?.name);
+      // Member ID: use the current business display ID (AMxxx / LMxxx) from the member record.
+      // DISPLAY ONLY — do not derive or recompute IDs.
+      const memberId = displayReceiptField(member?.id);
+
+      // Subscription Type: render the exact stored value (no mapping / no normalization).
+      const subscriptionType = displayReceiptField(invoice?.subscriptionType ?? member?.subscriptionType ?? invoice?.invoiceType);
+
+      // Display-only: Replace internal upgrade marker with professional wording.
+      // Apply ONLY for Annual -> Lifetime Member + Janaza Fund upgrades.
+      if (typeof memberName === 'string' && memberName.includes('(Upgraded AMLM)')) {
+        const isLifetimeJanazaFund = String(subscriptionType).trim() === 'Lifetime Member + Janaza Fund';
+        const hasAnnualLegacyDisplayId = Array.isArray(member?.previousDisplayIds)
+          && member.previousDisplayIds.some((entry) => String(entry?.id || '').trim().toUpperCase().startsWith('AM'));
+
+        if (isLifetimeJanazaFund && hasAnnualLegacyDisplayId) {
+          memberName = memberName.replace('(Upgraded AMLM)', '(Upgraded to Lifetime)');
+        } else {
+          memberName = memberName.replace('(Upgraded AMLM)', '').replace(/\s+/g, ' ').trim();
+          if (!memberName) memberName = '-';
+        }
+      }
+
+      // Keep existing receipt table description behavior for Lifetime vs Annual.
+      const isLifetimeSubscription =
+        typeof subscriptionType === 'string' && subscriptionType.toLowerCase().includes('lifetime');
       const showRenewalText = !isLifetimeSubscription;
       
       // Extract year from invoice period
       const periodStr = String(invoice?.period || '').trim();
       const yearMatch = periodStr.match(/\d{4}/);
-      const renewalYear = yearMatch ? yearMatch[0] : new Date().getFullYear().toString();
+      const membershipYear = yearMatch ? yearMatch[0] : null;
+      const membershipYearDisplay = displayReceiptField(membershipYear);
 
-      // Two-column table layout for invoice details (50/50 split for centered divider)
-      const detailRowHeight = 20;
+      // Two-column header grid (labels + values, 50/50 split)
+      const detailRowHeight = 30;
       const detailCol1Width = contentWidth * 0.5; // Left column (50%)
       const detailCol2Width = contentWidth * 0.5; // Right column (50%)
       
@@ -313,67 +377,57 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       const detailsStartY = currentY;
       
       const verticalBorderX = leftMargin + detailCol1Width;
-      
-      // Row 1: Receipt No and Date (Invoice No removed)
-      doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
+
+      const drawHeaderRow = ({ leftLabel, leftValue, rightLabel, rightValue }) => {
+        const col1Width = contentWidth * 0.5;
+        const col2Width = contentWidth - col1Width;
+        // Outer border
+        doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
          .strokeColor('#000000')
          .lineWidth(0.5)
          .stroke();
-      
-      // Vertical border in the middle
-      doc.moveTo(verticalBorderX, currentY)
+
+        // Center divider
+        doc.moveTo(verticalBorderX, currentY)
          .lineTo(verticalBorderX, currentY + detailRowHeight)
          .strokeColor('#000000')
          .lineWidth(1)
          .stroke();
-      
-      doc.fontSize(Math.max(9, responsiveUnit * 1.6))
+
+        const cellPaddingX = 5;
+        const labelY = currentY + 4;
+        const valueY = currentY + 16;
+
+        doc.fontSize(Math.max(8, responsiveUnit * 1.4))
+         .fillColor('#000000')
+         .font('Helvetica-Bold');
+        doc.text(String(leftLabel), leftMargin + cellPaddingX, labelY, { width: col1Width - (cellPaddingX * 2) });
+        doc.text(String(rightLabel), leftMargin + col1Width + cellPaddingX, labelY, { width: col2Width - (cellPaddingX * 2) });
+
+        doc.fontSize(Math.max(9, responsiveUnit * 1.6))
          .fillColor('#000000')
          .font('Helvetica');
+        doc.text(displayReceiptField(leftValue), leftMargin + cellPaddingX, valueY, { width: col1Width - (cellPaddingX * 2) });
+        doc.text(displayReceiptField(rightValue), leftMargin + col1Width + cellPaddingX, valueY, { width: col2Width - (cellPaddingX * 2) });
+
+        currentY += detailRowHeight;
+      };
       
-      doc.text(`Receipt No: ${receiptNoValue || '-'}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
-      doc.text(`Date: ${receiptDate}`, leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
-      currentY += detailRowHeight;
+      // Header layout (exact 3 rows, 2 columns):
+      // Receipt No | Date
+      // Member Name | Member ID
+      // Subscription Type | Membership Year
+      drawHeaderRow({ leftLabel: 'Receipt No', rightLabel: 'Date', leftValue: receiptNoValue || '-', rightValue: receiptDate });
       
-      // Row 2: Member Name only (Member ID hidden)
-      doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
-         .strokeColor('#000000')
-         .lineWidth(0.5)
-         .stroke();
-      
-      // Vertical border in the middle
-      doc.moveTo(verticalBorderX, currentY)
-         .lineTo(verticalBorderX, currentY + detailRowHeight)
-         .strokeColor('#000000')
-         .lineWidth(1)
-         .stroke();
-      
-      doc.text(`Member Name: ${memberName}`, leftMargin + 5, currentY + 5, { width: detailCol1Width - 10 });
-      // Year moved to empty cell (where Member ID was)
-      doc.text(showRenewalText ? `Year: ${renewalYear}` : '', leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
-      currentY += detailRowHeight;
-      
-      // Row 3: Subscription Type only (Year moved to Row 2)
-      doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
-         .strokeColor('#000000')
-         .lineWidth(0.5)
-         .stroke();
-      
-      // Vertical border in the middle (centered)
-      doc.moveTo(verticalBorderX, currentY)
-         .lineTo(verticalBorderX, currentY + detailRowHeight)
-         .strokeColor('#000000')
-         .lineWidth(1)
-         .stroke();
-      
-      // Subscription Type in left column (with proper width to prevent overflow)
-      doc.text(`Subscription Type: ${subscriptionType}`, leftMargin + 5, currentY + 5, { 
-        width: detailCol1Width - 10
+      console.log("[PDF FINAL HEADER] Member ID =", member?.id);
+      drawHeaderRow({
+        leftLabel: '',
+        rightLabel: 'Member ID',
+        leftValue: `Member Name: ${memberName}`,
+        rightValue: member?.id || "-",
       });
-      
-      // Right cell empty (Year moved to Row 2)
-      doc.text('', leftMargin + detailCol1Width + 5, currentY + 5, { width: detailCol2Width - 10 });
-      currentY += detailRowHeight + (responsiveHeightUnit * 3);
+      drawHeaderRow({ leftLabel: 'Subscription Type', rightLabel: 'Membership Year', leftValue: subscriptionType, rightValue: membershipYearDisplay });
+      // currentY is already advanced inside drawHeaderRow for each header row
 
       // Description and Amount Table
       const tableTopY = currentY;
@@ -396,7 +450,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
          .font('Helvetica-Bold');
       
       doc.text('Description', leftMargin + 5, tableTopY + 5, { width: col1Width - 10 });
-      doc.text(showRenewalText ? 'Year' : '', leftMargin + col1Width + 5, tableTopY + 5, { width: col2Width - 10 });
+      doc.text('Year', leftMargin + col1Width + 5, tableTopY + 5, { width: col2Width - 10 });
       doc.text('Amount (HKD)', leftMargin + col1Width + col2Width + 5, tableTopY + 5, { width: col3Width - 10 });
       
       currentY = tableTopY + rowHeight;
@@ -412,7 +466,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       }
       const formattedAmount = amountNum.toFixed(2);
       
-      // First data row - Membership Renewal Fee (hidden label/year for lifetime subscriptions)
+      // First data row
       doc.rect(leftMargin, currentY, contentWidth, rowHeight)
          .strokeColor('#000000')
          .lineWidth(0.5)
@@ -423,7 +477,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
          .font('Helvetica');
       
       doc.text(showRenewalText ? 'Membership Renewal Fee' : subscriptionType, leftMargin + 5, currentY + 5, { width: col1Width - 10 });
-      doc.text(showRenewalText ? renewalYear : '', leftMargin + col1Width + 5, currentY + 5, { width: col2Width - 10 });
+      doc.text(membershipYearDisplay, leftMargin + col1Width + 5, currentY + 5, { width: col2Width - 10 });
       doc.text(`HK$${formattedAmount}`, leftMargin + col1Width + col2Width + 5, currentY + 5, { width: col3Width - 10, align: 'right' });
       
       currentY += rowHeight;
@@ -660,13 +714,11 @@ export async function generateDonationReceiptPDF(donation, member = null) {
 
       currentY += (responsiveHeightUnit * 2.5);
 
-      // Member ID (if member)
-      if (donation.isMember && donation.memberId) {
-        doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-           .font('Helvetica')
-           .text(`Member ID: IMA/${donation.memberId}`, leftMargin, currentY, { width: contentWidth });
-        currentY += (responsiveHeightUnit * 2.5);
-      }
+      // Member ID (always show; read ONLY from member.id)
+      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+        .font('Helvetica')
+        .text(`Member ID: ${member?.id || '-'}`, leftMargin, currentY, { width: contentWidth });
+      currentY += (responsiveHeightUnit * 2.5);
 
       // Donation Type
       doc.fontSize(Math.max(9, responsiveUnit * 1.8))

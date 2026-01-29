@@ -318,7 +318,11 @@ export async function sendPaymentApprovalEmail(member, payment, invoice) {
     // Generate PDF receipt with the same receipt number (after receiptNo is set)
     let pdfBuffer = null;
     try {
-      pdfBuffer = await generatePaymentReceiptPDF(member, invoice, payment, receiptNo);
+      const memberPayload = {
+        ...(typeof member?.toObject === 'function' ? member.toObject() : member),
+        id: typeof member?.get === 'function' ? member.get('id') : member?.id,
+      };
+      pdfBuffer = await generatePaymentReceiptPDF(memberPayload, invoice, payment, receiptNo);
       console.log(`✓ PDF receipt generated for payment ${payment?.id || payment?.invoiceId || 'N/A'} with receipt number ${receiptNo}`);
     } catch (pdfError) {
       console.error(`❌ Error generating PDF receipt:`, pdfError);
