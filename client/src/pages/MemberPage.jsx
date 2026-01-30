@@ -7,6 +7,7 @@ import { Notie } from "../components/Notie.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import { statusClass } from "../statusClasses";
+import { matchesInvoiceToMember } from "../utils/matchesInvoiceToMember.js";
 
 export function MemberPage() {
   const {
@@ -105,8 +106,7 @@ export function MemberPage() {
     if ((memberEmail || memberId) && !currentMember && !loading && members.length === 0) {
       fetchMembers();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberEmail, memberId, currentMember, loading, members.length]);
+  }, [memberEmail, memberId, currentMember, loading, members.length, fetchMembers]);
 
   // Reset to page 1 when items per page changes or when switching to history section
   useEffect(() => {
@@ -121,8 +121,7 @@ export function MemberPage() {
       fetchInvoices();
       fetchPayments();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSection]); // Only depend on activeSection to prevent unnecessary re-fetches
+  }, [activeSection, fetchInvoices, fetchPayments]);
 
   // Close mobile menu when clicking outside
   useEffect(() => {
@@ -195,22 +194,11 @@ export function MemberPage() {
   const getUnpaidInvoices = () => {
     if (!currentMember) return [];
 
-    const previousIds = Array.isArray(currentMember.previousDisplayIds)
-      ? currentMember.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
-      : [];
-    const memberIdCandidates = [currentMember.id, ...previousIds].filter(Boolean);
-
     return invoices.filter((inv) => {
       const effectiveStatus = getEffectiveInvoiceStatus(inv);
-
-      const isMemberInvoice =
-        (currentMember.memberNo && inv.memberNo && String(inv.memberNo) === String(currentMember.memberNo)) ||
-        (inv.memberId && memberIdCandidates.includes(inv.memberId)) ||
-        (inv.memberEmail && currentMember.email && inv.memberEmail === currentMember.email) ||
-        (inv.memberName && currentMember.name && inv.memberName === currentMember.name);
       
       return (
-        isMemberInvoice &&
+        matchesInvoiceToMember(inv, currentMember) &&
         (effectiveStatus === "Unpaid" || effectiveStatus === "Overdue")
       );
     });
@@ -527,7 +515,7 @@ export function MemberPage() {
     // Include both "Paid" and "Completed" statuses (Completed = approved by admin)
     const memberPayments = currentMember 
       ? paymentHistory.filter((item) => 
-          (item.memberId === currentMember.id || 
+          (item.memberId===currentMember.id || 
            item.memberEmail === currentMember.email || 
            item.member === currentMember.name) &&
           (item.status === "Paid" || item.status === "Completed")
@@ -552,9 +540,7 @@ export function MemberPage() {
     if (paidThisYear === 0) {
       const paidInvoices = invoices.filter((inv) => 
         inv.status === "Paid" &&
-        (inv.memberId === currentMember?.id || 
-         inv.memberEmail === currentMember?.email || 
-         inv.memberName === currentMember?.name)
+        currentMember && matchesInvoiceToMember(inv, currentMember)
       );
       
       // Filter by year based on due date or current year
@@ -777,7 +763,7 @@ export function MemberPage() {
                       {(() => {
                         const memberPayments = currentMember 
                           ? paymentHistory.filter((item) => 
-                              item.memberId === currentMember.id || 
+                              item.memberId===currentMember.id || 
                               item.memberEmail === currentMember.email || 
                               item.member === currentMember.name
                             )
@@ -822,7 +808,7 @@ export function MemberPage() {
                     {(() => {
                       const memberPayments = currentMember 
                         ? paymentHistory.filter((item) => 
-                            item.memberId === currentMember.id || 
+                            item.memberId===currentMember.id || 
                             item.memberEmail === currentMember.email || 
                             item.member === currentMember.name
                           )
@@ -1214,13 +1200,7 @@ export function MemberPage() {
                     }
                     
                     const memberInvoices = currentMember 
-                      ? invoices.filter((inv) => 
-                          inv && (
-                            inv.memberId === currentMember.id || 
-                            inv.memberEmail === currentMember.email || 
-                            inv.memberName === currentMember.name
-                          )
-                        )
+                      ? invoices.filter((inv) => inv && matchesInvoiceToMember(inv, currentMember))
                       : invoices;
                     
                     if (memberInvoices.length === 0) {
@@ -1515,7 +1495,7 @@ export function MemberPage() {
                 <div style={{ marginTop: "24px" }}>
                   {(() => {
                     const filteredPayments = currentMember ? paymentHistory.filter((item) => 
-                      item.memberId === currentMember.id || 
+                      item.memberId===currentMember.id || 
                       item.memberEmail === currentMember.email || 
                       item.member === currentMember.name
                     ) : paymentHistory;

@@ -234,17 +234,29 @@ export function AppProvider({ children }) {
 
       // Listen for payment updates
       socketRef.current.on('payment:created', (payment) => {
-        setPayments(prev => {
-          const exists = prev.find(p => p._id === payment._id || p.id === payment.id);
-          if (exists) {
-            return prev.map(p => (p._id === payment._id || p.id === payment.id) ? payment : p);
-          }
-          return [payment, ...prev];
-        });
+        if (!payment) return;
+        const match = (p) => (p._id != null && String(p._id) === String(payment._id)) || (p.id != null && String(p.id) === String(payment.id));
+        const mergeInto = (setter) => {
+          setter(prev => {
+            const exists = prev.find(match);
+            if (exists) {
+              return prev.map(p => match(p) ? { ...p, ...payment } : p);
+            }
+            return [payment, ...prev];
+          });
+        };
+        mergeInto(setPayments);
+        mergeInto(setPaymentHistory);
+        mergeInto(setRecentPayments);
       });
 
       socketRef.current.on('payment:updated', (payment) => {
-        setPayments(prev => prev.map(p => (p._id === payment._id || p.id === payment.id) ? payment : p));
+        if (!payment) return;
+        const match = (p) => (p._id != null && String(p._id) === String(payment._id)) || (p.id != null && String(p.id) === String(payment.id));
+        const merged = (p) => ({ ...p, ...payment });
+        setPayments(prev => prev.map(p => match(p) ? merged(p) : p));
+        setPaymentHistory(prev => prev.map(p => match(p) ? merged(p) : p));
+        setRecentPayments(prev => prev.map(p => match(p) ? merged(p) : p));
       });
 
       // Listen for donation updates
@@ -966,10 +978,14 @@ export function AppProvider({ children }) {
     });
     
     try {
+      const authToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('authToken') : null;
       const newPayment = await makeRequest(requestKey, async () => {
       const response = await fetch(`${apiBaseUrl}/api/payments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
         body: JSON.stringify(paymentData),
       });
       
@@ -997,6 +1013,32 @@ export function AppProvider({ children }) {
       setMetrics(previousMetrics);
       throw error;
     }
+  };
+
+  // Update or add a single payment in state (e.g. after PUT payment success or approve-invoice) so UI reflects new receiver_name etc. without refetch.
+  const updatePaymentInState = (updatedPayment) => {
+    if (!updatedPayment) return;
+    const idStr = updatedPayment._id != null ? String(updatedPayment._id) : (updatedPayment.id != null ? String(updatedPayment.id) : null);
+    if (idStr == null || idStr === "") return;
+    const match = (p) => (p._id != null && String(p._id) === idStr) || (p.id != null && String(p.id) === idStr);
+    const upsert = (prev) => {
+      const found = prev.find(match);
+      if (found) {
+        return prev.map(p => match(p) ? { ...p, ...updatedPayment } : p);
+      }
+      return [updatedPayment, ...prev];
+    };
+    setPayments(prev => upsert(prev));
+    setPaymentHistory(prev => upsert(prev));
+    setRecentPayments(prev => upsert(prev));
+  };
+
+  // Update a single invoice in state (e.g. after payment approval) so UI reflects status, receiver_name etc. without refetch.
+  const updateInvoiceInState = (updatedInvoice) => {
+    if (!updatedInvoice || (updatedInvoice._id == null && updatedInvoice.id == null)) return;
+    const idStr = updatedInvoice._id != null ? String(updatedInvoice._id) : null;
+    if (!idStr) return;
+    setInvoices(prev => prev.map(inv => String(inv._id || "") === idStr ? { ...inv, ...updatedInvoice } : inv));
   };
 
   // Communication Operations
@@ -1246,6 +1288,8 @@ export function AppProvider({ children }) {
     updateInvoice,
     deleteInvoice,
     addPayment,
+    updatePaymentInState,
+    updateInvoiceInState,
     addDonation,
     deleteDonation,
     addCommunication,

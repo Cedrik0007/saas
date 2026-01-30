@@ -135,7 +135,7 @@ async function createNextYearInvoice(member, lastPaidYear, subscriptionType) {
       memberId: member.id,
       memberName: member.name,
       memberEmail: member.email,
-      receiver_name: String(member?.name || "").trim() || "Member",
+      receiver_name: null,
       period: invoicePeriod,
       amount: invoiceAmount,
       membershipFee: fees.membershipFee,

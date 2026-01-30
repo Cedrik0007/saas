@@ -1,89 +1,14 @@
-import { useState, useEffect, useRef, useMemo } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { SiteHeader } from "../components/SiteHeader.jsx";
-import { SiteFooter } from "../components/SiteFooter.jsx";
-import { Table } from "../components/Table.jsx";
-import { Pagination } from "../components/Pagination.jsx";
-import { Notie } from "../components/Notie.jsx";
-import { Tooltip } from "../components/Tooltip.jsx";
-import { ActionIcon } from "../components/ActionIcon.jsx";
-import { Modal } from "../components/Modal.jsx";
-import PhoneInput from "../components/PhoneInput.jsx";
-import { useApp } from "../context/AppContext.jsx";
-import jsPDF from "jspdf";
-import Select from "react-select";
-import { statusClass } from "../statusClasses";
-import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
-import {
-  SUBSCRIPTION_TYPES,
-  SUBSCRIPTION_TYPE_OPTIONS,
-  SUBSCRIPTION_TYPE_AMOUNTS,
-  getSubscriptionTypeDisplayParts,
-  normalizeSubscriptionType,
-} from "../constants/subscriptionTypes.js";
-
-
-// Format subscription type for display (remove amount for table display)
-function formatSubscriptionType(subscriptionType) {
-    if (!subscriptionType) return '-';
-    return normalizeSubscriptionType(subscriptionType);
-}
-
-const extractYearFromValue = (value) => {
-  if (value == null) return null;
-  const match = String(value).match(/\d{4}/);
-  return match ? match[0] : null;
-};
-
-const deriveSubscriptionYearForMember = (member) => {
-  if (!member) {
-    return new Date().getFullYear().toString();
-  }
-
-  return (
-    extractYearFromValue(member.subscriptionYear) ||
-    extractYearFromValue(member.next_due_date) ||
-    extractYearFromValue(member.nextDue) ||
-    new Date().getFullYear().toString()
-  );
-};
-
-const buildInvoiceFormDefaults = (member) => {
-  const fallbackType = SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
-  const normalizedType = normalizeSubscriptionType(member?.subscriptionType) || fallbackType;
-  let amount = SUBSCRIPTION_TYPE_AMOUNTS[normalizedType] ?? SUBSCRIPTION_TYPE_AMOUNTS[fallbackType];
-
-  // Invoice rules: Lifetime Member + Janaza Fund charges HK$5250 once, then HK$250/year.
-  if (
-    normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND &&
-    member &&
-    member.lifetimeMembershipPaid === false
-  ) {
-    amount = 5250;
-  }
-  const subscriptionYear = deriveSubscriptionYearForMember(member);
-
-  return {
-    memberId: member?.id || "",
-    period: subscriptionYear,
-    amount: String(amount || SUBSCRIPTION_TYPE_AMOUNTS[fallbackType]),
-    invoiceType: normalizedType,
-    due: "",
-    notes: "",
-    subscriptionYear,
-  };
-};
-
-const normalizeMemberIdForSort = (member) => {
+// Restore compareMembersByBusinessId above AdminPage so it is in scope for Array.sort
+function normalizeMemberIdForSort(member) {
   if (!member) return null;
   const rawId = member.id ?? member.memberId;
   if (!rawId || !String(rawId).trim()) {
     return null;
   }
   return String(rawId).trim().toUpperCase();
-};
+}
 
-const compareMembersByBusinessId = (memberA, memberB, direction = "asc") => {
+function compareMembersByBusinessId(memberA, memberB, direction = "asc") {
   const sortMultiplier = direction === "desc" ? -1 : 1;
   const normalizedA = normalizeMemberIdForSort(memberA);
   const normalizedB = normalizeMemberIdForSort(memberB);
@@ -105,7 +30,65 @@ const compareMembersByBusinessId = (memberA, memberB, direction = "asc") => {
       sensitivity: "base",
     }) * sortMultiplier
   );
-};
+}
+// Restore buildInvoiceFormDefaults above AdminPage so it is in scope for useState
+function buildInvoiceFormDefaults(member) {
+  const fallbackType = SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+  const normalizedType = normalizeSubscriptionType(member?.subscriptionType) || fallbackType;
+  let amount = SUBSCRIPTION_TYPE_AMOUNTS[normalizedType] ?? SUBSCRIPTION_TYPE_AMOUNTS[fallbackType];
+
+  // Invoice rules: Lifetime Member + Janaza Fund charges HK$5250 once, then HK$250/year.
+  if (
+    normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND &&
+    member &&
+    member.lifetimeMembershipPaid === false
+  ) {
+    amount = 5250;
+  }
+  const subscriptionYear = (member && member.subscriptionYear) || new Date().getFullYear().toString();
+
+  return {
+    memberId: member?.id || "",
+    period: subscriptionYear,
+    amount: String(amount || SUBSCRIPTION_TYPE_AMOUNTS[fallbackType]),
+    invoiceType: normalizedType,
+    due: "",
+    notes: "",
+    subscriptionYear,
+  };
+}
+import { useState, useEffect, useRef, useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { SiteHeader } from "../components/SiteHeader.jsx";
+import { SiteFooter } from "../components/SiteFooter.jsx";
+import { Table } from "../components/Table.jsx";
+import { Pagination } from "../components/Pagination.jsx";
+import { Notie } from "../components/Notie.jsx";
+import { Tooltip } from "../components/Tooltip.jsx";
+import { ActionIcon } from "../components/ActionIcon.jsx";
+import { Modal } from "../components/Modal.jsx";
+import PhoneInput from "../components/PhoneInput.jsx";
+import { useApp } from "../context/AppContext.jsx";
+import jsPDF from "jspdf";
+import Select from "react-select";
+import { statusClass } from "../statusClasses";
+import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
+import { matchesInvoiceToMember } from "../utils/matchesInvoiceToMember.js";
+import {
+  SUBSCRIPTION_TYPES,
+  SUBSCRIPTION_TYPE_OPTIONS,
+  SUBSCRIPTION_TYPE_AMOUNTS,
+  getSubscriptionTypeDisplayParts,
+  normalizeSubscriptionType,
+} from "../constants/subscriptionTypes.js";
+
+// Format subscription type for display (remove amount for table display)
+function formatSubscriptionType(subscriptionType) {
+    if (!subscriptionType) return '-';
+    return normalizeSubscriptionType(subscriptionType);
+}
+
+
 
 function AdminPage() {
     const {
@@ -148,6 +131,8 @@ function AdminPage() {
       deleteAdminUser,
       resetAllData,
       addPayment,
+      updatePaymentInState,
+      updateInvoiceInState,
       reminderLogs,
       fetchReminderLogs,
       passwordResetRequests,
@@ -209,47 +194,14 @@ function AdminPage() {
       }
     }, [navigate]);
 
+    const overdueInvoices = invoices.filter(inv => {
+      // ...existing filter logic...
+    });
     useEffect(() => {
-      const membersCount = Array.isArray(members) ? members.length : 0;
-      const newestMember = getNewestMember(members);
-      const newestKey = getMemberHighlightKey(newestMember);
-      if (!newestKey) {
-        if (lastSeenMembersCountRef.current === null) {
-          lastSeenMembersCountRef.current = membersCount;
-        }
-        return;
+      if (overdueInvoices.length > 0) {
+        // ...existing effect logic...
       }
-
-      // Avoid highlighting on initial load / refresh.
-      if (lastSeenNewestMemberKeyRef.current === null || lastSeenMembersCountRef.current === null) {
-        lastSeenNewestMemberKeyRef.current = newestKey;
-        lastSeenMembersCountRef.current = membersCount;
-        return;
-      }
-
-      const previousNewestKey = lastSeenNewestMemberKeyRef.current;
-      const previousCount = lastSeenMembersCountRef.current;
-      const newestChanged = newestKey !== previousNewestKey;
-      const countIncreased = membersCount > previousCount;
-
-      lastSeenNewestMemberKeyRef.current = newestKey;
-      lastSeenMembersCountRef.current = membersCount;
-
-      // Highlight ONLY after creating a new member: detect a transition where
-      // the newest record changes AND the members list length increases.
-      if (newestChanged && countIncreased) {
-        setNewestMemberHighlightKey(newestKey);
-
-        if (newestMemberHighlightTimeoutRef.current) {
-          clearTimeout(newestMemberHighlightTimeoutRef.current);
-        }
-
-        newestMemberHighlightTimeoutRef.current = setTimeout(() => {
-          setNewestMemberHighlightKey(null);
-          newestMemberHighlightTimeoutRef.current = null;
-        }, 4000);
-      }
-    }, [members]);
+    }, [overdueInvoices]);
 
     useEffect(() => {
       return () => {
@@ -354,8 +306,8 @@ function AdminPage() {
     // Initialize activeSection from URL or default to dashboard
     const [activeSection, setActiveSection] = useState(() => {
       const sectionFromUrl = searchParams.get('section');
-      const isValidSection = sectionFromUrl && sections.find(s => s.id === sectionFromUrl);
-      return isValidSection ? sectionFromUrl : sections[0].id;
+      const found = sectionFromUrl && sections.find(s => s.id === sectionFromUrl);
+      return found ? sectionFromUrl : sections[0].id;
     });
     const [activeTab, setActiveTab] = useState("Invoices");
     // Track which navigation groups are expanded (default all collapsed on login)
@@ -440,11 +392,8 @@ function AdminPage() {
       return formatSubscriptionType(selectedMember.subscriptionType);
     })();
 
-    const normalizedLastInvoiceMemberId = lastCreatedInvoice?.memberId
-      ? String(lastCreatedInvoice.memberId).toLowerCase()
-      : null;
-    const lastCreatedInvoiceMember = normalizedLastInvoiceMemberId
-      ? members.find((m) => String(m.id || "").toLowerCase() === normalizedLastInvoiceMemberId)
+    const lastCreatedInvoiceMember = lastCreatedInvoice
+      ? members.find((m) => matchesInvoiceToMember(lastCreatedInvoice, m))
       : null;
     const lastCreatedInvoiceMemberName = lastCreatedInvoice
       ? lastCreatedInvoiceMember?.name || lastCreatedInvoice.memberId || "Member"
@@ -1138,6 +1087,7 @@ function AdminPage() {
       adminMobile: "", // Mobile number for selected admin
     });
     const [uploadingPaymentModal, setUploadingPaymentModal] = useState(false);
+    const paymentApprovalInProgressRef = useRef(null);
     const [showPaymentConfirmationModal, setShowPaymentConfirmationModal] = useState(false);
     const [paymentConfirmationInvoice, setPaymentConfirmationInvoice] = useState(null);
     const [paymentConfirmationChannels, setPaymentConfirmationChannels] = useState({
@@ -1181,57 +1131,36 @@ function AdminPage() {
       }
     };
 
-    const getSubscriptionBalancePreset = (subscriptionType) => {
-      const normalizedType = normalizeSubscriptionType(subscriptionType);
-      const balancePresets = {
-        [SUBSCRIPTION_TYPES.ANNUAL_MEMBER]: "500",
-        [SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND]: "250",
-        [SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND]: "5250",
-      };
-      return balancePresets[normalizedType] || "500";
+    // Canonical billing: transition-based logic to match backend. Single source of truth.
+    const getCanonicalInvoiceAmount = ({ previousSubscriptionType, nextSubscriptionType, isCreateMode }) => {
+      const prev = previousSubscriptionType ? normalizeSubscriptionType(previousSubscriptionType) : null;
+      const next = normalizeSubscriptionType(nextSubscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER);
+      if (next === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) return 500;
+      if (next === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND) return 250;
+      if (next === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
+        if (isCreateMode) return 5250;
+        if (prev === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) return 5250;
+        return 250;
+      }
+      return 500;
     };
 
-    const getInvoiceAmountCurrentYear = (subscriptionType, { isNewMember, member } = {}) => {
-      const normalizedType = normalizeSubscriptionType(subscriptionType);
-      if (normalizedType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) return 500;
-      if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND) return 250;
+    const derivedInvoiceAmount = useMemo(() => {
+      const next = memberForm.subscriptionType || SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+      return getCanonicalInvoiceAmount({
+        previousSubscriptionType: editInitialSubscriptionType,
+        nextSubscriptionType: next,
+        isCreateMode: !isEditMode,
+      });
+    }, [memberForm.subscriptionType, editInitialSubscriptionType, isEditMode]);
 
-      if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
-        if (isNewMember) return 5250;
-
-        const currentYear = String(new Date().getFullYear());
-        const currentId = member?.id ? String(member.id).trim() : "";
-        const memberNo = member?.memberNo != null ? String(member.memberNo) : "";
-        const previousIds = new Set(
-          Array.isArray(member?.previousDisplayIds)
-            ? member.previousDisplayIds.map((entry) => entry?.id).filter(Boolean)
-            : []
-        );
-
-        const hasUnpaid5250 = Array.isArray(invoices) && invoices.some((inv) => {
-          const amount = Number(String(inv?.amount ?? "").replace(/[^0-9.]/g, ""));
-          if (amount !== 5250) return false;
-
-          const status = String(inv?.status ?? "").trim().toLowerCase();
-          if (status === "paid") return false;
-
-          const period = String(inv?.period ?? "");
-          if (!period.includes(currentYear)) return false;
-
-          const invMemberNo = inv?.memberNo != null ? String(inv.memberNo) : "";
-          const invMemberId = inv?.memberId != null ? String(inv.memberId).trim() : "";
-
-          const matchesByNo = memberNo && invMemberNo && invMemberNo === memberNo;
-          const matchesById = currentId && invMemberId && invMemberId === currentId;
-          const matchesByPreviousId = invMemberId && previousIds.has(invMemberId);
-
-          return matchesByNo || matchesById || matchesByPreviousId;
-        });
-
-        return hasUnpaid5250 ? 5250 : 250;
-      }
-
-      return 500;
+    const getSubscriptionBalancePreset = (nextSubscriptionType) => {
+      const amt = getCanonicalInvoiceAmount({
+        previousSubscriptionType: editInitialSubscriptionType,
+        nextSubscriptionType,
+        isCreateMode: !isEditMode,
+      });
+      return String(amt);
     };
 
     const formatSubscriptionTypeOptionLabel = (option) => {
@@ -1261,10 +1190,10 @@ function AdminPage() {
         ...base,
         padding: "2px 12px",
       }),
-      singleValue: (base) => ({
-        ...base,
-        margin: 0,
-      }),
+      // singleValue: (base) => ({
+      //   ...base,
+      //   margin: 0,
+      // }),
       indicatorSeparator: (base) => ({
         ...base,
         display: "none",
@@ -1355,6 +1284,7 @@ function AdminPage() {
         showToast("Membership upgraded to Lifetime Member + Janaza Fund successfully.", "success", 3000);
 
         setEditingMember(refreshedMember);
+        setEditInitialSubscriptionType(SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND);
         setMemberForm((prev) => ({
           ...prev,
           id: refreshedMember?.id || prev.id,
@@ -1366,7 +1296,6 @@ function AdminPage() {
         fetchInvoices();
         if (selectedMember?._id && String(selectedMember._id) === String(refreshedMember?._id)) {
           setSelectedMember(refreshedMember);
-          refreshSelectedMemberInvoices(refreshedMember);
         }
 
         closeAllModals();
@@ -1503,7 +1432,6 @@ function AdminPage() {
     const [invoicesPageSize, setInvoicesPageSize] = useState(10);
     const [memberDetailInvoicesPage, setMemberDetailInvoicesPage] = useState(1);
     const [memberDetailInvoicesPageSize, setMemberDetailInvoicesPageSize] = useState(10);
-    const [selectedMemberInvoices, setSelectedMemberInvoices] = useState([]); // Invoices fetched specifically for selected member
     const [loadingMemberInvoices, setLoadingMemberInvoices] = useState(false);
     const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed, Pending
     const [remindersChannelFilter, setRemindersChannelFilter] = useState("All"); // All, Email, WhatsApp
@@ -1544,8 +1472,7 @@ function AdminPage() {
         fetchReminderLogs();
         fetchPasswordResetRequests();
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeSection]); // Only depend on activeSection to prevent infinite loops
+    }, [activeSection, fetchReminderLogs, fetchPasswordResetRequests]);
 
     const normalizeMemberIdValue = (value) => {
       if (typeof value === "string") {
@@ -1576,8 +1503,8 @@ function AdminPage() {
 
     // Helper function to check if an invoice belongs to a member in the list
     const isInvoiceMemberInList = (invoice) => {
-      if (!invoice || !invoice.memberId) return false;
-      return Boolean(findMemberByBusinessId(invoice.memberId));
+      if (!invoice) return false;
+      return (members || []).some((member) => matchesInvoiceToMember(invoice, member));
     };
 
     // Helper function to check if a payment belongs to a member in the list
@@ -1793,35 +1720,30 @@ function AdminPage() {
         return sum;
       }, 0);
 
-      // Calculate Total Outstanding - ensure only members with unpaid/overdue invoices contribute
+      // Calculate Total Outstanding - sum of UNPAID invoices only (never from member.balance or presets)
       const totalOutstanding = members.reduce((sum, member) => {
-        const numericValue = parseOutstandingAmount(member.balance);
-        if (numericValue <= 0) {
-          return sum;
-        }
-
         const memberInvoices = getMemberInvoices(member.id);
-        const hasOutstandingInvoices = memberInvoices.some((inv) => {
-          const effectiveStatus = getEffectiveInvoiceStatus(inv);
-          return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
+        const unpaidInvoices = (Array.isArray(memberInvoices) ? memberInvoices : []).filter((inv) => {
+          if (!inv) return false;
+          try {
+            const effectiveStatus = getEffectiveInvoiceStatus(inv);
+            return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
+          } catch {
+            return inv.status === "Unpaid" || inv.status === "Overdue";
+          }
         });
-
-        if (!hasOutstandingInvoices) {
-          console.warn(
-            `[DATA INTEGRITY] Member ${member.id} reports ${member.balance || "HK$0"} outstanding but has no unpaid/overdue invoices. Excluding from outstanding totals.`
-          );
-          return sum;
-        }
-
-        return sum + numericValue;
+        const memberOutstanding = unpaidInvoices.reduce((s, inv) => {
+          const amount = parseFloat(String(inv?.amount ?? "").replace(/[^0-9.]/g, "") || 0);
+          return s + (Number.isFinite(amount) ? amount : 0);
+        }, 0);
+        return sum + memberOutstanding;
       }, 0);
 
       // Calculate Overdue Members - members with overdue invoices OR members with Overdue status
       // First, get all overdue invoices
       const overdueInvoices = invoices.filter(inv => {
-        const normalizedInvoiceMemberId = normalizeMemberIdValue(inv.memberId);
-        const isMemberInvoice = normalizedInvoiceMemberId && memberIds.has(normalizedInvoiceMemberId);
-        return isMemberInvoice && inv.status === "Overdue";
+        if (inv.status !== "Overdue") return false;
+        return (members || []).some((member) => matchesInvoiceToMember(inv, member));
       });
 
       // Create sets to track members with overdue invoices
@@ -2096,50 +2018,64 @@ function AdminPage() {
         return previousIds.some((entry) => String(entry?.id || "").trim() === memberIdStr);
       });
 
-      const memberAliases = new Set([
-        memberIdStr,
-        ...(matchingMember?.id ? [String(matchingMember.id).trim()] : []),
-        ...((matchingMember?.previousDisplayIds || [])
-          .map((entry) => String(entry?.id || "").trim())
-          .filter(Boolean)),
-      ]);
+      if (!matchingMember) {
+        console.warn('getMemberInvoices: No matching member found for id:', memberIdStr);
+        return [];
+      }
 
-      const memberNoStr = matchingMember?.memberNo != null ? String(matchingMember.memberNo).trim() : "";
-
-      const filteredInvoices = invoicesArray.filter((inv) => {
-        if (!inv) return false;
-        const invMemberIdStr = String(inv.memberId || "").trim();
-
-        const invMemberNoStr = inv?.memberNo != null ? String(inv.memberNo).trim() : "";
-        const matchesByNo = memberNoStr && invMemberNoStr && invMemberNoStr === memberNoStr;
-        const matchesById = invMemberIdStr && memberAliases.has(invMemberIdStr);
-        return matchesByNo || matchesById;
-      });
+      const filteredInvoices = invoicesArray.filter((inv) => matchesInvoiceToMember(inv, matchingMember));
       
-      console.log(`getMemberInvoices for ${memberIdStr}: found ${filteredInvoices.length} invoices out of ${invoicesArray.length} total`);
+      // Removed per-member log to prevent log spam
+      // --- Invoice summary and integrity logging ---
+      // Example parent scope where members are processed:
+      // (Insert this after all members are processed, e.g., after mapping/filtering over members)
+      //
+      // let totalMembersProcessed = members.length;
+      // let membersWithInvoices = 0;
+      // let membersWithoutInvoices = 0;
+      // const integrityWarningIds = [];
+      // members.forEach(member => {
+      //   const invoices = getMemberInvoices(member.id);
+      //   if (invoices.length > 0) {
+      //     membersWithInvoices++;
+      //   } else {
+      //     membersWithoutInvoices++;
+      //     // If integrity warning applies, push member.id
+      //     // integrityWarningIds.push(member.id);
+      //   }
+      // });
+      // if (import.meta.env.DEV) {
+      //   console.info(`[INVOICE MATCH SUMMARY] Members: ${totalMembersProcessed} | With invoices: ${membersWithInvoices} | Without invoices: ${membersWithoutInvoices}`);
+      //   if (integrityWarningIds.length > 0) {
+      //     const sample = integrityWarningIds.slice(0, 10);
+      //     console.warn(`[DATA INTEGRITY] ${integrityWarningIds.length} members with issues. Sample IDs:`, sample);
+      //   }
+      // }
       
       return filteredInvoices;
     };
 
     const getPreferredInvoicesForMember = (memberId, { includeOptimistic = true } = {}) => {
       const normalizedMemberId = String(memberId || "").trim();
-      if (!normalizedMemberId || normalizedMemberId === "undefined" || normalizedMemberId === "null") {
+      if (!normalizedMemberId || normalizedMemberId==="undefined" || normalizedMemberId==="null") {
         return [];
-      }
-
-      const selectedMemberId = String(selectedMember?.id || "").trim();
-      const hasSelectedInvoices = Array.isArray(selectedMemberInvoices) && selectedMemberInvoices.length > 0;
-
-      if (hasSelectedInvoices && selectedMemberId && selectedMemberId === normalizedMemberId) {
-        return selectedMemberInvoices;
       }
 
       const fallbackInvoices = getMemberInvoices(normalizedMemberId);
 
+      const targetMember = (members || []).find((member) => {
+        if (!member) return false;
+        const currentId = String(member.id || "").trim();
+        if (currentId && currentId === normalizedMemberId) return true;
+        const previousIds = Array.isArray(member.previousDisplayIds) ? member.previousDisplayIds : [];
+        return previousIds.some((entry) => String(entry?.id || "").trim() === normalizedMemberId);
+      });
+
       if (
         includeOptimistic &&
         lastCreatedInvoice &&
-        String(lastCreatedInvoice.memberId || "").trim() === normalizedMemberId
+        targetMember &&
+        matchesInvoiceToMember(lastCreatedInvoice, targetMember)
       ) {
         const optimisticId = String(lastCreatedInvoice.id || lastCreatedInvoice._id || "").trim();
         const alreadyIncluded = fallbackInvoices.some((inv) => {
@@ -2155,52 +2091,54 @@ function AdminPage() {
       return fallbackInvoices;
     };
 
-    const deriveSubscriptionYearFromInvoices = (invoicesList = []) => {
-      if (!Array.isArray(invoicesList) || invoicesList.length === 0) {
-        return null;
-      }
-
-      const sortedInvoices = invoicesList
-        .filter(Boolean)
-        .slice()
-        .sort((a, b) => {
-          const aDate = new Date(a?.createdAt || a?.updatedAt || a?.due || 0).getTime();
-          const bDate = new Date(b?.createdAt || b?.updatedAt || b?.due || 0).getTime();
-          return bDate - aDate;
-        });
-
-      for (const invoice of sortedInvoices) {
-        const yearFromPeriod = extractYearFromValue(invoice?.period);
-        if (yearFromPeriod) {
-          return yearFromPeriod;
-        }
-        const yearFromDue = extractYearFromValue(invoice?.due);
-        if (yearFromDue) {
-          return yearFromDue;
-        }
-      }
-
-      return null;
-    };
-
-    const getResolvedSubscriptionYear = (member) => {
+    const getResolvedSubscriptionYear = (member, invoicesList) => {
+      const currentYear = new Date().getFullYear().toString();
       if (!member) {
-        return new Date().getFullYear().toString();
+        return currentYear;
       }
 
       try {
-        const invoicesForMember = member.id
-          ? getPreferredInvoicesForMember(member.id, { includeOptimistic: true })
-          : [];
-        const invoiceYear = deriveSubscriptionYearFromInvoices(invoicesForMember);
-        if (invoiceYear) {
-          return invoiceYear;
+        const invoices = Array.isArray(invoicesList)
+          ? invoicesList
+          : (member.id ? getPreferredInvoicesForMember(member.id, { includeOptimistic: true }) : []);
+
+        if (invoices.length > 0) {
+          const extractYear = (val) => {
+            if (val == null || val === "") return null;
+            const str = String(val).trim();
+            const m = str.match(/\d{4}/);
+            if (m) return m[0];
+            const d = new Date(val);
+            return !isNaN(d.getTime()) ? d.getFullYear().toString() : null;
+          };
+          const sorted = invoices
+            .filter(Boolean)
+            .slice()
+            .sort((a, b) => {
+              const aDate = new Date(a?.createdAt || a?.updatedAt || a?.due || 0).getTime();
+              const bDate = new Date(b?.createdAt || b?.updatedAt || b?.due || 0).getTime();
+              return bDate - aDate;
+            });
+
+          for (const inv of sorted) {
+            const yearFromPeriod = extractYear(inv?.period);
+            if (yearFromPeriod) return yearFromPeriod;
+            const yearFromDue = extractYear(inv?.due);
+            if (yearFromDue) return yearFromDue;
+            const yearFromDate = extractYear(inv?.createdAt || inv?.updatedAt);
+            if (yearFromDate) return yearFromDate;
+          }
+        }
+
+        if (member?.createdAt) {
+          const d = new Date(member.createdAt);
+          if (!isNaN(d.getTime())) return d.getFullYear().toString();
         }
       } catch (error) {
-        console.warn("Unable to derive subscription year from invoices:", error);
+        console.warn("Unable to derive subscription year:", error);
       }
 
-      return deriveSubscriptionYearForMember(member);
+      return currentYear;
     };
 
     const getRecentPayments = () => {
@@ -3298,9 +3236,13 @@ function AdminPage() {
         const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
         const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
 
+        const authToken = sessionStorage.getItem('authToken');
         const response = await fetch(`${apiUrl}/api/payments/${paymentId}/approve`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
           body: JSON.stringify({ adminId, adminName: sessionStorage.getItem('adminName') || 'Admin' }),
         });
 
@@ -3309,11 +3251,16 @@ function AdminPage() {
           throw new Error(errorData.error || 'Failed to approve payment');
         }
 
-        // No need to refetch - Socket.io will update in real-time
-        // State is already updated optimistically
+        const data = await response.json();
+        if (data.payment) {
+          updatePaymentInState(data.payment);
+        }
+        if (data.invoice) {
+          updateInvoiceInState(data.invoice);
+        }
 
         // Update member balance after payment approval
-        const payment = paymentHistory.find(p => p.id === paymentId) || payments.find(p => p.id === paymentId);
+        const payment = data.payment || paymentHistory.find(p => p.id === paymentId) || payments.find(p => p.id === paymentId);
         if (payment && payment.memberId) {
           const newBalance = calculateMemberBalance(payment.memberId);
           const balanceText = newBalance > 0 ? `${formatCurrency(newBalance)} Outstanding` : formatCurrency(0);
@@ -3351,9 +3298,13 @@ function AdminPage() {
         const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
         const adminId = sessionStorage.getItem('adminId') || sessionStorage.getItem('adminName') || 'Admin';
 
+        const authToken = sessionStorage.getItem('authToken');
         const response = await fetch(`${apiUrl}/api/payments/${paymentId}/reject`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
           body: JSON.stringify({ adminId, adminName: sessionStorage.getItem('adminName') || 'Admin', reason }),
         });
 
@@ -3610,9 +3561,13 @@ function AdminPage() {
           updatedPaymentPayload.invoiceId = matchedInvoice._id;
         }
 
+        const authToken = sessionStorage.getItem('authToken');
         const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
           body: JSON.stringify(updatedPaymentPayload),
         });
 
@@ -3621,11 +3576,15 @@ function AdminPage() {
           throw new Error(errorData.error || 'Failed to update payment');
         }
 
+        const data = await response.json();
+        if (data.payment) {
+          updatePaymentInState(data.payment);
+        }
+
         showToast("Payment updated successfully!");
         setShowPaymentForm(false);
         setEditingPayment(null);
         setPaymentForm(buildEmptyPaymentForm());
-        // No need to refetch - Socket.io will update in real-time
       } catch (error) {
         console.error('Error updating payment:', error);
         showToast(error.message || "Failed to update payment", "error");
@@ -3641,9 +3600,13 @@ function AdminPage() {
             // In production, use VITE_API_URL if set
             const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
 
+            const authToken = sessionStorage.getItem('authToken');
             const response = await fetch(`${apiUrl}/api/payments/${paymentId}`, {
               method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+              },
             });
 
             if (!response.ok) {
@@ -3725,7 +3688,7 @@ function AdminPage() {
         for (const member of selectedMembers) {
           const memberInvoices = invoices.filter(
             (inv) =>
-              inv.memberId === member.id &&
+              matchesInvoiceToMember(inv, member) &&
               (inv.status === "Unpaid" || inv.status === "Overdue")
           );
           
@@ -3767,7 +3730,7 @@ function AdminPage() {
 
           const memberUnpaidInvoices = invoices.filter(
             (inv) =>
-              inv.memberId === member.id &&
+              matchesInvoiceToMember(inv, member) &&
               (inv.status === "Unpaid" || inv.status === "Overdue")
           );
 
@@ -4011,7 +3974,7 @@ Indian Muslim Association, Hong Kong`;
           // Get member's unpaid/overdue invoices
           const memberUnpaidInvoices = invoices.filter(
             (inv) =>
-              inv.memberId === member.id &&
+              matchesInvoiceToMember(inv, member) &&
               (inv.status === "Unpaid" || inv.status === "Overdue")
           );
 
@@ -4168,10 +4131,8 @@ Indian Muslim Association, Hong Kong`;
       if (activeSection === "donations") {
         fetchDonations();
       }
-      // We intentionally only depend on activeSection here.
-      // fetchDonations comes from context and its identity can change on re-renders,
-      // which would cause this effect to run repeatedly and refetch endlessly.
       // eslint-disable-next-line react-hooks/exhaustive-deps
+      // Reason: fetchDonations comes from context and its identity can change on re-renders, which would cause this effect to run repeatedly and refetch endlessly. Only run when activeSection changes.
     }, [activeSection]);
 
     // Reset pagination when filters change
@@ -4241,48 +4202,6 @@ Indian Muslim Association, Hong Kong`;
         setDonationsPage(1);
       }
     }, [donations, donationsPageSize, donationsPage]);
-
-    // Helper function to refresh selected member's invoices from backend
-    const refreshSelectedMemberInvoices = async (member) => {
-      if (!member?._id) {
-        console.error("Missing member _id for invoice refresh.", member);
-        return;
-      }
-
-      const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-      const memberBusinessId = member.id ? String(member.id).trim() : "";
-      const memberNoStr = member?.memberNo != null ? String(member.memberNo).trim() : "";
-      const memberPreviousIds = Array.isArray(member.previousDisplayIds)
-        ? member.previousDisplayIds.map((entry) => String(entry?.id || "").trim()).filter(Boolean)
-        : [];
-      const memberAliases = new Set([memberBusinessId, ...memberPreviousIds].filter(Boolean));
-
-      try {
-        setLoadingMemberInvoices(true);
-        const response = await fetch(`${apiUrl}/api/invoices`);
-        if (response.ok) {
-          const invoices = await response.json();
-          const memberInvoices = (memberAliases.size > 0 || memberNoStr)
-            ? invoices.filter((invoice) => {
-              const invoiceMemberId = String(invoice?.memberId || "").trim();
-              const invoiceMemberNo = invoice?.memberNo != null ? String(invoice.memberNo).trim() : "";
-              const matchesByNo = memberNoStr && invoiceMemberNo && invoiceMemberNo === memberNoStr;
-              const matchesById = invoiceMemberId && memberAliases.has(invoiceMemberId);
-              return matchesByNo || matchesById;
-            })
-            : [];
-          console.log(`✓ Refreshed ${memberInvoices.length} invoices for member ${memberBusinessId || member._id}`);
-          setSelectedMemberInvoices(memberInvoices);
-        } else {
-          setSelectedMemberInvoices([]);
-        }
-      } catch (error) {
-        console.error('Error refreshing member invoices:', error);
-        setSelectedMemberInvoices([]);
-      } finally {
-        setLoadingMemberInvoices(false);
-      }
-    };
 
     // Reset member detail invoices pagination when selected member changes
     useEffect(() => {
@@ -4762,37 +4681,46 @@ Indian Muslim Association, Hong Kong`;
     };
 
     const handleEditMember = (member) => {
-      // Clear validation state when opening edit form
-      setMemberFieldErrors({
-        name: false,
-        email: false,
-        phone: false,
-        nextDue: false,
-        lastPayment: false,
-      });
-      setCurrentInvalidField(null);
-      setEditingMember(member);
-      setPendingSubscriptionType(null);
-      setPendingSubscriptionTypePrev(null);
-      setEditInitialSubscriptionType(normalizeSubscriptionType(member.subscriptionType));
-      // Include all fields from add member form - use actual values from member object
-      const rawMemberId = member.id || "";
-      const sanitizedMemberId = String(rawMemberId).trim().toLowerCase() === "not assigned" ? "" : rawMemberId;
-      setMemberForm({
-        id: sanitizedMemberId,
-        name: member.name || "",
-        email: member.email || "",
-        phone: member.phone || "",
-        native: member.native || "",
-        status: member.status || "Active",
-        subscriptionType: normalizeSubscriptionType(member.subscriptionType),
-        subscriptionYear: getResolvedSubscriptionYear(member),
-        balance: member.balance ? member.balance.replace(/[^0-9.]/g, '') : "500",
-        nextDue: member.start_date ? new Date(member.start_date).toISOString().split('T')[0] : getTodayDate(),
-        lastPayment: member.last_payment_date ? new Date(member.last_payment_date).toISOString().split('T')[0] : "",
-      });
-      setShowMemberForm(true);
-      openModal('memberForm');
+      try {
+        if (!member) {
+          showToast("No member selected.", "error");
+          return;
+        }
+        // Clear validation state when opening edit form
+        setMemberFieldErrors({
+          name: false,
+          email: false,
+          phone: false,
+          nextDue: false,
+          lastPayment: false,
+        });
+        setCurrentInvalidField(null);
+        setEditingMember(member);
+        setPendingSubscriptionType(null);
+        setPendingSubscriptionTypePrev(null);
+        setEditInitialSubscriptionType(normalizeSubscriptionType(member.subscriptionType));
+        const subscriptionYear = getResolvedSubscriptionYear(member);
+        const rawMemberId = member.id || "";
+        const sanitizedMemberId = String(rawMemberId).trim().toLowerCase() === "not assigned" ? "" : rawMemberId;
+        setMemberForm({
+          id: sanitizedMemberId,
+          name: member.name || "",
+          email: member.email || "",
+          phone: member.phone || "",
+          native: member.native || "",
+          status: member.status || "Active",
+          subscriptionType: normalizeSubscriptionType(member.subscriptionType),
+          subscriptionYear,
+          balance: member.balance ? member.balance.replace(/[^0-9.]/g, '') : "500",
+          nextDue: member.start_date ? new Date(member.start_date).toISOString().split('T')[0] : getTodayDate(),
+          lastPayment: member.last_payment_date ? new Date(member.last_payment_date).toISOString().split('T')[0] : "",
+        });
+        setShowMemberForm(true);
+        openModal('memberForm');
+      } catch (error) {
+        console.error("Edit Member error:", error);
+        showToast("Unable to open Edit Member form. Please try again.", "error");
+      }
     };
 
     const handleUpdateMember = async (e) => {
@@ -4950,7 +4878,7 @@ Indian Muslim Association, Hong Kong`;
             // UI-only: backend auto-creates an invoice on upgrade; refresh invoice state so it shows immediately.
             fetchInvoices();
             if (selectedMember?._id && String(selectedMember._id) === String(upgradedMemberDbId)) {
-              refreshSelectedMemberInvoices(selectedMember);
+              // selectedMember will be updated via selectedMember prop change, which triggers useMemo
             }
           };
 
@@ -5116,7 +5044,7 @@ Indian Muslim Association, Hong Kong`;
 
       // Check if an invoice for the same period already exists for this member
       const existingInvoice = invoices.find(
-        (inv) => inv.memberId === invoiceForm.memberId &&
+        (inv) => member && matchesInvoiceToMember(inv, member) &&
           inv.period === period &&
           inv.status !== "Rejected"
       );
@@ -5170,24 +5098,9 @@ Indian Muslim Association, Hong Kong`;
     };
 
    const updateInvoiceInSelectedTable = (updatedInvoice, receiverName) => {
-  if (!updatedInvoice?._id) return;
-
-  setSelectedMemberInvoices(prev =>
-      prev.map(inv => {
-        if (inv._id !== updatedInvoice._id) return inv;
-
-        // UI-only safety: don't clobber subscriptionType with empty/undefined from partial updates
-        const merged = {
-          ...inv,
-          ...updatedInvoice,
-          ...(receiverName ? { receiver_name: receiverName } : {}),
-        };
-        merged.subscriptionType = merged.subscriptionType || inv.subscriptionType;
-
-        return merged;
-      })
-  );
-};
+      // This function is no longer needed since we derive memberInvoices from global state
+      // Invoice updates are handled by socket events and state changes to the global invoices array
+    };
 
 
 
@@ -5204,10 +5117,6 @@ Indian Muslim Association, Hong Kong`;
         }
 
         let invoice = invoices.find((inv) => String(inv._id || "").trim() === invoiceIdValue);
-        if (!invoice) {
-          invoice = (selectedMemberInvoices || []).find((inv) => String(inv._id || "").trim() === invoiceIdValue);
-        }
-
         if (!invoice) {
           showToast("Invoice not found", "error");
           return;
@@ -5235,16 +5144,20 @@ Indian Muslim Association, Hong Kong`;
           reference = payment_type === "online" ? `ONL_${Date.now()}` : `CASH_${Date.now()}`;
         }
 
-        const member = members.find(m => String(m.id || "").trim() === String(invoice.memberId || "").trim());
+        const member = (members || []).find((m) => matchesInvoiceToMember(invoice, m));
         if (!member?._id) {
           showToast("Member record is missing a Mongo _id.", "error");
           return;
         }
 
         // Step 1: Approve payment (single-step, server handles invoice + member updates)
+        const authToken = sessionStorage.getItem('authToken');
         const paymentResponse = await fetch(`${apiUrl}/api/payments/approve-invoice`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
           body: JSON.stringify({
             invoiceId: invoice._id,
             memberId: member._id,
@@ -5287,21 +5200,14 @@ Indian Muslim Association, Hong Kong`;
             status: approvedInvoice.status,
             receiptNumber: approvedInvoice.receiptNumber,
           });
-          updateInvoiceInSelectedTable(
-            approvedInvoice,
-            paymentModalData.receiver_name
-          );
+          updateInvoiceInState(approvedInvoice);
+        }
+        if (approvalResult?.payment) {
+          updatePaymentInState(approvalResult.payment);
         }
 
         // Step 2: Store member ID for later use (avoid stale closure)
         const processedMemberDbId = member?._id || null;
-
-        // Step 3: Use approval response for confirmation modal
-        const invoiceForConfirmation = approvedInvoice || { ...invoice, status: "Paid" };
-        setPaymentConfirmationInvoice(invoiceForConfirmation);
-        setPaymentConfirmationChannels({ email: false, whatsapp: false });
-        // Replace payment modal with confirmation modal (modal replacement pattern)
-        openConfirmModal('paymentConfirmation');
 
         // Step 7: Update selectedMember and their invoices if we're currently viewing this member's details
         if (processedMemberDbId && selectedMember && selectedMember._id === processedMemberDbId && approvedMember?._id) {
@@ -5315,10 +5221,7 @@ Indian Muslim Association, Hong Kong`;
           console.warn("⚠ Failed to refresh invoices list after payment approval:", refreshError);
         }
 
-        if (selectedMember) {
-          await refreshSelectedMemberInvoices(selectedMember);
-          console.log("✓ Selected member invoices refreshed after payment approval");
-        }
+        // selectedMemberInvoices will be automatically updated via useMemo when invoices change
 
         // Step 4: Show success message
         if (approvedMember?.last_payment_date || approvedMember?.next_due_date) {
@@ -5366,7 +5269,6 @@ Indian Muslim Association, Hong Kong`;
     const invoiceIdStr = String(invoiceDbId);
 
     const invoice =
-      selectedMemberInvoices.find(inv => String(inv._id) === invoiceIdStr) ||
       invoices.find(inv => String(inv._id) === invoiceIdStr);
 
     if (!invoice) {
@@ -5383,10 +5285,7 @@ Indian Muslim Association, Hong Kong`;
     // 🔥 Backend delete
     await deleteInvoice(invoice._id);
 
-    // 🔥 Instant table update (NO refetch)
-    setSelectedMemberInvoices(prev =>
-      prev.filter(inv => String(inv._id) !== invoiceIdStr)
-    );
+    // Invoice will be automatically removed from memberInvoices via useMemo when global invoices state updates
 
     showToast("Invoice deleted successfully", "success");
   } catch (error) {
@@ -5936,68 +5835,20 @@ Indian Muslim Association, Hong Kong`;
 
       const targetMemberDbId = String(memberToView._id).trim();
       const targetMemberBusinessId = String(memberToView.id || "").trim();
-      const targetMemberNo = memberToView?.memberNo != null ? String(memberToView.memberNo).trim() : "";
-      const targetMemberPreviousDisplayIds = Array.isArray(memberToView?.previousDisplayIds)
-        ? memberToView.previousDisplayIds.map((entry) => String(entry?.id || "").trim()).filter(Boolean)
-        : [];
-      const targetMemberIdAliases = new Set([
-        targetMemberBusinessId,
-        ...targetMemberPreviousDisplayIds,
-      ].filter(Boolean));
       console.log(`Viewing member details for: ${targetMemberDbId} - ${memberToView.name}`);
 
       // Reset state when switching members - CRITICAL to prevent showing old data
       setMemberDetailInvoicesPage(1);
       setActiveTab("Invoices");
-      setSelectedMemberInvoices([]); // Clear previous member's invoices immediately
       setLoadingMemberInvoices(true);
 
       // Immediately set the member and switch section for instant feedback
       setSelectedMember(memberToView);
       setActiveSection("member-detail");
 
-      // Fetch member-specific invoices from dedicated backend endpoint
-      // This guarantees correct data, unlike filtering from global state
       const apiUrl = import.meta.env.DEV ? "" : (import.meta.env.VITE_API_URL || "");
-      
-      try {
-        // Fetch invoices SPECIFICALLY for this member from the backend
-        const invoicesResponse = await fetch(`${apiUrl}/api/invoices`);
-          if (invoicesResponse.ok) {
-            const allInvoices = await invoicesResponse.json();
-            const memberInvoices = allInvoices.filter((invoice) => {
-              if (!invoice) return false;
-
-              const invoiceMemberId = String(invoice?.memberId || "").trim();
-              const invoiceMemberNo = invoice?.memberNo != null ? String(invoice.memberNo).trim() : "";
-              const matchesByNo = targetMemberNo && invoiceMemberNo && invoiceMemberNo === targetMemberNo;
-              const matchesById = invoiceMemberId && targetMemberIdAliases.has(invoiceMemberId);
-              return matchesByNo || matchesById;
-            });
-            console.log(`✓ Fetched ${memberInvoices.length} invoices for member ${targetMemberBusinessId || targetMemberDbId}`);
-          if (shouldBlockMemberDetailForMissingInvoices(memberToView, memberInvoices)) {
-            setSelectedMember(null);
-            setSelectedMemberInvoices([]);
-            setActiveSection("members");
-            return;
-          }
-          setSelectedMemberInvoices(memberInvoices);
-        } else {
-          console.warn(
-            `Failed to fetch invoices for member ${targetMemberBusinessId || targetMemberDbId}:`,
-            invoicesResponse.status
-          );
-          setSelectedMemberInvoices([]);
-        }
-      } catch (error) {
-        console.error(
-          `Error fetching invoices for member ${targetMemberBusinessId || targetMemberDbId}:`,
-          error
-        );
-        setSelectedMemberInvoices([]);
-      } finally {
-        setLoadingMemberInvoices(false);
-      }
+      // Invoices for this member are now derived from global invoices state
+      setLoadingMemberInvoices(false);
 
       // Refresh other data in the background
       try {
@@ -6011,8 +5862,9 @@ Indian Muslim Association, Hong Kong`;
               .then(response => response.ok ? response.json() : null)
               .then(latestMember => {
                 if (latestMember?._id) {
-                  console.log(`Updated selected member with fresh data: ${latestMember.id || latestMember._id}`);
-                  setSelectedMember(latestMember);
+                  setSelectedMember((prev) =>
+                    prev && String(prev._id) === String(targetMemberDbId) ? latestMember : prev
+                  );
                 }
               })
               .catch(fetchError => {
@@ -6837,11 +6689,11 @@ Indian Muslim Association, Hong Kong`;
                               phone: "",
                               native: "",
                               status: "Active",
-                              balance: "500", // default based on Annual Member subscription
-                              nextDue: getTodayDate(), // Default to today's date
+                              balance: "500",
+                              nextDue: getTodayDate(),
                               subscriptionYear: new Date().getFullYear().toString(),
                               lastPayment: "",
-                              subscriptionType: "Annual Member",
+                              subscriptionType: SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
                             });
                           }}
                         >
@@ -7264,7 +7116,7 @@ Indian Muslim Association, Hong Kong`;
                                 <input
                                   type="number"
                                   inputMode="numeric"
-                                  value={getInvoiceAmountCurrentYear(memberForm.subscriptionType, { isNewMember: false, member: editingMember })}
+                                  value={derivedInvoiceAmount}
                                   readOnly
                                   style={{
                                     background: "#f9fafb",
@@ -7356,7 +7208,7 @@ Indian Muslim Association, Hong Kong`;
                                 <input
                                   type="number"
                                   inputMode="numeric"
-                                  value={getInvoiceAmountCurrentYear(memberForm.subscriptionType, { isNewMember: true })}
+                                  value={derivedInvoiceAmount}
                                   readOnly
                                   style={{
                                     background: "#f9fafb",
@@ -7893,7 +7745,6 @@ Indian Muslim Association, Hong Kong`;
                                         }}
                                         style={{
                                           padding: "8px 32px 8px 12px",
-                                          borderRadius: "0",
                                           border: "1px solid #e5e7eb",
                                           borderLeft: "none",
                                           borderRadius: "0 4px 4px 0",
@@ -8091,9 +7942,6 @@ Indian Muslim Association, Hong Kong`;
                                   rows={paginatedMembers.map((member) => {
                                     const highlightKey = getMemberHighlightKey(member);
                                     const shouldAllowHighlight = !isArchivedMember(member);
-                                    // Derive outstanding numeric amount
-                                    const balanceStr = member.balance?.toString() || "";
-                                    const numericOutstanding = parseFloat(balanceStr.replace(/[^0-9.]/g, "") || 0) || 0;
 
                                     // Joined Year
                                     const joinedYear = member.start_date
@@ -8102,6 +7950,24 @@ Indian Muslim Association, Hong Kong`;
 
                                     // Get all invoices for this member using business ID
                                     const memberInvoices = getMemberInvoices(member.id);
+
+                                    // Count unpaid invoices and calculate outstanding from invoices only (never from member.balance or presets)
+                                    const validMemberInvoices = Array.isArray(memberInvoices) ? memberInvoices : [];
+                                    const unpaidInvoices = validMemberInvoices.filter(inv => {
+                                      if (!inv) return false;
+                                      try {
+                                        const effectiveStatus = getEffectiveInvoiceStatus(inv);
+                                        return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
+                                      } catch (error) {
+                                        console.warn("Error getting effective invoice status:", error);
+                                        return inv.status === "Unpaid" || inv.status === "Overdue";
+                                      }
+                                    });
+                                    const unpaidInvoiceCount = unpaidInvoices.length;
+                                    const numericOutstanding = unpaidInvoices.reduce((sum, inv) => {
+                                      const amount = parseFloat(String(inv?.amount ?? "").replace(/[^0-9.]/g, "") || 0);
+                                      return sum + (Number.isFinite(amount) ? amount : 0);
+                                    }, 0);
 
                                     // Subscription Year - display only backend-derived latest invoice year (no inference)
                                     const subYear = getMemberSubscriptionYear(member) || "-";
@@ -8119,22 +7985,6 @@ Indian Muslim Association, Hong Kong`;
                                       derivedStatus === "Active"
                                         ? "badge badge-active"
                                         : "badge badge-inactive";
-
-                                    // Count unpaid invoices for this member (using effective status)
-                                    // Ensure memberInvoices is defined and is an array
-                                    const validMemberInvoices = Array.isArray(memberInvoices) ? memberInvoices : [];
-                                    const unpaidInvoices = validMemberInvoices.filter(inv => {
-                                      if (!inv) return false;
-                                      try {
-                                        const effectiveStatus = getEffectiveInvoiceStatus(inv);
-                                        return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
-                                      } catch (error) {
-                                        // Fallback to invoice status if getEffectiveInvoiceStatus fails
-                                        console.warn("Error getting effective invoice status:", error);
-                                        return inv.status === "Unpaid" || inv.status === "Overdue";
-                                      }
-                                    });
-                                    const unpaidInvoiceCount = unpaidInvoices.length;
                                     
                                     // Check if member has 1 or more unpaid invoices
                                     const hasUnpaidInvoices = unpaidInvoiceCount >= 1;
@@ -8410,8 +8260,7 @@ Indian Muslim Association, Hong Kong`;
                         </p>
                         <h4 className="admin-dashboard-kpi-value admin-dashboard-kpi-value--red">
                           {(() => {
-                            // Use selectedMemberInvoices fetched from backend
-                            const memberInvoices = selectedMemberInvoices;
+                            const memberInvoices = !selectedMember ? [] : invoices.filter(inv => matchesInvoiceToMember(inv, selectedMember));
                             const unpaidInvoices = memberInvoices.filter(inv => {
                               const effectiveStatus = getEffectiveInvoiceStatus(inv);
                               return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
@@ -8506,8 +8355,9 @@ Indian Muslim Association, Hong Kong`;
 
                     {/* Overdue warning */}
                     {(() => {
-                      // Use selectedMemberInvoices fetched from backend
-                      const memberInvoices = selectedMemberInvoices;
+                      // Derive member invoices from global invoices on the fly
+                      const memberInvoices = !selectedMember ? [] : invoices.filter(inv => matchesInvoiceToMember(inv, selectedMember));
+
                       const overdueInvoices = memberInvoices.filter(
                         (inv) => getEffectiveInvoiceStatus(inv) === "Overdue"
                       );
@@ -8593,8 +8443,9 @@ Indian Muslim Association, Hong Kong`;
                           <div>
                             <h4>Invoices</h4>
                             {(() => {
-                              // Use selectedMemberInvoices fetched from backend
-                              const memberInvoices = selectedMemberInvoices;
+                              // Derive member invoices from global invoices on the fly
+                              const memberInvoices = !selectedMember ? [] : invoices.filter(inv => matchesInvoiceToMember(inv, selectedMember));
+
                               const unpaidInvoices = memberInvoices.filter(inv => {
                                 const effectiveStatus = getEffectiveInvoiceStatus(inv);
                                 return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
@@ -8636,7 +8487,10 @@ Indian Muslim Association, Hong Kong`;
                           <div>
                             <button
                               className="secondary-btn"
+                              disabled={isArchivedMember(selectedMember)}
+                              title={isArchivedMember(selectedMember) ? "Archived members cannot have new invoices" : "Create Invoice"}
                               onClick={() => {
+                                if (isArchivedMember(selectedMember)) return;
                                 prefillInvoiceFormForMember(selectedMember);
                                 setActiveSection("invoice-builder");
                               }}
@@ -8646,10 +8500,9 @@ Indian Muslim Association, Hong Kong`;
                           </div>
                         </div>
                         {(() => {
-                          // Use invoices fetched specifically for this member from backend
-                          // This guarantees correct data and prevents showing other members' invoices
-                          const allMemberInvoices = selectedMemberInvoices;
-                          
+                          // Derive member invoices from global invoices on the fly
+                          const memberInvoices = !selectedMember ? [] : invoices.filter(inv => matchesInvoiceToMember(inv, selectedMember));
+
                           // Show loading state
                           if (loadingMemberInvoices) {
                             return (
@@ -8659,6 +8512,10 @@ Indian Muslim Association, Hong Kong`;
                               </div>
                             );
                           }
+
+                          // REQUIRED: split invoices into two arrays using exact string matches.
+                          // No normalization/mapping; do not wrap/replace invoice objects.
+                          const allMemberInvoices = memberInvoices;
 
                           // REQUIRED: split invoices into two arrays using exact string matches.
                           // No normalization/mapping; do not wrap/replace invoice objects.
@@ -8707,7 +8564,7 @@ Indian Muslim Association, Hong Kong`;
                                 paymentInvoiceId === invoice._id?.toString()
                               );
                             });
-                            const receiverName = relatedPayment?.receiver_name || "-";
+                            const receiverName = isPaid ? (invoice?.receiver_name || relatedPayment?.receiver_name || "-") : "-";
 
                             // Display invoice's own stored due date (never auto-updated)
                             const getDueDateDisplay = () => {
@@ -8878,7 +8735,7 @@ Indian Muslim Association, Hong Kong`;
                                             />
                                           </>
                                         )}
-                                        {/* Paid invoices: Show Send, PDF, and Delete buttons as circular icons */}
+                                        {/* Paid invoices: Show Send and PDF only (paid invoices cannot be deleted) */}
                                         {isPaid && (
                                           <>
                                             <ActionIcon
@@ -8906,21 +8763,6 @@ Indian Muslim Association, Hong Kong`;
                                                 window.open(pdfUrl, "_blank");
                                               }}
                                             />
-                                            <ActionIcon
-                                              icon="fa-trash"
-                                              tooltip="Delete Invoice"
-                                              variant="delete"
-                                              ariaLabel="Delete Invoice"
-                                              onClick={() => {
-                                                showConfirmation(
-                                                  `Delete invoice ${invoice.id}? This cannot be undone.`,
-                                                  () => handleDeleteInvoice(invoice._id, { skipConfirmation: true }),
-                                                  null,
-                                                  "Delete",
-                                                  { requirePassword: true }
-                                                );
-                                              }}
-                                            />
                                           </>
                                         )}
                                       </>
@@ -8931,6 +8773,15 @@ Indian Muslim Association, Hong Kong`;
                             };
                           };
                           
+                          if (allMemberInvoices.length === 0) {
+                            return (
+                              <div style={{ textAlign: "center", padding: "32px 20px", color: "#666" }}>
+                                <p className="m-0 text-base">No invoices for this member yet.</p>
+                                <p style={{ marginTop: "8px", fontSize: "0.875rem" }}>Create an invoice from Subscriptions or the button above.</p>
+                              </div>
+                            );
+                          }
+
                           return (
                             <>
 
@@ -8979,7 +8830,7 @@ Indian Muslim Association, Hong Kong`;
                               return (
                                 normalizedPaymentMemberId &&
                                 normalizedSelectedMemberId &&
-                                normalizedPaymentMemberId === normalizedSelectedMemberId
+                                normalizedPaymentMemberId===normalizedSelectedMemberId
                               );
                             })
                             .sort((a, b) => {
@@ -9198,7 +9049,7 @@ Indian Muslim Association, Hong Kong`;
                               return (
                                 normalizedCommMemberId &&
                                 normalizedSelectedMemberId &&
-                                normalizedCommMemberId === normalizedSelectedMemberId
+                                normalizedCommMemberId===normalizedSelectedMemberId
                               );
                             })
                             .sort((a, b) => {
@@ -9313,7 +9164,7 @@ Indian Muslim Association, Hong Kong`;
                               return (
                                 normalizedPaymentMemberId &&
                                 normalizedSelectedMemberId &&
-                                normalizedPaymentMemberId === normalizedSelectedMemberId
+                                normalizedPaymentMemberId===normalizedSelectedMemberId
                               );
                             })
                             .map((p) => ({
@@ -9331,7 +9182,7 @@ Indian Muslim Association, Hong Kong`;
                               return (
                                 normalizedCommMemberId &&
                                 normalizedSelectedMemberId &&
-                                normalizedCommMemberId === normalizedSelectedMemberId
+                                normalizedCommMemberId===normalizedSelectedMemberId
                               );
                             })
                             .map((c) => ({
@@ -9747,9 +9598,9 @@ Indian Muslim Association, Hong Kong`;
                                       padding: "14px 16px",
                                       cursor: "pointer",
                                       borderBottom: "none",
-                                      background: invoiceForm.memberId === member.id ? "#f0f4ff" : "#fff",
+                                      background: invoiceForm.memberId===member.id ? "#f0f4ff" : "#fff",
                                       transition: "all 0.2s",
-                                      boxShadow: invoiceForm.memberId === member.id ? "0 2px 4px rgba(90, 49, 234, 0.1)" : "none"
+                                      boxShadow: invoiceForm.memberId===member.id ? "0 2px 4px rgba(90, 49, 234, 0.1)" : "none"
                                     }}
                                     onMouseEnter={(e) => {
                                       if (invoiceForm.memberId !== member.id) {
@@ -10041,7 +9892,7 @@ Indian Muslim Association, Hong Kong`;
                           // Get existing unpaid invoices for this member
                           const existingUnpaidInvoices = invoices.filter(
                             (inv) =>
-                              inv.memberId === member.id &&
+                              matchesInvoiceToMember(inv, member) &&
                               (inv.status === "Unpaid" || inv.status === "Overdue")
                           );
 
@@ -10577,7 +10428,7 @@ Indian Muslim Association, Hong Kong`;
                           .map((member) => {
                           const memberInvoices = invoices.filter(
                             (inv) =>
-                              inv.memberId === member.id &&
+                              matchesInvoiceToMember(inv, member) &&
                               (inv.status === "Unpaid" || inv.status === "Overdue")
                           );
                             if (memberInvoices.length === 0) return null;
@@ -10597,7 +10448,7 @@ Indian Muslim Association, Hong Kong`;
                             // Check if member has outstanding invoices in the selected year
                             const memberInvoices = invoices.filter(
                               (inv) =>
-                                inv.memberId === member.id &&
+                                matchesInvoiceToMember(inv, member) &&
                                 (inv.status === "Unpaid" || inv.status === "Overdue")
                             );
                             
@@ -13861,8 +13712,8 @@ Indian Muslim Association, Hong Kong`;
                         if (invoiceSearchTerm.trim()) {
                           const searchLower = invoiceSearchTerm.toLowerCase();
                           filteredInvoices = filteredInvoices.filter((invoice) => {
-                            // Get member strictly via normalized business ID
-                            const member = findMemberByBusinessId(invoice.memberId);
+                            // Get member via shared invoice-member matcher
+                            const member = (members || []).find((m) => matchesInvoiceToMember(invoice, m));
 
                             // Search by name (only when canonical member exists)
                             const memberName = (member?.name || "").toLowerCase();
@@ -14014,7 +13865,6 @@ Indian Muslim Association, Hong Kong`;
                                       }}
                                       style={{
                                         padding: "8px 32px 8px 12px",
-                                        borderRadius: "0",
                                         border: "1px solid #e5e7eb",
                                         borderLeft: "none",
                                         borderRadius: "0 4px 4px 0",
@@ -14232,20 +14082,8 @@ Indian Muslim Association, Hong Kong`;
                                       const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
                                       const isOverdue = invoice.status === "Overdue";
 
-                                      // Get member from members list - prioritize memberId to avoid duplicates
-                                      let member = null;
-                                      if (invoice.memberId) {
-                                        member = members.find(m => 
-                                          m.id === invoice.memberId ||
-                                          String(m.id || "") === String(invoice.memberId || "")
-                                        );
-                                      }
-                                      // Fallback to email only if memberId didn't find a match
-                                      if (!member && invoice.memberEmail) {
-                                        member = members.find(m => 
-                                          String(m.email || "").toLowerCase() === String(invoice.memberEmail || "").toLowerCase()
-                                        );
-                                      }
+                                      // Get member from members list using shared invoice-member matcher
+                                      let member = (members || []).find((m) => matchesInvoiceToMember(invoice, m));
                                       
                                       // If member not found in members list, skip this invoice (shouldn't happen due to filter, but double-check)
                                       if (!member) {
@@ -14722,7 +14560,6 @@ Indian Muslim Association, Hong Kong`;
                                   }}
                                   style={{
                                     padding: "8px 32px 8px 12px",
-                                    borderRadius: "0",
                                     border: "1px solid #e5e7eb",
                                     borderLeft: "none",
                                     borderRadius: "0 4px 4px 0",
@@ -15830,7 +15667,7 @@ Indian Muslim Association, Hong Kong`;
                                                 padding: "12px 16px",
                                                 cursor: "pointer",
                                                 borderBottom: "1px solid #e5e7eb",
-                                                background: donationForm.memberId === member.id ? "#f9fafb" : "#fff",
+                                                background: donationForm.memberId===member.id ? "#f9fafb" : "#fff",
                                                 transition: "background 0.2s"
                                               }}
                                               onMouseEnter={(e) => {
@@ -16672,7 +16509,6 @@ Indian Muslim Association, Hong Kong`;
                                         }}
                                         style={{
                                           padding: "8px 32px 8px 12px",
-                                          borderRadius: "0",
                                           border: "1px solid #e5e7eb",
                                           borderLeft: "none",
                                           borderRadius: "0 4px 4px 0",
@@ -18077,16 +17913,8 @@ Indian Muslim Association, Hong Kong`;
                                                 showToast("Invoice not found for this transaction", "error");
                                                 return;
                                               }
-                                              // Prioritize memberId, fallback to email
-                                              let member = members.find((m) => 
-                                                m.id === invoice.memberId ||
-                                                String(m.id || "") === String(invoice.memberId || "")
-                                              );
-                                              if (!member && invoice.memberEmail) {
-                                                member = members.find((m) =>
-                                                  String(m.email || "").toLowerCase() === String(invoice.memberEmail || "").toLowerCase()
-                                                );
-                                              }
+                                              // Resolve member using shared invoice-member matcher
+                                              let member = (members || []).find((m) => matchesInvoiceToMember(invoice, m));
                                               if (!member) {
                                                 showToast("Member not found for this invoice", "error");
                                                 return;
@@ -19080,11 +18908,7 @@ Indian Muslim Association, Hong Kong`;
                     <span style={{ color: "#666", fontSize: "0.875rem" }}>Joined Date:</span>
                     <span style={{ color: "#1a1a1a" }}>
                       {(() => {
-                        const member = members.find(m => 
-                          m.id === paymentModalInvoice.memberId || 
-                          m.email === paymentModalInvoice.memberEmail || 
-                          m.name === paymentModalInvoice.memberName
-                        );
+                        const member = (members || []).find((m) => matchesInvoiceToMember(paymentModalInvoice, m));
                         if (member?.start_date) {
                           return new Date(member.start_date).toLocaleDateString("en-GB", {
                             day: "2-digit",
@@ -19645,19 +19469,22 @@ Indian Muslim Association, Hong Kong`;
                         showConfirmation(
                           `Are you sure you want to mark Invoice #${paymentModalInvoice?.id || paymentModalInvoice?._id} as paid?`,
                           async () => {
+                            const targetInvoiceId = paymentModalInvoice?._id;
+                            if (paymentApprovalInProgressRef.current) {
+                              return;
+                            }
+                            if (!targetInvoiceId) {
+                              showToast("Invoice ID not found. Please close and try again.", "error");
+                              return;
+                            }
+                            if (paymentModalInvoice?.status === "Paid" || paymentModalInvoice?.status === "Completed") {
+                              showToast("This invoice is already marked as paid.", "error");
+                              return;
+                            }
+                            paymentApprovalInProgressRef.current = targetInvoiceId;
                             setUploadingPaymentModal(true);
                             try {
                               const apiUrl = import.meta.env.VITE_API_URL;
-                              
-                              // Defensive check: Verify invoice ID exists and fetch fresh invoice data
-                              const targetInvoiceId = paymentModalInvoice?._id;
-                              if (!targetInvoiceId) {
-                                throw new Error("Invoice ID not found. Please close and try again.");
-                              }
-
-                              if (paymentModalInvoice?.status === "Paid" || paymentModalInvoice?.status === "Completed") {
-                                throw new Error("This invoice is already marked as paid.");
-                              }
 
                               let imageUrl = paymentModalData.imageUrl || paymentModalInvoice.screenshot;
                               if (paymentModalData.imageFile && paymentModalData.imagePreview) {
@@ -19727,10 +19554,8 @@ Indian Muslim Association, Hong Kong`;
                                 setUploadingPaymentModal(false);
                               }, 100);
                             } finally {
-                              // Ensure uploading state is always reset
-                              setTimeout(() => {
-                                setUploadingPaymentModal(false);
-                              }, 200);
+                              paymentApprovalInProgressRef.current = null;
+                              setUploadingPaymentModal(false);
                             }
                           },
                           null,
@@ -21070,8 +20895,6 @@ Indian Muslim Association, Hong Kong`;
                       if (useWhatsApp) {
                         console.log('📱 Opening WhatsApp...');
                         try {
-                          // Store the member ID to avoid stale closure issues
-                          const targetMemberId = paymentConfirmationInvoice.memberId;
                           const targetInvoiceDbId = paymentConfirmationInvoice.id;
                           
                           // Fetch fresh member data to ensure we have the correct member
@@ -21080,30 +20903,28 @@ Indian Muslim Association, Hong Kong`;
                             const memberResponse = await fetch(`${apiUrl}/api/members`);
                             if (memberResponse.ok) {
                               const allMembers = await memberResponse.json();
-                              member = allMembers.find(m => m.id === targetMemberId);
+                              member = allMembers.find(m => matchesInvoiceToMember(paymentConfirmationInvoice, m));
                             }
                           } catch (memberError) {
                             console.warn('Could not fetch fresh member data, using cached:', memberError);
-                            member = members.find(m => m.id === targetMemberId);
+                            member = (members || []).find(m => matchesInvoiceToMember(paymentConfirmationInvoice, m));
                           }
                           
                           if (member && member.phone) {
-                            // Fetch the latest invoice data to ensure we have the updated receipt number
+                            // Use latest invoice data from AppContext state
                             let latestInvoice = paymentConfirmationInvoice;
-                            try {
-                              const invoiceResponse = await fetch(`${apiUrl}/api/invoices`);
-                              if (invoiceResponse.ok) {
-                                const allInvoices = await invoiceResponse.json();
-                                const updatedInvoice = allInvoices.find(inv => inv._id === targetInvoiceDbId);
-                                if (updatedInvoice) {
-                                  latestInvoice = updatedInvoice;
-                                  // Update the state to reflect the latest invoice data
-                                  setPaymentConfirmationInvoice(updatedInvoice);
-                                }
-                              }
-                            } catch (invoiceError) {
-                              console.warn('Could not fetch latest invoice data, using cached data:', invoiceError);
-                              // Continue with existing invoice data
+                            const invoiceIdCandidates = [
+                              paymentConfirmationInvoice?._id,
+                              paymentConfirmationInvoice?.id,
+                              targetInvoiceDbId,
+                            ].filter(Boolean);
+                            const updatedInvoice = (invoices || []).find((inv) =>
+                              invoiceIdCandidates.includes(inv?._id) || invoiceIdCandidates.includes(inv?.id)
+                            );
+                            if (updatedInvoice) {
+                              latestInvoice = updatedInvoice;
+                              // Update the state to reflect the latest invoice data
+                              setPaymentConfirmationInvoice(updatedInvoice);
                             }
                             
                             // Fetch fresh payment data to ensure we have the correct payment
@@ -21608,4 +21429,3 @@ ${downloadUrl}`;
 }
 
 export default AdminPage;
-export { AdminPage };

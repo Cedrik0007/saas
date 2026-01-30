@@ -40,6 +40,19 @@ const PaymentSchema = new mongoose.Schema({
 
 PaymentSchema.index({ paymentNo: 1 }, { unique: true, sparse: true });
 
+// One Completed payment per invoice: prevents duplicate payment race conditions at DB level.
+// A second insert or update that would create another Completed payment for the same invoiceRef
+// will fail with E11000 duplicate key. Race conditions are impossible because the constraint
+// is enforced by the database at commit time.
+PaymentSchema.index(
+  { invoiceRef: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: "Completed" },
+    name: "idx_invoiceRef_unique_when_Completed",
+  }
+);
+
 const isUpdatingField = (update, field) => {
   if (!update) return false;
   if (update.$set && Object.prototype.hasOwnProperty.call(update.$set, field)) return true;

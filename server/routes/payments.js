@@ -9,6 +9,7 @@ import { emitInvoiceUpdate, emitMemberUpdate, emitPaymentUpdate } from "../confi
 import { approveInvoicePayment, approvePaymentAndMarkInvoicePaid } from "../services/paymentApprovalService.js";
 import { resolveInvoice, resolveMember } from "../utils/resolveRefs.js";
 import { getReceiptWhatsAppUrl } from "../utils/receiptLinks.js";
+import { requireFinanceRole } from "../middleware/requireFinanceRole.js";
 
 const router = express.Router();
 const objectIdRegex = /^[a-f\d]{24}$/i;
@@ -99,8 +100,8 @@ router.get("/member/:memberId", async (req, res) => {
   }
 });
 
-// POST create new payment
-router.post("/", async (req, res) => {
+// POST create new payment (Owner or Finance Admin only)
+router.post("/", requireFinanceRole, async (req, res) => {
   try {
     await ensureConnection();
 
@@ -126,6 +127,14 @@ router.post("/", async (req, res) => {
 
     if (!invoiceRecord?._id) {
       return res.status(400).json({ error: "Payments must reference a valid invoice." });
+    }
+
+    const invoiceStatus = String(invoiceRecord.status || "").trim();
+    if (invoiceStatus === "Paid" || invoiceStatus === "Completed") {
+      return res.status(400).json({
+        error: "Cannot create payment for an invoice that is already paid.",
+        invoiceId: invoiceRecord.id || invoiceRecord._id,
+      });
     }
 
     const paymentData = {
@@ -157,8 +166,8 @@ router.post("/", async (req, res) => {
   }
 });
 
-// POST approve invoice payment (single-step approval by invoice _id)
-router.post("/approve-invoice", async (req, res) => {
+// POST approve invoice payment (single-step approval by invoice _id) (Owner or Finance Admin only)
+router.post("/approve-invoice", requireFinanceRole, async (req, res) => {
   try {
     await ensureConnection();
 
@@ -200,8 +209,8 @@ router.post("/approve-invoice", async (req, res) => {
   }
 });
 
-// PUT approve payment
-router.put("/:id/approve", async (req, res) => {
+// PUT approve payment (Owner or Finance Admin only)
+router.put("/:id/approve", requireFinanceRole, async (req, res) => {
   try {
     await ensureConnection();
 
@@ -224,6 +233,9 @@ router.put("/:id/approve", async (req, res) => {
     }
 
     emitPaymentUpdate('updated', payment);
+    if (invoice) {
+      emitInvoiceUpdate('updated', invoice);
+    }
 
     const receiptPdfUrl = invoice?._id
       ? getReceiptWhatsAppUrl(invoice._id)
@@ -236,8 +248,8 @@ router.put("/:id/approve", async (req, res) => {
   }
 });
 
-// PUT reject payment
-router.put("/:id/reject", async (req, res) => {
+// PUT reject payment (Owner or Finance Admin only)
+router.put("/:id/reject", requireFinanceRole, async (req, res) => {
   try {
     await ensureConnection();
 
@@ -320,7 +332,7 @@ router.put("/:id/reject", async (req, res) => {
 });
 
 // PUT update payment
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireFinanceRole, async (req, res) => {
   try {
     await ensureConnection();
 
@@ -365,8 +377,8 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE payment
-router.delete("/:id", async (req, res) => {
+// DELETE payment (Owner or Finance Admin only)
+router.delete("/:id", requireFinanceRole, async (req, res) => {
   try {
     await ensureConnection();
 

@@ -216,10 +216,6 @@ router.post("/", async (req, res) => {
     req.body.memberId = memberId;
     console.log(`✓ Invoice creation: Validated member exists (id=${memberExists.id}, name=${memberExists.name})`);
 
-    const receiverName = String(req.body.receiver_name || "").trim()
-      || String(memberExists?.name || "").trim()
-      || "Member";
-
     const { membershipFee, janazaFee, totalFee } =
       calculateFees(memberExists.subscriptionType, memberExists.lifetimeMembershipPaid);
 
@@ -280,7 +276,7 @@ router.post("/", async (req, res) => {
       memberRef,
       memberNo,
       memberId,
-      receiver_name: receiverName,
+      receiver_name: null,
       due: dueDate, // Always set due date at creation
       status: req.body.status || "Unpaid",
     };
@@ -1082,7 +1078,7 @@ router.get("/:id/pdf-receipt/download", async (req, res) => {
     const invoicePayload = {
       ...(typeof invoice?.toObject === "function" ? invoice.toObject() : invoice),
     };
-    delete invoicePayload.subscriptionType;
+    // Keep invoice.subscriptionType so PDF shows the invoice's subscription label (matches invoice table; e.g. Annual vs Lifetime for old invoices)
 
     const pdfBuffer = await generatePaymentReceiptPDF(memberPayload, invoicePayload, paymentData, invoice.receiptNumber);
 
@@ -1167,7 +1163,7 @@ router.get("/:id/pdf-receipt", async (req, res) => {
     const invoicePayload = {
       ...(typeof invoice?.toObject === "function" ? invoice.toObject() : invoice),
     };
-    delete invoicePayload.subscriptionType;
+    // Keep invoice.subscriptionType so PDF matches invoice table (e.g. Annual vs Lifetime for old invoices)
 
     const pdfBuffer = await generatePaymentReceiptPDF(memberPayload, invoicePayload, paymentData, invoice.receiptNumber);
 
@@ -1289,7 +1285,7 @@ router.get("/:id/pdf-receipt/view", async (req, res) => {
     const invoicePayload = {
       ...(typeof invoice?.toObject === "function" ? invoice.toObject() : invoice),
     };
-    delete invoicePayload.subscriptionType;
+    // Keep invoice.subscriptionType so PDF matches invoice table (e.g. Annual vs Lifetime for old invoices)
 
     const pdfBuffer = await generatePaymentReceiptPDF(memberPayload, invoicePayload, paymentData, invoice.receiptNumber);
 
@@ -1360,7 +1356,7 @@ router.get("/:id/pdf-receipt/whatsapp", async (req, res) => {
     const invoicePayload = {
       ...(typeof invoice?.toObject === "function" ? invoice.toObject() : invoice),
     };
-    delete invoicePayload.subscriptionType;
+    // Keep invoice.subscriptionType so PDF matches invoice table (e.g. Annual vs Lifetime for old invoices)
 
     const pdfBuffer = await generatePaymentReceiptPDF(memberPayload, invoicePayload, paymentData, invoice.receiptNumber);
 

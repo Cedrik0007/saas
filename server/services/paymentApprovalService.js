@@ -76,6 +76,9 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
       payment.status = "Completed";
       payment.approvedBy = adminId || adminName || "Admin";
       payment.approvedAt = new Date();
+      if (!payment.receiver_name || String(payment.receiver_name).trim() === "") {
+        payment.receiver_name = adminName || "Admin";
+      }
 
       const receiptNumber = await getNextReceiptNumberStrict({ session });
       payment.receiptNumber = receiptNumber;
@@ -193,6 +196,14 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
     });
 
     return { payment, invoice, member };
+  } catch (err) {
+    if (err.code === 11000) {
+      const conflict = new Error("Another payment for this invoice has already been completed.");
+      conflict.status = 409;
+      conflict.code = 11000;
+      throw conflict;
+    }
+    throw err;
   } finally {
     session.endSession();
   }
@@ -405,6 +416,14 @@ export async function approveInvoicePayment({
     });
 
     return { payment, invoice, member };
+  } catch (err) {
+    if (err.code === 11000) {
+      const conflict = new Error("Another payment for this invoice has already been completed.");
+      conflict.status = 409;
+      conflict.code = 11000;
+      throw conflict;
+    }
+    throw err;
   } finally {
     session.endSession();
   }

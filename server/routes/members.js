@@ -390,7 +390,7 @@ router.post("/:id/upgrade-subscription", async (req, res) => {
       memberId: member.id,
       memberName: member.name,
       memberEmail: member.email,
-      receiver_name: String(member?.name || "").trim() || "Member",
+      receiver_name: null,
       period,
       amount: `HK$${invoiceAmountNumber.toFixed(2)}`,
       membershipFee,
