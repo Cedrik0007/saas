@@ -10364,6 +10364,7 @@ Indian Muslim Association, Hong Kong`;
                           </div>
                         </div>
                       </div>
+                      </div>
 
                       {/* Row 2: Search only */}
                       <div className="search-row">
