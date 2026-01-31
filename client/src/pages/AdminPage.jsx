@@ -4138,7 +4138,7 @@ Indian Muslim Association, Hong Kong`;
     // Reset pagination when filters change
     useEffect(() => {
       setMembersPage(1);
-    }, [memberSearchTerm, memberTypeFilter]);
+    }, [memberSearchTerm, memberTypeFilter, memberYearFilter, memberStatusFilter]);
 
     useEffect(() => {
       setPaymentsPage(1);
@@ -4173,13 +4173,6 @@ Indian Muslim Association, Hong Kong`;
         setMembersPage(1);
       }
     }, [members, memberSearchTerm, membersPageSize, membersPage]);
-
-    useEffect(() => {
-      if (memberTypeFilter === "Lifetime Member" && memberYearFilter !== "All") {
-        // Lifetime subscriptions are not tied to annual billing cycles, so a year filter would be misleading.
-        setMemberYearFilter("All");
-      }
-    }, [memberTypeFilter, memberYearFilter]);
 
     // Handle pagination bounds checking for payments
     useEffect(() => {
@@ -7521,23 +7514,28 @@ Indian Muslim Association, Hong Kong`;
                           })
                           .filter((member) => {
                             if (memberYearFilter === "All") return true;
-                            
+
+                            const subscriptionType = normalizeSubscriptionType(member.subscriptionType);
+                            const isPureLifetime = subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND;
+                            if (isPureLifetime) return true;
+
                             const subscriptionYear = getMemberSubscriptionYear(member);
                             if (!subscriptionYear) return false;
-                            
                             return subscriptionYear === memberYearFilter;
                           })
                           .filter((member) => {
                             if (memberTypeFilter === "All") return true;
-                            
                             const subscriptionType = normalizeSubscriptionType(member.subscriptionType);
-                            
-                            if (memberTypeFilter === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+
+                            if (memberTypeFilter === "Annual") {
                               return subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
-                            } else if (memberTypeFilter === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
-                              return subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
                             }
-                            
+                            if (memberTypeFilter === "Lifetime") {
+                              return (
+                                subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND ||
+                                subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND
+                              );
+                            }
                             return false;
                           });
 
@@ -7559,7 +7557,8 @@ Indian Muslim Association, Hong Kong`;
 
                         const isOwner = currentAdminRole === "Owner";
 
-                        const isYearFilterDisabled = memberTypeFilter === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
+                        // Disable Year filter only for pure Lifetime (one-time). Annual and Lifetime + Janaza both have yearly fees.
+                        const isYearFilterDisabled = false;
 
                         return (
                           <>
@@ -7577,8 +7576,8 @@ Indian Muslim Association, Hong Kong`;
                                 }}>
                                   {[
                                     { value: "All", label: "All" },
-                                    { value: SUBSCRIPTION_TYPES.ANNUAL_MEMBER, label: SUBSCRIPTION_TYPES.ANNUAL_MEMBER },
-                                    { value: SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND, label: SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND },
+                                    { value: "Annual", label: "Annual" },
+                                    { value: "Lifetime", label: "Lifetime" },
                                   ].map((option) => (
                                     <button
                                       key={option.value}
