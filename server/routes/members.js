@@ -78,7 +78,8 @@ const buildNextDisplayId = async (prefix, options = {}) => {
     throw new Error("Failed to allocate next display ID sequence.");
   }
 
-  return `${normalizedPrefix}${seq}`;
+  const nextNumber = String(seq).padStart(3, "0");
+  return `${normalizedPrefix}${nextNumber}`;
 };
 
 const buildPreviousDisplayIdEntry = (member, displayId) => {
@@ -1112,60 +1113,99 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// DELETE member and all related data (invoices and payments, but NOT donations)
+// DELETE member – HARD DELETE with strict safety rules.
+// Allowed only if member has NO paid invoices.
+// When allowed: permanently delete member, unpaid invoices, and pending/unapproved payments.
 router.delete("/:id", async (req, res) => {
+  let session;
   try {
     await ensureConnection();
-    
+
     const identifier = req.params.id;
-    
-    // Find the member using flexible identifier resolution
-    // Supports: MongoDB _id, display ID (AM/LM), memberNo
     const member = await findMemberByIdentifier(identifier);
 
     if (!member) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         message: "Member not found",
         identifier: identifier
       });
     }
 
-    // Archive-only: never hard-delete members.
-    if (String(member.status || "").trim().toLowerCase() === "archived") {
-      return res.status(200).json({
-        message: "Member is already archived",
-        member: {
-          id: member.id,
-          _id: member._id,
-          name: member.name,
-          status: member.status,
-        },
+    const memberId = member._id;
+    const memberBusinessId = member.id || String(member._id);
+
+    // SAFETY: Block deletion if member has ANY paid invoice.
+    const paidInvoice = await InvoiceModel.findOne({
+      memberRef: memberId,
+      status: { $in: ["Paid", "Completed"] }
+    });
+
+    if (paidInvoice) {
+      return res.status(403).json({
+        message: "Cannot permanently delete a member with paid invoices."
       });
     }
 
-    await UserModel.findByIdAndUpdate(
-      member._id,
-      { $set: { status: "Archived" } },
-      { new: true }
+    // Use transaction when supported (replica set).
+    let supportsTransactions = false;
+    try {
+      const client = mongoose.connection?.client;
+      if (client) {
+        const admin = client.db().admin();
+        const isMaster = await admin.command({ isMaster: 1 });
+        supportsTransactions = !!isMaster?.setName;
+      }
+    } catch {
+      supportsTransactions = false;
+    }
+
+    if (supportsTransactions) {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    }
+
+    const opts = session ? { session } : {};
+
+    // 1. Delete pending/unapproved payments for this member.
+    const paymentResult = await PaymentModel.deleteMany(
+      {
+        memberRef: memberId,
+        status: { $in: ["Pending", "Rejected"] }
+      },
+      opts
     );
 
-    // Emit Socket.io event for real-time update
-    emitMemberUpdate('deleted', { 
-      id: member.id || member._id,
-      _id: member._id 
-    });
+    // 2. Delete all invoices for this member (all are unpaid at this point).
+    const invoiceResult = await InvoiceModel.deleteMany(
+      { memberRef: memberId },
+      opts
+    );
 
-    console.log(`✓ Member ${member.name} (${member.id || member._id}) archived. Invoices and payments preserved.`);
+    // 3. Delete the member document.
+    await UserModel.findByIdAndDelete(memberId, opts);
 
-    res.status(200).json({ 
-      message: "Member archived successfully",
-      member: {
-        id: member.id,
-        _id: member._id,
-        name: member.name
-      }
+    if (session) {
+      await session.commitTransaction();
+      session.endSession();
+    }
+
+    emitMemberUpdate('deleted', { id: memberBusinessId, _id: memberId });
+
+    console.log(`✓ Member ${member.name} (${memberBusinessId}) hard-deleted. Removed ${invoiceResult.deletedCount} invoice(s), ${paymentResult.deletedCount} payment(s).`);
+
+    res.status(200).json({
+      message: "Member permanently deleted",
+      member: { id: memberBusinessId, _id: memberId, name: member.name }
     });
   } catch (error) {
+    if (session) {
+      try {
+        await session.abortTransaction();
+        session.endSession();
+      } catch (abortErr) {
+        console.error("Error aborting transaction:", abortErr);
+      }
+    }
     console.error("Error deleting member:", error);
     res.status(500).json({ error: error.message });
   }
