@@ -388,7 +388,7 @@ export function ServerPage() {
   };
 
   const handleDeleteMember = async (id) => {
-    if (window.confirm("Are you sure you want to delete this member?")) {
+    if (window.confirm("This will permanently delete the member and all unpaid records. This action cannot be undone.")) {
       try {
         await deleteMember(id);
         showToast("Member deleted successfully!");

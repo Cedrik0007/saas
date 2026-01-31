@@ -798,8 +798,12 @@ export function AppProvider({ children }) {
     
     try {
       await makeRequest(requestKey, async () => {
-      const response = await fetch(`${apiBaseUrl}/api/members/${id}`, { method: 'DELETE' });
-      if (!response.ok) throw new Error('Failed to delete member');
+        const response = await fetch(`${apiBaseUrl}/api/members/${id}`, { method: 'DELETE' });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          const msg = data?.message || 'Failed to delete member';
+          throw new Error(msg);
+        }
         return response;
       });
       

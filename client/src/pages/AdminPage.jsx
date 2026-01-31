@@ -4895,19 +4895,16 @@ Indian Muslim Association, Hong Kong`;
 
     const handleDeleteMember = async (id) => {
       showConfirmation(
-        "Are you sure you want to delete this member?",
+        "This will permanently delete the member and all unpaid records. This action cannot be undone.",
         async () => {
           try {
-            // Delete member - deleteMember from context already handles optimistic state update
             await deleteMember(id);
-
-            // Show success message for 2+ seconds
             setNotieMessage("Member deleted successfully!");
             setNotieType("success");
             setTimeout(() => setNotieMessage(null), 2000);
           } catch (error) {
-            // Error message for 2+ seconds
-            setNotieMessage("Failed to delete member. Please try again.");
+            const msg = error?.message || "Failed to delete member. Please try again.";
+            setNotieMessage(msg);
             setNotieType("error");
             setTimeout(() => setNotieMessage(null), 2000);
           }
