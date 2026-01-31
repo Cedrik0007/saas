@@ -31,6 +31,35 @@
   font-weight: 700;
   color: #111827;
 }
+
+/* Standardized search UX across list pages */
+.search-row {
+  width: 100%;
+  margin-top: 12px;
+}
+.search-wrapper {
+  position: relative;
+  width: 100%;
+}
+.search-wrapper .search-input {
+  width: 100%;
+  padding-right: 36px;
+}
+.search-clear {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: #888;
+  padding: 4px;
+}
+.search-clear:hover {
+  color: #374151;
+}
 :root {
   --bg: #ffffff;
   --surface: #ffffff;

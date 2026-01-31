@@ -761,20 +761,78 @@ function AdminPage() {
       setInvoiceForm(buildInvoiceFormDefaults());
     };
 
+    // Create Invoice: allowed options based on member's current subscription (DO NOT reuse elsewhere)
+    const getAllowedInvoiceSubscriptions = (member) => {
+      if (!member) return [];
+      const t = normalizeSubscriptionType(member.subscriptionType);
+      if (t === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+        return [{ type: SUBSCRIPTION_TYPES.ANNUAL_MEMBER, label: "Annual Member", amount: 500 }];
+      }
+      if (t === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
+        return [{ type: SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND, label: "Janaza Fund (Renewal)", amount: 250 }];
+      }
+      return []; // Pure lifetime (LIFETIME_JANAZA_FUND) - no Create Invoice
+    };
+
+    const getNextEligibleYearForInvoice = (member) => {
+      if (!member?.id) return new Date().getFullYear().toString();
+      const invoices = getPreferredInvoicesForMember(member.id, { includeOptimistic: true });
+      const currentYear = new Date().getFullYear();
+      if (!invoices || invoices.length === 0) return String(currentYear);
+      const extractYear = (val) => {
+        if (val == null || val === "") return null;
+        const str = String(val).trim();
+        const m = str.match(/\d{4}/);
+        return m ? m[0] : null;
+      };
+      const sorted = invoices.slice().sort((a, b) => {
+        const aDate = new Date(a?.createdAt || a?.due || 0).getTime();
+        const bDate = new Date(b?.createdAt || b?.due || 0).getTime();
+        return bDate - aDate;
+      });
+      let latestYear = null;
+      for (const inv of sorted) {
+        const y = extractYear(inv?.period) || extractYear(inv?.due) || extractYear(inv?.createdAt);
+        if (y) {
+          latestYear = parseInt(y, 10);
+          break;
+        }
+      }
+      const nextYear = latestYear != null ? latestYear + 1 : currentYear;
+      return String(Math.max(currentYear, nextYear));
+    };
+
     const prefillInvoiceFormForMember = (member) => {
       if (!member) {
         resetInvoiceForm();
         return;
       }
 
-      const resolvedMember = {
-        ...member,
-        subscriptionYear: getResolvedSubscriptionYear(member),
-      };
+      const allowedOptions = getAllowedInvoiceSubscriptions(member);
+      const nextYear = getNextEligibleYearForInvoice(member);
 
+      if (allowedOptions.length === 0) {
+        setInvoiceForm((prev) => ({
+          memberId: member.id,
+          period: nextYear,
+          amount: "0",
+          invoiceType: "",
+          due: "",
+          notes: prev.notes || "",
+          subscriptionYear: nextYear,
+        }));
+        return;
+      }
+
+      const firstOption = allowedOptions[0];
       setInvoiceForm((prev) => ({
-        ...buildInvoiceFormDefaults(resolvedMember),
+        memberId: member.id,
+        period: nextYear,
+        amount: String(firstOption.amount),
+        invoiceType: firstOption.type,
+        due: "",
         notes: prev.notes || "",
+        subscriptionYear: nextYear,
       }));
     };
 
@@ -4118,6 +4176,49 @@ Indian Muslim Association, Hong Kong`;
       setMembersPage(1);
     }, [memberSearchTerm, memberTypeFilter, memberYearFilter, memberStatusFilter]);
 
+    // Canonical members filter (ORDER: Search → Type → Status → Year). Used for list and pagination bounds.
+    const getMemberSubscriptionYearForFilter = (m) => {
+      if (!m) return null;
+      const raw = m.latestInvoiceYear ?? m.subscriptionYear;
+      if (raw == null) return null;
+      const s = String(raw).trim();
+      return s || null;
+    };
+    const membersFilteredForList = useMemo(() => {
+      return (members || []).filter((m) => {
+        const searchTerm = memberSearchTerm?.trim() || "";
+        if (searchTerm) {
+          const s = searchTerm.toLowerCase();
+          const mobile = String(m.mobile ?? m.phone ?? "").trim();
+          if (
+            !m.name?.toLowerCase().includes(s) &&
+            !String(m.id ?? "").toLowerCase().includes(s) &&
+            !mobile.includes(s) &&
+            !m.email?.toLowerCase().includes(s)
+          ) return false;
+        }
+        const subType = normalizeSubscriptionType(m.subscriptionType);
+        if (memberTypeFilter === "Annual") {
+          if (subType !== SUBSCRIPTION_TYPES.ANNUAL_MEMBER) return false;
+        }
+        if (memberTypeFilter === "Lifetime") {
+          if (subType !== SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND && subType !== SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) return false;
+        }
+        if (memberStatusFilter !== "All") {
+          const derivedStatus = m.status === "Inactive" ? "Inactive" : "Active";
+          if (derivedStatus !== memberStatusFilter) return false;
+        }
+        if (memberYearFilter !== "All") {
+          const isPureLifetime = subType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND;
+          if (!isPureLifetime) {
+            const memberYear = getMemberSubscriptionYearForFilter(m);
+            if (String(memberYear ?? "") !== String(memberYearFilter)) return false;
+          }
+        }
+        return true;
+      });
+    }, [members, memberSearchTerm, memberTypeFilter, memberStatusFilter, memberYearFilter]);
+
     useEffect(() => {
       setPaymentsPage(1);
     }, [paymentStatusFilter]);
@@ -4140,17 +4241,13 @@ Indian Muslim Association, Hong Kong`;
       setTransactionsPage(1);
     }, [transactionsSearch, reportFilter, donorTypeFilter, transactionMethodFilter]);
 
-    // Handle pagination bounds checking for members
+    // Handle pagination bounds checking for members (uses canonical filter)
     useEffect(() => {
-      const filteredMembers = members.filter(member =>
-        !memberSearchTerm ||
-        member.name?.toLowerCase().includes(memberSearchTerm.toLowerCase())
-      );
-      const totalPages = Math.ceil(filteredMembers.length / membersPageSize);
+      const totalPages = Math.ceil(membersFilteredForList.length / membersPageSize) || 1;
       if (membersPage > totalPages && totalPages > 0) {
         setMembersPage(1);
       }
-    }, [members, memberSearchTerm, membersPageSize, membersPage]);
+    }, [membersFilteredForList.length, membersPageSize, membersPage]);
 
     // Handle pagination bounds checking for payments
     useEffect(() => {
@@ -5034,19 +5131,42 @@ Indian Muslim Association, Hong Kong`;
     const handleAddInvoice = (e) => {
       e.preventDefault();
 
-      if (!validateInvoiceForm()) {
-        // Validation error already shown via Notie
+      const member = members.find((m) => m.id === invoiceForm.memberId);
+      if (!member) {
+        showToast("Please select a member", "error");
         return;
       }
 
-      const member = members.find((m) => m.id === invoiceForm.memberId);
+      const allowedOptions = getAllowedInvoiceSubscriptions(member);
+      if (allowedOptions.length === 0) {
+        showToast("Invalid invoice creation for this member.", "error");
+        return;
+      }
 
-      // Generate period from subscription year and invoice type
+      const selectedOption = allowedOptions.find((o) => o.type === normalizeSubscriptionType(invoiceForm.invoiceType));
+      if (!selectedOption) {
+        showToast("Invalid invoice creation for this member.", "error");
+        return;
+      }
+
+      const expectedYear = getNextEligibleYearForInvoice(member);
+      if (String(invoiceForm.subscriptionYear || "").trim() !== String(expectedYear)) {
+        showToast("Invalid invoice creation for this member.", "error");
+        return;
+      }
+
+      const amountNum = selectedOption.amount;
+      if (!amountNum || amountNum <= 0) {
+        showToast("Invalid invoice creation for this member.", "error");
+        return;
+      }
+
+      if (!validateInvoiceForm()) {
+        return;
+      }
+
       const subscriptionYear = invoiceForm.subscriptionYear;
-      const period = subscriptionYear; // Use subscription year as period
-
-      // Parse amount
-      const amountNum = parseFloat(invoiceForm.amount);
+      const period = subscriptionYear;
 
       // Check if an invoice for the same period already exists for this member
       const existingInvoice = invoices.find(
@@ -7468,90 +7588,16 @@ Indian Muslim Association, Hong Kong`;
                   <div className="admin-members-table-card">
                     <div className="table-wrapper">
                       {(() => {
-                        // Subscription year is always sourced from backend-derived latest invoice year only.
+                        // Subscription year for table display (backend latestInvoiceYear)
                         const getMemberSubscriptionYear = (member) => {
                           if (!member) return null;
                           const rawYear = member.latestInvoiceYear;
-                          if (rawYear === null || rawYear === undefined) {
-                            return null;
-                          }
+                          if (rawYear === null || rawYear === undefined) return null;
                           const normalized = String(rawYear).trim();
                           return normalized || null;
                         };
 
-                        // Filter members based on search term and status (using derived status)
-                        const filteredMembers = members
-                          .filter((member) => {
-                            if (!memberSearchTerm) return true;
-                            
-                            const searchLower = memberSearchTerm.toLowerCase();
-                            const memberName = member.name?.toLowerCase() || "";
-                            const memberEmail = member.email?.toLowerCase() || "";
-                            const memberId = member.id?.toLowerCase() || "";
-                            const memberPhone = member.phone?.toLowerCase() || "";
-                            
-                            // Check if search matches name, email, id, or phone
-                            if (memberName.includes(searchLower) || 
-                                memberEmail.includes(searchLower) || 
-                                memberId.includes(searchLower) ||
-                                memberPhone.includes(searchLower)) {
-                              return true;
-                            }
-                            
-                            // Check if search matches subscription year
-                            const subscriptionYear = getMemberSubscriptionYear(member);
-                            if (subscriptionYear && subscriptionYear.includes(searchLower)) {
-                              return true;
-                            }
-                            
-                            return false;
-                          })
-                          .filter((member) => {
-                            if (memberStatusFilter === "All") return true;
-
-                            const balanceStr = member.balance?.toString() || "";
-                            const numericOutstanding = parseFloat(
-                              balanceStr.replace(/[^0-9.]/g, "") || 0
-                            ) || 0;
-
-                            // Derive status: Active / Inactive only
-                            let derivedStatus = "Active";
-
-                            if (member.status === "Inactive") {
-                              derivedStatus = "Inactive";
-                            } else {
-                              derivedStatus = "Active";
-                            }
-
-                            return derivedStatus === memberStatusFilter;
-                          })
-                          .filter((member) => {
-                            if (memberYearFilter === "All") return true;
-
-                            const subscriptionType = normalizeSubscriptionType(member.subscriptionType);
-                            const isPureLifetime = subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND;
-                            if (isPureLifetime) return true;
-
-                            const subscriptionYear = getMemberSubscriptionYear(member);
-                            if (!subscriptionYear) return false;
-                            return subscriptionYear === memberYearFilter;
-                          })
-                          .filter((member) => {
-                            if (memberTypeFilter === "All") return true;
-                            const subscriptionType = normalizeSubscriptionType(member.subscriptionType);
-
-                            if (memberTypeFilter === "Annual") {
-                              return subscriptionType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
-                            }
-                            if (memberTypeFilter === "Lifetime") {
-                              return (
-                                subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND ||
-                                subscriptionType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND
-                              );
-                            }
-                            return false;
-                          });
-
+                        const filteredMembers = membersFilteredForList;
                         const sortedMembers = (() => {
                           if (memberSortConfig?.column === "Member ID") {
                             return [...filteredMembers].sort((memberA, memberB) =>
@@ -7575,8 +7621,8 @@ Indian Muslim Association, Hong Kong`;
 
                         return (
                           <>
-                            {/* Filters above table */}
-                            <div className="mb-lg flex gap-md flex-wrap items-center justify-between">
+                            {/* Filters: Row 1 = Type, Status, Year | Row 2 = Full-width Search */}
+                            <div className="mb-lg" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                               <div className="flex gap-md flex-wrap items-center">
                                 <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Type:</label>
                                 <div style={{
@@ -7649,7 +7695,10 @@ Indian Muslim Association, Hong Kong`;
                                     <button
                                       key={option.value}
                                       type="button"
-                                      onClick={() => setMemberStatusFilter(option.value)}
+                                      onClick={() => {
+                                        setMemberStatusFilter(option.value);
+                                        setMembersPage(1);
+                                      }}
                                       style={{
                                         padding: "8px 16px",
                                         borderRadius: "4px",
@@ -7760,7 +7809,7 @@ Indian Muslim Association, Hong Kong`;
                                           border: "1px solid #e5e7eb",
                                           borderLeft: "none",
                                           borderRadius: "0 4px 4px 0",
-                                          borderRight: "1px sol",
+                                          borderRight: "1px solid #e5e7eb",
                                           background: isYearFilterDisabled ? "#f3f4f6" : "#ffffff",
                                           fontSize: "0.875rem",
                                           fontWeight: "500",
@@ -7873,15 +7922,13 @@ Indian Muslim Association, Hong Kong`;
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                <label className="text-l font-semibold" style={{ whiteSpace: "nowrap" }}>
-                                  Search:&nbsp;
-                                </label>
-                                <div style={{ position: "relative", display: "inline-flex", minWidth: "220px" }}>
+
+                              <div className="search-row">
+                                <div className="search-wrapper">
                                   <input
                                     ref={memberSearchInputRef}
                                     type="text"
-                                    placeholder="Search by name, mobile, email"
+                                    placeholder="Search by name, member ID, mobile, email"
                                     value={memberSearchTerm}
                                     onChange={(e) => {
                                       setMemberSearchTerm(e.target.value);
@@ -7896,14 +7943,11 @@ Indian Muslim Association, Hong Kong`;
                                     }}
                                     className="search-input"
                                     style={{
-                                      padding: "8px 12px",
-                                      paddingRight: memberSearchTerm ? "32px" : "12px",
+                                      padding: "10px 40px 10px 16px",
                                       borderRadius: "4px",
                                       border: "1px solid #e5e7eb",
                                       background: "#ffffff",
                                       fontSize: "0.875rem",
-                                      width: "100%",
-                                      minWidth: "200px",
                                       outline: "none",
                                       transition: "border-color 0.2s"
                                     }}
@@ -7917,35 +7961,13 @@ Indian Muslim Association, Hong Kong`;
                                   {memberSearchTerm && (
                                     <button
                                       type="button"
+                                      className="search-clear"
                                       onClick={() => {
                                         setMemberSearchTerm("");
                                         setMembersPage(1);
                                         memberSearchInputRef.current?.focus();
                                       }}
-                                      title="Clear search"
                                       aria-label="Clear search"
-                                      style={{
-                                        position: "absolute",
-                                        right: "6px",
-                                        top: "50%",
-                                        transform: "translateY(-50%)",
-                                        padding: "2px 6px",
-                                        background: "transparent",
-                                        border: "none",
-                                        borderRadius: "4px",
-                                        cursor: "pointer",
-                                        fontSize: "1rem",
-                                        lineHeight: 1,
-                                        color: "#6b7280"
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        e.target.style.background = "#f3f4f6";
-                                        e.target.style.color = "#374151";
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.target.style.background = "transparent";
-                                        e.target.style.color = "#6b7280";
-                                      }}
                                     >
                                       ×
                                     </button>
@@ -7958,8 +7980,8 @@ Indian Muslim Association, Hong Kong`;
                             {sortedMembers.length === 0 ? (
                               <div className="admin-empty-state">
                                 <p className="admin-empty-state-message">
-                                  {memberStatusFilter !== "All"
-                                    ? `No ${memberStatusFilter.toLowerCase()} members found.`
+                                  {memberSearchTerm || memberTypeFilter !== "All" || memberStatusFilter !== "All" || memberYearFilter !== "All"
+                                    ? "No members match your filters. Try adjusting search or filters."
                                     : "No members found."}
                                 </p>
                               </div>
@@ -8524,10 +8546,17 @@ Indian Muslim Association, Hong Kong`;
                           <div>
                             <button
                               className="secondary-btn"
-                              disabled={isArchivedMember(selectedMember)}
-                              title={isArchivedMember(selectedMember) ? "Archived members cannot have new invoices" : "Create Invoice"}
+                              disabled={isArchivedMember(selectedMember) || getAllowedInvoiceSubscriptions(selectedMember).length === 0}
+                              title={
+                                isArchivedMember(selectedMember)
+                                  ? "Archived members cannot have new invoices"
+                                  : getAllowedInvoiceSubscriptions(selectedMember).length === 0
+                                    ? "No invoice can be created for this subscription."
+                                    : "Create Invoice"
+                              }
                               onClick={() => {
                                 if (isArchivedMember(selectedMember)) return;
+                                if (getAllowedInvoiceSubscriptions(selectedMember).length === 0) return;
                                 prefillInvoiceFormForMember(selectedMember);
                                 setActiveSection("invoice-builder");
                               }}
@@ -9325,132 +9354,69 @@ Indian Muslim Association, Hong Kong`;
                     </div>
                   </header>
 
-                  {/* Invoice Success Card */}
-                  {showInvoiceSuccessCard && lastCreatedInvoice && (
-                    <div style={{
-                      marginBottom: "24px",
-                      padding: "24px",
-                      background: "#f0f9ff",
-                      borderRadius: "12px",
-                      border: "2px solid #5a31ea",
-                      boxShadow: "0 4px 12px rgba(90, 49, 234, 0.15)"
-                    }}>
+                  {/* Invoice Success Modal */}
+                  <Modal
+                    isOpen={showInvoiceSuccessCard && !!lastCreatedInvoice}
+                    onClose={() => {
+                      setShowInvoiceSuccessCard(false);
+                      setLastCreatedInvoice(null);
+                    }}
+                    title="Invoice Created Successfully"
+                    size="sm"
+                    ariaLabel="Invoice created confirmation"
+                    contentStyle={{ padding: "24px" }}
+                  >
+                    <div style={{ textAlign: "center" }}>
                       <div style={{
+                        width: "56px",
+                        height: "56px",
+                        borderRadius: "50%",
+                        background: "#d1fae5",
                         display: "flex",
                         alignItems: "center",
-                        justifyContent: "space-between"
-                      }}
-                        className="mb-lg">
-                        <div className="flex items-center gap-md">
-                          <div style={{
-                            width: "48px",
-                            height: "48px",
-                            borderRadius: "50%",
-                            background: "#5a31ea",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: "24px",
-                            color: "#fff"
-                          }}>
-                            ✓
-                          </div>
-                          <div>
-                            <h4 style={{ margin: 0, fontSize: "1.25rem", fontWeight: "700", color: "#1a1a1a" }}>
-                              Invoice Has Been Created
-                            </h4>
-                            <p style={{ margin: "4px 0 0 0", fontSize: "0.875rem", color: "#666" }}>
-                              Invoice for {lastCreatedInvoiceMemberName} - {lastCreatedInvoice.period} ({lastCreatedInvoice.amount})
-                            </p>
-                          </div>
-                        </div>
-                        {/* <button
-                          className="ghost-btn"
-                          onClick={() => {
-                            setShowInvoiceSuccessCard(false);
-                            setLastCreatedInvoice(null);
-                          }}
-                          style={{ padding: "8px 12px" }}
-                        >
-                          ×
-                        </button> */}
-                      </div>
-
-                      <div className="success-card-actions" style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                        gap: "12px",
-                        marginTop: "16px"
+                        justifyContent: "center",
+                        fontSize: "28px",
+                        color: "#059669",
+                        margin: "0 auto 16px"
                       }}>
+                        ✓
+                      </div>
+                      <p style={{ margin: "0 0 24px 0", fontSize: "0.9375rem", color: "#4b5563", lineHeight: 1.5 }}>
+                        Invoice for {lastCreatedInvoice?.period || "—"} ({lastCreatedInvoice?.amount || "—"}) has been created.
+                      </p>
+                      <div style={{ display: "flex", gap: "12px", justifyContent: "center", flexWrap: "wrap" }}>
                         <button
                           className="primary-btn"
                           onClick={() => {
                             if (lastCreatedInvoiceMember) {
                               handleViewMemberDetail(lastCreatedInvoiceMember);
                               setActiveSection("member-detail");
+                              setActiveTab("Invoices");
                               setShowInvoiceSuccessCard(false);
+                              setLastCreatedInvoice(null);
                               return;
                             }
                             if (lastCreatedInvoice?.memberId) {
                               showToast("Member record not found yet. Refresh members and try again.", "warning");
                             }
                           }}
-                          style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
+                          style={{ padding: "10px 20px", fontSize: "0.875rem", fontWeight: "600" }}
                         >
-                          <i className="fas fa-user" style={{ marginRight: "8px" }}></i>
-                          Member Detail
-                        </button>
-
-                        {/* <button
-                          className="secondary-btn"
-                          onClick={() => {
-                            if (lastCreatedInvoiceMember) {
-                              handleViewMemberDetail(lastCreatedInvoiceMember);
-                              setActiveSection("member-detail");
-                              setActiveTab("Invoices");
-                              setShowInvoiceSuccessCard(false);
-                            }
-                          }}
-                          style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
-                        >
-                          <i className="fas fa-file-invoice" style={{ marginRight: "8px" }}></i>
                           View Invoice
-                        </button> */}
-
-                        <button
-                          className="secondary-btn"
-                          onClick={() => {
-                            if (!lastCreatedInvoice) return;
-                            const fallbackMemberId = lastCreatedInvoice.memberId || null;
-                            setPendingReminderAction({
-                              type: 'single',
-                              memberData: lastCreatedInvoiceMember || null,
-                              memberId: lastCreatedInvoiceMember?.id || fallbackMemberId,
-                            });
-                            setSelectedChannels([]);
-                            setShowChannelSelection(true);
-                          }}
-                          style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: "8px", verticalAlign: "middle" }}>
-                            <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="currentColor" />
-                          </svg>
-                          Send Reminder
                         </button>
-
                         <button
                           className="ghost-btn"
                           onClick={() => {
                             setShowInvoiceSuccessCard(false);
                             setLastCreatedInvoice(null);
                           }}
-                          style={{ padding: "12px 20px", fontSize: "0.9375rem", fontWeight: "600" }}
+                          style={{ padding: "10px 20px", fontSize: "0.875rem", fontWeight: "600" }}
                         >
                           Close
                         </button>
                       </div>
                     </div>
-                  )}
+                  </Modal>
 
                   <form className="card form-grid" onSubmit={handleAddInvoice} noValidate style={{ padding: "20px", background: "#ffffff", boxShadow: "0 4px 16px rgba(90, 49, 234, 0.1)" }}>
                     <label style={{ marginBottom: "24px" }}>
@@ -9677,25 +9643,56 @@ Indian Muslim Association, Hong Kong`;
                       )}
                     </label>
 
+                    {(() => {
+                      const selectedMemberForInvoice = members.find((m) => m.id === invoiceForm.memberId);
+                      const allowedOptions = selectedMemberForInvoice ? getAllowedInvoiceSubscriptions(selectedMemberForInvoice) : [];
+                      const canCreateInvoice = allowedOptions.length > 0;
+                      const selectedOption = allowedOptions.find((o) => o.type === normalizeSubscriptionType(invoiceForm.invoiceType));
+                      const invoiceAmount = selectedOption?.amount ?? 0;
+
+                      if (!invoiceForm.memberId) {
+                        return (
+                          <div style={{
+                            padding: "16px",
+                            background: "#f9fafb",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "8px",
+                            color: "#6b7280",
+                            marginBottom: "24px",
+                          }}>
+                            Select a member to create an invoice.
+                          </div>
+                        );
+                      }
+
+                      if (!canCreateInvoice) {
+                        return (
+                          <div style={{
+                            padding: "20px",
+                            background: "#fef2f2",
+                            border: "1px solid #fecaca",
+                            borderRadius: "8px",
+                            color: "#991b1b",
+                            marginBottom: "24px",
+                            fontWeight: "500",
+                          }}>
+                            No invoice can be created for this subscription.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <>
                     <label style={{ marginBottom: "24px" }}>
                       <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-id-card" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Invoice Type <span style={{ color: "#ef4444" }}>*</span></span>
-                      <div 
-                        style={{ position: "relative" }}
-                        onMouseEnter={(e) => {
-                          const tooltip = e.currentTarget.querySelector('.invoice-details-tooltip');
-                          if (tooltip && invoiceForm.invoiceType) tooltip.style.opacity = '1';
-                        }}
-                        onMouseLeave={(e) => {
-                          const tooltip = e.currentTarget.querySelector('.invoice-details-tooltip');
-                          if (tooltip) tooltip.style.opacity = '0';
-                        }}
-                      >
+                      <div style={{ position: "relative" }}>
                       <select
                         required
                         value={invoiceForm.invoiceType}
                         onChange={(e) => {
                           const type = normalizeSubscriptionType(e.target.value);
-                          const amount = String(SUBSCRIPTION_TYPE_AMOUNTS[type] || 250);
+                          const opt = allowedOptions.find((o) => o.type === type);
+                          const amount = opt ? String(opt.amount) : "0";
                           setInvoiceForm((prev) => ({ ...prev, invoiceType: type, amount }));
                         }}
                         style={{
@@ -9717,84 +9714,31 @@ Indian Muslim Association, Hong Kong`;
                             transition: "all 0.2s ease",
                             color: "#1a1a1a"
                           }}
-                        onFocus={(e) => {
-                            e.target.style.borderColor = "#5a31ea";
-                            e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                            const tooltip = e.target.parentElement.querySelector('.invoice-details-tooltip');
-                            if (tooltip && invoiceForm.invoiceType) tooltip.style.opacity = '1';
-                        }}
-                        onBlur={(e) => {
-                            e.target.style.borderColor = "#e0e0e0";
-                            e.target.style.boxShadow = "none";
-                            const tooltip = e.target.parentElement.querySelector('.invoice-details-tooltip');
-                            if (tooltip) tooltip.style.opacity = '0';
-                        }}
+                        onFocus={(e) => { e.target.style.borderColor = "#5a31ea"; e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)"; }}
+                        onBlur={(e) => { e.target.style.borderColor = "#e0e0e0"; e.target.style.boxShadow = "none"; }}
                       >
                         <option value="">Select Invoice Type</option>
-                        {SUBSCRIPTION_TYPE_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
+                        {allowedOptions.map((opt) => (
+                          <option key={opt.type} value={opt.type}>
+                            {opt.label} (HK${opt.amount})
                           </option>
                         ))}
                       </select>
-                        {invoiceForm.invoiceType && (
-                          <div style={{
-                            position: "absolute",
-                            top: "100%",
-                            left: 0,
-                            right: 0,
-                            marginTop: "4px",
-                            padding: "8px 12px",
-                            background: "#f8f9ff",
-                            borderRadius: "6px",
-                            fontSize: "0.75rem",
-                            color: "#666",
-                            border: "1px solid #e5e7eb",
-                            zIndex: 1000,
-                            opacity: 0,
-                            pointerEvents: "none",
-                            transition: "opacity 0.2s ease"
-                          }} className="invoice-details-tooltip">
-                            {normalizeSubscriptionType(invoiceForm.invoiceType) === SUBSCRIPTION_TYPES.ANNUAL_MEMBER && (
-                              <div>Payable: HK$500/year</div>
-                            )}
-                            {normalizeSubscriptionType(invoiceForm.invoiceType) === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND && (
-                              <div>Payable: HK$250/year</div>
-                            )}
-                          </div>
-                        )}
                       </div>
                     </label>
 
                     <label style={{ marginBottom: "24px" }}>
                       <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-calendar-alt" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Subscription Year <span style={{ color: "#ef4444" }}>*</span></span>
                       <input
-                        type="number"
-                        required
-                        min="2000"
-                        max="2100"
+                        type="text"
+                        readOnly
                         value={invoiceForm.subscriptionYear}
-                        onChange={(e) => {
-                          const year = e.target.value;
-                          if (year === "" || (parseInt(year) >= 2000 && parseInt(year) <= 2100)) {
-                            setInvoiceForm((prev) => ({
-                              ...prev,
-                              subscriptionYear: year,
-                              period: year || "",
-                            }));
-                            if (invoiceFieldErrors.subscriptionYear) {
-                              setInvoiceFieldErrors(prev => ({ ...prev, subscriptionYear: false }));
-                              if (currentInvalidInvoiceField === "subscriptionYear") {
-                                setCurrentInvalidInvoiceField(null);
-                              }
-                            }
-                          }
-                        }}
-                        placeholder="YYYY"
                         className="mono-input"
-                        style={{ 
+                        style={{
                           color: "#1a1a1a",
-                          border: invoiceFieldErrors.subscriptionYear ? "2px solid #ef4444" : undefined
+                          background: "#f3f4f6",
+                          cursor: "not-allowed",
+                          border: invoiceFieldErrors.subscriptionYear ? "2px solid #ef4444" : "1px solid #e5e7eb",
                         }}
                       />
                     </label>
@@ -9802,18 +9746,16 @@ Indian Muslim Association, Hong Kong`;
                     <label style={{ marginBottom: "24px" }}>
                       <span style={{ fontSize: "0.95rem", fontWeight: "600", color: "#1a1a1a", marginBottom: "12px", display: "block" }}><i className="fas fa-dollar-sign" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Amount ($) <span style={{ color: "#ef4444" }}>*</span></span>
                       <input
-                        type="number"
-                        inputMode="numeric"
+                        type="text"
                         readOnly
-                        value={invoiceForm.amount}
-                        // onChange={(e) => {
-                        //   const value = e.target.value.replace(/\\D/g, "");
-                        //   setInvoiceForm({ ...invoiceForm, amount: value });
-                        // }}
+                        value={invoiceAmount}
                         className="mono-input"
-                        style={{ color: "#1a1a1a" }}
+                        style={{ color: "#1a1a1a", background: "#f3f4f6", cursor: "not-allowed" }}
                       />
                     </label>
+                        </>
+                      );
+                    })()}
 
 
                     {/* Live invoice preview */}
@@ -9863,7 +9805,15 @@ Indian Muslim Association, Hong Kong`;
                     </div>
 
                     <div className="form-actions" style={{ marginTop: "8px", gap: "12px" }}>
-                      <button type="submit" className="primary-btn" style={{ padding: "14px 28px", fontSize: "1rem", fontWeight: "600" }}>
+                      <button
+                        type="submit"
+                        className="primary-btn"
+                        disabled={
+                          !invoiceForm.memberId ||
+                          (members.find((m) => m.id === invoiceForm.memberId) && getAllowedInvoiceSubscriptions(members.find((m) => m.id === invoiceForm.memberId)).length === 0)
+                        }
+                        style={{ padding: "14px 28px", fontSize: "1rem", fontWeight: "600" }}
+                      >
                         <i className="fas fa-file-invoice" style={{ marginRight: "8px" }}></i>Create Invoice
                       </button>
                       <button
@@ -10237,47 +10187,9 @@ Indian Muslim Association, Hong Kong`;
                       </div>
                     </div>
 
-                    {/* Search and Year Filter */}
-                    <div style={{
-                      marginBottom: "16px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      flexWrap: "wrap"
-                    }}>
-                      {/* Search Input */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <label className="text-l font-semibold" style={{ whiteSpace: "nowrap" }}>
-                          Search:&nbsp;
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Search by name, email, or phone..."
-                          value={outstandingMembersSearch}
-                          onChange={(e) => {
-                            setOutstandingMembersSearch(e.target.value);
-                            setOutstandingMembersPage(1); // Reset to first page when search changes
-                          }}
-                          className="search-input"
-                          style={{
-                            padding: "8px 12px",
-                            borderRadius: "4px",
-                            border: "1px solid #e5e7eb",
-                            background: "#ffffff",
-                            fontSize: "0.875rem",
-                            minWidth: "200px",
-                            outline: "none",
-                            transition: "border-color 0.2s"
-                          }}
-                          onFocus={(e) => {
-                            e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                          }}
-                          onBlur={(e) => {
-                            e.target.style.boxShadow = "none";
-                          }}
-                        />
-                      </div>
-
+                    {/* Row 1: Year Filter only | Row 2: Search only */}
+                    <div style={{ marginBottom: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                       {/* Year Filter */}
                       <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "16px" }}>
                         <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Year:</label>
@@ -10450,6 +10362,52 @@ Indian Muslim Association, Hong Kong`;
                               </button>
                             </div>
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Row 2: Search only */}
+                      <div className="search-row">
+                        <div className="search-wrapper">
+                          <input
+                            type="text"
+                            placeholder="Search by name, member ID, mobile, email"
+                            value={outstandingMembersSearch}
+                            onChange={(e) => {
+                              setOutstandingMembersSearch(e.target.value);
+                              setOutstandingMembersPage(1);
+                            }}
+                            className="search-input"
+                            style={{
+                              padding: "10px 40px 10px 16px",
+                              borderRadius: "4px",
+                              border: "1px solid #e5e7eb",
+                              background: "#ffffff",
+                              fontSize: "0.875rem",
+                              outline: "none",
+                              transition: "border-color 0.2s"
+                            }}
+                            onFocus={(e) => {
+                              e.target.style.borderColor = "#5a31ea";
+                              e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                            }}
+                            onBlur={(e) => {
+                              e.target.style.borderColor = "#e5e7eb";
+                              e.target.style.boxShadow = "none";
+                            }}
+                          />
+                          {outstandingMembersSearch && (
+                            <button
+                              type="button"
+                              className="search-clear"
+                              onClick={() => {
+                                setOutstandingMembersSearch("");
+                                setOutstandingMembersPage(1);
+                              }}
+                              aria-label="Clear search"
+                            >
+                              ×
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -13778,9 +13736,8 @@ Indian Muslim Association, Hong Kong`;
 
                         return (
                           <div>
-                            {/* Invoice Filters - Status on Left, Search on Right */}
-                            <div style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                              {/* Invoice Status Filter - Segmented Buttons (Left) */}
+                            {/* Row 1: Filters only | Row 2: Search only */}
+                            <div style={{ marginBottom: "20px", display: "flex", flexDirection: "column", gap: "12px" }}>
                               <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                               <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Status:</label>
                               <div style={{
@@ -14043,59 +14000,50 @@ Indian Muslim Association, Hong Kong`;
                               </div>
                               </div>
 
-                              {/* Invoice Search Filter (Right) */}
-                              <div style={{ display: "inline-flex", gap: "8px", flexWrap: "nowrap", alignItems: "center" }}>
-                                <label style={{ fontWeight: "600", color: "#1a1a1a" ,whiteSpace: "nowrap" }}> Search:</label>
-                                <input
-                                  type="text"
-                                  placeholder="Search by name, year, or native place..."
-                                  value={invoiceSearchTerm}
-                                  onChange={(e) => {
-                                    setInvoiceSearchTerm(e.target.value);
-                                    setInvoicesPage(1); // Reset to first page when searching
-                                  }}
-                                  style={{
-                                    padding: "8px 12px",
-                                    borderRadius: "4px",
-                                    border: "1px solid #e5e7eb",
-                                    background: "#ffffff",
-                                    fontSize: "0.875rem",
-                                    minWidth: "250px",
-                                    outline: "none",
-                                    transition: "border-color 0.2s"
-                                  }}
-                                  onFocus={(e) => {
-                                    e.target.style.borderColor = "#5a31ea";
-                                    e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                                  }}
-                                  onBlur={(e) => {
-                                    e.target.style.borderColor = "#e5e7eb";
-                                    e.target.style.boxShadow = "none";
-                                  }}
-                                />
-                                {/* {invoiceSearchTerm && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setInvoiceSearchTerm("");
+                              {/* Row 2: Search only */}
+                              <div className="search-row">
+                                <div className="search-wrapper">
+                                  <input
+                                    type="text"
+                                    value={invoiceSearchTerm}
+                                    onChange={(e) => {
+                                      setInvoiceSearchTerm(e.target.value);
                                       setInvoicesPage(1);
                                     }}
+                                    placeholder="Search by member, receipt no, invoice year"
+                                    className="search-input"
                                     style={{
-                                      padding: "8px 12px",
-                                      background: "transparent",
-                                      border: "none",
-                                      color: "#6b7280",
-                                      cursor: "pointer",
+                                      padding: "10px 40px 10px 16px",
+                                      borderRadius: "4px",
+                                      border: "1px solid #e5e7eb",
+                                      background: "#ffffff",
                                       fontSize: "0.875rem",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "4px"
+                                      outline: "none",
+                                      transition: "border-color 0.2s"
                                     }}
-                                    title="Clear search"
-                                  >
-                                    <i className="fas fa-times"></i> Clear
-                                  </button>
-                                )} */}
+                                    onFocus={(e) => {
+                                      e.target.style.borderColor = "#5a31ea";
+                                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                    }}
+                                    onBlur={(e) => {
+                                      e.target.style.borderColor = "#e5e7eb";
+                                      e.target.style.boxShadow = "none";
+                                    }}
+                                  />
+                                  {invoiceSearchTerm && (
+                                    <button
+                                      type="button"
+                                      className="search-clear"
+                                      onClick={() => {
+                                        setInvoiceSearchTerm("");
+                                        setInvoicesPage(1);
+                                      }}
+                                      aria-label="Clear search"
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
 
@@ -14527,8 +14475,8 @@ Indian Muslim Association, Hong Kong`;
 
                   <div className=" card-payments">
                     <div style={{ padding: "2px" }}>
-                      {/* Payment Filters */}
-                      <div style={{ marginBottom: "20px", display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+                      {/* Row 1: Filters only | Row 2: Search only */}
+                      <div style={{ marginBottom: "20px", display: "flex", flexDirection: "column", gap: "12px" }}>
                         <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                           <div className="flex gap-md flex-nowrap items-center">
                             <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Year:</label>
@@ -14739,56 +14687,51 @@ Indian Muslim Association, Hong Kong`;
                             </select>
                           </div>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "nowrap" }}>
-                          <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Search:</label>
-                          <input
-                            type="text"
-                            value={paymentSearchTerm}
-                            onChange={(e) => {
-                              setPaymentSearchTerm(e.target.value);
-                              setPaymentsPage(1);
-                            }}
-                            placeholder="Search by member, invoice ID, method, or reference..."
-                            style={{
-                              padding: "10px 12px",
-                              borderRadius: "4px",
-                              border: "1px solid #e5e7eb",
-                              minWidth: "260px",
-                              fontSize: "0.95rem",
-                              outline: "none",
-                              transition: "border-color 0.2s, box-shadow 0.2s",
-                              background: "#fff"
-                            }}
-                            onFocus={(e) => {
-                              e.target.style.borderColor = "#5a31ea";
-                              e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                            }}
-                            onBlur={(e) => {
-                              e.target.style.borderColor = "#e5e7eb";
-                              e.target.style.boxShadow = "none";
-                            }}
-                          />
-                          {/* {paymentSearchTerm && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPaymentSearchTerm("");
+
+                        {/* Row 2: Search only */}
+                        <div className="search-row">
+                          <div className="search-wrapper">
+                            <input
+                              type="text"
+                              value={paymentSearchTerm}
+                              onChange={(e) => {
+                                setPaymentSearchTerm(e.target.value);
                                 setPaymentsPage(1);
                               }}
+                              placeholder="Search by member, invoice ID, payment ref"
+                              className="search-input"
                               style={{
-                                padding: "8px 12px",
-                                background: "#f9fafb",
-                                border: "1px solid #e5e7eb",
+                                padding: "10px 40px 10px 16px",
                                 borderRadius: "4px",
-                                cursor: "pointer",
+                                border: "1px solid #e5e7eb",
+                                background: "#ffffff",
                                 fontSize: "0.875rem",
-                                color: "#666"
+                                outline: "none",
+                                transition: "border-color 0.2s"
                               }}
-                              title="Clear search"
-                            >
-                              ✕
-                            </button>
-                          )} */}
+                              onFocus={(e) => {
+                                e.target.style.borderColor = "#5a31ea";
+                                e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                              }}
+                              onBlur={(e) => {
+                                e.target.style.borderColor = "#e5e7eb";
+                                e.target.style.boxShadow = "none";
+                              }}
+                            />
+                            {paymentSearchTerm && (
+                              <button
+                                type="button"
+                                className="search-clear"
+                                onClick={() => {
+                                  setPaymentSearchTerm("");
+                                  setPaymentsPage(1);
+                                }}
+                                aria-label="Clear search"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -17673,66 +17616,93 @@ Indian Muslim Association, Hong Kong`;
 
                     {/* Transactions Table */}
                     <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
-                        <h4 style={{ margin: 0, fontSize: "1.25rem", fontWeight: "700", color: "#1a1a1a" }}>
-                          <i className="fas fa-list" style={{ marginRight: "10px", color: "#5a31ea" }}></i>
-                          Transactions
-                        </h4>
-                        <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "nowrap" }}>
-                          <div className="flex gap-md flex-nowrap items-center">
-                            <label className="font-semibold" style={{ color: "#1a1a1a" }}>Payment Method:</label>
-                            <select
-                              value={transactionMethodFilter}
-                              onChange={(e) => {
-                                setTransactionMethodFilter(e.target.value);
-                                setTransactionsPage(1);
-                              }}
-                              style={{
-                                padding: "8px 32px 8px 12px",
-                                borderRadius: "4px",
-                                border: "1px solid #e5e7eb",
-                                background: "#ffffff",
-                                fontSize: "0.875rem",
-                                fontWeight: "500",
-                                color: "#1a1a1a",
-                                outline: "none",
-                                transition: "border-color 0.2s",
-                                cursor: "pointer"
-                              }}
-                              onFocus={(e) => {
-                                e.target.style.borderColor = "#5a31ea";
-                                e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                              }}
-                              onBlur={(e) => {
-                                e.target.style.borderColor = "#e5e7eb";
-                                e.target.style.boxShadow = "none";
-                              }}
-                            >
-                              <option value="All">All</option>
-                              <option value="Cash">Cash</option>
-                              <option value="FPS">FPS</option>
-                              <option value="Alipay">Alipay</option>
-                              <option value="Bank Deposit">Bank Deposit</option>
-                              <option value="Other">Other</option>
-                            </select>
-                          </div>
+                      <h4 style={{ margin: "0 0 12px 0", fontSize: "1.25rem", fontWeight: "700", color: "#1a1a1a" }}>
+                        <i className="fas fa-list" style={{ marginRight: "10px", color: "#5a31ea" }}></i>
+                        Transactions
+                      </h4>
+                      {/* Row 1: Filters only */}
+                      <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px" }}>
+                        <div className="flex gap-md flex-nowrap items-center">
+                          <label className="font-semibold" style={{ color: "#1a1a1a" }}>Payment Method:</label>
+                          <select
+                            value={transactionMethodFilter}
+                            onChange={(e) => {
+                              setTransactionMethodFilter(e.target.value);
+                              setTransactionsPage(1);
+                            }}
+                            style={{
+                              padding: "8px 32px 8px 12px",
+                              borderRadius: "4px",
+                              border: "1px solid #e5e7eb",
+                              background: "#ffffff",
+                              fontSize: "0.875rem",
+                              fontWeight: "500",
+                              color: "#1a1a1a",
+                              outline: "none",
+                              transition: "border-color 0.2s",
+                              cursor: "pointer"
+                            }}
+                            onFocus={(e) => {
+                              e.target.style.borderColor = "#5a31ea";
+                              e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                            }}
+                            onBlur={(e) => {
+                              e.target.style.borderColor = "#e5e7eb";
+                              e.target.style.boxShadow = "none";
+                            }}
+                          >
+                            <option value="All">All</option>
+                            <option value="Cash">Cash</option>
+                            <option value="FPS">FPS</option>
+                            <option value="Alipay">Alipay</option>
+                            <option value="Bank Deposit">Bank Deposit</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                      </div>
+                      {/* Row 2: Search only */}
+                      <div className="search-row">
+                        <div className="search-wrapper">
                           <input
                             type="text"
-                            placeholder="Search transactions..."
+                            placeholder="Search by member, donor, amount, method"
                             value={transactionsSearch}
                             onChange={(e) => {
                               setTransactionsSearch(e.target.value);
                               setTransactionsPage(1);
                             }}
+                            className="search-input"
                             style={{
-                              padding: "10px 16px",
-                              borderRadius: "8px",
+                              padding: "10px 40px 10px 16px",
+                              borderRadius: "4px",
                               border: "1px solid #e5e7eb",
-                              fontSize: "0.9375rem",
-                              minWidth: "250px",
-                              background: "#ffffff"
+                              background: "#ffffff",
+                              fontSize: "0.875rem",
+                              outline: "none",
+                              transition: "border-color 0.2s"
+                            }}
+                            onFocus={(e) => {
+                              e.target.style.borderColor = "#5a31ea";
+                              e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                            }}
+                            onBlur={(e) => {
+                              e.target.style.borderColor = "#e5e7eb";
+                              e.target.style.boxShadow = "none";
                             }}
                           />
+                          {transactionsSearch && (
+                            <button
+                              type="button"
+                              className="search-clear"
+                              onClick={() => {
+                                setTransactionsSearch("");
+                                setTransactionsPage(1);
+                              }}
+                              aria-label="Clear search"
+                            >
+                              ×
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div style={{ overflow: "hidden", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
