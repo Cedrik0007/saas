@@ -1364,6 +1364,7 @@ function AdminPage() {
     const [transactionsPage, setTransactionsPage] = useState(1);
     const [transactionsPageSize, setTransactionsPageSize] = useState(10);
     const [memberSearchTerm, setMemberSearchTerm] = useState(""); // Search filter for members
+    const memberSearchInputRef = useRef(null);
     const [memberStatusFilter, setMemberStatusFilter] = useState("All"); // Status filter for members
     const [memberYearFilter, setMemberYearFilter] = useState("All"); // Year filter for members
     const [memberTypeFilter, setMemberTypeFilter] = useState("All"); // Member type filter: All, Annual Member, Lifetime Member + Janaza Fund
@@ -1828,14 +1829,9 @@ function AdminPage() {
         // Get all invoices for this member
         const memberInvoices = getMemberInvoices(member.id);
 
-        // Check if member has any unpaid or overdue invoices
-        // Use effective status (considering completed payments)
+        // Check if member has any unpaid or overdue invoices (invoice.status is single source of truth)
         const hasUnpaidInvoice = memberInvoices.some(inv => {
-          // Check if there's a completed payment for this invoice
-          const relatedPayment = paymentHistory.find(
-            (p) => p.invoiceId === inv.id && (p.status === "Completed" || p.status === "Paid")
-          );
-          const effectiveStatus = relatedPayment ? "Paid" : inv.status;
+          const effectiveStatus = getEffectiveInvoiceStatus(inv);
           return effectiveStatus === "Unpaid" || effectiveStatus === "Overdue";
         });
 
@@ -1942,35 +1938,11 @@ function AdminPage() {
       return "Other";
     };
 
-    // Helper function to get effective invoice status (considering completed payments)
+    // Invoice object is the single source of truth for status. Both Invoices page and Member Details read from global invoices.
+    // No inference from paymentHistory — backend updates invoice.status when payment is approved; updateInvoiceInState syncs it.
     const getEffectiveInvoiceStatus = (invoice) => {
-      // If invoice is already marked as Paid, return Paid immediately
-      if (invoice.status === "Paid" || invoice.status === "Completed") {
-        return "Paid";
-      }
-
-      // Check if there's a completed payment for this SPECIFIC invoice
-      // Use strict string comparison to avoid false positives
-      const invoiceIdStr = String(invoice.id || "").trim();
-      
-      // Only check for related payment if invoice has a valid ID
-      if (invoiceIdStr && invoiceIdStr !== "undefined" && invoiceIdStr !== "null") {
-        const relatedPayment = (paymentHistory || []).find((p) => {
-          const paymentInvoiceIdStr = String(p.invoiceId || "").trim();
-          // Strict match: both IDs must be non-empty and exactly equal
-          return paymentInvoiceIdStr && 
-                 paymentInvoiceIdStr === invoiceIdStr && 
-                 (p.status === "Completed" || p.status === "Paid");
-        });
-
-        // If there's a completed payment, invoice is effectively paid
-        if (relatedPayment) {
-          return "Paid";
-        }
-      }
-
-      // Otherwise use the invoice's own status
-      return invoice.status || "Unpaid";
+      if (invoice?.status === "Paid" || invoice?.status === "Completed") return "Paid";
+      return invoice?.status || "Unpaid";
     };
 
     const getDisplayPrefixForType = (subscriptionType) =>
@@ -4665,6 +4637,13 @@ Indian Muslim Association, Hong Kong`;
 
         if (!newMember?.id) {
           throw new Error("Member ID missing from server response. Please try again.");
+        }
+
+        // Backend may have created an unpaid invoice for the new member; refresh lists so Member Details and Members List show correct data (e.g. Year)
+        try {
+          await Promise.all([fetchMembers(), fetchInvoices()]);
+        } catch (refreshErr) {
+          console.warn("Could not refresh lists after member create:", refreshErr);
         }
 
         // Sync state: set selectedMember and navigate to details so data shows immediately
@@ -7898,55 +7877,80 @@ Indian Muslim Association, Hong Kong`;
                                 <label className="text-l font-semibold" style={{ whiteSpace: "nowrap" }}>
                                   Search:&nbsp;
                                 </label>
-                                <input
-                                  type="text"
-                                  placeholder="Search by name, mobile, email, or ID..."
-                                  value={memberSearchTerm}
-                                  onChange={(e) => {
-                                    setMemberSearchTerm(e.target.value);
-                                    setMembersPage(1); // Reset to first page when searching
-                                  }}
-                                  className="search-input"
-                                  style={{
-                                    padding: "8px 12px",
-                                    borderRadius: "4px",
-                                    border: "1px solid #e5e7eb",
-                                    background: "#ffffff",
-                                    fontSize: "0.875rem",
-                                    minWidth: "200px",
-                                    outline: "none",
-                                    transition: "border-color 0.2s"
-                                  }}
-                                  onFocus={(e) => {
-                                    // e.target.style.borderColor = "#5a31ea";
-                                    e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                                  }}
-                                  onBlur={(e) => {
-                                    // e.target.style.borderColor = "#e5e7eb";
-                                    e.target.style.boxShadow = "none";
-                                  }}
-                                />
-                                {/* {memberSearchTerm && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setMemberSearchTerm("");
+                                <div style={{ position: "relative", display: "inline-flex", minWidth: "220px" }}>
+                                  <input
+                                    ref={memberSearchInputRef}
+                                    type="text"
+                                    placeholder="Search by name, mobile, email"
+                                    value={memberSearchTerm}
+                                    onChange={(e) => {
+                                      setMemberSearchTerm(e.target.value);
                                       setMembersPage(1);
                                     }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Escape") {
+                                        setMemberSearchTerm("");
+                                        setMembersPage(1);
+                                        memberSearchInputRef.current?.focus();
+                                      }
+                                    }}
+                                    className="search-input"
                                     style={{
                                       padding: "8px 12px",
-                                      background: "#f9fafb",
-                                      border: "1px solid #e5e7eb",
+                                      paddingRight: memberSearchTerm ? "32px" : "12px",
                                       borderRadius: "4px",
-                                      cursor: "pointer",
+                                      border: "1px solid #e5e7eb",
+                                      background: "#ffffff",
                                       fontSize: "0.875rem",
-                                      color: "#666"
+                                      width: "100%",
+                                      minWidth: "200px",
+                                      outline: "none",
+                                      transition: "border-color 0.2s"
                                     }}
-                                    title="Clear search"
-                                  >
-                                    ✕
-                                  </button>
-                                )} */}
+                                    onFocus={(e) => {
+                                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                    }}
+                                    onBlur={(e) => {
+                                      e.target.style.boxShadow = "none";
+                                    }}
+                                  />
+                                  {memberSearchTerm && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setMemberSearchTerm("");
+                                        setMembersPage(1);
+                                        memberSearchInputRef.current?.focus();
+                                      }}
+                                      title="Clear search"
+                                      aria-label="Clear search"
+                                      style={{
+                                        position: "absolute",
+                                        right: "6px",
+                                        top: "50%",
+                                        transform: "translateY(-50%)",
+                                        padding: "2px 6px",
+                                        background: "transparent",
+                                        border: "none",
+                                        borderRadius: "4px",
+                                        cursor: "pointer",
+                                        fontSize: "1rem",
+                                        lineHeight: 1,
+                                        color: "#6b7280"
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.target.style.background = "#f3f4f6";
+                                        e.target.style.color = "#374151";
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.target.style.background = "transparent";
+                                        e.target.style.color = "#6b7280";
+                                      }}
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
 

@@ -1038,11 +1038,21 @@ export function AppProvider({ children }) {
   };
 
   // Update a single invoice in state (e.g. after payment approval) so UI reflects status, receiver_name etc. without refetch.
+  // Invoice object is the single source of truth; both Invoices page and Member Details read from global invoices.
   const updateInvoiceInState = (updatedInvoice) => {
     if (!updatedInvoice || (updatedInvoice._id == null && updatedInvoice.id == null)) return;
-    const idStr = updatedInvoice._id != null ? String(updatedInvoice._id) : null;
-    if (!idStr) return;
-    setInvoices(prev => prev.map(inv => String(inv._id || "") === idStr ? { ...inv, ...updatedInvoice } : inv));
+    const matchId = (inv) => {
+      if (updatedInvoice._id != null && inv._id != null && String(inv._id) === String(updatedInvoice._id)) return true;
+      if (updatedInvoice.id != null && inv.id != null && String(inv.id) === String(updatedInvoice.id)) return true;
+      return false;
+    };
+    setInvoices(prev => {
+      const found = prev.find(matchId);
+      if (found) {
+        return prev.map(inv => matchId(inv) ? { ...inv, ...updatedInvoice } : inv);
+      }
+      return [updatedInvoice, ...prev]; // upsert if not in list
+    });
   };
 
   // Communication Operations
