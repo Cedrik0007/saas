@@ -1436,13 +1436,19 @@ function AdminPage() {
     const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed, Pending
     const [remindersChannelFilter, setRemindersChannelFilter] = useState("All"); // All, Email, WhatsApp
 
-    // Sync URL with activeSection changes
+    // Sync URL with activeSection and memberId (for member-detail deep linking)
     useEffect(() => {
       const currentSection = searchParams.get('section');
-      if (currentSection !== activeSection) {
-        setSearchParams({ section: activeSection }, { replace: false });
+      const currentMemberId = searchParams.get('memberId');
+      const sectionChanged = currentSection !== activeSection;
+      const shouldSetMemberId = activeSection === "member-detail" && selectedMember?.id;
+      const memberIdChanged = shouldSetMemberId && currentMemberId !== selectedMember.id;
+      if (sectionChanged || memberIdChanged) {
+        const params = { section: activeSection };
+        if (shouldSetMemberId) params.memberId = selectedMember.id;
+        setSearchParams(params, { replace: false });
       }
-    }, [activeSection, searchParams, setSearchParams]);
+    }, [activeSection, selectedMember?.id, searchParams, setSearchParams]);
 
     // Handle browser back/forward buttons
     useEffect(() => {
@@ -4203,6 +4209,36 @@ Indian Muslim Association, Hong Kong`;
       }
     }, [selectedMember?.id]);
 
+    // Fetch member by ID when on member-detail with memberId in URL but selectedMember missing/mismatched (e.g. after refresh)
+    useEffect(() => {
+      if (activeSection !== "member-detail") return;
+      const urlMemberId = searchParams.get("memberId");
+      if (!urlMemberId) return;
+      const matches = selectedMember && (
+        String(selectedMember.id || "").trim() === String(urlMemberId).trim() ||
+        String(selectedMember._id || "").trim() === String(urlMemberId).trim()
+      );
+      if (matches) return;
+
+      const existing = members.find(
+        (m) =>
+          String(m.id || "").trim() === String(urlMemberId).trim() ||
+          String(m._id || "").trim() === String(urlMemberId).trim()
+      );
+      if (existing) {
+        setSelectedMember(existing);
+        return;
+      }
+
+      const apiUrl = import.meta.env.DEV ? "" : (import.meta.env.VITE_API_URL || "");
+      fetch(`${apiUrl}/api/members/${encodeURIComponent(urlMemberId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((member) => {
+          if (member?._id) setSelectedMember(member);
+        })
+        .catch((err) => console.warn("Could not fetch member by URL memberId:", err));
+    }, [activeSection, searchParams, selectedMember?.id, selectedMember?._id, members]);
+
     // Lock body scroll when mobile menu is open
     useEffect(() => {
       if (isMobileMenuOpen) {
@@ -4631,10 +4667,11 @@ Indian Muslim Association, Hong Kong`;
           throw new Error("Member ID missing from server response. Please try again.");
         }
 
-
-
-        // No need to refetch - Socket.io will update in real-time
-        // State is already updated optimistically and will be confirmed via Socket.io
+        // Sync state: set selectedMember and navigate to details so data shows immediately
+        setSelectedMember(newMember);
+        setActiveSection("member-detail");
+        setMemberDetailInvoicesPage(1);
+        setActiveTab("Invoices");
 
         setMemberForm({
           id: "",
