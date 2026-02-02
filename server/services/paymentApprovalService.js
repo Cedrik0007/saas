@@ -94,6 +94,8 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
         last_payment_date: payment.approvedAt,
         memberRef: member?._id,
         memberNo: member?.memberNo,
+        memberName: member?.name || null,
+        memberEmail: member?.email || null,
       };
 
       if (payment.paidToAdmin) {
@@ -117,6 +119,12 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
 
       invoice = updatedInvoice;
       invoice.receiptPdfUrl = getReceiptWhatsAppUrl(invoice._id);
+
+      if (!invoice.receiptNumber || String(invoice.receiptNumber).trim() === "") {
+        const err = new Error("Invoice receipt number missing after approval. Aborting.");
+        err.status = 500;
+        throw err;
+      }
 
       // Update member balance atomically inside the transaction
       const unpaidInvoices = await InvoiceModel.find(
@@ -195,7 +203,16 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
       }
     });
 
-    return { payment, invoice, member };
+    const freshInvoice = await InvoiceModel.findById(invoice._id).lean();
+    if (!freshInvoice || !freshInvoice.receiptNumber || String(freshInvoice.receiptNumber).trim() === "") {
+      console.error("Payment approval: invoice missing receiptNumber after commit", { invoiceId: invoice._id });
+      const err = new Error("Receipt number could not be confirmed. Please try again.");
+      err.status = 500;
+      throw err;
+    }
+    const validatedInvoice = { ...freshInvoice, receiptPdfUrl: getReceiptWhatsAppUrl(freshInvoice._id) };
+
+    return { payment, invoice: validatedInvoice, member };
   } catch (err) {
     if (err.code === 11000) {
       const conflict = new Error("Another payment for this invoice has already been completed.");
@@ -289,6 +306,8 @@ export async function approveInvoicePayment({
         receiver_name: payment.receiver_name || null,
         memberRef: member?._id,
         memberNo: member?.memberNo,
+        memberName: member?.name || null,
+        memberEmail: member?.email || null,
       };
 
       if (paidToAdmin) {
@@ -311,7 +330,11 @@ export async function approveInvoicePayment({
       }
 
       invoice = updatedInvoice;
-      // Receipt link should never block payment approval.
+      if (!invoice.receiptNumber || String(invoice.receiptNumber).trim() === "") {
+        const err = new Error("Invoice receipt number missing after approval. Aborting.");
+        err.status = 500;
+        throw err;
+      }
       try {
         invoice.receiptPdfUrl = getReceiptDownloadUrl(invoice._id) || getReceiptWhatsAppUrl(invoice._id);
       } catch (receiptError) {
@@ -415,7 +438,16 @@ export async function approveInvoicePayment({
       }
     });
 
-    return { payment, invoice, member };
+    const freshInvoice = await InvoiceModel.findById(invoice._id).lean();
+    if (!freshInvoice || !freshInvoice.receiptNumber || String(freshInvoice.receiptNumber).trim() === "") {
+      console.error("approve-invoice: invoice missing receiptNumber after commit", { invoiceId: invoice._id });
+      const err = new Error("Receipt number could not be confirmed. Please try again.");
+      err.status = 500;
+      throw err;
+    }
+    const validatedInvoice = { ...freshInvoice, receiptPdfUrl: getReceiptDownloadUrl(freshInvoice._id) || getReceiptWhatsAppUrl(freshInvoice._id) };
+
+    return { payment, invoice: validatedInvoice, member };
   } catch (err) {
     if (err.code === 11000) {
       const conflict = new Error("Another payment for this invoice has already been completed.");

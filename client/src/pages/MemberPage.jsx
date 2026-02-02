@@ -164,30 +164,10 @@ export function MemberPage() {
     setTimeout(() => setNotieMessage(null), 3000);
   };
 
-  // Get effective invoice status based on payment status
+  // Invoice is the ONLY source of truth for status. Do NOT infer from payments.
   const getEffectiveInvoiceStatus = (invoice) => {
-    // Check if there's a payment for this invoice
-    const relatedPayment = (payments || paymentHistory || []).find(
-      (p) => p.invoiceId === invoice.id
-    );
-
-    if (relatedPayment) {
-      // If payment is pending, invoice should show "Pending Verification"
-      if (relatedPayment.status === "Pending") {
-        return "Pending Verification";
-      }
-      // If payment is completed (approved), invoice should show "Paid"
-      if (relatedPayment.status === "Completed") {
-        return "Paid";
-      }
-      // If payment is rejected, invoice should show "Unpaid"
-      if (relatedPayment.status === "Rejected") {
-        return "Unpaid";
-      }
-    }
-
-    // If no payment or payment status doesn't match, return invoice's current status
-    return invoice.status;
+    if (invoice?.status === "Paid" || invoice?.status === "Completed") return "Paid";
+    return invoice?.status || "Unpaid";
   };
 
   // Get unpaid invoices for current member only

@@ -10,7 +10,7 @@ import DisplayIdCounterModel from "../models/DisplayIdCounter.js";
 import CounterModel from "../models/Counter.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
 import { sendAccountApprovalEmail } from "../utils/emailHelpers.js";
-import { emitMemberUpdate } from "../config/socket.js";
+import { emitMemberUpdate, emitInvoiceUpdate } from "../config/socket.js";
 import { SUBSCRIPTION_TYPES, calculateFees, calculateFeesForMember, normalizeSubscriptionType } from "../utils/subscriptionTypes.js";
 import { getNextReceiptNumberStrict } from "../utils/receiptCounter.js";
 
@@ -712,6 +712,7 @@ router.post("/", async (req, res) => {
     // Determine the invoice period first to check for duplicates accurately
     const invoiceSubscriptionType = subscriptionType;
     const normalizedInvoiceSubscriptionType = normalizeSubscriptionType(invoiceSubscriptionType);
+    let createdInvoiceDoc = null;
 
     if (savedMember.id) {
       let invoicePeriod = 'Lifetime Subscription';
@@ -812,6 +813,7 @@ router.post("/", async (req, res) => {
 
         const newInvoice = new InvoiceModel(invoiceData);
         await newInvoice.save(session ? { session } : undefined);
+        createdInvoiceDoc = newInvoice.toObject ? newInvoice.toObject() : newInvoice;
         console.log(`✓ Invoice created for new member ${savedMember.name} (${savedMember.id}): ${invoiceData.id}`);
       } else {
         console.log(`⚠ Invoice already exists for member ${savedMember.name} (${savedMember.id}), skipping duplicate creation`);
@@ -834,6 +836,9 @@ router.post("/", async (req, res) => {
 
     // Emit Socket.io event for real-time update
     emitMemberUpdate('created', updatedMember);
+    if (createdInvoiceDoc) {
+      emitInvoiceUpdate('created', createdInvoiceDoc);
+    }
 
     res.status(201).json(updatedMember);
   } catch (error) {

@@ -225,7 +225,19 @@ export function AppProvider({ children }) {
       });
 
       socketRef.current.on('invoice:updated', (invoice) => {
-        setInvoices(prev => prev.map(inv => inv._id === invoice._id ? invoice : inv));
+        if (!invoice || (invoice._id == null && invoice.id == null)) return;
+        const matchId = (inv) => {
+          if (invoice._id != null && inv._id != null && String(inv._id) === String(invoice._id)) return true;
+          if (invoice.id != null && inv.id != null && String(inv.id) === String(invoice.id)) return true;
+          return false;
+        };
+        setInvoices(prev => {
+          const found = prev.find(matchId);
+          if (found) {
+            return prev.map(inv => matchId(inv) ? { ...inv, ...invoice } : inv);
+          }
+          return [invoice, ...prev];
+        });
       });
 
       socketRef.current.on('invoice:deleted', (data) => {

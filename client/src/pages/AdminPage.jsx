@@ -1145,6 +1145,7 @@ function AdminPage() {
       adminMobile: "", // Mobile number for selected admin
     });
     const [uploadingPaymentModal, setUploadingPaymentModal] = useState(false);
+    const [isApprovingPayment, setIsApprovingPayment] = useState(false);
     const paymentApprovalInProgressRef = useRef(null);
     const [showPaymentConfirmationModal, setShowPaymentConfirmationModal] = useState(false);
     const [paymentConfirmationInvoice, setPaymentConfirmationInvoice] = useState(null);
@@ -3266,6 +3267,8 @@ function AdminPage() {
 
     // Payment Approval Functions
     const handleApprovePayment = async (paymentId) => {
+      if (isApprovingPayment) return;
+      setIsApprovingPayment(true);
       try {
         // In development, use empty string to use Vite proxy (localhost:4000)
         // In production, use VITE_API_URL if set
@@ -3323,6 +3326,8 @@ function AdminPage() {
       } catch (error) {
         console.error('Error approving payment:', error);
         showToast(error.message || "Failed to approve payment", "error");
+      } finally {
+        setIsApprovingPayment(false);
       }
     };
 
@@ -8801,33 +8806,43 @@ Indian Muslim Association, Hong Kong`;
                                             />
                                           </>
                                         )}
-                                        {/* Paid invoices: Show Send and PDF only (paid invoices cannot be deleted) */}
+                                        {/* Paid invoices: Show Send and PDF only when receiptNumber exists (guards against race) */}
                                         {isPaid && (
                                           <>
                                             <ActionIcon
                                               icon="fa-whatsapp"
-                                              tooltip="Send Confirmation"
+                                              tooltip={invoice.receiptNumber ? "Send / Re-send Receipt" : "Receipt number pending—wait a moment"}
                                               variant="whatsapp"
-                                              ariaLabel="Send payment confirmation"
+                                              ariaLabel="Send or re-send payment receipt"
                                               onClick={() => {
+                                                if (!invoice.receiptNumber) {
+                                                  showToast("Receipt number is being generated. Please wait a moment and try again.", "error");
+                                                  return;
+                                                }
                                                 setPaymentConfirmationInvoice(invoice);
                                                 setPaymentConfirmationChannels({ email: false, whatsapp: false });
                                                 openConfirmModal('paymentConfirmation');
                                               }}
+                                              style={invoice.receiptNumber ? undefined : { opacity: 0.6, cursor: "not-allowed" }}
                                             />
                                             <ActionIcon
                                               icon="fa-file-pdf"
-                                              tooltip="View/Download PDF"
+                                              tooltip={invoice.receiptNumber ? "View/Download PDF" : "Receipt number pending—wait a moment"}
                                               variant="pdf"
                                               ariaLabel="PDF Options"
                                               onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
+                                                if (!invoice.receiptNumber) {
+                                                  showToast("Receipt number is being generated. Please wait a moment and try again.", "error");
+                                                  return;
+                                                }
                                                 const apiUrl = import.meta.env.VITE_API_URL || "";
                                                 const invoiceParam = invoice?._id || invoice?.id;
                                                 const pdfUrl = `${apiUrl}/api/invoices/${invoiceParam}/pdf-receipt/view`;
                                                 window.open(pdfUrl, "_blank");
                                               }}
+                                              style={invoice.receiptNumber ? undefined : { opacity: 0.6, cursor: "not-allowed" }}
                                             />
                                           </>
                                         )}
@@ -12815,6 +12830,11 @@ Indian Muslim Association, Hong Kong`;
                       <div>
                         <h3>Payment Approvals</h3>
                         <p>Review and approve member payment submissions.</p>
+                        {isApprovingPayment && (
+                          <p style={{ marginTop: "8px", color: "#5a31ea", fontWeight: 500 }}>
+                            Please wait, generating receipt…
+                          </p>
+                        )}
                       </div>
                       <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
                         <button
@@ -13442,12 +13462,14 @@ Indian Muslim Association, Hong Kong`;
                                           <>
                                             <ActionIcon
                                               icon="fa-check"
-                                              tooltip="Approve payment (By Admin)"
+                                              tooltip={isApprovingPayment ? "Processing..." : "Approve payment (By Admin)"}
                                               variant="default"
                                               ariaLabel="Approve payment (By Admin)"
                                               onClick={() => {
+                                                if (isApprovingPayment) return;
                                                 if (paymentIdString) handleApprovePayment(paymentIdString);
                                               }}
+                                              style={isApprovingPayment ? { opacity: 0.6, cursor: "not-allowed" } : undefined}
                                             />
                                             <ActionIcon
                                               icon="fa-times"
@@ -19335,6 +19357,11 @@ Indian Muslim Association, Hong Kong`;
                   </div>
                 )}
 
+                {uploadingPaymentModal && (
+                  <p style={{ marginTop: "16px", marginBottom: "0", color: "#5a31ea", fontWeight: 500, fontSize: "0.9375rem" }}>
+                    Please wait, generating receipt…
+                  </p>
+                )}
                 {/* Action Buttons */}
                 <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
                   <button
@@ -20901,272 +20928,76 @@ Indian Muslim Association, Hong Kong`;
 
                       // Open WhatsApp (only channel we surface here)
                       if (useWhatsApp) {
-                        console.log('📱 Opening WhatsApp...');
+                        console.log('📱 Fetching WhatsApp data from backend (single source of truth)...');
                         try {
-                          const targetInvoiceDbId = paymentConfirmationInvoice.id;
-                          
-                          // Fetch fresh member data to ensure we have the correct member
-                          let member = null;
-                          try {
-                            const memberResponse = await fetch(`${apiUrl}/api/members`);
-                            if (memberResponse.ok) {
-                              const allMembers = await memberResponse.json();
-                              member = allMembers.find(m => matchesInvoiceToMember(paymentConfirmationInvoice, m));
-                            }
-                          } catch (memberError) {
-                            console.warn('Could not fetch fresh member data, using cached:', memberError);
-                            member = (members || []).find(m => matchesInvoiceToMember(paymentConfirmationInvoice, m));
+                          const invoiceParam = paymentConfirmationInvoice._id || paymentConfirmationInvoice.id;
+                          const whatsappDataRes = await fetch(`${apiUrl}/api/invoices/${invoiceParam}/whatsapp-data`);
+                          if (!whatsappDataRes.ok) {
+                            const errData = await whatsappDataRes.json().catch(() => ({}));
+                            showToast(errData.error || "Could not load receipt data. Please try again.", "error");
+                            setSendingPaymentConfirmation(false);
+                            return;
                           }
-                          
-                          if (member && member.phone) {
-                            // Use latest invoice data from AppContext state
-                            let latestInvoice = paymentConfirmationInvoice;
-                            const invoiceIdCandidates = [
-                              paymentConfirmationInvoice?._id,
-                              paymentConfirmationInvoice?.id,
-                              targetInvoiceDbId,
-                            ].filter(Boolean);
-                            const updatedInvoice = (invoices || []).find((inv) =>
-                              invoiceIdCandidates.includes(inv?._id) || invoiceIdCandidates.includes(inv?.id)
-                            );
-                            if (updatedInvoice) {
-                              latestInvoice = updatedInvoice;
-                              // Update the state to reflect the latest invoice data
-                              setPaymentConfirmationInvoice(updatedInvoice);
-                            }
-                            
-                            // Fetch fresh payment data to ensure we have the correct payment
-                            let payment = null;
-                            try {
-                              const paymentResponse = await fetch(`${apiUrl}/api/payments`);
-                              if (paymentResponse.ok) {
-                                const allPayments = await paymentResponse.json();
-                                const paymentInvoiceId = latestInvoice?.id || paymentConfirmationInvoice?.id;
-                                payment = allPayments.find(p => p.invoiceId === paymentInvoiceId);
-                              }
-                            } catch (paymentError) {
-                              console.warn('Could not fetch fresh payment data, using cached:', paymentError);
-                              const paymentInvoiceId = latestInvoice?.id || paymentConfirmationInvoice?.id;
-                              payment = payments.find(p => p.invoiceId === paymentInvoiceId);
-                            }
-                            
-                            const receiptPdfLink = resolveReceiptPdfUrl(
-                              latestInvoice?.receiptPdfUrl || paymentConfirmationInvoice?.receiptPdfUrl || ""
-                            );
-                            
-                            // Helper function to convert number to words
-                            const numberToWords = (num) => {
-                              const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
-                                'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-                              const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-                              
-                              if (num === 0) return 'Zero';
-                              if (num < 20) return ones[num];
-                              if (num < 100) {
-                                const ten = Math.floor(num / 10);
-                                const one = num % 10;
-                                return tens[ten] + (one > 0 ? ' ' + ones[one] : '');
-                              }
-                              if (num < 1000) {
-                                const hundred = Math.floor(num / 100);
-                                const remainder = num % 100;
-                                return ones[hundred] + ' Hundred' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
-                              }
-                              if (num < 100000) {
-                                const thousand = Math.floor(num / 1000);
-                                const remainder = num % 1000;
-                                return numberToWords(thousand) + ' Thousand' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
-                              }
-                              if (num < 10000000) {
-                                const lakh = Math.floor(num / 100000);
-                                const remainder = num % 100000;
-                                return numberToWords(lakh) + ' Lakh' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
-                              }
-                              const crore = Math.floor(num / 10000000);
-                              const remainder = num % 10000000;
-                              return numberToWords(crore) + ' Crore' + (remainder > 0 ? ' ' + numberToWords(remainder) : '');
-                            };
+                          const d = await whatsappDataRes.json();
+                          const receiptPdfLink = resolveReceiptPdfUrl(d.receiptPdfUrl || "");
 
-                            // Use receipt number from latest invoice data (fetched fresh to ensure we have the updated receipt number)
-                            let receiptNo = latestInvoice.receiptNumber || null;
-                            const receiptDate = new Date().toLocaleDateString('en-GB', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric'
-                            }).replace(/\//g, ' / ');
-                            const amountStr = latestInvoice.amount || 'HK$0';
-                            const amountNum = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
-                            const amountInWords = amountNum > 0 ? numberToWords(Math.floor(amountNum)) + ' Only' : '';
-                            const invoiceYear = latestInvoice.period ? (latestInvoice.period.match(/\d{4}/)?.[0] || '') : '';
-                            
-                            // Determine payment mode: Priority is to use the actual method if specified
-                            let paymentMode = 'Online';
-                            const method = String(payment?.method || paymentConfirmationInvoice.method || '').trim();
-                            const methodLower = method.toLowerCase();
-                            
-                            // Known online payment methods - check these FIRST before checking for cash
-                            const onlineMethods = ['FPS', 'PayMe', 'Bank Transfer', 'Bank Deposit', 'Alipay', 
-                                                  'Credit Card', 'Credit/Debit Cards', 'Direct Bank Transfer',
-                                                  'Online Payment', 'Screenshot', 'Bank Deposit', 'Bank Transfer'];
-                            
-                            // Priority 1: If method is explicitly set and matches a known online method, use it
-                            if (method) {
-                              // Check for exact match or case-insensitive match with known online methods
-                              const matchedMethod = onlineMethods.find(m => 
-                                method === m || methodLower === m.toLowerCase() || methodLower.includes(m.toLowerCase())
-                              );
-                              
-                              if (matchedMethod) {
-                                paymentMode = matchedMethod;
-                              } 
-                              // Check for Cheque payment
-                              else if (methodLower === 'cheque' || methodLower === 'check' ||
-                                      methodLower.includes('cheque') || methodLower.includes('check')) {
-                                paymentMode = 'Cheque';
-                              }
-                              // Check for Cash in method name
-                              else if (methodLower === 'cash' || methodLower.includes('cash') ||
-                                      method === 'Cash' || method === 'Cash to Admin') {
-                                paymentMode = 'Cash';
-                              }
-                              // Check for generic online indicators
-                              else if (methodLower.includes('bank') || methodLower.includes('transfer') || 
-                                      methodLower.includes('fps') || methodLower.includes('alipay') || 
-                                      methodLower.includes('payme') || methodLower.includes('online')) {
-                                paymentMode = method; // Use the method as-is
-                              }
-                              // If method exists but doesn't match above, use it as-is
-                              else {
-                                paymentMode = method;
-                              }
+                          let paymentMode = "Online";
+                          const method = String(d.method || "").trim().toLowerCase();
+                          if (method) {
+                            if (method.includes('cheque') || method.includes('check')) paymentMode = 'Cheque';
+                            else if (method.includes('cash')) paymentMode = 'Cash';
+                            else if (method.includes('bank') || method.includes('transfer') || method.includes('fps') || method.includes('payme') || method.includes('online')) {
+                              paymentMode = d.method || 'Online';
                             }
-                            // Priority 2: If no method specified, check payment_type and paidToAdmin flags
-                            else {
-                              // Check for Cash payment via flags (only if method is not specified)
-                              const isCash = payment?.paidToAdmin || payment?.paidToAdminName || 
-                                            paymentConfirmationInvoice?.paidToAdmin ||
-                                            payment?.payment_type === 'cash' || payment?.payment_mode === 'cash' ||
-                                            paymentConfirmationInvoice?.payment_type === 'cash';
-                              
-                              if (isCash) {
-                                paymentMode = 'Cash';
-                              } else {
-                                paymentMode = 'Online';
-                              }
-                            }
-                            
-                            // Format date for display
-                            const displayDate = new Date().toLocaleDateString('en-GB', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric'
-                            });
-                            
-                            // Determine receipt type based on amount
-                            // HK$250 = Lifetime Member + Janaza Fund Receipt
-                            // HK$500 = Membership Renewal Receipt
-                            const isJanazaFund = amountNum === 250 || amountNum === 250.00;
-                            const receiptTitle = isJanazaFund 
-                              ? 'Lifetime Member + Janaza Fund Receipt' 
-                              : 'Membership Renewal Receipt';
-                            
-                            // Create WhatsApp message
-                            let message = `Indian Muslim Association – Hong Kong
+                          }
+
+                          const displayDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                          const isJanazaFund = (d.amountNum || 0) === 250 || (d.amountNum || 0) === 250.00;
+                          const receiptTitle = isJanazaFund ? 'Lifetime Member + Janaza Fund Receipt' : 'Membership Renewal Receipt';
+
+                          let message = `Indian Muslim Association – Hong Kong
 ${receiptTitle}
 
 Date: ${displayDate}
-Member ID: ${member.id || '-'}
-Name: ${member.name}
-Receipt No: ${receiptNo || ''}
-Amount: ${amountStr}
+Member ID: ${d.memberId || '-'}
+Name: ${d.memberName || 'Member'}
+Receipt No: ${d.receiptNumber || ''}
+Amount: ${d.amount || 'HK$0'}
 Payment Mode: ${paymentMode}
 
-Renewal confirmed for Year ${invoiceYear || '____'}
+Renewal confirmed for Year ${d.invoiceYear || '____'}
 
 Thank you for supporting the IMA community!`;
+                          if (receiptPdfLink) message += `\n\nReceipt PDF:\n${receiptPdfLink}`;
 
-                            if (receiptPdfLink) {
-                              message += `\n\nReceipt PDF:\n${receiptPdfLink}`;
-                            }
-
-                            // Clean phone number - ensure it starts with country code
-                            let cleanPhone = member.phone.replace(/[^0-9+]/g, "");
-                            
-                            // Validate phone number
-                            if (!cleanPhone || cleanPhone.length < 8) {
-                              errors.push("WhatsApp: Invalid phone number format");
-                              // Skip WhatsApp if phone is invalid
-                              console.error('Invalid phone number:', member.phone);
-                            } else {
-                            
-                            // Ensure phone number has country code
-                            if (!cleanPhone.startsWith('+')) {
-                              // If no +, assume it needs country code (default to +852 for Hong Kong)
-                              cleanPhone = '+852' + cleanPhone.replace(/^\+?/, '');
-                            }
-                            
-                            // Remove the + from the URL (wa.me format doesn't need it)
+                          let cleanPhone = (d.memberPhone || "").replace(/[^0-9+]/g, "");
+                          if (!cleanPhone || cleanPhone.length < 8) {
+                            errors.push("WhatsApp: Invalid phone number format");
+                          } else {
+                            if (!cleanPhone.startsWith('+')) cleanPhone = '+852' + cleanPhone.replace(/^\+?/, '');
                             const phoneForUrl = cleanPhone.replace(/^\+/, '');
-                            
-                            // Check if message is too long (WhatsApp has URL length limits ~2000 chars)
-                            // If message is too long, use a shorter version
-                            const maxUrlLength = 2000; // Safe limit for URLs
+                            const maxUrlLength = 2000;
                             let finalMessage = message;
                             let whatsappUrl = `https://wa.me/${phoneForUrl}?text=${encodeURIComponent(finalMessage)}`;
-                            
-                            // If URL is too long, use a shorter message
                             if (whatsappUrl.length > maxUrlLength) {
-                              console.warn('WhatsApp message too long, using shortened version');
-                              // Create a shorter message (same format but without extra spaces)
-                              finalMessage = `Indian Muslim Association – Hong Kong
-${receiptTitle}
-
-Date: ${displayDate}
-Member ID: ${member.id || '-'}
-Name: ${member.name}
-Receipt No: ${receiptNo || ''}
-Amount: ${amountStr}
-Payment Mode: ${paymentMode}
-
-Renewal confirmed for Year ${invoiceYear || '____'}
-
-Thank you for supporting the IMA community!${receiptPdfLink ? `\n\nReceipt PDF:\n${receiptPdfLink}` : ''}`;
+                              finalMessage = `Indian Muslim Association – Hong Kong\n${receiptTitle}\n\nDate: ${displayDate}\nMember ID: ${d.memberId || '-'}\nName: ${d.memberName || 'Member'}\nReceipt No: ${d.receiptNumber || ''}\nAmount: ${d.amount || 'HK$0'}\nPayment Mode: ${paymentMode}\n\nRenewal confirmed for Year ${d.invoiceYear || '____'}\n\nThank you for supporting the IMA community!${receiptPdfLink ? `\n\nReceipt PDF:\n${receiptPdfLink}` : ''}`;
                               whatsappUrl = `https://wa.me/${phoneForUrl}?text=${encodeURIComponent(finalMessage)}`;
                             }
-                            
-                            console.log('Opening WhatsApp:', { phone: phoneForUrl, urlLength: whatsappUrl.length });
-                            
-                            // Always open WhatsApp in a new tab/window (target="_blank")
-                            // Use window.open with _blank to ensure it opens in a new tab
                             const whatsappWindow = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-                            
-                            // Check if popup was blocked
                             if (!whatsappWindow || whatsappWindow.closed || typeof whatsappWindow.closed === 'undefined') {
-                              // Popup blocked - show warning but don't navigate in current page
-                              console.warn('Popup blocked by browser');
-                              showToast('Popup blocked. Please allow popups for this site to open WhatsApp in a new tab.', 'warning');
+                              showToast('Popup blocked. Please allow popups for this site.', 'warning');
                             } else {
-                              // Successfully opened
                               whatsappSuccess = true;
-                              console.log('WhatsApp opened successfully in new window');
-                            }
-                            
-                            // Log to communication only if successful
-                            if (whatsappSuccess) {
                               const comm = {
                                 channel: "WhatsApp",
                                 type: "Payment Confirmation",
-                                memberId: member.id,
-                                memberEmail: member.email,
-                                memberName: member.name,
-                                message: `Payment confirmation sent to ${member.name} (${member.phone}) - Invoice #${latestInvoice?.id || paymentConfirmationInvoice?.id || 'N/A'}${receiptPdfLink ? ' (with receipt link)' : ''}${receiptNo ? ` - Receipt No: ${receiptNo}` : ''}`,
+                                memberId: d.memberId,
+                                memberName: d.memberName,
+                                message: `Payment confirmation sent to ${d.memberName} (${d.memberPhone}) - Invoice #${d.invoiceId || 'N/A'} - Receipt No: ${d.receiptNumber || 'N/A'}`,
                                 status: "Delivered",
                               };
                               addCommunication(comm);
                             }
-                            } // End of else block for valid phone
-                          } else {
-                            errors.push("WhatsApp: Member phone number not found");
                           }
                         } catch (error) {
                           console.error('Error sending WhatsApp confirmation:', error);

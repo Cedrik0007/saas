@@ -1243,11 +1243,15 @@ router.get("/:id/pdf-receipt/view", async (req, res) => {
 
     console.log(`✓ Resolved invoice for PDF receipt view: ${invoice._id} (${invoice.id})`);
 
-
     // Allow both "Paid" and "Completed" statuses
     const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
     if (!isPaid) {
       return res.status(400).json({ error: "Invoice is not marked as paid. Current status: " + invoice.status });
+    }
+    const receiptNoView = (invoice.receiptNumber || "").trim();
+    if (!receiptNoView || !/^\d+$/.test(receiptNoView)) {
+      console.error("PDF receipt view blocked: Paid invoice missing receiptNumber", { invoiceId: invoice._id });
+      return res.status(400).json({ error: "Receipt number is missing. Cannot generate PDF." });
     }
 
     const member = await resolveMember(invoice.memberRef || invoice.memberNo || invoice.memberId);
@@ -1306,6 +1310,65 @@ router.get("/:id/pdf-receipt/view", async (req, res) => {
   }
 });
 
+// GET WhatsApp receipt data - fresh from DB, single source of truth for WhatsApp message building
+// Used for both Send Confirmation and Re-send Receipt. Never use cached/frontend data.
+router.get("/:id/whatsapp-data", async (req, res) => {
+  try {
+    await ensureConnection();
+
+    const invoiceParam = String(req.params.id || "").trim();
+    const invoice = await resolveInvoiceByParam(invoiceParam);
+    if (!invoice) {
+      return res.status(404).json({ error: "Invoice not found" });
+    }
+
+    const inv = invoice.toObject ? invoice.toObject() : invoice;
+    const isPaid = inv.status === "Paid" || inv.status === "Completed";
+    if (!isPaid) {
+      return res.status(400).json({ error: "Invoice is not paid. Cannot send receipt." });
+    }
+
+    const receiptNo = (inv.receiptNumber || "").trim();
+    if (!receiptNo || !/^\d+$/.test(receiptNo)) {
+      console.error("WhatsApp data blocked: Paid invoice missing receiptNumber", { invoiceId: inv._id, invoiceBusinessId: inv.id });
+      return res.status(400).json({ error: "Receipt number is missing. Cannot send WhatsApp receipt." });
+    }
+
+    const member = await resolveMember(inv.memberRef || inv.memberNo || inv.memberId);
+    if (!member || !member.phone) {
+      return res.status(400).json({ error: "Member or member phone not found. Cannot send WhatsApp receipt." });
+    }
+
+    const memberObj = member.toObject ? member.toObject() : member;
+    const memberName = inv.memberName || memberObj?.name || "Member";
+    const memberId = memberObj?.id || inv.memberId || "-";
+    const memberPhone = String(memberObj?.phone || "").trim();
+    const amountStr = inv.amount || "HK$0";
+    const amountNum = parseFloat(String(amountStr).replace(/[^0-9.]/g, "")) || 0;
+    const invoiceYear = (inv.period || "").match(/\d{4}/)?.[0] || "";
+    const method = String(inv.method || "").trim();
+    const receiptPdfUrl = getReceiptWhatsAppUrl(inv._id);
+
+    res.json({
+      memberName,
+      memberId,
+      memberPhone,
+      receiptNumber: receiptNo,
+      amount: amountStr,
+      amountNum,
+      period: inv.period || "",
+      invoiceYear,
+      method,
+      receiptPdfUrl,
+      invoiceId: inv.id,
+      invoiceDbId: inv._id,
+    });
+  } catch (error) {
+    console.error("Error fetching WhatsApp data:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET WhatsApp-safe PDF receipt (public, inline, no downloads/redirects)
 router.get("/:id/pdf-receipt/whatsapp", async (req, res) => {
   try {
@@ -1324,6 +1387,11 @@ router.get("/:id/pdf-receipt/whatsapp", async (req, res) => {
     const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
     if (!isPaid) {
       return res.status(400).json({ error: "Invoice is not marked as paid. Current status: " + invoice.status });
+    }
+    const receiptNoPdf = (invoice.receiptNumber || "").trim();
+    if (!receiptNoPdf || !/^\d+$/.test(receiptNoPdf)) {
+      console.error("PDF receipt blocked: Paid invoice missing receiptNumber", { invoiceId: invoice._id });
+      return res.status(400).json({ error: "Receipt number is missing. Cannot generate PDF." });
     }
 
     const member = await resolveMember(invoice.memberRef || invoice.memberNo || invoice.memberId);
