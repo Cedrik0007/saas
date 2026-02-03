@@ -34,6 +34,10 @@ jobs:
       - name: Verify dist files
         run: ls -la client/dist
 
+      - name: Debug FTP root
+        run: echo "FTP root assumed as public_html"
+
+
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
@@ -45,6 +49,6 @@ jobs:
           # server-dir: public_html/
           # server-dir: ${{ secrets.FTP_TARGET }}/
           # server-dir: ${{ secrets.FTP_TARGET }}/admin/
-          server-dir: public_html/admin/
+          server-dir:admin/
           
 
