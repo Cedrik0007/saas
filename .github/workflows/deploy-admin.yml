@@ -48,7 +48,7 @@ jobs:
           local-dir: client/dist/
           # server-dir: public_html/
           # server-dir: ${{ secrets.FTP_TARGET }}/
-          # server-dir: ${{ secrets.FTP_TARGET }}/admin/
-          server-dir: admin/
+          server-dir: ${{ secrets.FTP_TARGET }}/admin/
+          # server-dir: admin/
           
 
