@@ -26,6 +26,11 @@ jobs:
         working-directory: client
         run: npm run build
 
+      - name: Debug dist
+        run: |
+          pwd
+          ls -la client/dist
+
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -37,6 +42,7 @@ jobs:
           # server-dir: ${{ secrets.FTP_TARGET }}/
           # server-dir: ${{ secrets.FTP_TARGET }}/admin/
           server-dir: /home/u746748141/domains/imahk.org/public_html/admin/
+          exclude: |
+            **/.git*
+            **/.git*/**
 
-
-          dangerous-clean-slate: true
