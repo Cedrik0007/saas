@@ -35,6 +35,8 @@ jobs:
           local-dir: client/dist/
           # server-dir: public_html/
           # server-dir: ${{ secrets.FTP_TARGET }}/
-          server-dir: ${{ secrets.FTP_TARGET }}/admin/
+          # server-dir: ${{ secrets.FTP_TARGET }}/admin/
+          server-dir: /home/u746748141/domains/imahk.org/public_html/admin/
+
 
           dangerous-clean-slate: true
