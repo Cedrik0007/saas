@@ -8820,7 +8820,8 @@ Indian Muslim Association, Hong Kong`;
                                                   return;
                                                 }
                                                 setPaymentConfirmationInvoice(invoice);
-                                                setPaymentConfirmationChannels({ email: false, whatsapp: false });
+                                                setPaymentConfirmationChannels({ email: false, whatsapp: true });
+                                                setSelectedConfirmationChannel('whatsapp');
                                                 openConfirmModal('paymentConfirmation');
                                               }}
                                               style={invoice.receiptNumber ? undefined : { opacity: 0.6, cursor: "not-allowed" }}
@@ -20729,6 +20730,7 @@ Indian Muslim Association, Hong Kong`;
               </button>
             </div>
           </div>
+          
 
           <div style={{ padding: "0 24px 24px" }}>
             <p style={{ marginBottom: "24px", color: "#6b7280", fontSize: "0.875rem" }}>
@@ -20790,6 +20792,7 @@ Indian Muslim Association, Hong Kong`;
                   {paymentConfirmationChannels.email && (
                     <i className="fas fa-check" style={{ color: "#ffffff", fontSize: "12px" }}></i>
                   )}
+
                 </div>
                 <div>
                   <div style={{ 
@@ -20811,15 +20814,27 @@ Indian Muslim Association, Hong Kong`;
                 </div>
               </button>
 
+              
+
               <button
                 type="button"
+                // onClick={() => {
+                //   setPaymentConfirmationChannels
+                //   (prev => ({
+                //     ...prev,
+                //     whatsapp: !prev.whatsapp
+                //   }));
+                //   setSelectedConfirmationChannel(prev => prev === 'whatsapp' ? null : 'whatsapp');
+                // }}
                 onClick={() => {
+                  const newValue = selectedConfirmationChannel === 'whatsapp' ? null : 'whatsapp';
+                  setSelectedConfirmationChannel(newValue);
+                  // Sync paymentConfirmationChannels.whatsapp with selectedConfirmationChannel
                   setPaymentConfirmationChannels(prev => ({
                     ...prev,
-                    whatsapp: !prev.whatsapp
+                    whatsapp: newValue === 'whatsapp'
                   }));
-                  setSelectedConfirmationChannel(prev => prev === 'whatsapp' ? null : 'whatsapp');
-                }}
+                }}                
                 style={{
                   flex: 1,
                   minWidth: "200px",
@@ -21014,7 +21029,7 @@ Thank you for supporting the IMA community!`;
                         showToast(`Some errors: ${errors.join("; ")}`, "error");
                       }
                     }}
-                    disabled={sendingPaymentConfirmation || !selectedConfirmationChannel}
+                    disabled={sendingPaymentConfirmation || selectedConfirmationChannel !== 'whatsapp'}
                   >
                     {sendingPaymentConfirmation ? (
                       <>
