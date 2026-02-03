@@ -6490,7 +6490,7 @@ Indian Muslim Association, Hong Kong`;
                     <div>
                       {renderBreadcrumb("dashboard")}
                       <h3><i className="fas fa-chart-line admin-section-icon"></i>Dashboard</h3>
-                      <p>Key KPIs, monthly collections, recent payments. Checking</p>
+                      <p>Key KPIs, monthly collections, recent payments</p>
                     </div>
                   </header>
                   <div className="admin-dashboard-main-card">
