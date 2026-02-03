@@ -25,18 +25,10 @@ jobs:
       - name: Build admin UI
         working-directory: client
         run: npm run build
-
-      - name: Debug dist
+        
+      - name: Create test file
         run: |
-          pwd
-          ls -la client/dist
-
-      - name: Verify dist files
-        run: ls -la client/dist
-
-      - name: Debug FTP root
-        run: echo "FTP root assumed as public_html"
-
+          echo "HELLO FROM GITHUB ACTION" > client/dist/github-test.txt
 
 
       - name: Deploy via FTP
