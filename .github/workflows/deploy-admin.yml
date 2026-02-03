@@ -25,11 +25,9 @@ jobs:
       - name: Build admin UI
         working-directory: client
         run: npm run build
-        
-      - name: Create test file
-        run: |
-          echo "HELLO FROM GITHUB ACTION" > client/dist/github-test.txt
 
+      - name: Debug dist
+        run: ls -la client/dist
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
@@ -38,7 +36,5 @@ jobs:
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
           local-dir: client/dist/
+          server-dir: admin/
           dangerous-clean-slate: true
-
-          
-
