@@ -32,6 +32,6 @@ jobs:
           server: ${{ secrets.FTP_HOST }}
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
-          local-dir: saas/client/dist/
+          local-dir: client/dist/
           server-dir: ${{ secrets.FTP_TARGET }}/
           dangerous-clean-slate: true
