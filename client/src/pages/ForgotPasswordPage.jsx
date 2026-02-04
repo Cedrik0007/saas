@@ -102,7 +102,7 @@ export function ForgotPasswordPage() {
       <main className="login-main">
         <div className="login-shell">
           <aside className="login-menu">
-            <p className="eyebrow light">Password Recovery</p>
+            <p className="eyebrow light">Password reset</p>
             <h2>Request Password Reset</h2>
             {/* <p>
               Enter your email address to request a password reset. Your request will be sent to the administrator for manual approval.
