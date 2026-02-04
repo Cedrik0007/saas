@@ -104,14 +104,14 @@ export function ForgotPasswordPage() {
           <aside className="login-menu">
             <p className="eyebrow light">Password Recovery</p>
             <h2>Request Password Reset</h2>
-            <p>
+            {/* <p>
               Enter your email address to request a password reset. Your request will be sent to the administrator for manual approval.
             </p>
             <ul>
               <li>Submit your email address</li>
               <li>Administrator will review your request</li>
               <li>You'll receive your new password after verification</li>
-            </ul>
+            </ul> */}
           </aside>
 
           <div className="login-form-card">

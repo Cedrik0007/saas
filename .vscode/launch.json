@@ -3,10 +3,12 @@
   "configurations": [
     {
       "name": "Chrome Incognito",
-      "type": "pwa-chrome",
+      "type": "chrome",
       "request": "launch",
       "url": "http://localhost:5173",
-      "runtimeArgs": ["--incognito"]
+      "runtimeExecutable": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "runtimeArgs": ["--incognito"],
+      "webRoot": "${workspaceFolder}"
     }
   ]
 }
