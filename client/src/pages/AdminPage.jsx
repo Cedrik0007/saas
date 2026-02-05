@@ -63,6 +63,7 @@ import { SiteHeader } from "../components/SiteHeader.jsx";
 import { SiteFooter } from "../components/SiteFooter.jsx";
 import { Table } from "../components/Table.jsx";
 import { Pagination } from "../components/Pagination.jsx";
+import { PageLoader } from "../components/PageLoader.jsx";
 import { Notie } from "../components/Notie.jsx";
 import { Tooltip } from "../components/Tooltip.jsx";
 import { ActionIcon } from "../components/ActionIcon.jsx";
@@ -150,6 +151,8 @@ function AdminPage() {
     // - No backend/API changes
     // - No new calls; relies on existing `members` updates after create
     // - No persistence (clears on refresh)
+    const [isInvoicesTableLocked, setIsInvoicesTableLocked] = useState(false);
+
     const [newestMemberHighlightKey, setNewestMemberHighlightKey] = useState(null);
     const lastSeenNewestMemberKeyRef = useRef(null);
     const lastSeenMembersCountRef = useRef(null);
@@ -6161,9 +6164,9 @@ Indian Muslim Association, Hong Kong`;
                       type="button"
                       onClick={handleConfirmationConfirm}
                       disabled={confirmationDialog.isProcessing}
-                      style={confirmButtonStyle}
-                      onMouseEnter={handleConfirmMouseEnter}
-                      onMouseLeave={handleConfirmMouseLeave}
+                      // style={confirmButtonStyle}
+                      // onMouseEnter={handleConfirmMouseEnter}
+                      // onMouseLeave={handleConfirmMouseLeave}
                     >
                       {confirmationDialog.isProcessing ? "Validating..." : (confirmationDialog.confirmButtonText || "Confirm")}
                     </button>
@@ -8573,6 +8576,11 @@ Indian Muslim Association, Hong Kong`;
                         {(() => {
                           // Derive member invoices from global invoices on the fly
                           const memberInvoices = !selectedMember ? [] : invoices.filter(inv => matchesInvoiceToMember(inv, selectedMember));
+
+                          // Show full-table loader during payment updates
+                          if (isInvoicesTableLocked) {
+                            return <PageLoader message="Updating invoices after payment..." />;
+                          }
 
                           // Show loading state
                           if (loadingMemberInvoices) {
@@ -14071,8 +14079,10 @@ Indian Muslim Association, Hong Kong`;
                               </div>
                             </div>
 
-                            {/* Empty State */}
-                            {filteredInvoices.length === 0 ? (
+                            {/* Empty State / Table with full-table loader during payment updates */}
+                            {isInvoicesTableLocked ? (
+                              <PageLoader message="Updating invoices after payment…" />
+                            ) : filteredInvoices.length === 0 ? (
                               <div className="admin-empty-state">
                                 <p className="admin-empty-state-message">
                                   {invoiceStatusFilter !== "All"
@@ -19519,6 +19529,7 @@ Indian Muslim Association, Hong Kong`;
                             }
                             paymentApprovalInProgressRef.current = targetInvoiceId;
                             setUploadingPaymentModal(true);
+                            setIsInvoicesTableLocked(true);
                             try {
                               const apiUrl = import.meta.env.VITE_API_URL;
 
@@ -19592,6 +19603,7 @@ Indian Muslim Association, Hong Kong`;
                             } finally {
                               paymentApprovalInProgressRef.current = null;
                               setUploadingPaymentModal(false);
+                              setIsInvoicesTableLocked(false);
                             }
                           },
                           null,
