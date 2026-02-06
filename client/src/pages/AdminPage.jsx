@@ -16730,7 +16730,7 @@ Indian Muslim Association, Hong Kong`;
                                     }
                                   }}
                                 >
-                                  📥 Export as Excel
+                                   Export as Excel
                                 </button>
                               </div>
 
