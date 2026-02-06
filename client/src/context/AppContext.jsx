@@ -420,6 +420,7 @@ export function AppProvider({ children }) {
       const data = await response.json();
       setInvoices(data);
       console.log('✓ Loaded', data.length, 'invoices from MongoDB');
+      console.log("DUMMY DEPLOY TEST - v1");
     } catch (error) {
       console.error('Error fetching invoices:', error);
       // Only set empty array if we don't have data yet (first load)

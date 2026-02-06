@@ -64,8 +64,7 @@ function App() {
 }
 
 export default App;
-console.log("DUMMY DEPLOY TEST - v1");
-  
+
 
 
 
