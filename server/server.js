@@ -229,7 +229,7 @@ if (!process.env.VERCEL) {
     console.log(`  - GET    /api/donations`);
     console.log(`  - POST   /api/donations`);
     console.log(`  - DELETE /api/donations/:id`);
-    console.log("BACKEND DEPLOY TEST v1");
+    console.log("BACKEND DEPLOY TEST v2");
 
     
     // Initialize all member balances on server start

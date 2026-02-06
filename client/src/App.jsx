@@ -64,6 +64,7 @@ function App() {
 }
 
 export default App;
+console.log("ADMIN UI DEPLOY TEST v1");
 
 
 
