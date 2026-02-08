@@ -71,6 +71,7 @@ import { Modal } from "../components/Modal.jsx";
 import PhoneInput from "../components/PhoneInput.jsx";
 import { useApp } from "../context/AppContext.jsx";
 import jsPDF from "jspdf";
+import ExcelJS from "exceljs";
 import Select from "react-select";
 import { statusClass } from "../statusClasses";
 import { formatNumber, formatCurrency, getAvailableLocales } from "../utils/numberFormat.js";
@@ -1415,6 +1416,7 @@ function AdminPage() {
     const [paymentSearchTerm, setPaymentSearchTerm] = useState(""); // Search filter for payments
     const [paymentYearFilter, setPaymentYearFilter] = useState("All"); // Year filter for payments
     const [paymentMethodFilter, setPaymentMethodFilter] = useState("All"); // Payment method filter for payments: All, Cash, Online Payment
+    const [paymentSubscriptionTypeFilter, setPaymentSubscriptionTypeFilter] = useState("All"); // Payment subscription type filter for payments: All, Annual, Lifetime
     const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("All"); // All, Paid, Unpaid, Overdue, Pending
     const [invoiceSearchTerm, setInvoiceSearchTerm] = useState(""); // Search filter for invoices
     const [invoiceYearFilter, setInvoiceYearFilter] = useState("All"); // Year filter for invoices
@@ -2659,6 +2661,236 @@ function AdminPage() {
         return;
       }
       handleExportPDF();
+    };
+
+    // Export Payments to Excel function
+    const handleExportPaymentsToExcel = async () => {
+      try {
+        // Get filtered payments based on current filters
+        let filteredPayments = (payments || []).filter(payment => 
+          isPaymentMemberInList(payment)
+        );
+        
+        // Filter payments by year
+        if (paymentYearFilter !== "All") {
+          filteredPayments = filteredPayments.filter((payment) => {
+            const paymentDate = payment.date || payment.createdAt;
+            if (!paymentDate) return false;
+            try {
+              const date = new Date(paymentDate);
+              const year = date.getFullYear().toString();
+              return year === paymentYearFilter;
+            } catch (e) {
+              return false;
+            }
+          });
+        }
+
+        // Filter payments by payment method
+        if (paymentMethodFilter !== "All") {
+          filteredPayments = filteredPayments.filter((payment) => {
+            const method = String(payment.method || "").trim().toLowerCase();
+            const normalizedFilter = paymentMethodFilter.toLowerCase();
+            
+            // Handle Cash - only show payments that are specifically cash
+            if (normalizedFilter === "cash") {
+              // A payment is cash if:
+              // 1. paidToAdmin is explicitly true, OR
+              // 2. method field contains "cash"
+              return payment.paidToAdmin === true || 
+                     method === "cash" || 
+                     method === "cash to admin" ||
+                     method.includes("cash");
+            }
+            
+            // Handle Other - match all methods that are not Cash, FPS, Alipay, or Bank Deposit
+            if (normalizedFilter === "other") {
+              const specificMethods = ["cash", "fps", "alipay", "bank deposit"];
+              const isCash = payment.paidToAdmin === true || 
+                            method === "cash" || 
+                            method === "cash to admin" ||
+                            method.includes("cash");
+              return !isCash && !specificMethods.includes(method) && method !== "";
+            }
+            
+            return method === normalizedFilter;
+          });
+        }
+
+        // Filter payments by member subscription type
+        if (paymentSubscriptionTypeFilter !== "All") {
+          filteredPayments = filteredPayments.filter((payment) => {
+            const member = findMemberByBusinessId(payment.memberId);
+            if (!member) return false;
+            
+            const memberType = normalizeSubscriptionType(member.subscriptionType);
+            if (paymentSubscriptionTypeFilter === "Annual") {
+              return memberType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+            } else if (paymentSubscriptionTypeFilter === "Lifetime") {
+              return memberType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND || 
+                     memberType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND;
+            }
+            return true;
+          });
+        }
+
+        // Apply search filter
+        filteredPayments = filteredPayments.filter(payment => {
+          const term = paymentSearchTerm.trim().toLowerCase();
+          if (!term) return true;
+          const memberRecord = findMemberByBusinessId(payment.memberId);
+          const memberName = (memberRecord?.name || "").toLowerCase();
+          const memberIdValue = (payment.memberId || "").toLowerCase();
+          const invoiceId = (payment.invoiceId || "").toLowerCase();
+          const method = (getPaymentMethodDisplay(payment) || "").toLowerCase();
+          const reference = (payment.reference || "").toLowerCase();
+          const amount = (payment.amount || "").toString().toLowerCase();
+          return (
+            memberName.includes(term) ||
+            memberIdValue.includes(term) ||
+            invoiceId.includes(term) ||
+            method.includes(term) ||
+            reference.includes(term) ||
+            amount.includes(term)
+          );
+        });
+
+        // Create a new workbook and worksheet
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Payments");
+
+        // Set column widths
+        worksheet.columns = [
+          { header: "Date", key: "date", width: 15 },
+          { header: "Member", key: "member", width: 20 },
+          { header: "Member ID", key: "memberId", width: 12 },
+          { header: "Year", key: "year", width: 8 },
+          { header: "Native Place", key: "nativePlace", width: 18 },
+          { header: "Invoice ID", key: "invoiceId", width: 15 },
+          { header: "Amount", key: "amount", width: 12 },
+          { header: "Method", key: "method", width: 15 },
+          { header: "Type", key: "type", width: 10 },
+          { header: "Receiver Name", key: "receiverName", width: 18 },
+          { header: "Reference", key: "reference", width: 15 },
+          { header: "Status", key: "status", width: 12 }
+        ];
+
+        // Add header row styling
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: "FFFFFF" } };
+        headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "5A31EA" } };
+        headerRow.alignment = { horizontal: "center", vertical: "center" };
+
+        // Add data rows
+        filteredPayments.forEach((payment) => {
+          const paymentDate = payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+          }) : "-");
+
+          const paymentDateObj = payment.date || payment.createdAt;
+          let paymentYear = "-";
+          if (paymentDateObj) {
+            try {
+              const date = new Date(paymentDateObj);
+              paymentYear = date.getFullYear().toString();
+            } catch (e) {
+              paymentYear = "-";
+            }
+          }
+
+          const member = findMemberByBusinessId(payment.memberId);
+          const memberNative = member?.native || "-";
+          const paymentType = payment.payment_type || (payment.method === "Cash" ? "Cash" : "Online");
+
+          worksheet.addRow({
+            date: paymentDate,
+            member: member?.name || payment.memberId || "Unknown",
+            memberId: payment.memberId || "-",
+            year: paymentYear,
+            nativePlace: memberNative,
+            invoiceId: payment.invoiceId || "-",
+            amount: `HK$${formatNumber(parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0), {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}`,
+            method: getPaymentMethodDisplay(payment),
+            type: paymentType,
+            receiverName: payment.receiver_name || payment.paidToAdminName || "-",
+            reference: payment.reference || "-",
+            status: payment.status || "-"
+          });
+        });
+
+        // Format data rows
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber !== 1) {
+            row.eachCell((cell) => {
+              cell.alignment = { horizontal: "left", vertical: "center" };
+              cell.border = {
+                top: { style: "thin", color: { argb: "D1D5DB" } },
+                left: { style: "thin", color: { argb: "D1D5DB" } },
+                bottom: { style: "thin", color: { argb: "D1D5DB" } },
+                right: { style: "thin", color: { argb: "D1D5DB" } }
+              };
+            });
+          }
+        });
+
+        // Add summary section
+        const summaryRowStart = filteredPayments.length + 3;
+        worksheet.getCell(`A${summaryRowStart}`).value = "Summary";
+        worksheet.getCell(`A${summaryRowStart}`).font = { bold: true, size: 12 };
+
+        let summaryRow = summaryRowStart + 1;
+        const totalAmount = filteredPayments.reduce((sum, payment) => {
+          const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+          return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
+
+        const completedPayments = filteredPayments.filter(p => p.status === "Completed" || p.status === "Paid");
+        worksheet.getCell(`A${summaryRow}`).value = "Total Payments";
+        worksheet.getCell(`B${summaryRow}`).value = filteredPayments.length;
+        summaryRow++;
+
+        worksheet.getCell(`A${summaryRow}`).value = "Total Amount";
+        worksheet.getCell(`B${summaryRow}`).value = `HK$${formatNumber(totalAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        summaryRow++;
+
+        worksheet.getCell(`A${summaryRow}`).value = "Completed Payments";
+        worksheet.getCell(`B${summaryRow}`).value = completedPayments.length;
+        summaryRow++;
+
+        const completedAmount = completedPayments.reduce((sum, payment) => {
+          const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+          return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
+
+        worksheet.getCell(`A${summaryRow}`).value = "Completed Amount";
+        worksheet.getCell(`B${summaryRow}`).value = `HK$${formatNumber(completedAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+        // Generate filename
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0];
+        const filename = `payments_${dateStr}.xlsx`;
+
+        // Save the workbook
+        await workbook.xlsx.writeBuffer().then((buffer) => {
+          const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+
+        showToast(`Payments exported to Excel successfully!`, "success");
+      } catch (error) {
+        console.error("Error exporting payments to Excel:", error);
+        showToast("Failed to export payments to Excel", "error");
+      }
     };
 
     // Export PDF function
@@ -14325,6 +14557,19 @@ Indian Muslim Association, Hong Kong`;
                         <h3><i className="fas fa-credit-card" style={{ marginRight: "10px" }}></i>Payments</h3>
                         <p>View and all payment transactions.</p>
                       </div>
+                      <button
+                        className="primary-btn"
+                        onClick={handleExportPaymentsToExcel}
+                        style={{ 
+                          display: "flex", 
+                          alignItems: "center", 
+                          gap: "8px",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        <i className="fas fa-download" style={{ fontSize: "0.875rem" }}></i>
+                        Export to Excel
+                      </button>
                     </div>
                   </header>
 
@@ -14775,6 +15020,62 @@ Indian Muslim Association, Hong Kong`;
                               <option value="Other">Other</option>
                             </select>
                           </div>
+                          <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "12px" }}>
+                            <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Type:</label>
+                            <div style={{
+                              display: "flex",
+                              gap: "4px",
+                              background: "#f3f4f6",
+                              padding: "4px",
+                              borderRadius: "4px",
+                              flexWrap: "wrap"
+                            }}>
+                              {[
+                                { value: "All", label: "All" },
+                                { value: "Annual", label: "Annual" },
+                                { value: "Lifetime", label: "Lifetime" },
+                              ].map((option) => (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => {
+                                    setPaymentSubscriptionTypeFilter(option.value);
+                                    setPaymentsPage(1);
+                                  }}
+                                  style={{
+                                    padding: "8px 16px",
+                                    borderRadius: "4px",
+                                    border: "none",
+                                    fontSize: "0.875rem",
+                                    fontWeight: "500",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s ease",
+                                    background: paymentSubscriptionTypeFilter === option.value
+                                      ? "#5a31ea"
+                                      : "transparent",
+                                    color: paymentSubscriptionTypeFilter === option.value ? "#ffffff" : "#6b7280",
+                                    boxShadow: paymentSubscriptionTypeFilter === option.value
+                                      ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                      : "none",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (paymentSubscriptionTypeFilter !== option.value) {
+                                      e.target.style.background = "#e5e7eb";
+                                      e.target.style.color = "#374151";
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (paymentSubscriptionTypeFilter !== option.value) {
+                                      e.target.style.background = "transparent";
+                                      e.target.style.color = "#6b7280";
+                                    }
+                                  }}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                         </div>
 
                         {/* Row 2: Search only */}
@@ -14787,7 +15088,7 @@ Indian Muslim Association, Hong Kong`;
                                 setPaymentSearchTerm(e.target.value);
                                 setPaymentsPage(1);
                               }}
-                              placeholder="Search by member, invoice ID, payment ref"
+                              placeholder="Search by member name, member ID, invoice ID, method, amount"
                               className="search-input"
                               style={{
                                 padding: "10px 40px 10px 16px",
@@ -14848,26 +15149,49 @@ Indian Muslim Association, Hong Kong`;
                         // Filter payments by payment method
                         if (paymentMethodFilter !== "All") {
                           filteredPayments = filteredPayments.filter((payment) => {
-                            // Handle Cash - check paidToAdmin, paidToAdminName, or method
-                            if (paymentMethodFilter === "Cash") {
-                              return payment.paidToAdmin || payment.paidToAdminName || 
-                                     payment.method === "Cash" || payment.method === "Cash to Admin" ||
-                                     (payment.method && payment.method.toLowerCase().includes("cash"));
+                            const method = String(payment.method || "").trim().toLowerCase();
+                            const normalizedFilter = paymentMethodFilter.toLowerCase();
+                            
+                            // Handle Cash - only show payments that are specifically cash
+                            if (normalizedFilter === "cash") {
+                              // A payment is cash if:
+                              // 1. paidToAdmin is explicitly true, OR
+                              // 2. method field contains "cash"
+                              return payment.paidToAdmin === true || 
+                                     method === "cash" || 
+                                     method === "cash to admin" ||
+                                     method.includes("cash");
                             }
                             
                             // Handle Other - match all methods that are not Cash, FPS, Alipay, or Bank Deposit
-                            if (paymentMethodFilter === "Other") {
-                              const method = String(payment.method || "").trim();
-                              const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
-                              const isCash = payment.paidToAdmin || payment.paidToAdminName || 
-                                            payment.method === "Cash" || payment.method === "Cash to Admin" ||
-                                            (payment.method && payment.method.toLowerCase().includes("cash"));
+                            if (normalizedFilter === "other") {
+                              const specificMethods = ["cash", "fps", "alipay", "bank deposit"];
+                              const isCash = payment.paidToAdmin === true || 
+                                            method === "cash" || 
+                                            method === "cash to admin" ||
+                                            method.includes("cash");
                               return !isCash && !specificMethods.includes(method) && method !== "";
                             }
                             
                             // Handle specific payment methods (FPS, Alipay, Bank Deposit)
-                            const method = String(payment.method || "").trim();
-                            return method === paymentMethodFilter;
+                            return method === normalizedFilter;
+                          });
+                        }
+                        
+                        // Filter payments by member subscription type
+                        if (paymentSubscriptionTypeFilter !== "All") {
+                          filteredPayments = filteredPayments.filter((payment) => {
+                            const member = findMemberByBusinessId(payment.memberId);
+                            if (!member) return false;
+                            
+                            const memberType = normalizeSubscriptionType(member.subscriptionType);
+                            if (paymentSubscriptionTypeFilter === "Annual") {
+                              return memberType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER;
+                            } else if (paymentSubscriptionTypeFilter === "Lifetime") {
+                              return memberType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND || 
+                                     memberType === SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND;
+                            }
+                            return true;
                           });
                         }
                         
@@ -14926,9 +15250,10 @@ Indian Muslim Association, Hong Kong`;
                               columns={[
                                 "Date",
                                 "Member",
+                                "Member ID",
                                 "Year",
-                                "Native Place",
-                                "Invoice ID",
+                                // "Native Place",
+                                // "Invoice ID",
                                 "Amount",
                                 "Method",
                                 "Receiver Name",
@@ -14963,6 +15288,7 @@ Indian Muslim Association, Hong Kong`;
                                   }) : "-"),
                                   Member: member?.name || payment.memberId || "Unknown",
                                   Year: paymentYear,
+                                  "Member ID": payment.memberId || "-",
                                   "Native Place": memberNative,
                                   "Invoice ID": payment.invoiceId || "-",
                                   Amount: payment.amount
