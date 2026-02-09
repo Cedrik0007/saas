@@ -571,269 +571,429 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
  * @param {Object} member - Member object (if isMember is true)
  * @returns {Promise<Buffer>} PDF buffer
  */
+// export async function generateDonationReceiptPDF(donation, member = null) {
+//   return new Promise(async (resolve, reject) => {
+//     try {
+//       const doc = new PDFDocument({ 
+//         size: 'A4',
+//         margin: 50,
+//         info: {
+//           Title: 'Donation Receipt',
+//           Author: 'Indian Muslim Association Jama-ath Ltd.',
+//           Subject: `Donation Receipt - ${donation._id || donation.id || 'N/A'}`,
+//         }
+//       });
+
+//       const buffers = [];
+//       doc.on('data', buffers.push.bind(buffers));
+//       doc.on('end', () => {
+//         const pdfBuffer = Buffer.concat(buffers);
+//         resolve(pdfBuffer);
+//       });
+//       doc.on('error', reject);
+
+//       // A4 dimensions in points: 595.28 x 841.89
+//       const pageWidth = 595.28;
+//       const pageHeight = 841.89;
+//       const margin = 50;
+//       const contentWidth = pageWidth - (margin * 2);
+//       const leftMargin = margin;
+//       const rightMargin = pageWidth - margin;
+
+//       const responsiveUnit = pageWidth / 100;
+//       const responsiveHeightUnit = pageHeight / 100;
+//       const getResponsiveWidth = (percent) => (contentWidth * percent) / 100;
+//       const getResponsiveX = (percent) => leftMargin + (contentWidth * percent) / 100;
+
+//       // Helper function to draw checkbox
+//       const drawCheckbox = (x, y, size = 8, checked = false) => {
+//         doc.rect(x, y, size, size).stroke();
+//         if (checked) {
+//           doc.moveTo(x + 1, y + size / 2)
+//              .lineTo(x + size / 2 - 1, y + size - 1)
+//              .lineTo(x + size - 1, y + 1)
+//              .stroke();
+//         }
+//       };
+
+//       // Helper function to draw underline
+//       const drawUnderline = (x, y, width) => {
+//         doc.moveTo(x, y).lineTo(x + width, y).stroke();
+//       };
+
+//       let currentY = margin + (responsiveHeightUnit * 2);
+
+//       // Header - Organization Name
+//       doc.fontSize(Math.max(14, responsiveUnit * 2.5))
+//          .fillColor('#000000')
+//          .font('Helvetica-Bold')
+//          .text('INDIAN MUSLIM ASSOCIATION JAMA-ATH LTD.', leftMargin, currentY, { 
+//            width: contentWidth,
+//            align: 'center'
+//          });
+
+//       currentY += (responsiveHeightUnit * 2);
+
+//       // Hong Kong
+//       doc.fontSize(Math.max(11, responsiveUnit * 2))
+//          .fillColor('#000000')
+//          .font('Helvetica')
+//          .text('Hong Kong', leftMargin, currentY, { 
+//            width: contentWidth,
+//            align: 'center'
+//          });
+
+//       currentY += (responsiveHeightUnit * 1.8);
+
+//       // Estd. 1979
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.6))
+//          .fillColor('#666666')
+//          .font('Helvetica-Oblique')
+//          .text('Estd. 1979', leftMargin, currentY, { 
+//            width: contentWidth,
+//            align: 'center'
+//          });
+
+//       currentY += (responsiveHeightUnit * 3);
+
+//       // Receipt Title
+//       doc.fontSize(Math.max(12, responsiveUnit * 2.2))
+//          .fillColor('#000000')
+//          .font('Helvetica-Bold')
+//          .text('Donation Receipt', leftMargin, currentY, { 
+//            width: contentWidth,
+//            align: 'center'
+//          });
+
+//       currentY += (responsiveHeightUnit * 4);
+
+//       // Receipt No (using sequential receipt number)
+//       const receiptNoValue = await getNextReceiptNumber();
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//          .fillColor('#000000')
+//          .font('Helvetica-Bold')
+//          .text(`Receipt No: ${receiptNoValue}`, leftMargin, currentY, { width: contentWidth });
+
+//       currentY += (responsiveHeightUnit * 2.5);
+
+//       // Date
+//       let receiptDate = donation.date;
+//       if (!receiptDate && donation.createdAt) {
+//         receiptDate = new Date(donation.createdAt).toLocaleDateString('en-GB', {
+//           day: '2-digit',
+//           month: 'short',
+//           year: 'numeric'
+//         });
+//       }
+//       if (!receiptDate) {
+//         receiptDate = new Date().toLocaleDateString('en-GB', {
+//           day: '2-digit',
+//           month: 'short',
+//           year: 'numeric'
+//         });
+//       }
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//          .fillColor('#000000')
+//          .font('Helvetica')
+//          .text(`Date: ${receiptDate}`, leftMargin, currentY, { width: contentWidth });
+
+//       currentY += (responsiveHeightUnit * 2.5);
+
+//       // Donor Name
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//          .font('Helvetica')
+//          .text(`Donor Name: ${donation.donorName || 'N/A'}`, leftMargin, currentY, { width: contentWidth });
+
+//       currentY += (responsiveHeightUnit * 2.5);
+
+//       // Donor Type (Member/Non-Member)
+//       const donorType = donation.isMember ? 'Member' : 'Non-Member';
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//          .font('Helvetica')
+//          .text(`Donor Type: ${donorType}`, leftMargin, currentY, { width: contentWidth });
+
+//       currentY += (responsiveHeightUnit * 2.5);
+
+//       // Member ID (always show; read ONLY from member.id)
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//         .font('Helvetica')
+//         .text(`Member ID: ${member?.id || '-'}`, leftMargin, currentY, { width: contentWidth });
+//       currentY += (responsiveHeightUnit * 2.5);
+
+//       // Donation Type
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//          .font('Helvetica')
+//          .text(`Donation Type: ${donation.donationType || 'N/A'}`, leftMargin, currentY, { width: contentWidth });
+
+//       currentY += (responsiveHeightUnit * 2.5);
+
+//       // Amount
+//       const amountStr = donation.amount || 'HK$0';
+//       const amountNum = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
+//       const formattedAmount = amountNum.toFixed(2);
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//          .font('Helvetica-Bold')
+//          .text(`Amount: HK$${formattedAmount}`, leftMargin, currentY, { width: contentWidth });
+
+//       currentY += (responsiveHeightUnit * 2.5);
+
+//       // Payment Type (Cash/Online)
+//       const paymentType = donation.payment_type || 'online';
+//       const paymentTypeDisplay = paymentType === 'cash' ? 'Cash' : 'Online Payment';
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//          .font('Helvetica')
+//          .text(`Payment Type: ${paymentTypeDisplay}`, leftMargin, currentY, { width: contentWidth });
+
+//       currentY += (responsiveHeightUnit * 2.5);
+
+//       // Payment Method
+//       const paymentMethod = donation.method || 'N/A';
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//          .font('Helvetica')
+//          .text(`Payment Method: ${paymentMethod}`, leftMargin, currentY, { width: contentWidth });
+
+//       currentY += (responsiveHeightUnit * 2.5);
+
+//       // Receiver Name (if online payment)
+//       if (donation.payment_type === 'online' && donation.receiver_name) {
+//         doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//            .font('Helvetica')
+//            .text(`Receiver Name: ${donation.receiver_name}`, leftMargin, currentY, { width: contentWidth });
+//         currentY += (responsiveHeightUnit * 2.5);
+//       }
+
+//       // Payment Screenshot (indicate if available)
+//       if (donation.screenshot) {
+//         doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//            .font('Helvetica')
+//            .text(`Payment Proof: Available`, leftMargin, currentY, { width: contentWidth });
+//         currentY += (responsiveHeightUnit * 2.5);
+//       }
+
+//       // Notes
+//       if (donation.notes) {
+//         currentY += (responsiveHeightUnit * 1.5);
+//         doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//            .font('Helvetica')
+//            .text(`Notes: ${donation.notes}`, leftMargin, currentY, { 
+//              width: contentWidth,
+//              align: 'left'
+//            });
+//         currentY += (responsiveHeightUnit * 2.5);
+//       }
+
+//       // Timestamps (if available)
+//       if (donation.createdAt) {
+//         const createdAt = new Date(donation.createdAt).toLocaleDateString('en-GB', {
+//           day: '2-digit',
+//           month: 'short',
+//           year: 'numeric',
+//           hour: '2-digit',
+//           minute: '2-digit'
+//         });
+//         doc.fontSize(Math.max(8, responsiveUnit * 1.5))
+//            .fillColor('#666666')
+//            .font('Helvetica')
+//            .text(`Recorded: ${createdAt}`, leftMargin, currentY, { width: contentWidth });
+//         currentY += (responsiveHeightUnit * 2);
+//       }
+
+//       currentY += (responsiveHeightUnit * 4);
+
+//       // Thank you message
+//       doc.fontSize(Math.max(10, responsiveUnit * 1.9))
+//          .font('Helvetica-Bold')
+//          .fillColor('#2e7d32')
+//          .text('Thank you for your generous donation!', leftMargin, currentY, { 
+//            width: contentWidth,
+//            align: 'center'
+//          });
+
+//       currentY += (responsiveHeightUnit * 4);
+
+//       // Bottom section - On Behalf of
+//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
+//          .fillColor('#000000')
+//          .font('Helvetica')
+//          .text('On Behalf of', leftMargin, currentY, { 
+//            width: contentWidth,
+//            align: 'right'
+//          });
+
+//       currentY += (responsiveHeightUnit * 2);
+
+//       doc.fontSize(Math.max(10, responsiveUnit * 2))
+//          .fillColor('#000000')
+//          .font('Helvetica-Bold')
+//          .text('Indian Muslim Association Jama-ath Ltd.', leftMargin, currentY, { 
+//            width: contentWidth,
+//            align: 'right'
+//          });
+
+//       doc.end();
+//     } catch (error) {
+//       console.error('Error in generateDonationReceiptPDF:', error);
+//       reject(error);
+//     }
+//   });
+// }
+
+// import PDFDocument from 'pdfkit';
+
 export async function generateDonationReceiptPDF(donation, member = null) {
   return new Promise(async (resolve, reject) => {
     try {
-      const doc = new PDFDocument({ 
+      const doc = new PDFDocument({
         size: 'A4',
         margin: 50,
         info: {
           Title: 'Donation Receipt',
-          Author: 'Indian Muslim Association Jama-ath Ltd.',
-          Subject: `Donation Receipt - ${donation._id || donation.id || 'N/A'}`,
+          Author: 'Indian Muslim Association Jama-ath Ltd.'
         }
       });
 
       const buffers = [];
       doc.on('data', buffers.push.bind(buffers));
-      doc.on('end', () => {
-        const pdfBuffer = Buffer.concat(buffers);
-        resolve(pdfBuffer);
-      });
+      doc.on('end', () => resolve(Buffer.concat(buffers)));
       doc.on('error', reject);
 
-      // A4 dimensions in points: 595.28 x 841.89
       const pageWidth = 595.28;
       const pageHeight = 841.89;
-      const margin = 50;
-      const contentWidth = pageWidth - (margin * 2);
-      const leftMargin = margin;
-      const rightMargin = pageWidth - margin;
+      const contentWidth = pageWidth - 100;
+      const leftMargin = 50;
 
-      const responsiveUnit = pageWidth / 100;
-      const responsiveHeightUnit = pageHeight / 100;
-      const getResponsiveWidth = (percent) => (contentWidth * percent) / 100;
-      const getResponsiveX = (percent) => leftMargin + (contentWidth * percent) / 100;
+      doc.fillColor('#000000');
 
-      // Helper function to draw checkbox
-      const drawCheckbox = (x, y, size = 8, checked = false) => {
-        doc.rect(x, y, size, size).stroke();
-        if (checked) {
-          doc.moveTo(x + 1, y + size / 2)
-             .lineTo(x + size / 2 - 1, y + size - 1)
-             .lineTo(x + size - 1, y + 1)
-             .stroke();
-        }
+      /* ================= HEADER ================= */
+      doc.font('Helvetica-Bold')
+        .fontSize(14)
+        .text('INDIAN MUSLIM ASSOCIATION JAMA-ATH LTD.', { align: 'center' });
+
+      doc.moveDown(0.3);
+      doc.font('Helvetica').fontSize(11).text('Hong Kong', { align: 'center' });
+      doc.fontSize(9).text('Estd. 1979', { align: 'center' });
+
+      doc.moveDown(2);
+      doc.font('Helvetica-Bold').fontSize(13)
+        .text('DONATION RECEIPT', { align: 'center' });
+
+      /* ================= TABLE ================= */
+      const tableX = leftMargin;
+      const tableY = 150;
+      const tableWidth = contentWidth;
+      const rowHeight = 26;
+      const rows = 3;
+      const colWidths = [140, 180, 100, tableWidth - 420];
+
+      doc.lineWidth(1).strokeColor('#000000');
+
+      // Outer border
+      doc.rect(tableX, tableY, tableWidth, rowHeight * rows).stroke();
+
+      // Horizontal lines
+      for (let i = 1; i < rows; i++) {
+        doc.moveTo(tableX, tableY + rowHeight * i)
+           .lineTo(tableX + tableWidth, tableY + rowHeight * i)
+           .stroke();
+      }
+
+      // Vertical lines
+      let x = tableX;
+      colWidths.forEach(w => {
+        x += w;
+        doc.moveTo(x, tableY)
+           .lineTo(x, tableY + rowHeight * rows)
+           .stroke();
+      });
+
+      const writeCell = (text, col, row, bold = false) => {
+        const xPos = tableX + colWidths.slice(0, col).reduce((a, b) => a + b, 0) + 6;
+        const yPos = tableY + row * rowHeight + 7;
+        doc.font(bold ? 'Helvetica-Bold' : 'Helvetica')
+           .fontSize(9)
+           .text(text || '', xPos, yPos);
       };
 
-      // Helper function to draw underline
-      const drawUnderline = (x, y, width) => {
-        doc.moveTo(x, y).lineTo(x + width, y).stroke();
-      };
+      const receiptDate = donation.date || new Date().toLocaleDateString('en-GB', {
+        day: '2-digit', month: 'short', year: 'numeric'
+      });
 
-      let currentY = margin + (responsiveHeightUnit * 2);
+      const amount = Number(donation.amount || 0).toFixed(2);
 
-      // Header - Organization Name
-      doc.fontSize(Math.max(14, responsiveUnit * 2.5))
-         .fillColor('#000000')
-         .font('Helvetica-Bold')
-         .text('INDIAN MUSLIM ASSOCIATION JAMA-ATH LTD.', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'center'
-         });
+      // writeCell('Receipt No', 0, 0, true);
+      // writeCell(donation.receiptNo || '-', 1, 0);
 
-      currentY += (responsiveHeightUnit * 2);
+      writeCell('Date', 2, 0, true);
+      writeCell(receiptDate, 3, 0);
 
-      // Hong Kong
-      doc.fontSize(Math.max(11, responsiveUnit * 2))
-         .fillColor('#000000')
-         .font('Helvetica')
-         .text('Hong Kong', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'center'
-         });
+      writeCell('Name', 0, 0, true);
+      writeCell(donation.donorName || '-', 1, 0);
+      writeCell('Member ID', 2, 1, true);
+      writeCell(member?.id || '-', 3, 1);
+      
+      // writeCell('Name', 0, 1, true);
+      // writeCell(donation.donorName || '-', 1, 1);
+      // writeCell('Member ID', 2, 1, true);
+      // writeCell(member?.id || '-', 3, 1);
 
-      currentY += (responsiveHeightUnit * 1.8);
+      writeCell('Donation towards', 0, 1, true);
+      writeCell(donation.donationType || '-', 1, 1);
 
-      // Estd. 1979
-      doc.fontSize(Math.max(9, responsiveUnit * 1.6))
-         .fillColor('#666666')
-         .font('Helvetica-Oblique')
-         .text('Estd. 1979', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'center'
-         });
+      writeCell('Amount (HKD)', 0, 2, true);
+      writeCell(`HK$${amount}`, 1, 2);
 
-      currentY += (responsiveHeightUnit * 3);
+      // writeCell('Total Amount', 0, 4, true);
+      // writeCell(`HK$${amount}`, 1, 4);  
 
-      // Receipt Title
-      doc.fontSize(Math.max(12, responsiveUnit * 2.2))
-         .fillColor('#000000')
-         .font('Helvetica-Bold')
-         .text('Donation Receipt', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'center'
-         });
+      /* ================= PAYMENT INFO ================= */
+      let y = tableY + rowHeight * rows + 40;
 
-      currentY += (responsiveHeightUnit * 4);
+      doc.font('Helvetica-Bold').fontSize(10)
+         .text('Payment Information', tableX, y);
 
-      // Receipt No (using sequential receipt number)
-      const receiptNoValue = await getNextReceiptNumber();
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .fillColor('#000000')
-         .font('Helvetica-Bold')
-         .text(`Receipt No: ${receiptNoValue}`, leftMargin, currentY, { width: contentWidth });
+      y += 22;
+      doc.font('Helvetica').fontSize(9)
+         .text(`Payment Method: ${donation.method || '-'}`, tableX, y);
 
-      currentY += (responsiveHeightUnit * 2.5);
+      // y += 18;
+      // doc.text(
+      //   `Reference / Transaction ID: ${donation.reference || '-'}`,
+      //   tableX,
+      //   y
+      // );
 
-      // Date
-      let receiptDate = donation.date;
-      if (!receiptDate && donation.createdAt) {
-        receiptDate = new Date(donation.createdAt).toLocaleDateString('en-GB', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric'
-        });
-      }
-      if (!receiptDate) {
-        receiptDate = new Date().toLocaleDateString('en-GB', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric'
-        });
-      }
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .fillColor('#000000')
-         .font('Helvetica')
-         .text(`Date: ${receiptDate}`, leftMargin, currentY, { width: contentWidth });
+      /* ================= FOOTER ================= */
+      y += 60;
+      doc.moveDown(1);
+      doc.font('Helvetica-Oblique').fontSize(10)
+         .text(
+           'Thank you for your Generosity,\nYour donation supports our ongoing Charitable and Community services.',
+           { align: 'center' }
+         );
 
-      currentY += (responsiveHeightUnit * 2.5);
+      y += 60;
+      doc.moveDown(1);
+      doc.font('Helvetica').fontSize(9)
+         .text(
+           'For any queries, please contact: Email: info@imahk.org   Whatsapp: +852 9545 4447',
+           { align: 'center' }
+         );
 
-      // Donor Name
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .font('Helvetica')
-         .text(`Donor Name: ${donation.donorName || 'N/A'}`, leftMargin, currentY, { width: contentWidth });
+      y += 40;
+      doc.moveDown(1);
+      doc.text(
+        'This is a system-generated receipt and does not require a signature.',
+        { align: 'center' }
+      );
 
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Donor Type (Member/Non-Member)
-      const donorType = donation.isMember ? 'Member' : 'Non-Member';
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .font('Helvetica')
-         .text(`Donor Type: ${donorType}`, leftMargin, currentY, { width: contentWidth });
-
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Member ID (always show; read ONLY from member.id)
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-        .font('Helvetica')
-        .text(`Member ID: ${member?.id || '-'}`, leftMargin, currentY, { width: contentWidth });
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Donation Type
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .font('Helvetica')
-         .text(`Donation Type: ${donation.donationType || 'N/A'}`, leftMargin, currentY, { width: contentWidth });
-
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Amount
-      const amountStr = donation.amount || 'HK$0';
-      const amountNum = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
-      const formattedAmount = amountNum.toFixed(2);
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .font('Helvetica-Bold')
-         .text(`Amount: HK$${formattedAmount}`, leftMargin, currentY, { width: contentWidth });
-
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Payment Type (Cash/Online)
-      const paymentType = donation.payment_type || 'online';
-      const paymentTypeDisplay = paymentType === 'cash' ? 'Cash' : 'Online Payment';
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .font('Helvetica')
-         .text(`Payment Type: ${paymentTypeDisplay}`, leftMargin, currentY, { width: contentWidth });
-
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Payment Method
-      const paymentMethod = donation.method || 'N/A';
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .font('Helvetica')
-         .text(`Payment Method: ${paymentMethod}`, leftMargin, currentY, { width: contentWidth });
-
-      currentY += (responsiveHeightUnit * 2.5);
-
-      // Receiver Name (if online payment)
-      if (donation.payment_type === 'online' && donation.receiver_name) {
-        doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-           .font('Helvetica')
-           .text(`Receiver Name: ${donation.receiver_name}`, leftMargin, currentY, { width: contentWidth });
-        currentY += (responsiveHeightUnit * 2.5);
-      }
-
-      // Payment Screenshot (indicate if available)
-      if (donation.screenshot) {
-        doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-           .font('Helvetica')
-           .text(`Payment Proof: Available`, leftMargin, currentY, { width: contentWidth });
-        currentY += (responsiveHeightUnit * 2.5);
-      }
-
-      // Notes
-      if (donation.notes) {
-        currentY += (responsiveHeightUnit * 1.5);
-        doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-           .font('Helvetica')
-           .text(`Notes: ${donation.notes}`, leftMargin, currentY, { 
-             width: contentWidth,
-             align: 'left'
-           });
-        currentY += (responsiveHeightUnit * 2.5);
-      }
-
-      // Timestamps (if available)
-      if (donation.createdAt) {
-        const createdAt = new Date(donation.createdAt).toLocaleDateString('en-GB', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-        doc.fontSize(Math.max(8, responsiveUnit * 1.5))
-           .fillColor('#666666')
-           .font('Helvetica')
-           .text(`Recorded: ${createdAt}`, leftMargin, currentY, { width: contentWidth });
-        currentY += (responsiveHeightUnit * 2);
-      }
-
-      currentY += (responsiveHeightUnit * 4);
-
-      // Thank you message
-      doc.fontSize(Math.max(10, responsiveUnit * 1.9))
-         .font('Helvetica-Bold')
-         .fillColor('#2e7d32')
-         .text('Thank you for your generous donation!', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'center'
-         });
-
-      currentY += (responsiveHeightUnit * 4);
-
-      // Bottom section - On Behalf of
-      doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .fillColor('#000000')
-         .font('Helvetica')
-         .text('On Behalf of', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'right'
-         });
-
-      currentY += (responsiveHeightUnit * 2);
-
-      doc.fontSize(Math.max(10, responsiveUnit * 2))
-         .fillColor('#000000')
-         .font('Helvetica-Bold')
-         .text('Indian Muslim Association Jama-ath Ltd.', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'right'
-         });
+      y += 40;
+      doc.moveDown(1);
+      doc.font('Helvetica-Bold')
+         .text('Issued by\nIndian Muslim Association (Jama-ath) Ltd.', { align: 'center' });
 
       doc.end();
-    } catch (error) {
-      console.error('Error in generateDonationReceiptPDF:', error);
-      reject(error);
+    } catch (err) {
+      reject(err);
     }
   });
 }

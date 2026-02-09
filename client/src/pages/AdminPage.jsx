@@ -17249,9 +17249,11 @@ Indian Muslim Association, Hong Kong`;
                                             onClick={(e) => {
                                               e.preventDefault();
                                               e.stopPropagation();
-                                              const apiUrl = import.meta.env.VITE_API_URL || "";
+                                              // const apiUrl = import.meta.env.VITE_API_URL || "";
+                                              const apiUrl = "http://localhost:4000";
                                               const donationParam = donation?._id || donation?.id;
                                               const pdfUrl = `${apiUrl}/api/donations/${donationParam}/pdf-receipt/view`;
+                                              // const pdfUrl = `${apiUrl}/api/donations/${donationParam}/utils/pdfDonation/donationReceiptTemplate/view`;
                                               window.open(pdfUrl, "_blank");
                                             }}
                                             title="PDF Options"

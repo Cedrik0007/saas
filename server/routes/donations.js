@@ -66,7 +66,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // GET generate PDF receipt and return URL for download
-router.get("/:id/pdf-receipt", async (req, res) => {
+router.get("/:id/ ", async (req, res) => {
   try {
     await ensureConnection();
 
