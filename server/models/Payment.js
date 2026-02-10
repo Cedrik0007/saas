@@ -25,6 +25,7 @@ const PaymentSchema = new mongoose.Schema({
   period: String,
   status: { type: String, default: "Pending" }, // Changed default to "Pending"
   date: String,
+  payment_date: { type: Date, default: null }, // Date when payment was made
   screenshot: String,
   paidToAdmin: String,
   paidToAdminName: String,

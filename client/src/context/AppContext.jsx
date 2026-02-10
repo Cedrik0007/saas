@@ -511,32 +511,69 @@ export function AppProvider({ children }) {
   };
 
   // Fetch reminder logs (automatic + manual email reminders) from server
-  const fetchReminderLogs = async () => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/reminders/logs`);
-      if (!response.ok) throw new Error('Failed to fetch reminder logs');
-      const data = await response.json();
-      setReminderLogs(data);
-      console.log('✓ Loaded', data.length, 'reminder logs from MongoDB');
-    } catch (error) {
-      console.error('Error fetching reminder logs:', error);
-      setReminderLogs([]);
-    }
-  };
+  // const fetchReminderLogs = async () => {
+  //   try {
+  //     const response = await fetch(`${apiBaseUrl}/api/reminders/logs`);
+  //     if (!response.ok) throw new Error('Failed to fetch reminder logs');
+  //     const data = await response.json();
+  //     setReminderLogs(data);
+  //     console.log('✓ Loaded', data.length, 'reminder logs from MongoDB');
+  //   } catch (error) {
+  //     console.error('Error fetching reminder logs:', error);
+  //     setReminderLogs([]);
+  //   }
+  // };
+  
+const fetchReminderLogs = useCallback(async () => {
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/reminders/logs`);
+    if (!response.ok) throw new Error("Failed to fetch reminder logs");
+    const data = await response.json();
+    setReminderLogs(data);
+    console.log("✓ Loaded", data.length, "reminder logs from MongoDB");
+  } catch (error) {
+    console.error("Error fetching reminder logs:", error);
+    setReminderLogs([]);
+  }
+}, [apiBaseUrl]);
+
 
   // Fetch password reset requests from server
-  const fetchPasswordResetRequests = async () => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/auth/password-reset-requests`);
-      if (!response.ok) throw new Error('Failed to fetch password reset requests');
-      const data = await response.json();
-      setPasswordResetRequests(data);
-      console.log('✓ Loaded', data.length, 'password reset requests from MongoDB');
-    } catch (error) {
-      console.error('Error fetching password reset requests:', error);
-      setPasswordResetRequests([]);
+  // const fetchPasswordResetRequests = async () => {
+  //   try {
+  //     const response = await fetch(`${apiBaseUrl}/api/auth/password-reset-requests`);
+  //     if (!response.ok) throw new Error('Failed to fetch password reset requests');
+  //     const data = await response.json();
+  //     setPasswordResetRequests(data);
+  //     console.log('✓ Loaded', data.length, 'password reset requests from MongoDB');
+  //   } catch (error) {
+  //     console.error('Error fetching password reset requests:', error);
+  //     setPasswordResetRequests([]);
+  //   }
+  // };
+
+  const fetchPasswordResetRequests = useCallback(async () => {
+  try {
+    const response = await fetch(
+      `${apiBaseUrl}/api/auth/password-reset-requests`
+    );
+    if (!response.ok) {
+      throw new Error("Failed to fetch password reset requests");
     }
-  };
+
+    const data = await response.json();
+    setPasswordResetRequests(data);
+    console.log(
+      "✓ Loaded",
+      data.length,
+      "password reset requests from MongoDB"
+    );
+  } catch (error) {
+    console.error("Error fetching password reset requests:", error);
+    setPasswordResetRequests([]);
+  }
+}, [apiBaseUrl]);
+
 
   // Fetch data on mount - moved after function definitions
   useEffect(() => {

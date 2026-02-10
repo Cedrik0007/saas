@@ -27,6 +27,7 @@ const DonationSchema = new mongoose.Schema({
   screenshot: String, // URL to payment proof image
   notes: String,
   date: String, // Auto-generated
+  receipt_number: { type: String, unique: true, sparse: true }, // 4-digit receipt number starting from 2000
 }, {
   timestamps: true
 });

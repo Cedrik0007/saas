@@ -26,22 +26,22 @@ export function numberToWords(num) {
     if (num === null || num === undefined || isNaN(num) || !isFinite(num)) {
       return '';
     }
-    
+
     // Ensure it's an integer
     num = Math.floor(Math.abs(num));
-    
+
     // Handle zero
     if (num === 0) return 'Zero';
-    
+
     // Limit to reasonable range to prevent stack overflow
     if (num > 999999999) {
       return 'Very Large Amount';
     }
-    
+
     const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
       'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
     const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-    
+
     if (num < 20) {
       return ones[num] || '';
     }
@@ -119,13 +119,13 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
 
       const previousDisplayIds = Array.isArray(member?.previousDisplayIds)
         ? member.previousDisplayIds
-            .map((entry) => {
-              if (!entry) return '';
-              if (typeof entry.id === 'string') return entry.id;
-              if (entry.id === null || entry.id === undefined) return '';
-              return String(entry.id);
-            })
-            .filter(Boolean)
+          .map((entry) => {
+            if (!entry) return '';
+            if (typeof entry.id === 'string') return entry.id;
+            if (entry.id === null || entry.id === undefined) return '';
+            return String(entry.id);
+          })
+          .filter(Boolean)
         : [];
 
       const matchesByMemberNo = invoiceMemberNo !== null && memberNo !== null && invoiceMemberNo === memberNo;
@@ -150,8 +150,8 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
         `(match: ${matchesByMemberNo ? 'memberNo' : matchesByCurrentDisplayId ? 'currentId' : 'previousId'})`
       );
       console.log(`  Member: ${member?.name}, Invoice Amount: ${invoice?.amount}`);
-      
-      const doc = new PDFDocument({ 
+
+      const doc = new PDFDocument({
         size: 'A4',
         margin: 50,
         info: {
@@ -181,36 +181,36 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       // This allows the layout to adapt if page size changes
       const responsiveUnit = pageWidth / 100; // 1% of page width = ~5.95 points
       const responsiveHeightUnit = pageHeight / 100; // 1% of page height = ~8.42 points
-      
+
       // Helper function to get responsive width (percentage of content width)
       const getResponsiveWidth = (percent) => (contentWidth * percent) / 100;
-      
+
       // Helper function to get responsive X position (percentage from left margin)
       const getResponsiveX = (percent) => leftMargin + (contentWidth * percent) / 100;
 
       // Helper function to draw checkbox
       const drawCheckbox = (x, y, size = 8, checked = false) => {
         doc.rect(x, y, size, size)
-           .strokeColor('#000000')
-           .lineWidth(1)
-           .stroke();
+          .strokeColor('#000000')
+          .lineWidth(1)
+          .stroke();
         if (checked) {
           // Draw checkmark more clearly and centered
           const checkmarkSize = size * 0.7;
           doc.fontSize(checkmarkSize)
-             .fillColor('#000000')
-             .font('Helvetica-Bold')
-             .text('✓', x + (size - checkmarkSize) / 2, y + (size - checkmarkSize) / 2 - 1);
+            .fillColor('#000000')
+            .font('Helvetica-Bold')
+            .text('✓', x + (size - checkmarkSize) / 2, y + (size - checkmarkSize) / 2 - 1);
         }
       };
 
       // Helper function to draw underline
       const drawUnderline = (x, y, width) => {
         doc.moveTo(x, y)
-           .lineTo(x + width, y)
-           .strokeColor('#000000')
-           .lineWidth(0.5)
-           .stroke();
+          .lineTo(x + width, y)
+          .strokeColor('#000000')
+          .lineWidth(0.5)
+          .stroke();
       };
 
       let currentY = margin;
@@ -247,10 +247,10 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
 
       // Calculate header text height to position logo accordingly
       const headerTextHeight = (responsiveHeightUnit * 2) + (responsiveHeightUnit * 1.8) + (responsiveHeightUnit * 1.8); // Approximate height of all three text lines
-      
+
       // Logo size - bigger (80x80 points)
       const logoSize = 80;
-      
+
       // Header section - Center everything, with logo on the left
       const headerStartY = currentY;
       let logoY = headerStartY;
@@ -270,34 +270,34 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
 
       // Header - Organization Name (centered on full page width, ignoring logo)
       doc.fontSize(Math.max(14, responsiveUnit * 2.5))
-         .fillColor('#000000')
-         .font('Helvetica-Bold')
-         .text('INDIAN MUSLIM ASSOCIATION JAMA-ATH LTD.', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'center'
-         });
+        .fillColor('#000000')
+        .font('Helvetica-Bold')
+        .text('INDIAN MUSLIM ASSOCIATION JAMA-ATH LTD.', leftMargin, currentY, {
+          width: contentWidth,
+          align: 'center'
+        });
 
       currentY += (responsiveHeightUnit * 2);
 
       // Hong Kong (centered on full page width)
       doc.fontSize(Math.max(11, responsiveUnit * 2))
-         .fillColor('#000000')
-         .font('Helvetica')
-         .text('Hong Kong', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'center'
-         });
+        .fillColor('#000000')
+        .font('Helvetica')
+        .text('Hong Kong', leftMargin, currentY, {
+          width: contentWidth,
+          align: 'center'
+        });
 
       currentY += (responsiveHeightUnit * 1.8);
 
       // Estd. 1979 (centered on full page width)
       doc.fontSize(Math.max(9, responsiveUnit * 1.6))
-         .fillColor('#666666')
-         .font('Helvetica-Oblique')
-         .text('Estd. 1979', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'center'
-         });
+        .fillColor('#666666')
+        .font('Helvetica-Oblique')
+        .text('Estd. 1979', leftMargin, currentY, {
+          width: contentWidth,
+          align: 'center'
+        });
 
       // Move to next section - use the maximum of logo bottom or text bottom
       const logoBottom = logoPath ? logoY + logoSize : headerStartY;
@@ -307,12 +307,12 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
 
       // Official Receipt Title
       doc.fontSize(Math.max(12, responsiveUnit * 2.2))
-         .fillColor('#000000')
-         .font('Helvetica-Bold')
-         .text('OFFICIAL RECEIPT', leftMargin, currentY, { 
-           width: contentWidth,
-           align: 'center'
-         });
+        .fillColor('#000000')
+        .font('Helvetica-Bold')
+        .text('OFFICIAL RECEIPT', leftMargin, currentY, {
+          width: contentWidth,
+          align: 'center'
+        });
 
       currentY += (responsiveHeightUnit * 4);
 
@@ -328,9 +328,9 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       // Only use receipt number if provided or exists in invoice - do NOT generate new one if empty
       const receiptNoValue = receiptNo || invoice?.receiptNumber || null;
       const receiptDate = new Date().toLocaleDateString('en-GB', {
-           day: '2-digit',
-           month: 'short',
-           year: 'numeric'
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
       });
       // CRITICAL: Use ONLY the member object passed, never fall back to invoice.memberName
       // The member object MUST be fetched using invoice.memberId before calling this function
@@ -361,7 +361,7 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       const isLifetimeSubscription =
         typeof subscriptionType === 'string' && subscriptionType.toLowerCase().includes('lifetime');
       const showRenewalText = !isLifetimeSubscription;
-      
+
       // Extract year from invoice period
       const periodStr = String(invoice?.period || '').trim();
       const yearMatch = periodStr.match(/\d{4}/);
@@ -372,10 +372,10 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       const detailRowHeight = 30;
       const detailCol1Width = contentWidth * 0.5; // Left column (50%)
       const detailCol2Width = contentWidth * 0.5; // Right column (50%)
-      
+
       // Invoice details table
       const detailsStartY = currentY;
-      
+
       const verticalBorderX = leftMargin + detailCol1Width;
 
       const drawHeaderRow = ({ leftLabel, leftValue, rightLabel, rightValue }) => {
@@ -383,47 +383,48 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
         const col2Width = contentWidth - col1Width;
         // Outer border
         doc.rect(leftMargin, currentY, contentWidth, detailRowHeight)
-         .strokeColor('#000000')
-         .lineWidth(0.5)
-         .stroke();
+          .strokeColor('#000000')
+          .lineWidth(0.5)
+          .stroke();
 
         // Center divider
         doc.moveTo(verticalBorderX, currentY)
-         .lineTo(verticalBorderX, currentY + detailRowHeight)
-         .strokeColor('#000000')
-         .lineWidth(1)
-         .stroke();
+          .lineTo(verticalBorderX, currentY + detailRowHeight)
+          .strokeColor('#000000')
+          .lineWidth(1)
+          .stroke();
 
         const cellPaddingX = 5;
         const labelY = currentY + 4;
         const valueY = currentY + 16;
 
         doc.fontSize(Math.max(8, responsiveUnit * 1.4))
-         .fillColor('#000000')
-         .font('Helvetica-Bold');
+          .fillColor('#000000')
+          .font('Helvetica-Bold');
         doc.text(String(leftLabel), leftMargin + cellPaddingX, labelY, { width: col1Width - (cellPaddingX * 2) });
         doc.text(String(rightLabel), leftMargin + col1Width + cellPaddingX, labelY, { width: col2Width - (cellPaddingX * 2) });
 
         doc.fontSize(Math.max(9, responsiveUnit * 1.6))
-         .fillColor('#000000')
-         .font('Helvetica');
+          .fillColor('#000000')
+          .font('Helvetica');
         doc.text(displayReceiptField(leftValue), leftMargin + cellPaddingX, valueY, { width: col1Width - (cellPaddingX * 2) });
         doc.text(displayReceiptField(rightValue), leftMargin + col1Width + cellPaddingX, valueY, { width: col2Width - (cellPaddingX * 2) });
 
         currentY += detailRowHeight;
       };
-      
+
       // Header layout (exact 3 rows, 2 columns):
       // Receipt No | Date
       // Member Name | Member ID
       // Subscription Type | Membership Year
+      // drawHeaderRow({ leftLabel: 'Receipt No', rightLabel: 'Date', leftValue: receiptNoValue || '-', rightValue: receiptDate });
       drawHeaderRow({ leftLabel: 'Receipt No', rightLabel: 'Date', leftValue: receiptNoValue || '-', rightValue: receiptDate });
-      
+
       console.log("[PDF FINAL HEADER] Member ID =", member?.id);
       drawHeaderRow({
-        leftLabel: '',
+        leftLabel: 'Member Name',
         rightLabel: 'Member ID',
-        leftValue: `Member Name: ${memberName}`,
+        leftValue: `${memberName}`,
         rightValue: member?.id || "-",
       });
       drawHeaderRow({ leftLabel: 'Subscription Type', rightLabel: 'Membership Year', leftValue: subscriptionType, rightValue: membershipYearDisplay });
@@ -435,26 +436,26 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       const col1Width = contentWidth * 0.5; // Description column
       const col2Width = contentWidth * 0.2; // Year column
       const col3Width = contentWidth * 0.3; // Amount column
-      
+
       // Table header with grey background
       const headerColor = '#E5E5E5'; // Light grey
       doc.rect(leftMargin, tableTopY, contentWidth, rowHeight)
-         .fill(headerColor)
-         .strokeColor('#000000')
-         .lineWidth(0.5)
-         .stroke();
-      
+        .fill(headerColor)
+        .strokeColor('#000000')
+        .lineWidth(0.5)
+        .stroke();
+
       // Header text
       doc.fontSize(Math.max(9, responsiveUnit * 1.6))
-         .fillColor('#000000')
-         .font('Helvetica-Bold');
-      
+        .fillColor('#000000')
+        .font('Helvetica-Bold');
+
       doc.text('Description', leftMargin + 5, tableTopY + 5, { width: col1Width - 10 });
       doc.text('Year', leftMargin + col1Width + 5, tableTopY + 5, { width: col2Width - 10 });
       doc.text('Amount (HKD)', leftMargin + col1Width + col2Width + 5, tableTopY + 5, { width: col3Width - 10 });
-      
+
       currentY = tableTopY + rowHeight;
-      
+
       // Table data rows (using amountStr and amountNum already declared above)
       const amountValue = payment?.amount ?? invoice?.amount ?? '';
       const amountStr = typeof amountValue === 'string' ? amountValue : String(amountValue ?? '');
@@ -465,92 +466,92 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
         throw new Error("Invalid amount for receipt generation");
       }
       const formattedAmount = amountNum.toFixed(2);
-      
+
       // First data row
       doc.rect(leftMargin, currentY, contentWidth, rowHeight)
-         .strokeColor('#000000')
-         .lineWidth(0.5)
-         .stroke();
-      
+        .strokeColor('#000000')
+        .lineWidth(0.5)
+        .stroke();
+
       doc.fontSize(Math.max(9, responsiveUnit * 1.6))
-         .fillColor('#000000')
-         .font('Helvetica');
-      
+        .fillColor('#000000')
+        .font('Helvetica');
+
       doc.text(showRenewalText ? 'Membership Renewal Fee' : subscriptionType, leftMargin + 5, currentY + 5, { width: col1Width - 10 });
       doc.text(membershipYearDisplay, leftMargin + col1Width + 5, currentY + 5, { width: col2Width - 10 });
       doc.text(`HK$${formattedAmount}`, leftMargin + col1Width + col2Width + 5, currentY + 5, { width: col3Width - 10, align: 'right' });
-      
+
       currentY += rowHeight;
-      
+
       // Total row (bold)
       doc.rect(leftMargin, currentY, contentWidth, rowHeight)
-         .strokeColor('#000000')
-         .lineWidth(0.5)
-         .stroke();
+        .strokeColor('#000000')
+        .lineWidth(0.5)
+        .stroke();
 
       doc.fontSize(Math.max(9, responsiveUnit * 1.6))
-         .fillColor('#000000')
-         .font('Helvetica-Bold');
-      
-      doc.text('Total Amount', leftMargin + 5, currentY + 5, { 
-        width: col1Width + col2Width - 10 
+        .fillColor('#000000')
+        .font('Helvetica-Bold');
+
+      doc.text('Total Amount', leftMargin + 5, currentY + 5, {
+        width: col1Width + col2Width - 10
       });
-      doc.text(`HK$${formattedAmount}`, leftMargin + col1Width + col2Width + 5, currentY + 5, { 
-        width: col3Width - 10, 
-        align: 'right' 
+      doc.text(`HK$${formattedAmount}`, leftMargin + col1Width + col2Width + 5, currentY + 5, {
+        width: col3Width - 10,
+        align: 'right'
       });
-      
+
       currentY += rowHeight + (responsiveHeightUnit * 3);
 
       // Payment Information Section
       doc.fontSize(Math.max(10, responsiveUnit * 1.9))
-         .fillColor('#000000')
-         .font('Helvetica-Bold')
-         .text('Payment Information', leftMargin, currentY, { width: contentWidth });
-      
+        .fillColor('#000000')
+        .font('Helvetica-Bold')
+        .text('Payment Information', leftMargin, currentY, { width: contentWidth });
+
       currentY += (responsiveHeightUnit * 2.5);
-      
+
       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-         .fillColor('#000000')
-         .font('Helvetica');
-      
+        .fillColor('#000000')
+        .font('Helvetica');
+
       const paymentMethod = String(payment?.method || invoice?.method || '').trim();
       const paymentMethodDisplay = paymentMethod || '';
       doc.text(`Payment Method: ${paymentMethodDisplay}`, leftMargin, currentY, { width: contentWidth });
-      
-      currentY += (responsiveHeightUnit * 2.5);
-      
-      const paymentRef = payment?.reference || payment?.transactionId || '';
-      doc.text(`Reference / Transaction ID: ${paymentRef}`, leftMargin, currentY, { width: contentWidth });
-      
+
+      // currentY += (responsiveHeightUnit * 2.5);
+
+      // const paymentRef = payment?.reference || payment?.transactionId || '';
+      // doc.text(`Reference / Transaction ID: ${paymentRef}`, leftMargin, currentY, { width: contentWidth });
+
       // Receiver Name hidden - removed from PDF
       currentY += (responsiveHeightUnit * 4);
 
       // Footer disclaimer
       doc.fontSize(Math.max(8, responsiveUnit * 1.4))
-         .fillColor('#000000')
-         .font('Helvetica')
-         .text('This is a system-generated invoice and does not require a signature.', leftMargin, currentY, {
-           width: contentWidth,
-           align: 'center'
-         });
-      
+        .fillColor('#000000')
+        .font('Helvetica')
+        .text('This is a system-generated invoice and does not require a signature.', leftMargin, currentY, {
+          width: contentWidth,
+          align: 'center'
+        });
+
       currentY += (responsiveHeightUnit * 2);
-      
+
       doc.text('Issued by', leftMargin, currentY, {
-         width: contentWidth,
-         align: 'center'
-       });
-      
+        width: contentWidth,
+        align: 'center'
+      });
+
       currentY += (responsiveHeightUnit * 1.5);
-      
+
       doc.fontSize(Math.max(9, responsiveUnit * 1.6))
-         .fillColor('#000000')
-         .font('Helvetica-Bold')
-         .text('Indian Muslim Association Jama-ath Ltd.', leftMargin, currentY, {
-           width: contentWidth,
-           align: 'center'
-         });
+        .fillColor('#000000')
+        .font('Helvetica-Bold')
+        .text('Indian Muslim Association Jama-ath Ltd.', leftMargin, currentY, {
+          width: contentWidth,
+          align: 'center'
+        });
 
       // Close the document
       doc.end();
@@ -571,276 +572,8 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
  * @param {Object} member - Member object (if isMember is true)
  * @returns {Promise<Buffer>} PDF buffer
  */
-// export async function generateDonationReceiptPDF(donation, member = null) {
-//   return new Promise(async (resolve, reject) => {
-//     try {
-//       const doc = new PDFDocument({ 
-//         size: 'A4',
-//         margin: 50,
-//         info: {
-//           Title: 'Donation Receipt',
-//           Author: 'Indian Muslim Association Jama-ath Ltd.',
-//           Subject: `Donation Receipt - ${donation._id || donation.id || 'N/A'}`,
-//         }
-//       });
 
-//       const buffers = [];
-//       doc.on('data', buffers.push.bind(buffers));
-//       doc.on('end', () => {
-//         const pdfBuffer = Buffer.concat(buffers);
-//         resolve(pdfBuffer);
-//       });
-//       doc.on('error', reject);
-
-//       // A4 dimensions in points: 595.28 x 841.89
-//       const pageWidth = 595.28;
-//       const pageHeight = 841.89;
-//       const margin = 50;
-//       const contentWidth = pageWidth - (margin * 2);
-//       const leftMargin = margin;
-//       const rightMargin = pageWidth - margin;
-
-//       const responsiveUnit = pageWidth / 100;
-//       const responsiveHeightUnit = pageHeight / 100;
-//       const getResponsiveWidth = (percent) => (contentWidth * percent) / 100;
-//       const getResponsiveX = (percent) => leftMargin + (contentWidth * percent) / 100;
-
-//       // Helper function to draw checkbox
-//       const drawCheckbox = (x, y, size = 8, checked = false) => {
-//         doc.rect(x, y, size, size).stroke();
-//         if (checked) {
-//           doc.moveTo(x + 1, y + size / 2)
-//              .lineTo(x + size / 2 - 1, y + size - 1)
-//              .lineTo(x + size - 1, y + 1)
-//              .stroke();
-//         }
-//       };
-
-//       // Helper function to draw underline
-//       const drawUnderline = (x, y, width) => {
-//         doc.moveTo(x, y).lineTo(x + width, y).stroke();
-//       };
-
-//       let currentY = margin + (responsiveHeightUnit * 2);
-
-//       // Header - Organization Name
-//       doc.fontSize(Math.max(14, responsiveUnit * 2.5))
-//          .fillColor('#000000')
-//          .font('Helvetica-Bold')
-//          .text('INDIAN MUSLIM ASSOCIATION JAMA-ATH LTD.', leftMargin, currentY, { 
-//            width: contentWidth,
-//            align: 'center'
-//          });
-
-//       currentY += (responsiveHeightUnit * 2);
-
-//       // Hong Kong
-//       doc.fontSize(Math.max(11, responsiveUnit * 2))
-//          .fillColor('#000000')
-//          .font('Helvetica')
-//          .text('Hong Kong', leftMargin, currentY, { 
-//            width: contentWidth,
-//            align: 'center'
-//          });
-
-//       currentY += (responsiveHeightUnit * 1.8);
-
-//       // Estd. 1979
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.6))
-//          .fillColor('#666666')
-//          .font('Helvetica-Oblique')
-//          .text('Estd. 1979', leftMargin, currentY, { 
-//            width: contentWidth,
-//            align: 'center'
-//          });
-
-//       currentY += (responsiveHeightUnit * 3);
-
-//       // Receipt Title
-//       doc.fontSize(Math.max(12, responsiveUnit * 2.2))
-//          .fillColor('#000000')
-//          .font('Helvetica-Bold')
-//          .text('Donation Receipt', leftMargin, currentY, { 
-//            width: contentWidth,
-//            align: 'center'
-//          });
-
-//       currentY += (responsiveHeightUnit * 4);
-
-//       // Receipt No (using sequential receipt number)
-//       const receiptNoValue = await getNextReceiptNumber();
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//          .fillColor('#000000')
-//          .font('Helvetica-Bold')
-//          .text(`Receipt No: ${receiptNoValue}`, leftMargin, currentY, { width: contentWidth });
-
-//       currentY += (responsiveHeightUnit * 2.5);
-
-//       // Date
-//       let receiptDate = donation.date;
-//       if (!receiptDate && donation.createdAt) {
-//         receiptDate = new Date(donation.createdAt).toLocaleDateString('en-GB', {
-//           day: '2-digit',
-//           month: 'short',
-//           year: 'numeric'
-//         });
-//       }
-//       if (!receiptDate) {
-//         receiptDate = new Date().toLocaleDateString('en-GB', {
-//           day: '2-digit',
-//           month: 'short',
-//           year: 'numeric'
-//         });
-//       }
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//          .fillColor('#000000')
-//          .font('Helvetica')
-//          .text(`Date: ${receiptDate}`, leftMargin, currentY, { width: contentWidth });
-
-//       currentY += (responsiveHeightUnit * 2.5);
-
-//       // Donor Name
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//          .font('Helvetica')
-//          .text(`Donor Name: ${donation.donorName || 'N/A'}`, leftMargin, currentY, { width: contentWidth });
-
-//       currentY += (responsiveHeightUnit * 2.5);
-
-//       // Donor Type (Member/Non-Member)
-//       const donorType = donation.isMember ? 'Member' : 'Non-Member';
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//          .font('Helvetica')
-//          .text(`Donor Type: ${donorType}`, leftMargin, currentY, { width: contentWidth });
-
-//       currentY += (responsiveHeightUnit * 2.5);
-
-//       // Member ID (always show; read ONLY from member.id)
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//         .font('Helvetica')
-//         .text(`Member ID: ${member?.id || '-'}`, leftMargin, currentY, { width: contentWidth });
-//       currentY += (responsiveHeightUnit * 2.5);
-
-//       // Donation Type
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//          .font('Helvetica')
-//          .text(`Donation Type: ${donation.donationType || 'N/A'}`, leftMargin, currentY, { width: contentWidth });
-
-//       currentY += (responsiveHeightUnit * 2.5);
-
-//       // Amount
-//       const amountStr = donation.amount || 'HK$0';
-//       const amountNum = parseFloat(amountStr.replace(/[^0-9.]/g, '')) || 0;
-//       const formattedAmount = amountNum.toFixed(2);
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//          .font('Helvetica-Bold')
-//          .text(`Amount: HK$${formattedAmount}`, leftMargin, currentY, { width: contentWidth });
-
-//       currentY += (responsiveHeightUnit * 2.5);
-
-//       // Payment Type (Cash/Online)
-//       const paymentType = donation.payment_type || 'online';
-//       const paymentTypeDisplay = paymentType === 'cash' ? 'Cash' : 'Online Payment';
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//          .font('Helvetica')
-//          .text(`Payment Type: ${paymentTypeDisplay}`, leftMargin, currentY, { width: contentWidth });
-
-//       currentY += (responsiveHeightUnit * 2.5);
-
-//       // Payment Method
-//       const paymentMethod = donation.method || 'N/A';
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//          .font('Helvetica')
-//          .text(`Payment Method: ${paymentMethod}`, leftMargin, currentY, { width: contentWidth });
-
-//       currentY += (responsiveHeightUnit * 2.5);
-
-//       // Receiver Name (if online payment)
-//       if (donation.payment_type === 'online' && donation.receiver_name) {
-//         doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//            .font('Helvetica')
-//            .text(`Receiver Name: ${donation.receiver_name}`, leftMargin, currentY, { width: contentWidth });
-//         currentY += (responsiveHeightUnit * 2.5);
-//       }
-
-//       // Payment Screenshot (indicate if available)
-//       if (donation.screenshot) {
-//         doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//            .font('Helvetica')
-//            .text(`Payment Proof: Available`, leftMargin, currentY, { width: contentWidth });
-//         currentY += (responsiveHeightUnit * 2.5);
-//       }
-
-//       // Notes
-//       if (donation.notes) {
-//         currentY += (responsiveHeightUnit * 1.5);
-//         doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//            .font('Helvetica')
-//            .text(`Notes: ${donation.notes}`, leftMargin, currentY, { 
-//              width: contentWidth,
-//              align: 'left'
-//            });
-//         currentY += (responsiveHeightUnit * 2.5);
-//       }
-
-//       // Timestamps (if available)
-//       if (donation.createdAt) {
-//         const createdAt = new Date(donation.createdAt).toLocaleDateString('en-GB', {
-//           day: '2-digit',
-//           month: 'short',
-//           year: 'numeric',
-//           hour: '2-digit',
-//           minute: '2-digit'
-//         });
-//         doc.fontSize(Math.max(8, responsiveUnit * 1.5))
-//            .fillColor('#666666')
-//            .font('Helvetica')
-//            .text(`Recorded: ${createdAt}`, leftMargin, currentY, { width: contentWidth });
-//         currentY += (responsiveHeightUnit * 2);
-//       }
-
-//       currentY += (responsiveHeightUnit * 4);
-
-//       // Thank you message
-//       doc.fontSize(Math.max(10, responsiveUnit * 1.9))
-//          .font('Helvetica-Bold')
-//          .fillColor('#2e7d32')
-//          .text('Thank you for your generous donation!', leftMargin, currentY, { 
-//            width: contentWidth,
-//            align: 'center'
-//          });
-
-//       currentY += (responsiveHeightUnit * 4);
-
-//       // Bottom section - On Behalf of
-//       doc.fontSize(Math.max(9, responsiveUnit * 1.8))
-//          .fillColor('#000000')
-//          .font('Helvetica')
-//          .text('On Behalf of', leftMargin, currentY, { 
-//            width: contentWidth,
-//            align: 'right'
-//          });
-
-//       currentY += (responsiveHeightUnit * 2);
-
-//       doc.fontSize(Math.max(10, responsiveUnit * 2))
-//          .fillColor('#000000')
-//          .font('Helvetica-Bold')
-//          .text('Indian Muslim Association Jama-ath Ltd.', leftMargin, currentY, { 
-//            width: contentWidth,
-//            align: 'right'
-//          });
-
-//       doc.end();
-//     } catch (error) {
-//       console.error('Error in generateDonationReceiptPDF:', error);
-//       reject(error);
-//     }
-//   });
-// }
-
-// import PDFDocument from 'pdfkit';
-
-export async function generateDonationReceiptPDF(donation, member = null) {
+export async function generateDonationReceiptPDF(donation, member = null, receiptNo = null) {
   return new Promise(async (resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -848,7 +581,8 @@ export async function generateDonationReceiptPDF(donation, member = null) {
         margin: 50,
         info: {
           Title: 'Donation Receipt',
-          Author: 'Indian Muslim Association Jama-ath Ltd.'
+          Author: 'Indian Muslim Association Jama-ath Ltd.',
+          Subject: `Donation Receipt - ${donation?.id || 'N/A'}`
         }
       });
 
@@ -857,139 +591,279 @@ export async function generateDonationReceiptPDF(donation, member = null) {
       doc.on('end', () => resolve(Buffer.concat(buffers)));
       doc.on('error', reject);
 
+      /* ================= PAGE METRICS ================= */
       const pageWidth = 595.28;
       const pageHeight = 841.89;
-      const contentWidth = pageWidth - 100;
-      const leftMargin = 50;
+      const margin = 50;
+      const contentWidth = pageWidth - (margin * 2);
+      const leftMargin = margin;
 
-      doc.fillColor('#000000');
+      const responsiveUnit = pageWidth / 100;
+      const responsiveHeightUnit = pageHeight / 100;
+
+      let currentY = margin;
+
+      /* ================= LOGO ================= */
+      let logoPath = null;
+      try {
+        const logoExtensions = ['png', 'jpg', 'jpeg'];
+        const basePaths = [
+          path.join(process.cwd(), 'public'),
+          path.join(process.cwd(), 'assets'),
+          path.join(process.cwd(), 'server/public'),
+          path.join(process.cwd(), 'server/assets'),
+        ];
+
+        for (const basePath of basePaths) {
+          for (const ext of logoExtensions) {
+            const testPath = path.join(basePath, `logo.${ext}`);
+            if (fs.existsSync(testPath)) {
+              logoPath = testPath;
+              break;
+            }
+          }
+          if (logoPath) break;
+        }
+      } catch { }
+
+      const headerTextHeight =
+        (responsiveHeightUnit * 2) +
+        (responsiveHeightUnit * 1.8) +
+        (responsiveHeightUnit * 1.8);
+
+      const logoSize = 80;
+      let logoY = currentY;
+
+      if (logoPath) {
+        logoY = currentY + (headerTextHeight / 2) - (logoSize / 2);
+        doc.image(logoPath, leftMargin, logoY, { fit: [logoSize, logoSize] });
+      }
 
       /* ================= HEADER ================= */
       doc.font('Helvetica-Bold')
-        .fontSize(14)
-        .text('INDIAN MUSLIM ASSOCIATION JAMA-ATH LTD.', { align: 'center' });
+        .fontSize(Math.max(14, responsiveUnit * 2.5))
+        .text('INDIAN MUSLIM ASSOCIATION JAMA-ATH LTD.', leftMargin, currentY, {
+          width: contentWidth,
+          align: 'center'
+        });
 
-      doc.moveDown(0.3);
-      doc.font('Helvetica').fontSize(11).text('Hong Kong', { align: 'center' });
-      doc.fontSize(9).text('Estd. 1979', { align: 'center' });
+      currentY += responsiveHeightUnit * 2;
 
-      doc.moveDown(2);
-      doc.font('Helvetica-Bold').fontSize(13)
-        .text('DONATION RECEIPT', { align: 'center' });
+      doc.font('Helvetica')
+        .fontSize(Math.max(11, responsiveUnit * 2))
+        .text('Hong Kong', leftMargin, currentY, {
+          width: contentWidth,
+          align: 'center'
+        });
 
-      /* ================= TABLE ================= */
-      const tableX = leftMargin;
-      const tableY = 150;
-      const tableWidth = contentWidth;
-      const rowHeight = 26;
-      const rows = 3;
-      const colWidths = [140, 180, 100, tableWidth - 420];
+      currentY += responsiveHeightUnit * 1.8;
 
-      doc.lineWidth(1).strokeColor('#000000');
+      doc.font('Helvetica-Oblique')
+        .fontSize(Math.max(9, responsiveUnit * 1.6))
+        .fillColor('#666')
+        .text('Estd. 1979', leftMargin, currentY, {
+          width: contentWidth,
+          align: 'center'
+        });
 
-      // Outer border
-      doc.rect(tableX, tableY, tableWidth, rowHeight * rows).stroke();
+      currentY = Math.max(currentY + 20, logoY + logoSize) + 30;
 
-      // Horizontal lines
-      for (let i = 1; i < rows; i++) {
-        doc.moveTo(tableX, tableY + rowHeight * i)
-           .lineTo(tableX + tableWidth, tableY + rowHeight * i)
-           .stroke();
-      }
+      doc.font('Helvetica-Bold')
+        .fontSize(Math.max(12, responsiveUnit * 2.2))
+        .fillColor('#000')
+        .text('DONATION RECEIPT', leftMargin, currentY, {
+          width: contentWidth,
+          align: 'center'
+        });
 
-      // Vertical lines
-      let x = tableX;
-      colWidths.forEach(w => {
-        x += w;
-        doc.moveTo(x, tableY)
-           .lineTo(x, tableY + rowHeight * rows)
-           .stroke();
-      });
+      currentY += 40;
 
-      const writeCell = (text, col, row, bold = false) => {
-        const xPos = tableX + colWidths.slice(0, col).reduce((a, b) => a + b, 0) + 6;
-        const yPos = tableY + row * rowHeight + 7;
-        doc.font(bold ? 'Helvetica-Bold' : 'Helvetica')
-           .fontSize(9)
-           .text(text || '', xPos, yPos);
+      /* ================= HEADER TABLE ================= */
+      const rowHeight = 30;
+      const colWidth = contentWidth / 2;
+
+      const drawRow = (lLabel, lValue, rLabel, rValue) => {
+        doc.rect(leftMargin, currentY, contentWidth, rowHeight)
+          .strokeColor('#000000')
+          .lineWidth(0.5)
+          .stroke();
+
+        doc.moveTo(leftMargin + colWidth, currentY)
+          .lineTo(leftMargin + colWidth, currentY + rowHeight)
+          .strokeColor('#000000')
+          .lineWidth(1)
+          .stroke();
+
+        doc.font('Helvetica-Bold').fontSize(8)
+          .text(lLabel, leftMargin + 6, currentY + 5)
+          .text(rLabel, leftMargin + colWidth + 6, currentY + 5);
+
+        doc.font('Helvetica').fontSize(9)
+          .text(lValue || '-', leftMargin + 6, currentY + 16)
+          .text(rValue || '-', leftMargin + colWidth + 6, currentY + 16);
+
+        currentY += rowHeight;
       };
 
-      const receiptDate = donation.date || new Date().toLocaleDateString('en-GB', {
-        day: '2-digit', month: 'short', year: 'numeric'
-      });
+      const receiptDate = donation?.date
+        ? new Date(donation.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+        : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-      const amount = Number(donation.amount || 0).toFixed(2);
+      // drawRow('Donor Name', donation?.donorName || '-', 'Receipt No', donation?.receipt_number || '-');
+      drawRow('Receipt No', donation?.receipt_number || '-', 'Date', receiptDate);
+      drawRow('Donor Name', donation?.donorName || '-','Member ID', member?.id || '-');
+      drawRow('Amount (HKD)', `HK$${Number(donation?.amount || 0).toFixed(2)}`, 'Donation Towards', donation?.donationType || '-');
 
-      // writeCell('Receipt No', 0, 0, true);
-      // writeCell(donation.receiptNo || '-', 1, 0);
+      /* ================= DESCRIPTION / AMOUNT TABLE (MATCHES PAYMENT RECEIPT EXACTLY) ================= */
 
-      writeCell('Date', 2, 0, true);
-      writeCell(receiptDate, 3, 0);
+      const tableTopY = currentY;
+      const tableRowHeight = 20;
 
-      writeCell('Name', 0, 0, true);
-      writeCell(donation.donorName || '-', 1, 0);
-      writeCell('Member ID', 2, 1, true);
-      writeCell(member?.id || '-', 3, 1);
-      
-      // writeCell('Name', 0, 1, true);
-      // writeCell(donation.donorName || '-', 1, 1);
-      // writeCell('Member ID', 2, 1, true);
-      // writeCell(member?.id || '-', 3, 1);
+      const col1Width = contentWidth * 0.5;
+      const col2Width = contentWidth * 0.2;
+      const col3Width = contentWidth * 0.3;
 
-      writeCell('Donation towards', 0, 1, true);
-      writeCell(donation.donationType || '-', 1, 1);
+      // const headerColor = '#E5E5E5';
 
-      writeCell('Amount (HKD)', 0, 2, true);
-      writeCell(`HK$${amount}`, 1, 2);
+      // Header row
+      // doc.rect(leftMargin, tableTopY, contentWidth, tableRowHeight)
+      //   // .fill(headerColor)
+      //   .strokeColor('#000000')
+      //   .lineWidth(0.5)
+      //   .stroke();
 
-      // writeCell('Total Amount', 0, 4, true);
-      // writeCell(`HK$${amount}`, 1, 4);  
+      // doc.font('Helvetica-Bold').fontSize(9);
+      // doc.text('Description', leftMargin + 5, tableTopY + 5, { width: col1Width - 10 });
+      // doc.text('Year', leftMargin + col1Width + 5, tableTopY + 5, { width: col2Width - 10 });
+      // doc.text('Amount (HKD)', leftMargin + col1Width + col2Width + 5, tableTopY + 5, {
+      //   width: col3Width - 10
+      // });
 
-      /* ================= PAYMENT INFO ================= */
-      let y = tableY + rowHeight * rows + 40;
+      // const headerColor = '#E5E5E5';
 
-      doc.font('Helvetica-Bold').fontSize(10)
-         .text('Payment Information', tableX, y);
+      // // Header background
+      // doc.rect(leftMargin, tableTopY, contentWidth, tableRowHeight)
+      //   .fill(headerColor)
+      //   .strokeColor('#000000')
+      //   .lineWidth(0.5)
+      //   .stroke();
 
-      y += 22;
-      doc.font('Helvetica').fontSize(9)
-         .text(`Payment Method: ${donation.method || '-'}`, tableX, y);
+      // 🔴 CRITICAL RESET — THIS FIXES EVERYTHING
+      // doc.fillColor('#000000');
 
-      // y += 18;
+      // Header text
+      // doc.font('Helvetica-Bold').fontSize(9);
+      // doc.text('Description', leftMargin + 5, tableTopY + 5, { width: col1Width - 10 });
+      // doc.text('Year', leftMargin + col1Width + 5, tableTopY + 5, { width: col2Width - 10 });
       // doc.text(
-      //   `Reference / Transaction ID: ${donation.reference || '-'}`,
-      //   tableX,
-      //   y
+      //   'Amount (HKD)',
+      //   leftMargin + col1Width + col2Width + 5,
+      //   tableTopY + 5,
+      //   { width: col3Width - 10 }
       // );
 
-      /* ================= FOOTER ================= */
-      y += 60;
-      doc.moveDown(1);
-      doc.font('Helvetica-Oblique').fontSize(10)
-         .text(
-           'Thank you for your Generosity,\nYour donation supports our ongoing Charitable and Community services.',
-           { align: 'center' }
-         );
 
-      y += 60;
-      doc.moveDown(1);
+      currentY = tableTopY + tableRowHeight;
+
+      const donationAmountNum = Number(donation?.amount || 0);
+      const donationAmount = donationAmountNum.toFixed(2);
+      const donationYear = donation?.date
+        ? new Date(donation.date).getFullYear()
+        : new Date().getFullYear();
+
+      // Data row
+      // doc.rect(leftMargin, currentY, contentWidth, tableRowHeight)
+      //   .strokeColor('#000000')
+      //   .lineWidth(0.5)
+      //   .stroke();
+
+      // doc.font('Helvetica').fontSize(9);
+      // doc.text(donation?.donationType || 'Donation', leftMargin + 5, currentY + 5, { width: col1Width - 10 });
+      // doc.text(donationYear, leftMargin + col1Width + 5, currentY + 5, { width: col2Width - 10 });
+      // doc.text(`HK$${donationAmount}`, leftMargin + col1Width + col2Width + 5, currentY + 5, {
+      //   width: col3Width - 10,
+      //   align: 'right'
+      // });
+
+      // currentY += tableRowHeight;
+
+      // Total row
+      // doc.rect(leftMargin, currentY, contentWidth, tableRowHeight)
+      //   .strokeColor('#000000')
+      //   .lineWidth(0.5)
+      //   .stroke();
+
+      // doc.font('Helvetica-Bold').fontSize(9);
+      // doc.text('Total Amount', leftMargin + 5, currentY + 5, {
+      //   width: col1Width + col2Width - 10
+      // });
+      // doc.text(`HK$${donationAmount}`, leftMargin + col1Width + col2Width + 5, currentY + 5, {
+      //   width: col3Width - 10,
+      //   align: 'right'
+      // });
+
+      // currentY += tableRowHeight + 25;
+
+      /* ================= PAYMENT INFO ================= */
+      doc.font('Helvetica-Bold').fontSize(10)
+        .text('Payment Information', leftMargin, currentY);
+
+      currentY += 20;
+
       doc.font('Helvetica').fontSize(9)
-         .text(
-           'For any queries, please contact: Email: info@imahk.org   Whatsapp: +852 9545 4447',
-           { align: 'center' }
-         );
+        .text(`Payment Method: ${donation?.method || '-'}`, leftMargin, currentY);
 
-      y += 40;
-      doc.moveDown(1);
-      doc.text(
-        'This is a system-generated receipt and does not require a signature.',
-        { align: 'center' }
-      );
+      currentY += 30;
 
-      y += 40;
-      doc.moveDown(1);
       doc.font('Helvetica-Bold')
-         .text('Issued by\nIndian Muslim Association (Jama-ath) Ltd.', { align: 'center' });
+        .fontSize(9)
+        .text(
+          'Thank you for your Generosity,\nYour donation supports our ongoing Charitable and Community services',
+          leftMargin,
+          currentY,
+          { width: contentWidth, align: 'center' }
+        );
+
+      currentY += 35;
+
+      // doc.font('Helvetica').fontSize(9)
+      //   .text(
+      //     'For any queries, please contact: Email: info@imahk.org Whatsapp: +852 9545 4447',
+      //     // currentY,
+      //     { align: 'center' }
+      //   );
+
+      doc.font('Helvetica')
+        .fontSize(9)
+        .text(
+          'For any queries, please contact: Email: info@imahk.org Whatsapp: +852 9545 4447',
+          leftMargin,
+          currentY,
+          { width: contentWidth, align: 'center' }
+        );
+
+      currentY += 30;
+
+      /* ================= FOOTER ================= */
+      doc.font('Helvetica')
+        .fontSize(9)
+        .text(
+          'This is a system-generated receipt and does not require a signature.',
+          leftMargin,
+          currentY,
+          { width: contentWidth, align: 'center' }
+        );
+
+      currentY += 30;
+
+      doc.font('Helvetica-Bold')
+        .fontSize(9)
+        .text(
+          'Issued by\nIndian Muslim Association Jama-ath Ltd.',
+          leftMargin,
+          currentY,
+          { width: contentWidth, align: 'center' }
+        );
 
       doc.end();
     } catch (err) {
@@ -997,6 +871,8 @@ export async function generateDonationReceiptPDF(donation, member = null) {
     }
   });
 }
+
+
 
 async function fetchImageFromUrl(url) {
   return new Promise((resolve) => {
@@ -1009,17 +885,17 @@ async function fetchImageFromUrl(url) {
           return;
         }
       }
-      
+
       // Handle HTTP/HTTPS URLs
       const protocol = url.startsWith('https:') ? https : http;
-      
+
       protocol.get(url, (response) => {
         if (response.statusCode !== 200) {
           console.error(`Failed to fetch image: ${response.statusCode}`);
           resolve(null);
           return;
         }
-        
+
         const chunks = [];
         response.on('data', (chunk) => chunks.push(chunk));
         response.on('end', () => {

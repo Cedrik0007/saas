@@ -167,6 +167,7 @@ const InvoiceSchema = new mongoose.Schema({
   payment_mode: { type: String, default: null }, // online, cash
   payment_proof: { type: String, default: null }, // URL to payment proof image
   last_payment_date: { type: Date, default: null },
+  payment_date: { type: Date, default: null }, // Date entered by user when marking invoice as paid
   receiver_name: { type: String, default: null },
   receiptNumber: { type: String, default: null }, // Receipt number assigned when payment is approved
 }, {

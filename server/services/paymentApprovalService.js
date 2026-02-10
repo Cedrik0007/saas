@@ -187,6 +187,7 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
         if (isLifetimeMembershipFullPayment) {
           memberUpdate.lifetimeMembershipPaid = true;
           memberUpdate.janazaOnly = false;
+          memberUpdate.subscriptionType = SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
         }
 
         await UserModel.findOneAndUpdate(
@@ -236,6 +237,7 @@ export async function approveInvoicePayment({
   reference,
   screenshot,
   date,
+  payment_date,
   paidToAdmin,
   paidToAdminName,
   approvedBy,
@@ -266,6 +268,42 @@ export async function approveInvoicePayment({
         year: "numeric",
       });
 
+      // Parse the payment_date field if provided by user
+      let userPaymentDate = null;
+      if (payment_date) {
+        console.log("🔍 DEBUG: Received payment_date:", payment_date, "Type:", typeof payment_date);
+        
+        // Handle YYYY-MM-DD format from HTML date input
+        // Using split to parse manually to avoid timezone issues
+        let parsedPaymentDate = null;
+        if (typeof payment_date === 'string' && payment_date.includes('-')) {
+          const [year, month, day] = payment_date.split('-');
+          if (year && month && day) {
+            // Create date in local timezone to avoid UTC conversion
+            parsedPaymentDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            console.log("🔍 DEBUG: Manually parsed date from YYYY-MM-DD format");
+          }
+        }
+        
+        // Fallback to automatic parsing if manual parsing failed
+        if (!parsedPaymentDate) {
+          parsedPaymentDate = new Date(payment_date);
+        }
+        
+        console.log("🔍 DEBUG: Parsed date:", parsedPaymentDate);
+        console.log("🔍 DEBUG: Is valid date?", !Number.isNaN(parsedPaymentDate.getTime()));
+        
+        if (!Number.isNaN(parsedPaymentDate.getTime())) {
+          userPaymentDate = parsedPaymentDate;
+          console.log("✓ DEBUG: userPaymentDate set to:", userPaymentDate);
+          console.log("✓ DEBUG: userPaymentDate ISO string:", userPaymentDate.toISOString());
+        } else {
+          console.warn("⚠ DEBUG: Failed to parse payment_date as valid date");
+        }
+      } else {
+        console.log("🔍 DEBUG: payment_date is null or undefined");
+      }
+
       const receiptNumber = await getNextReceiptNumberStrict({ session });
 
       payment = new PaymentModel({
@@ -284,6 +322,7 @@ export async function approveInvoicePayment({
         period: invoice.period,
         status: "Completed",
         date: paymentDateLabel,
+        payment_date: userPaymentDate || null,
         screenshot: screenshot || undefined,
         paidToAdmin,
         paidToAdminName,
@@ -303,12 +342,16 @@ export async function approveInvoicePayment({
         payment_mode: paymentType || null,
         payment_proof: screenshot || null,
         last_payment_date: payment.approvedAt,
+        payment_date: userPaymentDate || null,
         receiver_name: payment.receiver_name || null,
         memberRef: member?._id,
         memberNo: member?.memberNo,
         memberName: member?.name || null,
         memberEmail: member?.email || null,
       };
+
+      console.log("🔍 DEBUG: invoiceUpdate object:", JSON.stringify(invoiceUpdate, null, 2));
+      console.log("🔍 DEBUG: payment_date in invoiceUpdate:", invoiceUpdate.payment_date);
 
       if (paidToAdmin) {
         invoiceUpdate.paidToAdmin = paidToAdmin;
@@ -328,6 +371,9 @@ export async function approveInvoicePayment({
         error.status = 500;
         throw error;
       }
+
+      console.log("🔍 DEBUG: After update - updatedInvoice.payment_date:", updatedInvoice.payment_date);
+      console.log("🔍 DEBUG: After update - Full invoice object payment_date:", updatedInvoice.toObject?.()?.payment_date || updatedInvoice.payment_date);
 
       invoice = updatedInvoice;
       if (!invoice.receiptNumber || String(invoice.receiptNumber).trim() === "") {
@@ -413,6 +459,7 @@ export async function approveInvoicePayment({
         if (isLifetimeMembershipFullPayment) {
           memberUpdate.lifetimeMembershipPaid = true;
           memberUpdate.janazaOnly = false;
+          memberUpdate.subscriptionType = SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND;
         }
 
         member = await UserModel.findByIdAndUpdate(
@@ -445,7 +492,18 @@ export async function approveInvoicePayment({
       err.status = 500;
       throw err;
     }
+    
+    console.log("✓ DEBUG: freshInvoice after update - payment_date:", freshInvoice.payment_date);
+    console.log("✓ DEBUG: freshInvoice full object (payment fields):", {
+      payment_date: freshInvoice.payment_date,
+      last_payment_date: freshInvoice.last_payment_date,
+      status: freshInvoice.status,
+      receiptNumber: freshInvoice.receiptNumber,
+    });
+    
     const validatedInvoice = { ...freshInvoice, receiptPdfUrl: getReceiptDownloadUrl(freshInvoice._id) || getReceiptWhatsAppUrl(freshInvoice._id) };
+    
+    console.log("✓ DEBUG: validatedInvoice - payment_date:", validatedInvoice.payment_date);
 
     return { payment, invoice: validatedInvoice, member };
   } catch (err) {

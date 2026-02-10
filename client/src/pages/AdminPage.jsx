@@ -1141,6 +1141,7 @@ function AdminPage() {
       payment_type: "", // "cash" or "online" - empty by default
       method: "", // Payment method (Cash / FPS / Alipay / Bank Deposit / Other)
       receiver_name: "", // Receiver name (required for both cash and online)
+      payment_date: "", // Payment date (required for both cash and online)
       imageFile: null,
       imagePreview: null,
       imageUrl: "",
@@ -1168,6 +1169,7 @@ function AdminPage() {
       payment_type: false,
       method: false,
       receiver_name: false,
+      payment_date: false,
       image: false,
       reference: false,
       selectedAdminId: false,
@@ -5503,6 +5505,7 @@ Indian Muslim Association, Hong Kong`;
         const payment_type = paymentData.payment_type || (method === "Online" ? "online" : "cash");
         const paymentMethod = paymentData.method || method || (payment_type === "cash" ? "Cash" : "Online Payment");
         const receiver_name = paymentData.receiver_name || "";
+        const payment_date = paymentData.payment_date || "";
 
         // Generate reference if not provided
         let reference = referenceNumber;
@@ -5518,27 +5521,33 @@ Indian Muslim Association, Hong Kong`;
 
         // Step 1: Approve payment (single-step, server handles invoice + member updates)
         const authToken = sessionStorage.getItem('authToken');
+        const paymentRequestBody = {
+          invoiceId: invoice._id,
+          memberId: member._id,
+          amount: invoice.amount,
+          payment_type: payment_type,
+          method: paymentMethod,
+          receiver_name: receiver_name,
+          reference: reference,
+          period: invoice.period,
+          date: new Date().toISOString(),
+          payment_date: payment_date,
+          paidToAdmin: adminId,
+          paidToAdminName: adminName,
+          approvedBy: adminName,
+          screenshot: screenshotUrl || invoice.screenshot || null,
+        };
+        
+        console.log("📤 DEBUG: Sending payment_date to backend:", payment_date, "Type:", typeof payment_date);
+        console.log("📤 DEBUG: Full request body:", JSON.stringify(paymentRequestBody, null, 2));
+
         const paymentResponse = await fetch(`${apiUrl}/api/payments/approve-invoice`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           },
-          body: JSON.stringify({
-            invoiceId: invoice._id,
-            memberId: member._id,
-            amount: invoice.amount,
-            payment_type: payment_type,
-            method: paymentMethod,
-            receiver_name: receiver_name,
-            reference: reference,
-            period: invoice.period,
-            date: new Date().toISOString(),
-            paidToAdmin: adminId,
-            paidToAdminName: adminName,
-            approvedBy: adminName,
-            screenshot: screenshotUrl || invoice.screenshot || null,
-          }),
+          body: JSON.stringify(paymentRequestBody),
         });
 
         if (!paymentResponse.ok) {
@@ -5557,6 +5566,7 @@ Indian Muslim Association, Hong Kong`;
 
         const approvalResult = await paymentResponse.json();
         console.log("✓ Payment approval response:", approvalResult);
+        console.log("✓ Payment approval response - payment_date:", approvalResult?.invoice?.payment_date);
         const approvedInvoice = approvalResult?.invoice || null;
         const approvedMember = approvalResult?.member || null;
 
@@ -5565,6 +5575,7 @@ Indian Muslim Association, Hong Kong`;
             id: approvedInvoice._id || approvedInvoice.id,
             status: approvedInvoice.status,
             receiptNumber: approvedInvoice.receiptNumber,
+            payment_date: approvedInvoice.payment_date,
           });
           updateInvoiceInState(approvedInvoice);
         }
@@ -8905,6 +8916,7 @@ Indian Muslim Association, Hong Kong`;
                             "Amount",
                             "Status",
                             "Due Date",
+                            "Payment Date",
                             "Receiver Name",
                             "Actions",
                           ];
@@ -9002,6 +9014,13 @@ Indian Muslim Association, Hong Kong`;
                                 ),
                               },
                               "Due Date": getDueDateDisplay(),
+                              "Payment Date": isPaid && invoice.payment_date 
+                                ? new Date(invoice.payment_date).toLocaleDateString("en-GB", {
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                    year: "numeric",
+                                  })
+                                : "-",
                               "Receiver Name": receiverName,
                               Screenshot: invoice.screenshot
                                 ? {
@@ -9076,7 +9095,7 @@ Indian Muslim Association, Hong Kong`;
                                                   selectedAdminId: "",
                                                   adminMobile: "",
                                                 });
-                                                setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                                                setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, payment_date: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
                                                 setCurrentInvalidPaymentModalField(null);
                                                 setShowPaymentModal(true);
                                                 openModal('paymentModal');
@@ -9134,6 +9153,7 @@ Indian Muslim Association, Hong Kong`;
                                                   return;
                                                 }
                                                 const apiUrl = import.meta.env.VITE_API_URL || "";
+                                                // const apiUrl = "http://localhost:4000"; // Use hardcoded API URL to ensure it works even if VITE_API_URL is not set
                                                 const invoiceParam = invoice?._id || invoice?.id;
                                                 const pdfUrl = `${apiUrl}/api/invoices/${invoiceParam}/pdf-receipt/view`;
                                                 window.open(pdfUrl, "_blank");
@@ -11580,7 +11600,7 @@ Indian Muslim Association, Hong Kong`;
                   </div>
 
                   {/* Save Button */}
-                  <div className="mt-2xl flex justify-end">
+                  {/* <div className="mt-2xl flex justify-end">
                     <button
                       className="primary-btn"
                       onClick={handleSaveAllSettings}
@@ -11620,7 +11640,7 @@ Indian Muslim Association, Hong Kong`;
                         </span>
                       )}
                     </button>
-                  </div>
+                  </div> */}
                 </article>
               )}
 
@@ -12478,7 +12498,7 @@ Indian Muslim Association, Hong Kong`;
               )}
 
               {/* PASSWORD RESET REQUESTS - Only visible to Owner */}
-              {activeSection === "communications" && currentAdminRole === "Owner" && (
+              {/* {activeSection === "communications" && currentAdminRole === "Owner" && (
                 <article className="screen-card" id="password-reset-requests" style={{ marginTop: "24px" }}>
                   <header className="screen-card__header">
                     <div>
@@ -12574,7 +12594,7 @@ Indian Muslim Association, Hong Kong`;
                     </div>
                   </div>
                 </article>
-              )}
+              )} */}
 
               {/* PAYMENT METHODS */}
               {activeSection === "payment-methods" && (
@@ -14382,7 +14402,8 @@ Indian Muslim Association, Hong Kong`;
                                 {/* Invoice Table */}
                                 <div style={{ marginBottom: "20px" }}>
                                   <Table
-                                    columns={["Name", "Native Place", "Year", "Subscription Type", "Joined Year", "Status", "Outstanding", "Actions"]}
+                                    // columns={["Name", "Native Place", "Year", "Subscription Type", "Joined Year", "Status", "Outstanding", "Actions"]}
+                                    columns={["Name", "Native Place", "Year", "Subscription Type","Payment Date", "Status", "Amount", "Actions"]}
                                     rows={paginatedInvoices.map((invoice) => {
                                       // Filter out invoices where member is not found in members list
                                       const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
@@ -14438,6 +14459,13 @@ Indian Muslim Association, Hong Kong`;
                                         "Native Place": member?.native || "-",
                                         "Year": subYear,
                                         "Subscription Type": formatSubscriptionType(member?.subscriptionType) || "-",
+                                        "Payment Date": isPaid && invoice.payment_date 
+                                            ? new Date(invoice.payment_date).toLocaleDateString("en-GB", {
+                                                day: "2-digit",
+                                                month: "2-digit",
+                                                year: "numeric",
+                                              })
+                                            : "-",
                                         "Joined Year": joinedYear,
                                         "Status": {
                                           render: () => (
@@ -14451,7 +14479,7 @@ Indian Muslim Association, Hong Kong`;
                                             </span>
                                           ),
                                         },
-                                        "Outstanding": {
+                                        "Amount": {
                                           render: () => {
                                             // Color based on invoice status: red for unpaid, black for paid
                                             const isUnpaid = invoice.status === "Unpaid" || invoice.status === "Overdue" || invoice.status === "Pending" || !invoice.status;
@@ -14507,7 +14535,7 @@ Indian Muslim Association, Hong Kong`;
                                                   }}
                                                 />
                                               )}
-                                              {!isPaid && (
+                                              {/* {!isPaid && (
                                                 <ActionIcon
                                                   icon="fa-trash"
                                                   tooltip="Delete Invoice"
@@ -14519,7 +14547,7 @@ Indian Muslim Association, Hong Kong`;
                                                     }
                                                   }}
                                                 />
-                                              )}
+                                              )} */}
                                             </div>
                                           ),
                                         },
@@ -15248,7 +15276,7 @@ Indian Muslim Association, Hong Kong`;
                           <>
                             <Table
                               columns={[
-                                "Date",
+                                // "Date",
                                 "Member",
                                 "Member ID",
                                 "Year",
@@ -15257,8 +15285,9 @@ Indian Muslim Association, Hong Kong`;
                                 "Amount",
                                 "Method",
                                 "Receiver Name",
+                                "Payment Date",
                                 "Screenshot",
-                                "Status",
+                                // "Status",
                               ]}
                               rows={paginatedPayments.map((payment) => {
                                 const paymentId = payment._id || payment.id;
@@ -15286,6 +15315,13 @@ Indian Muslim Association, Hong Kong`;
                                     month: 'short',
                                     year: 'numeric'
                                   }) : "-"),
+                                   "Payment Date": payment.payment_date 
+                                            ? new Date(payment.payment_date).toLocaleDateString("en-GB", {
+                                                day: "2-digit",
+                                                month: "2-digit",
+                                                year: "numeric",
+                                              })
+                                            : "-",
                                   Member: member?.name || payment.memberId || "Unknown",
                                   Year: paymentYear,
                                   "Member ID": payment.memberId || "-",
@@ -16596,51 +16632,67 @@ Indian Muslim Association, Hong Kong`;
                           <label style={{ marginBottom: "20px", display: "block" }}>
                             <span><i className="fas fa-calendar-day" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Date <span style={{ color: "#ef4444" }}>*</span></span>
                             <input
-                              type="date"
-                              value={donationForm.date}
-                              onChange={(e) => {
-                                const selectedDate = e.target.value;
-                                setDonationForm({ ...donationForm, date: selectedDate });
-                                if (donationFieldErrors.date) {
-                                  setDonationFieldErrors(prev => ({ ...prev, date: false }));
-                                  if (currentInvalidDonationField === "date") {
-                                    setCurrentInvalidDonationField(null);
+                                type="date"
+                                value={donationForm.date}
+                                onClick={(e) => {
+                                  if (e.target.showPicker) {
+                                    e.target.showPicker();
                                   }
-                                }
-                              }}
-                              onBlur={(e) => {
-                                const dateValue = e.target.value;
-                                if (dateValue) {
-                                  const date = new Date(dateValue);
-                                  if (isNaN(date.getTime())) {
-                                    showToast("Invalid date format. Please enter a valid date (YYYY-MM-DD)", "error");
-                                    return;
+                                }}
+                                onFocus={(e) => {
+                                  if (e.target.showPicker) {
+                                    e.target.showPicker();
                                   }
-                                  // Validate date components
-                                  const [year, month, day] = dateValue.split('-').map(Number);
-                                  if (month < 1 || month > 12) {
-                                    showToast("Invalid month. Please enter a month between 01 and 12", "error");
-                                    return;
+                                }}
+                                onChange={(e) => {
+                                  const selectedDate = e.target.value;
+                                  setDonationForm({ ...donationForm, date: selectedDate });
+
+                                  if (donationFieldErrors.date) {
+                                    setDonationFieldErrors((prev) => ({ ...prev, date: false }));
+                                    if (currentInvalidDonationField === "date") {
+                                      setCurrentInvalidDonationField(null);
+                                    }
                                   }
-                                  if (day < 1 || day > 31) {
-                                    showToast("Invalid day. Please enter a valid day for the selected month", "error");
-                                    return;
+                                }}
+                                onBlur={(e) => {
+                                  const dateValue = e.target.value;
+                                  if (dateValue) {
+                                    const date = new Date(dateValue);
+                                    if (isNaN(date.getTime())) {
+                                      showToast(
+                                        "Invalid date format. Please enter a valid date (YYYY-MM-DD)",
+                                        "error"
+                                      );
+                                      return;
+                                    }
+
+                                    const [year, month, day] = dateValue.split("-").map(Number);
+
+                                    if (month < 1 || month > 12) {
+                                      showToast("Invalid month. Please enter a month between 01 and 12", "error");
+                                      return;
+                                    }
+
+                                    const daysInMonth = new Date(year, month, 0).getDate();
+                                    if (day < 1 || day > daysInMonth) {
+                                      showToast(
+                                        `Invalid date. ${month}/${year} only has ${daysInMonth} days`,
+                                        "error"
+                                      );
+                                      return;
+                                    }
                                   }
-                                  // Check if day is valid for the month
-                                  const daysInMonth = new Date(year, month, 0).getDate();
-                                  if (day > daysInMonth) {
-                                    showToast(`Invalid date. ${month}/${year} only has ${daysInMonth} days`, "error");
-                                    return;
-                                  }
-                                }
-                              }}
-                              required
-                              style={{
-                                borderRadius: "4px",
-                                width: "100%",
-                                border: donationFieldErrors.date ? "2px solid #ef4444" : undefined
-                              }}
-                            />
+                                }}
+                                required
+                                style={{
+                                  borderRadius: "4px",
+                                  width: "100%",
+                                  border: donationFieldErrors.date ? "2px solid #ef4444" : undefined,
+                                  cursor: "pointer",
+                                }}
+                              />
+
                           </label>
 
                           <label style={{ marginBottom: "20px", display: "block" }}>
@@ -17063,6 +17115,7 @@ Indian Muslim Association, Hong Kong`;
                                       
                                       // Prepare data for Excel export
                                       const rows = filteredDonations.map((d) => ({
+                                        "Receipt No": d.receipt_number || "",
                                         "Donor Name": d.donorName || "",
                                         "Donor Type": d.isMember ? "Member" : "Non-Member",
                                         "Donation Type": d.donationType || "Other",
@@ -17080,6 +17133,7 @@ Indian Muslim Association, Hong Kong`;
 
                                       // Add headers
                                       worksheet.columns = [
+                                        { header: "Receipt No", key: "Receipt No", width: 12 },
                                         { header: "Donor Name", key: "Donor Name", width: 25 },
                                         { header: "Donor Type", key: "Donor Type", width: 12 },
                                         { header: "Donation Type", key: "Donation Type", width: 15 },
@@ -17116,7 +17170,7 @@ Indian Muslim Association, Hong Kong`;
                               </div>
 
                               <Table
-                                columns={["Donor Name", "Donor Type", "Donation Type", "Amount", "Method", "Screenshot", "Notes", "Actions"]}
+                                columns={["Receipt No", "Donor Name", "Donor Type", "Donation Type", "Amount", "Method", "Screenshot", "Notes", "Actions"]}
                                 rows={paginatedDonations.map((donation) => {
                                   if (!donation) return null;
                                   const donationDate =
@@ -17155,6 +17209,7 @@ Indian Muslim Association, Hong Kong`;
                                   const donorPhone = getDonorPhone();
 
                                   return {
+                                    "Receipt No": donation.receipt_number || "-",
                                     "Donor Name": donation.donorName || "Unknown",
                                     "Donor Type": donation.isMember ? (
                                       <span className="badge badge-active">Member</span>
@@ -17249,8 +17304,8 @@ Indian Muslim Association, Hong Kong`;
                                             onClick={(e) => {
                                               e.preventDefault();
                                               e.stopPropagation();
-                                              // const apiUrl = import.meta.env.VITE_API_URL || "";
-                                              const apiUrl = "http://localhost:4000";
+                                              const apiUrl = import.meta.env.VITE_API_URL || "";
+                                              // const apiUrl = "http://localhost:4000";
                                               const donationParam = donation?._id || donation?.id;
                                               const pdfUrl = `${apiUrl}/api/donations/${donationParam}/pdf-receipt/view`;
                                               // const pdfUrl = `${apiUrl}/api/donations/${donationParam}/utils/pdfDonation/donationReceiptTemplate/view`;
@@ -19611,7 +19666,89 @@ Indian Muslim Association, Hong Kong`;
                   </div>
                 )}
 
-                {/* Attachment Upload - Required for both payment methods */}
+                {/* Payment Date - Required for both payment methods */}
+                {(paymentModalData.payment_type === "cash" || paymentModalData.payment_type === "online") && (
+                  <div>
+                    <label style={{
+                      display: "block",
+                      fontSize: "0.875rem",
+                      fontWeight: "600",
+                      color: "#333",
+                      marginBottom: "8px"
+                    }}>
+                      Payment Date <span style={{ color: "#ef4444" }}>*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={paymentModalData.payment_date || ""}
+                      onClick={(e) => {
+                        if (e.target.showPicker) {
+                          e.target.showPicker();
+                        }
+                      }}
+                      onFocus={(e) => {
+                        if (e.target.showPicker) {
+                          e.target.showPicker();
+                        }
+
+                        if (
+                          !paymentModalErrors.payment_date ||
+                          currentInvalidPaymentModalField !== "payment_date"
+                        ) {
+                          e.target.style.borderColor = "#5a31ea";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                        }
+                      }}
+                      onChange={(e) => {
+                        setPaymentModalData({
+                          ...paymentModalData,
+                          payment_date: e.target.value,
+                        });
+
+                        if (paymentModalErrors.payment_date) {
+                          setPaymentModalErrors((prev) => ({
+                            ...prev,
+                            payment_date: false,
+                          }));
+
+                          if (currentInvalidPaymentModalField === "payment_date") {
+                            setCurrentInvalidPaymentModalField(null);
+                          }
+                        }
+                      }}
+                      onBlur={(e) => {
+                        if (
+                          paymentModalErrors.payment_date &&
+                          currentInvalidPaymentModalField === "payment_date"
+                        ) {
+                          e.target.style.borderColor = "#ef4444";
+                          e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
+                        } else {
+                          e.target.style.borderColor = "#e0e0e0";
+                          e.target.style.boxShadow = "none";
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        border:
+                          paymentModalErrors.payment_date &&
+                          currentInvalidPaymentModalField === "payment_date"
+                            ? "2px solid #ef4444"
+                            : "1px solid #e0e0e0",
+                        borderRadius: "8px",
+                        fontSize: "0.875rem",
+                        background: "#fff",
+                        outline: "none",
+                        transition: "border-color 0.2s",
+                        cursor: "pointer",
+                      }}
+                    />
+
+                  </div>
+                )}
+
+                {/* Attachment Upload - Optional for both payment methods */}
                 {(paymentModalData.payment_type === "cash" || paymentModalData.payment_type === "online") && (
                   <div>
                     <label style={{
@@ -19772,8 +19909,9 @@ Indian Muslim Association, Hong Kong`;
                         reference: "",
                         selectedAdminId: "",
                         adminMobile: "",
+                        payment_date: "",
                       });
-                      setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                      setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, payment_date: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
                       setCurrentInvalidPaymentModalField(null);
                     }}
                     disabled={uploadingPaymentModal}
@@ -19790,7 +19928,7 @@ Indian Muslim Association, Hong Kong`;
                         // Progressive validation for payment modal
                         const validatePaymentModal = () => {
                           // Define field order for validation (selectedAdminId removed as field is hidden)
-                          const fieldOrder = ["payment_type", "method", "receiver_name"];
+                          const fieldOrder = ["payment_type", "method", "receiver_name", "payment_date"];
 
                           // If we have a current invalid field, check if it's now valid
                           if (currentInvalidPaymentModalField) {
@@ -19811,6 +19949,9 @@ Indian Muslim Association, Hong Kong`;
                             } else if (currentInvalidPaymentModalField === "receiver_name" && !paymentModalData.receiver_name) {
                               isValid = false;
                               errorMsg = "Receiver name is required";
+                            } else if (currentInvalidPaymentModalField === "payment_date" && !paymentModalData.payment_date) {
+                              isValid = false;
+                              errorMsg = "Payment date is required";
                             }
 
                             if (isValid) {
@@ -19842,6 +19983,9 @@ Indian Muslim Association, Hong Kong`;
                             } else if (field === "receiver_name" && !paymentModalData.receiver_name) {
                               isValid = false;
                               errorMsg = "Receiver name is required";
+                            } else if (field === "payment_date" && !paymentModalData.payment_date) {
+                              isValid = false;
+                              errorMsg = "Payment date is required";
                             }
 
                             if (!isValid) {
@@ -19850,6 +19994,7 @@ Indian Muslim Association, Hong Kong`;
                                 payment_type: false,
                                 method: false,
                                 receiver_name: false,
+                                payment_date: false,
                                 image: false,
                                 reference: false,
                                 selectedAdminId: false,
@@ -19869,6 +20014,10 @@ Indian Muslim Association, Hong Kong`;
                                   );
                                   receiverInput?.focus();
                                   receiverInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                } else if (field === "payment_date") {
+                                  const dateInput = document.querySelector('input[type="date"]');
+                                  dateInput?.focus();
+                                  dateInput?.scrollIntoView({ behavior: "smooth", block: "center" });
                                 }
                               }, 100);
 
@@ -19881,6 +20030,7 @@ Indian Muslim Association, Hong Kong`;
                             payment_type: false,
                             method: false,
                             receiver_name: false,
+                            payment_date: false,
                             image: false,
                             reference: false,
                             selectedAdminId: false,
@@ -19937,6 +20087,7 @@ Indian Muslim Association, Hong Kong`;
                                 payment_type: paymentModalData.payment_type,
                                 method: finalMethod,
                                 receiver_name: paymentModalData.receiver_name,
+                                payment_date: paymentModalData.payment_date,
                               });
 
                               // Close modal and reset AFTER payment is successfully processed
@@ -19947,6 +20098,7 @@ Indian Muslim Association, Hong Kong`;
                                 method: "",
                                 customMethod: "",
                                 receiver_name: "",
+                                payment_date: "",
                                 imageFile: null,
                                 imagePreview: null,
                                 imageUrl: "",
@@ -19954,7 +20106,7 @@ Indian Muslim Association, Hong Kong`;
                                 selectedAdminId: "",
                                 adminMobile: "",
                               });
-                              setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                              setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, payment_date: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
                               setCurrentInvalidPaymentModalField(null);
                               setUploadingPaymentModal(false);
 
@@ -19972,6 +20124,7 @@ Indian Muslim Association, Hong Kong`;
                                   method: "",
                                   customMethod: "",
                                   receiver_name: "",
+                                  payment_date: "",
                                   imageFile: null,
                                   imagePreview: null,
                                   imageUrl: "",
@@ -19979,7 +20132,7 @@ Indian Muslim Association, Hong Kong`;
                                   selectedAdminId: "",
                                   adminMobile: "",
                                 });
-                                setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
+                                setPaymentModalErrors({ payment_type: false, method: false, receiver_name: false, payment_date: false, image: false, reference: false, selectedAdminId: false, adminMobile: false });
                                 setCurrentInvalidPaymentModalField(null);
                                 setUploadingPaymentModal(false);
                               }, 100);
@@ -21587,7 +21740,7 @@ Thank you for supporting the IMA community!`;
                       className="primary-btn"
                       onClick={() => {
                         if (!donationConfirmationChannel.whatsapp) {
-                          showToast("Please select WhatsApp", "error");
+                          showToast("Please select a communication channel", "error");
                           return;
                         }
 

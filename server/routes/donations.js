@@ -2,6 +2,7 @@ import express from "express";
 import { ensureConnection } from "../config/database.js";
 import DonationModel from "../models/Donation.js";
 import UserModel from "../models/User.js";
+import ReceiptCounterModel from "../models/ReceiptCounter.js";
 import { emitDonationUpdate } from "../config/socket.js";
 
 const router = express.Router();
@@ -23,6 +24,9 @@ router.post("/", async (req, res) => {
   try {
     await ensureConnection();
     
+    // Generate receipt number
+    const receiptNumber = await ReceiptCounterModel.getNextReceiptNumber();
+    
     const donationData = {
       ...req.body,
       date: req.body.date || new Date().toLocaleDateString("en-GB", {
@@ -30,6 +34,7 @@ router.post("/", async (req, res) => {
         month: "short",
         year: "numeric",
       }),
+      receipt_number: receiptNumber,
     };
     
     const newDonation = new DonationModel(donationData);

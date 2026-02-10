@@ -171,6 +171,9 @@ router.post("/approve-invoice", requireFinanceRole, async (req, res) => {
   try {
     await ensureConnection();
 
+    console.log("🔍 DEBUG: /approve-invoice route received body:", JSON.stringify(req.body, null, 2));
+    console.log("🔍 DEBUG: payment_date from request:", req.body.payment_date, "Type:", typeof req.body.payment_date);
+
     const { payment, invoice, member } = await approveInvoicePayment({
       invoiceRef: req.body.invoiceId,
       memberRef: req.body.memberId,
@@ -181,6 +184,7 @@ router.post("/approve-invoice", requireFinanceRole, async (req, res) => {
       reference: req.body.reference,
       screenshot: req.body.screenshot,
       date: req.body.date,
+      payment_date: req.body.payment_date,
       paidToAdmin: req.body.paidToAdmin,
       paidToAdminName: req.body.paidToAdminName,
       approvedBy: req.body.approvedBy || req.body.adminName || req.body.adminId,
@@ -201,6 +205,16 @@ router.post("/approve-invoice", requireFinanceRole, async (req, res) => {
     const receiptPdfUrl = invoice?._id
       ? getReceiptWhatsAppUrl(invoice._id)
       : null;
+    
+    console.log("📤 DEBUG: Returning invoice in response with payment_date:", invoice?.payment_date);
+    console.log("📤 DEBUG: Full invoice object being returned:", JSON.stringify({
+      _id: invoice._id,
+      id: invoice.id,
+      status: invoice.status,
+      payment_date: invoice.payment_date,
+      last_payment_date: invoice.last_payment_date,
+    }, null, 2));
+    
     res.json({ success: true, payment, invoice, member, receiptPdfUrl });
   } catch (error) {
     console.error("Error approving invoice payment:", error);
