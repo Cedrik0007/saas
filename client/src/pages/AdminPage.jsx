@@ -13946,9 +13946,18 @@ Indian Muslim Association, Hong Kong`;
                       const amount = parseFloat((inv?.amount || "0").replace(/[^0-9.]/g, '') || 0);
                       return sum + amount;
                     }, 0);
-                    const totalPaidAmount = paidInvoices.reduce((sum, inv) => {
-                      const amount = parseFloat((inv?.amount || "0").replace(/[^0-9.]/g, '') || 0);
-                      return sum + amount;
+                    // Total Collected should come from actual payments, not invoice amounts
+                    // Filter payments that belong to members in the members list and are completed/paid
+                    const allPayments = (payments || []).filter(payment => 
+                      isPaymentMemberInList(payment)
+                    );
+                    const totalPaidAmount = allPayments.reduce((sum, payment) => {
+                      // Only count completed or paid payments
+                      if (payment.status === "Completed" || payment.status === "Paid") {
+                        const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+                        return sum + amount;
+                      }
+                      return sum;
                     }, 0);
 
                     return (
