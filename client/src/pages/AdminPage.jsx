@@ -37,13 +37,13 @@ function buildInvoiceFormDefaults(member) {
   const normalizedType = normalizeSubscriptionType(member?.subscriptionType) || fallbackType;
   let amount = SUBSCRIPTION_TYPE_AMOUNTS[normalizedType] ?? SUBSCRIPTION_TYPE_AMOUNTS[fallbackType];
 
-  // Invoice rules: Lifetime Member + Janaza Fund charges HK$5250 once, then HK$250/year.
-  if (
-    normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND &&
-    member &&
-    member.lifetimeMembershipPaid === false
-  ) {
-    amount = 5250;
+  // Invoice creation only allows:
+  // - Annual Members: HK$500/year
+  // - Lifetime Members: HK$250/year (Janaza Fund renewal only)
+  // Note: HK$5250 is never charged in invoice creation - it's only for member registration/upgrade
+  if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND && member) {
+    // Always charge only HK$250 for manual invoices (annual Janaza Fund)
+    amount = 250;
   }
   const subscriptionYear = (member && member.subscriptionYear) || new Date().getFullYear().toString();
 
@@ -773,7 +773,9 @@ function AdminPage() {
         return [{ type: SUBSCRIPTION_TYPES.ANNUAL_MEMBER, label: "Annual Member", amount: 500 }];
       }
       if (t === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
-        return [{ type: SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND, label: "Janaza Fund (Renewal)", amount: 250 }];
+        // Manual invoice creation only allows HK$250 for Lifetime Members (annual Janaza Fund renewal)
+        // HK$5250 is only charged during member registration/upgrade, not in invoice creation
+        return [{ type: SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND, label: "Lifetime Member", amount: 250 }];
       }
       return []; // Pure lifetime (LIFETIME_JANAZA_FUND) - no Create Invoice
     };
@@ -5370,7 +5372,7 @@ Indian Muslim Association, Hong Kong`;
     };
 
     // Invoice CRUD Operations
-    const handleAddInvoice = (e) => {
+    const handleAddInvoice = async (e) => {
       e.preventDefault();
 
       const member = members.find((m) => m.id === invoiceForm.memberId);
@@ -5448,21 +5450,26 @@ Indian Muslim Association, Hong Kong`;
       const invoicePayload = { ...newInvoice };
       delete invoicePayload.amount;
 
-      addInvoice(invoicePayload);
+      try {
+        await addInvoice(invoicePayload);
 
-      // Store the created invoice and show success card
-      setLastCreatedInvoice(newInvoice);
-      setShowInvoiceSuccessCard(true);
+        // Store the created invoice and show success card
+        setLastCreatedInvoice(newInvoice);
+        setShowInvoiceSuccessCard(true);
 
-      resetInvoiceForm();
-      setInvoiceFieldErrors({
-        memberId: false,
-        subscriptionYear: false,
-        amount: false,
-      });
-      setCurrentInvalidInvoiceField(null);
-      setShowInvoiceForm(false);
-      showToast("Invoice created successfully!");
+        resetInvoiceForm();
+        setInvoiceFieldErrors({
+          memberId: false,
+          subscriptionYear: false,
+          amount: false,
+        });
+        setCurrentInvalidInvoiceField(null);
+        setShowInvoiceForm(false);
+        showToast("Invoice created successfully!");
+      } catch (error) {
+        showToast(error.message || "Failed to create invoice", "error");
+        console.error("Error creating invoice:", error);
+      }
     };
 
    const updateInvoiceInSelectedTable = (updatedInvoice, receiverName) => {
@@ -14403,7 +14410,7 @@ Indian Muslim Association, Hong Kong`;
                                 <div style={{ marginBottom: "20px" }}>
                                   <Table
                                     // columns={["Name", "Native Place", "Year", "Subscription Type", "Joined Year", "Status", "Outstanding", "Actions"]}
-                                    columns={["Name", "Native Place", "Year", "Subscription Type","Payment Date", "Status", "Amount", "Actions"]}
+                                    columns={["Receipt No", "Name", "Native Place", "Year", "Subscription Type","Payment Date", "Status", "Amount", "Actions"]}
                                     rows={paginatedInvoices.map((invoice) => {
                                       // Filter out invoices where member is not found in members list
                                       const isPaid = invoice.status === "Paid" || invoice.status === "Completed";
@@ -14411,6 +14418,7 @@ Indian Muslim Association, Hong Kong`;
 
                                       // Get member from members list using shared invoice-member matcher
                                       let member = (members || []).find((m) => matchesInvoiceToMember(invoice, m));
+                                      // let receiptNo = member?.receiptNo || "Unknown";
                                       
                                       // If member not found in members list, skip this invoice (shouldn't happen due to filter, but double-check)
                                       if (!member) {
@@ -14448,6 +14456,13 @@ Indian Muslim Association, Hong Kong`;
                                         outstandingAmount = parseFloat(invoice.amount?.replace(/[^0-9.]/g, "") || 0);
                                       }
                                       // If paid but no payment record found, outstandingAmount remains 0
+
+                                      const cleanAmount = Number(
+                                        String(invoice.amount).replace(/[^0-9.-]+/g, "")
+                                      );
+
+                                      // {formatCurrency(cleanAmount)}
+
                                       
                                       // Extract year from invoice period
                                       const periodStr = String(invoice.period || "").trim();
@@ -14455,6 +14470,8 @@ Indian Muslim Association, Hong Kong`;
                                       const subYear = yearMatch ? yearMatch[0] : "-";
 
                                       return {
+                                        // "Receipt No.": receiptNo || "-",
+                                        "Receipt No": isPaid ? invoice.receiptNumber : "-",
                                         "Name": member.name || "Unknown",
                                         "Native Place": member?.native || "-",
                                         "Year": subYear,
@@ -14494,7 +14511,7 @@ Indian Muslim Association, Hong Kong`;
                                                     fontWeight: fontWeight,
                                                 }}
                                               >
-                                                  {formatCurrency(outstandingAmount)}
+                                                  {formatCurrency(cleanAmount || 0)}
                                               </span>
                                             </div>
                                             );

@@ -886,7 +886,13 @@ const fetchReminderLogs = useCallback(async () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sanitizedInvoice),
       });
-      if (!response.ok) throw new Error('Failed to add invoice');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || errorData.message || `Failed to add invoice (${response.status})`;
+        const error = new Error(errorMessage);
+        error.status = response.status;
+        throw error;
+      }
       const newInvoice = await response.json();
       setInvoices([newInvoice, ...invoices]);
       console.log('✓ Invoice added to server:', newInvoice);

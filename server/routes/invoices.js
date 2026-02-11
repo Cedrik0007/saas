@@ -6,7 +6,7 @@ import UserModel from "../models/User.js";
 import PaymentModel from "../models/Payment.js";
 import ReminderLogModel from "../models/ReminderLog.js";
 import { calculateAndUpdateMemberBalance } from "../utils/balance.js";
-import { calculateFees } from "../utils/subscriptionTypes.js";
+import { calculateFees, normalizeSubscriptionType, SUBSCRIPTION_TYPES } from "../utils/subscriptionTypes.js";
 import { generateSubscriptionInvoices } from "../services/invoiceService.js";
 import EmailSettingsModel from "../models/EmailSettings.js";
 import EmailTemplateModel from "../models/EmailTemplate.js";
@@ -216,8 +216,29 @@ router.post("/", async (req, res) => {
     req.body.memberId = memberId;
     console.log(`✓ Invoice creation: Validated member exists (id=${memberExists.id}, name=${memberExists.name})`);
 
-    const { membershipFee, janazaFee, totalFee } =
-      calculateFees(memberExists.subscriptionType, memberExists.lifetimeMembershipPaid);
+    // For manual invoice creation, ALWAYS use annual-only amounts:
+    // - Annual Member: HK$500/year
+    // - Lifetime Member: HK$250/year (Janaza Fund only, never 5250)
+    // HK$5250 is NEVER charged in invoice creation (only during member registration/upgrade)
+    const normalizedType = normalizeSubscriptionType(memberExists.subscriptionType);
+    let membershipFee = 0;
+    let janazaFee = 0;
+    let totalFee = 0;
+
+    if (normalizedType === SUBSCRIPTION_TYPES.ANNUAL_MEMBER) {
+      membershipFee = 500;
+      janazaFee = 0;
+      totalFee = 500;
+    } else if (normalizedType === SUBSCRIPTION_TYPES.LIFETIME_MEMBER_JANAZA_FUND) {
+      // For Lifetime Members in invoice creation: always charge only the annual Janaza Fund
+      membershipFee = 0;
+      janazaFee = 250;
+      totalFee = 250;
+    } else {
+      return res.status(400).json({
+        error: `Cannot create invoice for member type: ${normalizedType}`
+      });
+    }
 
     // Frontend fee fields are ignored; backend enforces canonical values
     req.body.membershipFee = membershipFee;
