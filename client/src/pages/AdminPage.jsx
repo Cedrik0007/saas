@@ -760,6 +760,7 @@ function AdminPage() {
     });
 
     const [invoiceForm, setInvoiceForm] = useState(() => buildInvoiceFormDefaults());
+    const [isInvoiceSubmitting, setIsInvoiceSubmitting] = useState(false);
 
     const resetInvoiceForm = () => {
       setInvoiceForm(buildInvoiceFormDefaults());
@@ -1425,6 +1426,7 @@ function AdminPage() {
     const [invoiceSearchTerm, setInvoiceSearchTerm] = useState(""); // Search filter for invoices
     const [invoiceYearFilter, setInvoiceYearFilter] = useState("All"); // Year filter for invoices
     const [invoiceSubscriptionTypeFilter, setInvoiceSubscriptionTypeFilter] = useState("All"); // All, Annual Member, Lifetime Janaza Fund, Lifetime Member + Janaza Fund
+    const [invoiceMemberTypeFilter, setInvoiceMemberTypeFilter] = useState("All"); // All, Annual, Lifetime — filters by member display ID prefix (AM/LM)
     const [reportFilter, setReportFilter] = useState("all"); // all, payments, donations
     const [donorTypeFilter, setDonorTypeFilter] = useState("all"); // all, member, non-member
     const [transactionMethodFilter, setTransactionMethodFilter] = useState("All"); // Payment method filter for transactions: All, Cash, FPS, Alipay, Bank Deposit, Other
@@ -1497,6 +1499,7 @@ function AdminPage() {
     const [outstandingMembersPageSize, setOutstandingMembersPageSize] = useState(5);
     const [outstandingMembersSearch, setOutstandingMembersSearch] = useState(""); // Search filter for outstanding members
     const [outstandingMembersYearFilter, setOutstandingMembersYearFilter] = useState("All"); // Year filter for outstanding members
+    const [outstandingMembersTypeFilter, setOutstandingMembersTypeFilter] = useState("All"); // All, Annual, Lifetime — filters by member display ID prefix (AM/LM)
     const [invoicesPage, setInvoicesPage] = useState(1);
     const [invoicesPageSize, setInvoicesPageSize] = useState(10);
     const [memberDetailInvoicesPage, setMemberDetailInvoicesPage] = useState(1);
@@ -1504,6 +1507,7 @@ function AdminPage() {
     const [loadingMemberInvoices, setLoadingMemberInvoices] = useState(false);
     const [remindersStatusFilter, setRemindersStatusFilter] = useState("All"); // All, Delivered, Failed, Pending
     const [remindersChannelFilter, setRemindersChannelFilter] = useState("All"); // All, Email, WhatsApp
+    const [remindersMemberTypeFilter, setRemindersMemberTypeFilter] = useState("All"); // All, Annual, Lifetime — filters by member display ID prefix (AM/LM)
 
     // Sync URL with activeSection and memberId (for member-detail deep linking)
     useEffect(() => {
@@ -2897,6 +2901,500 @@ function AdminPage() {
       }
     };
 
+    // Export all Members to Excel (complete database export without filters)
+    const handleExportAllMembersToExcel = async () => {
+      try {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Members");
+
+        // Set column widths
+        worksheet.columns = [
+          { header: "Member ID", key: "memberId", width: 15 },
+          { header: "Name", key: "name", width: 20 },
+          { header: "Email", key: "email", width: 25 },
+          { header: "Phone", key: "phone", width: 15 },
+          { header: "Native Place", key: "nativePlace", width: 20 },
+          { header: "Subscription Type", key: "subscriptionType", width: 20 },
+          { header: "Subscription Year", key: "subscriptionYear", width: 15 },
+          { header: "Status", key: "status", width: 12 },
+          { header: "Balance", key: "balance", width: 15 },
+          { header: "Joined Date", key: "joinedDate", width: 15 },
+          { header: "Notes", key: "notes", width: 20 }
+        ];
+
+        // Add header row styling
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: "FFFFFF" } };
+        headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "4F46E5" } };
+        headerRow.alignment = { horizontal: "center", vertical: "center" };
+
+        // Add all members data
+        (members || []).forEach((member) => {
+          worksheet.addRow({
+            memberId: member.id || "-",
+            name: member.name || "-",
+            email: member.email || "-",
+            phone: member.phone || "-",
+            nativePlace: member.native || "-",
+            subscriptionType: normalizeSubscriptionType(member.subscriptionType) || "-",
+            subscriptionYear: member.subscriptionYear || "-",
+            status: member.status || "Active",
+            balance: member.balance || "HK$0",
+            joinedDate: member.joinedDate ? new Date(member.joinedDate).toLocaleDateString() : "-",
+            notes: member.notes || "-"
+          });
+        });
+
+        // Format data rows
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber !== 1) {
+            row.eachCell((cell) => {
+              cell.alignment = { horizontal: "left", vertical: "center" };
+              cell.border = {
+                top: { style: "thin", color: { argb: "E5E7EB" } },
+                left: { style: "thin", color: { argb: "E5E7EB" } },
+                bottom: { style: "thin", color: { argb: "E5E7EB" } },
+                right: { style: "thin", color: { argb: "E5E7EB" } }
+              };
+            });
+          }
+        });
+
+        // Add summary section
+        const summaryRowStart = (members || []).length + 3;
+        worksheet.getCell(`A${summaryRowStart}`).value = "Summary";
+        worksheet.getCell(`A${summaryRowStart}`).font = { bold: true, size: 12 };
+
+        let summaryRow = summaryRowStart + 1;
+        worksheet.getCell(`A${summaryRow}`).value = "Total Members";
+        worksheet.getCell(`B${summaryRow}`).value = (members || []).length;
+        summaryRow++;
+
+        const activeMembers = (members || []).filter(m => m.status !== "Inactive").length;
+        worksheet.getCell(`A${summaryRow}`).value = "Active Members";
+        worksheet.getCell(`B${summaryRow}`).value = activeMembers;
+
+        // Generate filename with timestamp
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0];
+        const filename = `members_${dateStr}.xlsx`;
+
+        // Save the workbook
+        await workbook.xlsx.writeBuffer().then((buffer) => {
+          const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+
+        showToast(`✓ Exported ${(members || []).length} members to Excel`, "success");
+      } catch (error) {
+        console.error("Error exporting members to Excel:", error);
+        showToast("Failed to export members to Excel", "error");
+      }
+    };
+
+    // Export all Invoices to Excel (for currently available members without pagination limits)
+    const handleExportAllInvoicesToExcel = async () => {
+      try {
+        // Get list of member IDs currently in the system
+        const memberIds = new Set((members || []).map(m => m.id).filter(Boolean));
+        
+        // Filter invoices to only include those for members in the system
+        const filteredInvoices = (invoices || []).filter(invoice => 
+          memberIds.has(invoice.memberId)
+        );
+        
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Invoices");
+
+        // Set column widths
+        worksheet.columns = [
+          { header: "Invoice ID", key: "invoiceId", width: 15 },
+          { header: "Member ID", key: "memberId", width: 12 },
+          { header: "Member Name", key: "memberName", width: 20 },
+          { header: "Period", key: "period", width: 12 },
+          { header: "Amount", key: "amount", width: 12 },
+          { header: "Due Date", key: "dueDate", width: 12 },
+          { header: "Status", key: "status", width: 12 },
+          { header: "Invoice Type", key: "invoiceType", width: 15 },
+          { header: "Subscription Type", key: "subscriptionType", width: 20 },
+          { header: "Created Date", key: "createdDate", width: 12 },
+          { header: "Paid Date", key: "paidDate", width: 12 },
+          { header: "Notes", key: "notes", width: 20 }
+        ];
+
+        // Add header row styling
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: "FFFFFF" } };
+        headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "059669" } };
+        headerRow.alignment = { horizontal: "center", vertical: "center" };
+
+        // Add filtered invoices data
+        filteredInvoices.forEach((invoice) => {
+          const member = findMemberByBusinessId(invoice.memberId);
+          worksheet.addRow({
+            invoiceId: invoice.displayId || invoice._id || "-",
+            memberId: invoice.memberId || "-",
+            memberName: member?.name || "-",
+            period: invoice.period || "-",
+            amount: invoice.amount || "HK$0",
+            dueDate: invoice.due || "-",
+            status: invoice.status || "-",
+            invoiceType: invoice.invoiceType || "-",
+            subscriptionType: normalizeSubscriptionType(invoice.subscriptionType) || "-",
+            createdDate: invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString() : "-",
+            paidDate: invoice.paidAt ? new Date(invoice.paidAt).toLocaleDateString() : "-",
+            notes: invoice.notes || "-"
+          });
+        });
+
+        // Format data rows
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber !== 1) {
+            row.eachCell((cell) => {
+              cell.alignment = { horizontal: "left", vertical: "center" };
+              cell.border = {
+                top: { style: "thin", color: { argb: "E5E7EB" } },
+                left: { style: "thin", color: { argb: "E5E7EB" } },
+                bottom: { style: "thin", color: { argb: "E5E7EB" } },
+                right: { style: "thin", color: { argb: "E5E7EB" } }
+              };
+            });
+          }
+        });
+
+        // Add summary section
+        const summaryRowStart = filteredInvoices.length + 3;
+        worksheet.getCell(`A${summaryRowStart}`).value = "Summary";
+        worksheet.getCell(`A${summaryRowStart}`).font = { bold: true, size: 12 };
+
+        let summaryRow = summaryRowStart + 1;
+        const totalAmount = filteredInvoices.reduce((sum, inv) => {
+          const amountStr = String(inv.amount || '0').replace(/HK\$|\$|,/g, '').trim();
+          return sum + (parseFloat(amountStr) || 0);
+        }, 0);
+
+        worksheet.getCell(`A${summaryRow}`).value = "Total Invoices";
+        worksheet.getCell(`B${summaryRow}`).value = filteredInvoices.length;
+        summaryRow++;
+
+        const paidInvoices = filteredInvoices.filter(inv => inv.status === "Paid").length;
+        worksheet.getCell(`A${summaryRow}`).value = "Paid Invoices";
+        worksheet.getCell(`B${summaryRow}`).value = paidInvoices;
+        summaryRow++;
+
+        const unpaidInvoices = filteredInvoices.filter(inv => inv.status === "Unpaid" || inv.status === "Overdue").length;
+        worksheet.getCell(`A${summaryRow}`).value = "Unpaid/Overdue Invoices";
+        worksheet.getCell(`B${summaryRow}`).value = unpaidInvoices;
+        summaryRow++;
+
+        worksheet.getCell(`A${summaryRow}`).value = "Total Amount";
+        worksheet.getCell(`B${summaryRow}`).value = `HK$${formatNumber(totalAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+        // Generate filename with timestamp
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0];
+        const filename = `invoices_${dateStr}.xlsx`;
+
+        // Save the workbook
+        await workbook.xlsx.writeBuffer().then((buffer) => {
+          const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+
+        showToast(`✓ Exported ${filteredInvoices.length} invoices for ${(members || []).length} members to Excel`, "success");
+      } catch (error) {
+        console.error("Error exporting invoices to Excel:", error);
+        showToast("Failed to export invoices to Excel", "error");
+      }
+    };
+
+    // Export all Payments to Excel (for currently available members without pagination limits)
+    const handleExportAllPaymentsToExcel = async () => {
+      try {
+        // Get list of member IDs currently in the system
+        const memberIds = new Set((members || []).map(m => m.id).filter(Boolean));
+        
+        // Filter payments to only include those for members in the system
+        const filteredPayments = (payments || []).filter(payment => 
+          memberIds.has(payment.memberId)
+        );
+        
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Payments");
+
+        // Set column widths
+        worksheet.columns = [
+          { header: "Date", key: "date", width: 15 },
+          { header: "Member", key: "member", width: 20 },
+          { header: "Member ID", key: "memberId", width: 12 },
+          { header: "Year", key: "year", width: 8 },
+          { header: "Native Place", key: "nativePlace", width: 18 },
+          { header: "Invoice ID", key: "invoiceId", width: 15 },
+          { header: "Amount", key: "amount", width: 12 },
+          { header: "Method", key: "method", width: 15 },
+          { header: "Type", key: "type", width: 10 },
+          { header: "Receiver Name", key: "receiverName", width: 18 },
+          { header: "Reference", key: "reference", width: 15 },
+          { header: "Status", key: "status", width: 12 }
+        ];
+
+        // Add header row styling
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: "FFFFFF" } };
+        headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "DC2626" } };
+        headerRow.alignment = { horizontal: "center", vertical: "center" };
+
+        // Add filtered payments data
+        filteredPayments.forEach((payment) => {
+          const paymentDate = payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+          }) : "-");
+
+          const paymentDateObj = payment.date || payment.createdAt;
+          let paymentYear = "-";
+          if (paymentDateObj) {
+            try {
+              const date = new Date(paymentDateObj);
+              paymentYear = date.getFullYear().toString();
+            } catch (e) {
+              paymentYear = "-";
+            }
+          }
+
+          const member = findMemberByBusinessId(payment.memberId);
+          const memberNative = member?.native || "-";
+          const paymentType = payment.payment_type || (payment.method === "Cash" ? "Cash" : "Online");
+
+          worksheet.addRow({
+            date: paymentDate,
+            member: member?.name || payment.memberId || "Unknown",
+            memberId: payment.memberId || "-",
+            year: paymentYear,
+            nativePlace: memberNative,
+            invoiceId: payment.invoiceId || "-",
+            amount: `HK$${formatNumber(parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0), {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}`,
+            method: getPaymentMethodDisplay(payment),
+            type: paymentType,
+            receiverName: payment.receiver_name || payment.paidToAdminName || "-",
+            reference: payment.reference || "-",
+            status: payment.status || "-"
+          });
+        });
+
+        // Format data rows
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber !== 1) {
+            row.eachCell((cell) => {
+              cell.alignment = { horizontal: "left", vertical: "center" };
+              cell.border = {
+                top: { style: "thin", color: { argb: "E5E7EB" } },
+                left: { style: "thin", color: { argb: "E5E7EB" } },
+                bottom: { style: "thin", color: { argb: "E5E7EB" } },
+                right: { style: "thin", color: { argb: "E5E7EB" } }
+              };
+            });
+          }
+        });
+
+        // Add summary section
+        const summaryRowStart = filteredPayments.length + 3;
+        worksheet.getCell(`A${summaryRowStart}`).value = "Summary";
+        worksheet.getCell(`A${summaryRowStart}`).font = { bold: true, size: 12 };
+
+        let summaryRow = summaryRowStart + 1;
+        const totalAmount = filteredPayments.reduce((sum, payment) => {
+          const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+          return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
+
+        const completedPayments = filteredPayments.filter(p => p.status === "Completed" || p.status === "Paid");
+        worksheet.getCell(`A${summaryRow}`).value = "Total Payments";
+        worksheet.getCell(`B${summaryRow}`).value = filteredPayments.length;
+        summaryRow++;
+
+        worksheet.getCell(`A${summaryRow}`).value = "Total Amount";
+        worksheet.getCell(`B${summaryRow}`).value = `HK$${formatNumber(totalAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        summaryRow++;
+
+        worksheet.getCell(`A${summaryRow}`).value = "Completed Payments";
+        worksheet.getCell(`B${summaryRow}`).value = completedPayments.length;
+        summaryRow++;
+
+        const completedAmount = completedPayments.reduce((sum, payment) => {
+          const amount = parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0);
+          return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
+
+        worksheet.getCell(`A${summaryRow}`).value = "Completed Amount";
+        worksheet.getCell(`B${summaryRow}`).value = `HK$${formatNumber(completedAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+        // Generate filename with timestamp
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0];
+        const filename = `payments_complete_${dateStr}.xlsx`;
+
+        // Save the workbook
+        await workbook.xlsx.writeBuffer().then((buffer) => {
+          const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+
+        showToast(`✓ Exported ${filteredPayments.length} payments for ${(members || []).length} members to Excel`, "success");
+      } catch (error) {
+        console.error("Error exporting payments to Excel:", error);
+        showToast("Failed to export payments to Excel", "error");
+      }
+    };
+
+    // Export all Donations to Excel (all donations from backend without restrictions)
+    const handleExportAllDonationsToExcel = async () => {
+      try {
+        // Export ALL donations from backend without any restrictions
+        const filteredDonations = (donations || []).filter(donation => donation);
+        
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Donations");
+
+        // Set column widths
+        worksheet.columns = [
+          { header: "Date", key: "date", width: 15 },
+          { header: "Donor Name", key: "donorName", width: 20 },
+          { header: "Member ID", key: "memberId", width: 12 },
+          { header: "Donation Type", key: "donationType", width: 18 },
+          { header: "Amount", key: "amount", width: 12 },
+          { header: "Method", key: "method", width: 15 },
+          { header: "Receipt Number", key: "receiptNumber", width: 15 },
+          { header: "Description", key: "description", width: 25 }
+        ];
+
+        // Add header row styling
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: "FFFFFF" } };
+        headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "EF4444" } };
+        headerRow.alignment = { horizontal: "center", vertical: "center" };
+
+        // Add filtered donations data
+        filteredDonations.forEach((donation) => {
+          const donationDate = donation.date || (donation.createdAt ? new Date(donation.createdAt).toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+          }) : "-");
+
+          const member = findMemberByBusinessId(donation.memberId);
+
+          worksheet.addRow({
+            date: donationDate,
+            donorName: donation.donorName || "Unknown",
+            memberId: donation.memberId || "-",
+            donationType: donation.donationType || "-",
+            amount: `HK$${formatNumber(parseFloat(donation.amount?.replace?.(/[^0-9.]/g, '') || donation.amount || 0), {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}`,
+            method: donation.method || "-",
+            receiptNumber: donation.receipt_number || "-",
+            description: donation.description || "-"
+          });
+        });
+
+        // Format data rows
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber !== 1) {
+            row.eachCell((cell) => {
+              cell.alignment = { horizontal: "left", vertical: "center" };
+              cell.border = {
+                top: { style: "thin", color: { argb: "E5E7EB" } },
+                left: { style: "thin", color: { argb: "E5E7EB" } },
+                bottom: { style: "thin", color: { argb: "E5E7EB" } },
+                right: { style: "thin", color: { argb: "E5E7EB" } }
+              };
+            });
+          }
+        });
+
+        // Add summary section
+        const summaryRowStart = filteredDonations.length + 3;
+        worksheet.getCell(`A${summaryRowStart}`).value = "Summary";
+        worksheet.getCell(`A${summaryRowStart}`).font = { bold: true, size: 12 };
+
+        let summaryRow = summaryRowStart + 1;
+        const totalAmount = filteredDonations.reduce((sum, donation) => {
+          const amount = parseFloat(donation.amount?.replace?.(/[^0-9.]/g, '') || donation.amount || 0);
+          return sum + (isNaN(amount) ? 0 : amount);
+        }, 0);
+
+        const donationsByType = {};
+        filteredDonations.forEach(donation => {
+          const type = donation.donationType || "Other";
+          if (!donationsByType[type]) {
+            donationsByType[type] = 0;
+          }
+          const amount = parseFloat(donation.amount?.replace?.(/[^0-9.]/g, '') || donation.amount || 0);
+          donationsByType[type] += isNaN(amount) ? 0 : amount;
+        });
+
+        worksheet.getCell(`A${summaryRow}`).value = "Total Donations";
+        worksheet.getCell(`B${summaryRow}`).value = filteredDonations.length;
+        summaryRow++;
+
+        worksheet.getCell(`A${summaryRow}`).value = "Total Amount";
+        worksheet.getCell(`B${summaryRow}`).value = `HK$${formatNumber(totalAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        summaryRow++;
+
+        worksheet.getCell(`A${summaryRow}`).value = "Average Donation";
+        worksheet.getCell(`B${summaryRow}`).value = `HK$${formatNumber(filteredDonations.length > 0 ? totalAmount / filteredDonations.length : 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        summaryRow++;
+
+        Object.entries(donationsByType).forEach(([type, amount]) => {
+          worksheet.getCell(`A${summaryRow}`).value = `${type} Total`;
+          worksheet.getCell(`B${summaryRow}`).value = `HK$${formatNumber(amount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          summaryRow++;
+        });
+
+        // Generate filename with timestamp
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0];
+        const filename = `donations_complete_${dateStr}.xlsx`;
+
+        // Save the workbook
+        await workbook.xlsx.writeBuffer().then((buffer) => {
+          const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+
+        showToast(`✓ Exported ${filteredDonations.length} donations for ${(members || []).length} members to Excel`, "success");
+      } catch (error) {
+        console.error("Error exporting donations to Excel:", error);
+        showToast("Failed to export donations to Excel", "error");
+      }
+    };
+
     // Export PDF function
     const handleExportPDF = () => {
       try {
@@ -3134,6 +3632,204 @@ function AdminPage() {
         console.error('Error exporting PDF:', error);
         showToast("Failed to export PDF", "error");
       }
+    };
+
+    // Export Financial Report as Excel
+    const handleExportFinancialReportExcel = async () => {
+      try {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Financial Report");
+
+        // Set column widths
+        worksheet.columns = [
+          { header: "Metric", key: "metric", width: 25 },
+          { header: "Value", key: "value", width: 20 }
+        ];
+
+        // Add header row styling
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: "FFFFFF" } };
+        headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "5a31ea" } };
+        headerRow.alignment = { horizontal: "center", vertical: "center" };
+
+        // Add summary section
+        let rowNum = 2;
+        worksheet.getCell(`A${rowNum}`).value = "SUMMARY";
+        worksheet.getCell(`A${rowNum}`).font = { bold: true, size: 12 };
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Report Period";
+        worksheet.getCell(`B${rowNum}`).value = `${dateRange.from} to ${dateRange.to}`;
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Generated";
+        worksheet.getCell(`B${rowNum}`).value = new Date().toLocaleDateString();
+        rowNum++;
+
+        rowNum++; // Blank row
+
+        worksheet.getCell(`A${rowNum}`).value = "Collections";
+        worksheet.getCell(`A${rowNum}`).font = { bold: true };
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Total Collected";
+        worksheet.getCell(`B${rowNum}`).value = `HK$${formatNumber(reportStats.paymentsTotal + reportStats.donationsTotalInRange, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Payments";
+        worksheet.getCell(`B${rowNum}`).value = `HK$${formatNumber(reportStats.paymentsTotal, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Donations";
+        worksheet.getCell(`B${rowNum}`).value = `HK$${formatNumber(reportStats.donationsTotalInRange, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        rowNum++;
+
+        rowNum++; // Blank row
+
+        worksheet.getCell(`A${rowNum}`).value = "Outstanding";
+        worksheet.getCell(`A${rowNum}`).font = { bold: true };
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Amount Outstanding";
+        worksheet.getCell(`B${rowNum}`).value = `HK$${formatNumber(reportStats.outstanding, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Unpaid Members";
+        worksheet.getCell(`B${rowNum}`).value = reportStats.unpaidMembersCount || 0;
+        rowNum++;
+
+        rowNum++; // Blank row
+
+        worksheet.getCell(`A${rowNum}`).value = "Transactions";
+        worksheet.getCell(`A${rowNum}`).font = { bold: true };
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Payment Count";
+        worksheet.getCell(`B${rowNum}`).value = reportStats.paymentsCount;
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Donation Count";
+        worksheet.getCell(`B${rowNum}`).value = reportStats.donationsCount;
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Total Transactions";
+        worksheet.getCell(`B${rowNum}`).value = reportStats.transactionCount;
+        rowNum++;
+
+        rowNum++; // Blank row
+
+        worksheet.getCell(`A${rowNum}`).value = "Average";
+        worksheet.getCell(`A${rowNum}`).font = { bold: true };
+        rowNum++;
+
+        worksheet.getCell(`A${rowNum}`).value = "Average per Member";
+        worksheet.getCell(`B${rowNum}`).value = `HK$${formatNumber(reportStats.averagePerMember, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        rowNum++;
+
+        // Add detailed transactions section
+        rowNum += 2;
+        worksheet.getCell(`A${rowNum}`).value = "DETAILED TRANSACTIONS";
+        worksheet.getCell(`A${rowNum}`).font = { bold: true, size: 12 };
+        rowNum++;
+
+        // Add transaction headers
+        const transactionHeaders = worksheet.getRow(rowNum);
+        transactionHeaders.values = ["Date", "Member", "Period", "Amount", "Method", "Status", "Type"];
+        transactionHeaders.font = { bold: true, color: { argb: "FFFFFF" } };
+        transactionHeaders.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "5a31ea" } };
+        rowNum++;
+
+        // Add payment transactions
+        paymentsInRange
+          .filter(payment => {
+            const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+            return isCompleted && isPaymentMemberInList(payment);
+          })
+          .forEach(payment => {
+            const date = payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric'
+            }) : "-");
+
+            const member = findMemberByBusinessId(payment.memberId);
+            const method = getPaymentMethodDisplay(payment);
+
+            worksheet.getCell(`A${rowNum}`).value = date;
+            worksheet.getCell(`B${rowNum}`).value = member?.name || payment.memberId || "Unknown";
+            worksheet.getCell(`C${rowNum}`).value = payment.period || "-";
+            worksheet.getCell(`D${rowNum}`).value = `HK$${formatNumber(parseFloat(payment.amount?.replace(/[^0-9.]/g, '') || 0), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            worksheet.getCell(`E${rowNum}`).value = method;
+            worksheet.getCell(`F${rowNum}`).value = payment.status || "Completed";
+            worksheet.getCell(`G${rowNum}`).value = "Payment";
+            rowNum++;
+          });
+
+        // Add donation transactions
+        donationsInRange.forEach(donation => {
+          const date = donation.date || (donation.createdAt ? new Date(donation.createdAt).toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+          }) : "-");
+
+          const donorName = donation.donorName || "Unknown";
+          const donationType = donation.donationType || "-";
+          const method = donation.method || "-";
+
+          worksheet.getCell(`A${rowNum}`).value = date;
+          worksheet.getCell(`B${rowNum}`).value = donorName;
+          worksheet.getCell(`C${rowNum}`).value = "-";
+          worksheet.getCell(`D${rowNum}`).value = `HK$${formatNumber(parseFloat(donation.amount?.replace?.(/[^0-9.]/g, '') || donation.amount || 0), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          worksheet.getCell(`E${rowNum}`).value = method;
+          worksheet.getCell(`F${rowNum}`).value = "Completed";
+          worksheet.getCell(`G${rowNum}`).value = donationType;
+          rowNum++;
+        });
+
+        // Format data rows
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber > 1) {
+            row.eachCell((cell) => {
+              cell.alignment = { horizontal: "left", vertical: "center" };
+              cell.border = {
+                top: { style: "thin", color: { argb: "E5E7EB" } },
+                left: { style: "thin", color: { argb: "E5E7EB" } },
+                bottom: { style: "thin", color: { argb: "E5E7EB" } },
+                right: { style: "thin", color: { argb: "E5E7EB" } }
+              };
+            });
+          }
+        });
+
+        // Generate filename with timestamp
+        const filename = `financial-report-${dateRange.from}-to-${dateRange.to}.xlsx`;
+
+        // Save the workbook
+        await workbook.xlsx.writeBuffer().then((buffer) => {
+          const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+
+        showToast("Financial report exported to Excel successfully!");
+      } catch (error) {
+        console.error("Error exporting financial report to Excel:", error);
+        showToast("Failed to export financial report to Excel", "error");
+      }
+    };
+
+    // Guarded export for Excel financial report
+    const handleSecureExportFinancialReportExcel = () => {
+      if (!isFinanceRole) {
+        showToast("You are not authorized to export reports", "error");
+        return;
+      }
+      handleExportFinancialReportExcel();
     };
 
     // Get recent payments in date range
@@ -3451,7 +4147,8 @@ function AdminPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             memberId: memberId,
-            sendToAll: false
+            sendToAll: false,
+            channel: "Email"
           }),
         });
 
@@ -3928,7 +4625,8 @@ function AdminPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            sendToAll: true
+            sendToAll: true,
+            channel: "Email"
           }),
         });
 
@@ -5450,6 +6148,7 @@ Indian Muslim Association, Hong Kong`;
       const invoicePayload = { ...newInvoice };
       delete invoicePayload.amount;
 
+      setIsInvoiceSubmitting(true);
       try {
         await addInvoice(invoicePayload);
 
@@ -5469,6 +6168,8 @@ Indian Muslim Association, Hong Kong`;
       } catch (error) {
         showToast(error.message || "Failed to create invoice", "error");
         console.error("Error creating invoice:", error);
+      } finally {
+        setIsInvoiceSubmitting(false);
       }
     };
 
@@ -10147,17 +10848,25 @@ Indian Muslim Association, Hong Kong`;
                         type="submit"
                         className="primary-btn"
                         disabled={
+                          isInvoiceSubmitting ||
                           !invoiceForm.memberId ||
                           (members.find((m) => m.id === invoiceForm.memberId) && getAllowedInvoiceSubscriptions(members.find((m) => m.id === invoiceForm.memberId)).length === 0)
                         }
-                        style={{ padding: "14px 28px", fontSize: "1rem", fontWeight: "600" }}
+                        style={{ padding: "14px 28px", fontSize: "1rem", fontWeight: "600", cursor: isInvoiceSubmitting ? 'not-allowed' : undefined }}
                       >
-                        <i className="fas fa-file-invoice" style={{ marginRight: "8px" }}></i>Create Invoice
+                        {isInvoiceSubmitting ? (
+                          <><i className="fas fa-spinner fa-spin" style={{ marginRight: 8 }}></i>Processing…</>
+                        ) : (
+                          <><i className="fas fa-file-invoice" style={{ marginRight: "8px" }}></i>Create Invoice</>
+                        )}
                       </button>
                       <button
                         type="button"
                         className="secondary-btn"
+                        disabled={isInvoiceSubmitting}
+                        style={{ cursor: isInvoiceSubmitting ? 'not-allowed' : undefined }}
                         onClick={async () => {
+                          if (isInvoiceSubmitting) return;
                           const member = members.find((m) => m.id === invoiceForm.memberId);
                           if (!member) {
                             showToast("Please select a member", "error");
@@ -10176,50 +10885,58 @@ Indian Muslim Association, Hong Kong`;
                             return;
                           }
 
-                          // Generate period from subscription year
-                          const subscriptionYear = invoiceForm.subscriptionYear;
-                          const period = subscriptionYear;
-                          
-                          // Calculate due date: 1 year from subscription year (Jan 1st of next year)
-                          const dueYear = parseInt(subscriptionYear) + 1;
-                          const dueDate = new Date(dueYear, 0, 1);
-                          const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
-                            day: '2-digit',
-                            month: 'short',
-                            year: 'numeric'
-                          }).replace(',', '');
+                          setIsInvoiceSubmitting(true);
+                          try {
+                            // Generate period from subscription year
+                            const subscriptionYear = invoiceForm.subscriptionYear;
+                            const period = subscriptionYear;
+                            
+                            // Calculate due date: 1 year from subscription year (Jan 1st of next year)
+                            const dueYear = parseInt(subscriptionYear) + 1;
+                            const dueDate = new Date(dueYear, 0, 1);
+                            const dueDateFormatted = dueDate.toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            }).replace(',', '');
 
-                          // Create the invoice object from form data
-                          const normalizedInvoiceType = normalizeSubscriptionType(invoiceForm.invoiceType);
-                          const newInvoice = {
-                            id: generateInvoiceId(),
-                            memberId: invoiceForm.memberId,
-                            period: period,
-                            amount: `HK$${amountNum.toFixed(2)}`,
-                            status: "Unpaid",
-                            due: dueDateFormatted,
-                            method: "-",
-                            reference: "-",
-                            notes: "",
-                            subscriptionType: normalizedInvoiceType,
-                          };
+                            // Create the invoice object from form data
+                            const normalizedInvoiceType = normalizeSubscriptionType(invoiceForm.invoiceType);
+                            const newInvoice = {
+                              id: generateInvoiceId(),
+                              memberId: invoiceForm.memberId,
+                              period: period,
+                              amount: `HK$${amountNum.toFixed(2)}`,
+                              status: "Unpaid",
+                              due: dueDateFormatted,
+                              method: "-",
+                              reference: "-",
+                              notes: "",
+                              subscriptionType: normalizedInvoiceType,
+                            };
 
-                          // Add invoice to state while stripping client-side fee fields
-                          const invoicePayload = { ...newInvoice };
-                          delete invoicePayload.amount;
+                            // Add invoice to state while stripping client-side fee fields
+                            const invoicePayload = { ...newInvoice };
+                            delete invoicePayload.amount;
 
-                          addInvoice(invoicePayload);
+                            await addInvoice(invoicePayload);
 
-                          // Store the created invoice and show success card
-                          setLastCreatedInvoice(newInvoice);
-                          setShowInvoiceSuccessCard(true);
+                            // Store the created invoice and show success card
+                            setLastCreatedInvoice(newInvoice);
+                            setShowInvoiceSuccessCard(true);
 
-                          // Get existing unpaid invoices for this member
-                          const existingUnpaidInvoices = invoices.filter(
-                            (inv) =>
-                              matchesInvoiceToMember(inv, member) &&
-                              (inv.status === "Unpaid" || inv.status === "Overdue")
-                          );
+                            // Get existing unpaid invoices for this member
+                            const existingUnpaidInvoices = invoices.filter(
+                              (inv) =>
+                                matchesInvoiceToMember(inv, member) &&
+                                (inv.status === "Unpaid" || inv.status === "Overdue")
+                            );
+                          } catch (err) {
+                            showToast(err?.message || 'Failed to create invoice', 'error');
+                            console.error('Quick-create invoice error:', err);
+                          } finally {
+                            setIsInvoiceSubmitting(false);
+                          }
 
                           // Combine existing unpaid invoices with the newly created one
                           const allUnpaidInvoices = [...existingUnpaidInvoices, newInvoice];
@@ -10526,7 +11243,7 @@ Indian Muslim Association, Hong Kong`;
                     </div>
 
                     {/* Row 1: Year Filter only | Row 2: Search only */}
-                    <div style={{ marginBottom: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                    <div style={{ marginBottom: "16px", display: "flex", flexDirection: "row", gap: "12px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                       {/* Year Filter */}
                       <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "16px" }}>
@@ -10704,8 +11421,50 @@ Indian Muslim Association, Hong Kong`;
                       </div>
                       </div>
 
-                      {/* Row 2: Search only */}
-                      <div className="search-row">
+                      <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "8px" }}>
+                        <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Type:</label>
+                        <div style={{
+                          display: "flex",
+                          gap: "4px",
+                          background: "#f3f4f6",
+                          padding: "4px",
+                          borderRadius: "4px",
+                          flexWrap: "wrap"
+                        }}>
+                          {[
+                            { value: "All", label: "All" },
+                            { value: "Annual", label: "Annual" },
+                            { value: "Lifetime", label: "Lifetime" },
+                          ].map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => { setOutstandingMembersTypeFilter(option.value); setOutstandingMembersPage(1); }}
+                              style={{
+                                padding: "8px 16px",
+                                borderRadius: "4px",
+                                border: "none",
+                                fontSize: "0.875rem",
+                                fontWeight: "500",
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                                background: outstandingMembersTypeFilter === option.value ? "#5a31ea" : "transparent",
+                                color: outstandingMembersTypeFilter === option.value ? "#ffffff" : "#6b7280",
+                                boxShadow: outstandingMembersTypeFilter === option.value ? "0 2px 8px rgba(90, 49, 234, 0.3)" : "none",
+                              }}
+                              onMouseEnter={(e) => { if (outstandingMembersTypeFilter !== option.value) { e.target.style.background = "#e5e7eb"; e.target.style.color = "#374151"; } }}
+                              onMouseLeave={(e) => { if (outstandingMembersTypeFilter !== option.value) { e.target.style.background = "transparent"; e.target.style.color = "#6b7280"; } }}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                     
+                    </div>
+                     {/* Row 2: Search only */}
+                      <div className="search-row" style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
                         <div className="search-wrapper">
                           <input
                             type="text"
@@ -10749,7 +11508,6 @@ Indian Muslim Association, Hong Kong`;
                           )}
                         </div>
                       </div>
-                    </div>
 
                     {/* Members List with pagination */}
                     <div style={{
@@ -10795,6 +11553,16 @@ Indian Muslim Association, Hong Kong`;
                           });
                         }
 
+                        // Apply member-type filter (All / Annual => AM / Lifetime => LM)
+                        if (outstandingMembersTypeFilter !== "All") {
+                          outstandingMembers = outstandingMembers.filter(({ member }) => {
+                            const displayId = String(member?.id || "").toUpperCase();
+                            if (outstandingMembersTypeFilter === "Annual") return displayId.startsWith("AM");
+                            if (outstandingMembersTypeFilter === "Lifetime") return displayId.startsWith("LM");
+                            return true;
+                          });
+                        }
+
                         // Apply search filter (name, email, phone)
                         if (outstandingMembersSearch.trim()) {
                           const searchLower = outstandingMembersSearch.toLowerCase().trim();
@@ -10816,8 +11584,8 @@ Indian Muslim Association, Hong Kong`;
                                 fontSize: "0.9375rem",
                               }}
                             >
-                              {outstandingMembersSearch.trim() || outstandingMembersYearFilter !== "All"
-                                ? `No members found${outstandingMembersSearch.trim() ? ` matching "${outstandingMembersSearch}"` : ""}${outstandingMembersYearFilter !== "All" ? ` for year ${outstandingMembersYearFilter}` : ""}`
+                              {outstandingMembersSearch.trim() || outstandingMembersYearFilter !== "All" || outstandingMembersTypeFilter !== "All"
+                                ? `No ${outstandingMembersTypeFilter !== "All" ? outstandingMembersTypeFilter.toLowerCase() + ' ' : ''}members found${outstandingMembersSearch.trim() ? ` matching "${outstandingMembersSearch}"` : ""}${outstandingMembersYearFilter !== "All" ? ` for year ${outstandingMembersYearFilter}` : ""}`
                                 : "No members with outstanding invoices"}
                             </div>
                           );
@@ -11013,11 +11781,49 @@ Indian Muslim Association, Hong Kong`;
                                           return;
                                         }
 
-                                        // Update handleSendAllWithSelectedChannels to use selected members
-                                        setPendingReminderAction({ type: 'bulk', selectedMembers });
-                                        await handleSendAllWithSelectedChannels();
-                                        setSelectedOutstandingMembers(new Set());
-                                        setSelectedChannels([]);
+                                        // Check if we have selected members from the selection UI
+                                        const hasSelectedMembers = selectedMembers && selectedMembers.length > 0;
+
+                                        // Show confirmation for bulk send
+                                        const memberCount = hasSelectedMembers ? selectedMembers.length : 'ALL outstanding';
+                                        const confirmationMessage = selectedChannels.length === 2
+                                          ? `Are you sure you want to send reminders via Email AND WhatsApp to ${memberCount} member${hasSelectedMembers && selectedMembers.length !== 1 ? 's' : ''}?`
+                                          : selectedChannels.includes('Email')
+                                            ? `Are you sure you want to send reminder emails to ${memberCount} member${hasSelectedMembers && selectedMembers.length !== 1 ? 's' : ''}?`
+                                            : `Are you sure you want to open WhatsApp for ${memberCount} member${hasSelectedMembers && selectedMembers.length !== 1 ? 's' : ''}? This will open multiple WhatsApp windows.`;
+
+                                        showConfirmation(
+                                          confirmationMessage,
+                                          async () => {
+                                            try {
+                                              // Send to all selected channels
+                                              if (selectedChannels.includes('Email')) {
+                                                if (hasSelectedMembers) {
+                                                  await handleSendToSelectedMembers(selectedMembers, 'Email');
+                                                } else {
+                                                  await handleSendToAllOutstanding();
+                                                }
+                                              }
+
+                                              if (selectedChannels.includes('WhatsApp')) {
+                                                // Add a small delay if both channels are selected
+                                                if (selectedChannels.includes('Email')) {
+                                                  await new Promise(resolve => setTimeout(resolve, 1000));
+                                                }
+                                                if (hasSelectedMembers) {
+                                                  await handleSendWhatsAppToSelectedMembers(selectedMembers);
+                                                } else {
+                                                  await handleSendWhatsAppToAllOutstanding();
+                                                }
+                                              }
+
+                                              setSelectedChannels([]);
+                                              setSelectedOutstandingMembers(new Set());
+                                            } catch (error) {
+                                              console.error("Error sending bulk reminders:", error);
+                                            }
+                                          }
+                                        );
                                       }}
                                 disabled={sendingToAll || sendingWhatsAppToAll || !isAdminOrOwner}
                                 style={{
@@ -11708,13 +12514,13 @@ Indian Muslim Association, Hong Kong`;
                           </p>
                           <h4 className="admin-dashboard-kpi-value">{formatNumber(total)}</h4>
                         </div>
-                        <div className="admin-dashboard-kpi-card">
+                        {/* <div className="admin-dashboard-kpi-card">
                           <p className="admin-dashboard-kpi-label">
                             <i className="fas fa-envelope admin-dashboard-kpi-icon"></i>
                             Email Reminders
                           </p>
                           <h4 className="admin-dashboard-kpi-value">{formatNumber(emailCount)}</h4>
-                        </div>
+                        </div> */}
                         <div className="admin-dashboard-kpi-card">
                           <p className="admin-dashboard-kpi-label">
                             <i className="fab fa-whatsapp admin-dashboard-kpi-icon--green"></i>
@@ -11867,6 +12673,59 @@ Indian Muslim Association, Hong Kong`;
                           ))}
                         </div>
                       </div>
+
+                      <div className="flex gap-md flex-nowrap items-center">
+                        <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Type:</label>
+                        <div style={{
+                          display: "flex",
+                          gap: "4px",
+                          background: "#f3f4f6",
+                          padding: "4px",
+                          borderRadius: "4px",
+                          flexWrap: "wrap"
+                        }}>
+                          {[
+                            { value: "All", label: "All" },
+                            { value: "Annual", label: "Annual" },
+                            { value: "Lifetime", label: "Lifetime" },
+                          ].map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                setRemindersMemberTypeFilter(option.value);
+                                setRemindersPage(1);
+                              }}
+                              style={{
+                                padding: "8px 16px",
+                                borderRadius: "4px",
+                                border: "none",
+                                fontSize: "0.875rem",
+                                fontWeight: "500",
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                                background: remindersMemberTypeFilter === option.value ? "#5a31ea" : "transparent",
+                                color: remindersMemberTypeFilter === option.value ? "#ffffff" : "#6b7280",
+                                boxShadow: remindersMemberTypeFilter === option.value ? "0 2px 8px rgba(90, 49, 234, 0.3)" : "none",
+                              }}
+                              onMouseEnter={(e) => {
+                                if (remindersMemberTypeFilter !== option.value) {
+                                  e.target.style.background = "#e5e7eb";
+                                  e.target.style.color = "#374151";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (remindersMemberTypeFilter !== option.value) {
+                                  e.target.style.background = "transparent";
+                                  e.target.style.color = "#6b7280";
+                                }
+                              }}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
                     {(() => {
@@ -11957,7 +12816,16 @@ Indian Muslim Association, Hong Kong`;
                           remindersChannelFilter === "All" ||
                           normalizedChannel === remindersChannelFilter;
 
-                        return statusOk && channelOk;
+                        // Member TYPE filter (All / Annual => AM / Lifetime => LM)
+                        let memberTypeOk = true;
+                        if (remindersMemberTypeFilter !== "All") {
+                          const member = (members || []).find(m => (m.id === item.memberId) || (String(m._id || "") === String(item.memberId)) || (m.email === item.memberEmail));
+                          const displayId = String(member?.id || "").toUpperCase();
+                          if (remindersMemberTypeFilter === "Annual") memberTypeOk = displayId.startsWith("AM");
+                          else if (remindersMemberTypeFilter === "Lifetime") memberTypeOk = displayId.startsWith("LM");
+                        }
+
+                        return statusOk && channelOk && memberTypeOk;
                       });
 
                       // Sort newest first by rawDate when available
@@ -11988,7 +12856,15 @@ Indian Muslim Association, Hong Kong`;
                         let message = "No reminders have been sent yet.";
                         if (totalUnfiltered > 0) {
                           // There are reminders, but they don't match the current filter
-                          if (remindersStatusFilter !== "All" && remindersChannelFilter !== "All") {
+                          if (remindersMemberTypeFilter !== "All" && remindersStatusFilter !== "All" && remindersChannelFilter !== "All") {
+                            message = `No ${remindersMemberTypeFilter.toLowerCase()} ${remindersStatusFilter.toLowerCase()} ${remindersChannelFilter.toLowerCase()} reminders found.`;
+                          } else if (remindersMemberTypeFilter !== "All" && remindersStatusFilter !== "All") {
+                            message = `No ${remindersMemberTypeFilter.toLowerCase()} ${remindersStatusFilter.toLowerCase()} reminders found.`;
+                          } else if (remindersMemberTypeFilter !== "All" && remindersChannelFilter !== "All") {
+                            message = `No ${remindersMemberTypeFilter.toLowerCase()} ${remindersChannelFilter.toLowerCase()} reminders found.`;
+                          } else if (remindersMemberTypeFilter !== "All") {
+                            message = `No ${remindersMemberTypeFilter.toLowerCase()} reminders found.`;
+                          } else if (remindersStatusFilter !== "All" && remindersChannelFilter !== "All") {
                             message = `No ${remindersStatusFilter.toLowerCase()} ${remindersChannelFilter.toLowerCase()} reminders found.`;
                           } else if (remindersStatusFilter !== "All") {
                             message = `No ${remindersStatusFilter.toLowerCase()} reminders found.`;
@@ -14058,6 +14934,17 @@ Indian Muslim Association, Hong Kong`;
                           });
                         }
 
+                        // Filter invoices by member TYPE (All / Annual => AM / Lifetime => LM)
+                        if (invoiceMemberTypeFilter !== "All") {
+                          filteredInvoices = filteredInvoices.filter((invoice) => {
+                            const member = (members || []).find((m) => matchesInvoiceToMember(invoice, m));
+                            const displayId = String(member?.id || "").toUpperCase();
+                            if (invoiceMemberTypeFilter === "Annual") return displayId.startsWith("AM");
+                            if (invoiceMemberTypeFilter === "Lifetime") return displayId.startsWith("LM");
+                            return true;
+                          });
+                        }
+
                         // Filter invoices by search term (name, year, native place)
                         if (invoiceSearchTerm.trim()) {
                           const searchLower = invoiceSearchTerm.toLowerCase();
@@ -14319,7 +15206,7 @@ Indian Muslim Association, Hong Kong`;
                                 </div>
                               </div>
 
-                              <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "16px" }}>
+                              {/* <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "16px" }}>
                                 <label className="font-semibold" style={{ color: "#1a1a1a" }}>Filter by Subscription:</label>
                                 <select
                                   value={invoiceSubscriptionTypeFilter}
@@ -14352,6 +15239,59 @@ Indian Muslim Association, Hong Kong`;
                                   <option value={INVOICE_SUBSCRIPTION_TYPES.LIFETIME_JANAZA_FUND}>Lifetime Janaza Fund</option>
                                   <option value={INVOICE_SUBSCRIPTION_TYPES.LIFETIME_MEMBER_PLUS_JANAZA_FUND}>Lifetime Member + Janaza Fund</option>
                                 </select>
+                              </div> */}
+
+                              <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "8px" }}>
+                                <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Type:</label>
+                                <div style={{
+                                  display: "flex",
+                                  gap: "4px",
+                                  background: "#f3f4f6",
+                                  padding: "4px",
+                                  borderRadius: "4px",
+                                  flexWrap: "wrap"
+                                }}>
+                                  {[
+                                    { value: "All", label: "All" },
+                                    { value: "Annual", label: "Annual" },
+                                    { value: "Lifetime", label: "Lifetime" },
+                                  ].map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => {
+                                        setInvoiceMemberTypeFilter(option.value);
+                                        setInvoicesPage(1);
+                                      }}
+                                      style={{
+                                        padding: "8px 16px",
+                                        borderRadius: "4px",
+                                        border: "none",
+                                        fontSize: "0.875rem",
+                                        fontWeight: "500",
+                                        cursor: "pointer",
+                                        transition: "all 0.2s ease",
+                                        background: invoiceMemberTypeFilter === option.value ? "#5a31ea" : "transparent",
+                                        color: invoiceMemberTypeFilter === option.value ? "#ffffff" : "#6b7280",
+                                        boxShadow: invoiceMemberTypeFilter === option.value ? "0 2px 8px rgba(90, 49, 234, 0.3)" : "none",
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        if (invoiceMemberTypeFilter !== option.value) {
+                                          e.target.style.background = "#e5e7eb";
+                                          e.target.style.color = "#374151";
+                                        }
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        if (invoiceMemberTypeFilter !== option.value) {
+                                          e.target.style.background = "transparent";
+                                          e.target.style.color = "#6b7280";
+                                        }
+                                      }}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
                               </div>
 
@@ -17131,7 +18071,7 @@ Indian Muslim Association, Hong Kong`;
                                     </select>
                                   </div>
                                 </div>
-                                <button
+                                {/* <button
                                   type="button"
                                   className="ghost-btn"
                                   onClick={async () => {
@@ -17192,7 +18132,7 @@ Indian Muslim Association, Hong Kong`;
                                   }}
                                 >
                                    Export as Excel
-                                </button>
+                                </button> */}
                               </div>
 
                               <Table
@@ -17861,16 +18801,12 @@ Indian Muslim Association, Hong Kong`;
                   </div> */}
 
                   {/* Filters and Transactions Section */}
-                  <div className="card card-reports" style={{
-                    padding: "24px",
-                    background: "#ffffff",
-                    border: "1px solid #e5e7eb"
-                  }}>
+                  <div className="card card-reports" >
                     {/* Filters */}
-                    <div style={{ marginBottom: "24px", display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center" }}>
+                    {/* <div style={{ marginBottom: "24px", display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center" }}>
                       <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                         <label style={{ fontWeight: "600", color: "#1a1a1a", fontSize: "0.9375rem" }}>
-                          {/* <i className="fas fa-filter" style={{ marginRight: "6px", color: "#5a31ea" }}></i> */}
+                          <i className="fas fa-filter" style={{ marginRight: "6px", color: "#5a31ea" }}></i>
                           Filter by Type:
                         </label>
                         <div style={{
@@ -17981,7 +18917,7 @@ Indian Muslim Association, Hong Kong`;
                           </div>
                         </div>
                       )}
-                    </div>
+                    </div> */}
 
                     {/* Payment Method Summary Cards */}
                     {(() => {
@@ -18114,12 +19050,12 @@ Indian Muslim Association, Hong Kong`;
 
                     {/* Transactions Table */}
                     <div>
-                      <h4 style={{ margin: "0 0 12px 0", fontSize: "1.25rem", fontWeight: "700", color: "#1a1a1a" }}>
+                      {/* <h4 style={{ margin: "0 0 12px 0", fontSize: "1.25rem", fontWeight: "700", color: "#1a1a1a" }}>
                         <i className="fas fa-list" style={{ marginRight: "10px", color: "#5a31ea" }}></i>
                         Transactions
-                      </h4>
+                      </h4> */}
                       {/* Row 1: Filters only */}
-                      <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px" }}>
+                      {/* <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap", marginBottom: "12px" }}>
                         <div className="flex gap-md flex-nowrap items-center">
                           <label className="font-semibold" style={{ color: "#1a1a1a" }}>Payment Method:</label>
                           <select
@@ -18157,9 +19093,9 @@ Indian Muslim Association, Hong Kong`;
                             <option value="Other">Other</option>
                           </select>
                         </div>
-                      </div>
+                      </div> */}
                       {/* Row 2: Search only */}
-                      <div className="search-row">
+                      {/* <div className="search-row">
                         <div className="search-wrapper">
                           <input
                             type="text"
@@ -18571,7 +19507,7 @@ Indian Muslim Association, Hong Kong`;
                             />
                           );
                         })()}
-                      </div>
+                      </div> */}
                     </div>
                   </div>
                 </article>
@@ -18584,93 +19520,282 @@ Indian Muslim Association, Hong Kong`;
                     <div>
                       {renderBreadcrumb("export-reports")}
                       <h3><i className="fas fa-file-export" style={{ marginRight: "10px" }}></i>Export Reports</h3>
-                      <p>Export financial data in various formats.</p>
+                      <p>Export complete database data in Excel format.</p>
                     </div>
                   </header>
                   <div className="card-exports">
                     <div style={{ padding: "2px" }}>
                       <div style={{ marginBottom: "24px" }}>
-                        <h4 style={{ marginBottom: "12px" }}>Export Options</h4>
+                        <h4 style={{ marginBottom: "12px" }}>Export All Data</h4>
                         <p style={{ color: "#666", marginBottom: "20px" }}>
-                          Export your financial data in CSV or PDF format. Select a date range to export specific periods.
+                          {/* Export all data from the database without any date filters or pagination limits. Each export includes complete records with proper headers and formatting. */}
+                          Export Complete Database Records to Excel
                         </p>
                       </div>
 
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "16px", marginBottom: "24px" }}>
-                        <div className="card card-export-reports" style={{
-                          padding: "20px",
-                          background: "#ffffff",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "space-between",
-                          minHeight: "180px"
-                        }}>
+                      {/* New Excel Export Buttons */}
+                      {(() => {
+                        // Calculate filtered invoices and payments for current members
+                        const memberIds = new Set((members || []).map(m => m.id).filter(Boolean));
+                        const filteredInvoicesCount = (invoices || []).filter(inv => memberIds.has(inv.memberId)).length;
+                        const filteredPaymentsCount = (payments || []).filter(pmt => memberIds.has(pmt.memberId)).length;
+                        const filteredDonationsCount = (donations || []).filter(d => d).length;
+                        
+                        return (
                           <div>
-                            <h4 style={{ marginBottom: "8px", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px" }}>
-                              <i className="fas fa-file-csv" style={{ color: "#5a31ea" }}></i>
-                              CSV Export
-                            </h4>
-                            <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
-                              Export all transactions as a CSV file for Excel or spreadsheet applications.
-                            </p>
-                          </div>
-                          <button
-                            className="secondary-btn"
-                            onClick={handleSecureExportCSV}
-                            style={{ width: "100%", marginTop: "auto" }}
-                            disabled={!isFinanceRole}
-                            title={isFinanceRole ? "Export CSV" : "Export allowed only for finance roles"}
-                          >
-                            <i className="fas fa-file-csv" style={{ marginRight: "8px" }}></i>
-                            Export CSV
-                          </button>
-                        </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px", marginBottom: "32px" }}>
+                              {/* Members Export Card */}
+                              <div className="card card-export-reports" style={{
+                                padding: "20px",
+                                background: "#ffffff",
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "space-between",
+                                minHeight: "200px",
+                                border: "2px solid #e5e7eb",
+                                borderRadius: "8px"
+                              }}>
+                                <div>
+                                  <h4 style={{ marginBottom: "8px", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px", color: "#4F46E5" }}>
+                                    <i className="fas fa-users" style={{ color: "#4F46E5" }}></i>
+                                    <span style={{ color: "black" }}>Members Data</span>
+                                  </h4>
+                                  <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "8px" }}>
+                                    Export all member information including contact details, subscription types, and membership status.
+                                  </p>
+                                  <p style={{ fontSize: "0.8rem", color: "#999", marginBottom: "16px" }}>
+                                    Records: {(members || []).length}
+                                  </p>
+                                </div>
+                                <button
+                                  className="primary-btn"
+                                  onClick={handleExportAllMembersToExcel}
+                                  disabled={!isFinanceRole}
+                                  // title={isFinanceRole ? "Export all members" : "Export allowed only for finance roles"}
+                                  style={{ 
+                                    width: "100%", 
+                                    marginTop: "auto",
+                                    background: isFinanceRole ? "white" : "#9CA3AF",
+                                    color: isFinanceRole ? "#4F46E5" : "#666",
+                                    cursor: isFinanceRole ? "pointer" : "not-allowed",
+                                     boxShadow: isFinanceRole ? "none" : "none",
+                                  }}
+                                >
+                                  <i className="fas fa-file-excel" style={{ marginRight: "8px" }}></i>
+                                  Export Members
+                                </button>
+                              </div>
 
-                        <div className="card card-export-reports" style={{
-                          padding: "20px",
-                          background: "#ffffff",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "space-between",
-                          minHeight: "180px"
-                        }}>
-                          <div>
-                            <h4 style={{ marginBottom: "8px", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px" }}>
-                              <i className="fas fa-file-pdf" style={{ color: "#5a31ea" }}></i>
-                              PDF Export
-                            </h4>
-                            <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
-                              Generate a formatted PDF report with charts and summaries.
-                            </p>
-                          </div>
-                          <button
-                            className="secondary-btn"
-                            onClick={handleSecureExportPDF}
-                            style={{ width: "100%", marginTop: "auto" }}
-                            disabled={!isFinanceRole}
-                            title={isFinanceRole ? "Export PDF" : "Export allowed only for finance roles"}
-                          >
-                            <i className="fas fa-file-pdf" style={{ marginRight: "8px" }}></i>
-                            Export PDF
-                          </button>
-                        </div>
-                      </div>
+                              {/* Invoices Export Card */}
+                              <div className="card card-export-reports" style={{
+                                padding: "20px",
+                                background: "#ffffff",
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "space-between",
+                                minHeight: "200px",
+                                border: "2px solid #e5e7eb",
+                                borderRadius: "8px"
+                              }}>
+                                <div>
+                                  <h4 style={{ marginBottom: "8px", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px", color: "#059669" }}>
+                                    <i className="fas fa-receipt" style={{ color: "#059669" }}></i>
+                                    <span style={{ color: "black" }}>Invoices Data</span>
+                                  </h4>
+                                  <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "8px" }}>
+                                    Export invoices for current members with amounts, due dates, payment status, and subscription details.
+                                  </p>
+                                  <p style={{ fontSize: "0.8rem", color: "#999", marginBottom: "16px" }}>
+                                   Records: {filteredInvoicesCount}
+                                  </p>
+                                </div>
+                                <button
+                                  className="primary-btn"
+                                  onClick={handleExportAllInvoicesToExcel}
+                                  disabled={!isFinanceRole}
+                                  // title={isFinanceRole ? "Export invoices" : "Export allowed only for finance roles"}
+                                  style={{ 
+                                    width: "100%", 
+                                    marginTop: "auto",
+                                    // background: isFinanceRole ? "#059669" : "#9CA3AF",
+                                    cursor: isFinanceRole ? "pointer" : "not-allowed",
+                                    background: isFinanceRole ? "white" : "#9CA3AF",
+                                    color: isFinanceRole ? "#4F46E5" : "#666",
+                                    boxShadow: isFinanceRole ? "none" : "none",
+                                  }}
+                                >
+                                  <i className="fas fa-file-excel" style={{ marginRight: "8px" }}></i>
+                                  Export Invoices
+                                </button>
+                              </div>
 
-                      <div style={{ marginTop: "24px", padding: "16px", background: "#f8f9ff", borderRadius: "8px" }}>
-                        <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "8px" }}>
-                          <strong>Note:</strong> For detailed reports with date filters and analytics, visit the Financial Reports section.
-                        </p>
-                        <button
-                          className="ghost-btn"
-                          onClick={() => {
-                            handleNavClick("reports");
-                            showToast("Redirecting to Financial Reports...");
-                          }}
-                        >
-                          <i className="fas fa-chart-bar" style={{ marginRight: "8px" }}></i>
-                          Go to Financial Reports
-                        </button>
-                      </div>
+                              {/* Payments Export Card */}
+                              <div className="card card-export-reports" style={{
+                                padding: "20px",
+                                background: "#ffffff",
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "space-between",
+                                minHeight: "200px",
+                                border: "2px solid #e5e7eb",
+                                borderRadius: "8px"
+                              }}>
+                                <div>
+                                  <h4 style={{ marginBottom: "8px", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px", color: "#DC2626" }}>
+                                    <i className="fas fa-credit-card" style={{ color: "#DC2626" }}></i>
+                                    <span style={{ color: "black" }}>Payments Data</span>
+                                  </h4>
+                                  <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "8px" }}>
+                                    Export payment transactions for current members including amounts, methods, dates, and status information.
+                                  </p>
+                                  <p style={{ fontSize: "0.8rem", color: "#999", marginBottom: "16px" }}>
+                                    Records: {filteredPaymentsCount}
+                                  </p>
+                                </div>
+                                <button
+                                  className="primary-btn"
+                                  onClick={handleExportAllPaymentsToExcel}
+                                  disabled={!isFinanceRole}
+                                  // title={isFinanceRole ? "Export all payments" : "Export allowed only for finance roles"}
+                                  style={{ 
+                                    width: "100%", 
+                                    marginTop: "auto",
+                                    // background: isFinanceRole ? "#DC2626" : "#9CA3AF",
+                                    cursor: isFinanceRole ? "pointer" : "not-allowed",
+                                    background: isFinanceRole ? "white" : "#9CA3AF",
+                                    color: isFinanceRole ? "#4F46E5" : "#666",
+                                    boxShadow: isFinanceRole ? "none" : "none",
+                                  }}
+                                >
+                                  <i className="fas fa-file-excel" style={{ marginRight: "8px" }}></i>
+                                  Export Payments
+                                </button>
+                              </div>
+
+                              {/* Donations Export Card */}
+                              <div className="card card-export-reports" style={{
+                                padding: "20px",
+                                background: "#ffffff",
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "space-between",
+                                minHeight: "200px",
+                                border: "2px solid #e5e7eb",
+                                borderRadius: "8px"
+                              }}>
+                                <div>
+                                  <h4 style={{ marginBottom: "8px", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px", color: "#EF4444" }}>
+                                    <i className="fas fa-heart" style={{ color: "#EF4444" }}></i>
+                                    <span style={{ color: "black" }}>Donations Data</span>
+                                  </h4>
+                                  <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "8px" }}>
+                                    Export all donation transactions including member and non-member donations with amounts, types, methods, and receipt information.
+                                  </p>
+                                  <p style={{ fontSize: "0.8rem", color: "#999", marginBottom: "16px" }}>
+                                    Records: {filteredDonationsCount}
+                                  </p>
+                                </div>
+                                <button
+                                  className="primary-btn"
+                                  onClick={handleExportAllDonationsToExcel}
+                                  disabled={!isFinanceRole}
+                                  // title={isFinanceRole ? "Export all donations" : "Export allowed only for finance roles"}
+                                  style={{ 
+                                    width: "100%", 
+                                    marginTop: "auto",
+                                    cursor: isFinanceRole ? "pointer" : "not-allowed",
+                                    background: isFinanceRole ? "white" : "#9CA3AF",
+                                    color: isFinanceRole ? "#4F46E5" : "#666",
+                                    boxShadow: isFinanceRole ? "none" : "none",
+                                  }}
+                                >
+                                  <i className="fas fa-file-excel" style={{ marginRight: "8px" }}></i>
+                                  Export Donations
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Additional Export Options */}
+                            {/* <hr style={{ margin: "32px 0", border: "none", borderTop: "1px solid #e5e7eb" }} /> */}
+
+                            {/* <div style={{ marginBottom: "24px" }}>
+                              <h4 style={{ marginBottom: "12px" }}>Additional Export Formats</h4>
+                              <p style={{ color: "#666", marginBottom: "20px" }}>
+                                Export your financial data in CSV or PDF format. Select a date range to export specific periods.
+                              </p>
+                            </div> */}
+
+                            {/* <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+                              <div className="card card-export-reports" style={{
+                                padding: "20px",
+                                background: "#ffffff",
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "space-between",
+                                minHeight: "180px"
+                              }}>
+                                <div>
+                                  <h4 style={{ marginBottom: "8px", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <i className="fas fa-file-csv" style={{ color: "#5a31ea" }}></i>
+                                    CSV Export
+                                  </h4>
+                                  <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
+                                    Export financial transactions as a CSV file for Excel or spreadsheet applications.
+                                  </p>
+                                </div>
+                                <button
+                                  className="secondary-btn"
+                                  onClick={handleSecureExportCSV}
+                                  style={{ width: "100%", marginTop: "auto" }}
+                                  disabled={!isFinanceRole}
+                                  title={isFinanceRole ? "Export CSV" : "Export allowed only for finance roles"}
+                                >
+                                  <i className="fas fa-file-csv" style={{ marginRight: "8px" }}></i>
+                                  Export CSV
+                                </button>
+                              </div>
+
+                              <div className="card card-export-reports" style={{
+                                padding: "20px",
+                                background: "#ffffff",
+                                display: "flex",
+                                flexDirection: "column",
+                                justifyContent: "space-between",
+                                minHeight: "180px"
+                              }}>
+                                <div>
+                                  <h4 style={{ marginBottom: "8px", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <i className="fas fa-file-pdf" style={{ color: "#5a31ea" }}></i>
+                                    PDF Export
+                                  </h4>
+                                  <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "16px" }}>
+                                    Generate a formatted PDF report with charts and summaries.
+                                  </p>
+                                </div>
+                                <button
+                                  className="secondary-btn"
+                                  onClick={handleSecureExportPDF}
+                                  style={{ width: "100%", marginTop: "auto" }}
+                                  disabled={!isFinanceRole}
+                                  title={isFinanceRole ? "Export PDF" : "Export allowed only for finance roles"}
+                                >
+                                  <i className="fas fa-file-pdf" style={{ marginRight: "8px" }}></i>
+                                  Export PDF
+                                </button>
+                              </div>
+                            </div> */}
+
+                            {/* <div style={{ marginTop: "24px", padding: "16px", background: "#f8f9ff", borderRadius: "8px", borderLeft: "4px solid #4F46E5" }}>
+                              <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "8px" }}>
+                                <strong>✓ Complete Data Export:</strong> The Excel exports include all records from your database without any filters, date restrictions, or pagination limits.
+                              </p>
+                              <p style={{ fontSize: "0.875rem", color: "#666", marginBottom: "0px" }}>
+                                <strong>✓ Ready to Use:</strong> Files include proper headers, formatting, and summary statistics for immediate analysis.
+                              </p>
+                            </div> */}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </article>

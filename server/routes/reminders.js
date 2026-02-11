@@ -104,7 +104,7 @@ router.post("/send", async (req, res) => {
   try {
     await ensureConnection();
     
-    const { memberId: rawMemberId, sendToAll } = req.body;
+    const { memberId: rawMemberId, sendToAll, channel = "Email" } = req.body;
     let normalizedRequestMemberId = null;
 
     if (!sendToAll && rawMemberId) {
@@ -115,21 +115,23 @@ router.post("/send", async (req, res) => {
       }
     }
     
-    // Check if email is configured
-    const emailSettings = await EmailSettingsModel.findOne({});
-    if (!emailSettings || !emailSettings.emailUser || !emailSettings.emailPassword) {
-      return res.status(400).json({ error: "Email not configured. Please configure email settings first." });
-    }
+    // Check if email is configured (only for Email channel)
+    if (channel === "Email") {
+      const emailSettings = await EmailSettingsModel.findOne({});
+      if (!emailSettings || !emailSettings.emailUser || !emailSettings.emailPassword) {
+        return res.status(400).json({ error: "Email not configured. Please configure email settings first." });
+      }
 
-    // Update transporter with saved settings
-    const transporter = nodemailer.createTransport({
-      service: emailSettings.emailService || 'gmail',
-      auth: {
-        user: emailSettings.emailUser,
-        pass: emailSettings.emailPassword,
-      },
-    });
-    setTransporter(transporter);
+      // Update transporter with saved settings
+      const transporter = nodemailer.createTransport({
+        service: emailSettings.emailService || 'gmail',
+        auth: {
+          user: emailSettings.emailUser,
+          pass: emailSettings.emailPassword,
+        },
+      });
+      setTransporter(transporter);
+    }
 
     let results = {
       sent: 0,
@@ -169,6 +171,7 @@ router.post("/send", async (req, res) => {
             amount: `HK$${totalDue}`,
             invoiceCount: unpaidInvoices.length,
             status: "Delivered",
+            channel: channel,
           });
           results.sent++;
         } else {
@@ -181,6 +184,7 @@ router.post("/send", async (req, res) => {
             amount: `HK$${totalDue}`,
             invoiceCount: unpaidInvoices.length,
             status: "Failed",
+            channel: channel,
           });
           results.failed++;
         }
@@ -218,6 +222,8 @@ router.post("/send", async (req, res) => {
           reminderType: unpaidInvoices.some(inv => inv.status === 'Overdue') ? 'overdue' : 'upcoming',
           amount: `HK$${totalDue}`,
           invoiceCount: unpaidInvoices.length,
+          status: "Delivered",
+          channel: channel,
         });
         results.sent = 1;
       } else {
