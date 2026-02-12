@@ -4877,97 +4877,91 @@ function AdminPage() {
           let message;
           if (amountNum === 250) {
             // Life Member template (HK$250)
-            message = `Indian Muslim Association – Janazah Fund Reminder (Life Member)
+            message = `Indian Muslim Association – Hong Kong
+Janaza Fund Reminder
 
-Dear *${member.name}*,
+This is a gentle reminder that your Janaza Fund for the year ${year} is still pending.
 
-Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+Kindly request you to settle the Janaza Fund of HK$250 at your convenience via FPS or Bank Transfer/Deposit.
 
-This is to formally remind you of the IMA Janazah Fund contribution for the year ${year}.
+Member ID: ${member.id}
+Name: ${member.name}
+Membership Year: ${year}
+Category: Lifetime Member
+Amount Due: HK$250
 
-*Contribution Details:*
-• Member Category: Life Member
-• Contribution Amount: HKD 250
-• Year: ${year}
-
-We kindly request you to make the contribution at your earliest convenience.
-
-*Payment Details:*
-FPS: +852 9545 4447
+FPS Payment Details:
+FPS Mobile No: +852 9545 4447
 
 Bank Transfer:
 Bank: Bank of China
 Account No: 012-968-2-013423-1
-Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+Beneficiary: The Indian Muslim Association (Jama-Ath) Limited
 
-*Payment Confirmation:*
-After completing the payment, kindly share the payment reference or screenshot via WhatsApp for our records.
+Once payment is made, please share a screenshot or confirmation for our records.
 
-May Allah reward you for your continued support and generosity.
+Thank you for your continued support of the IMA community.
 
-Indian Muslim Association, Hong Kong`;
+Warm regards,
+Indian Muslim Association Hong Kong`;
           } else if (amountNum === 500) {
             // Annual Member template (HK$500)
-            message = `Indian Muslim Association – Annual Membership Renewal 
+            message = `Indian Muslim Association – Hong Kong
+Annual Membership Renewal
 
-Dear *${member.name}*,
+This is a gentle reminder that your Membership Renewal for the year ${year} is still pending.
 
-Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+Kindly request you to settle the Membership Fee of HK$500 at your convenience via FPS or Bank Transfer/Deposit.
 
-This is to formally remind you that the renewal of your Indian Muslim Association (IMA) membership for the year ${year} is due.
+Member ID: ${member.id}
+Name: ${member.name}
+Membership Year: ${year}
+Category: Annual Member
+Amount Due: HK$500
 
-*Membership Details:*
-• Membership Category: Annual Member 
-• Renewal Amount: HKD 500
-• Year: ${year}
-
-We kindly request you to complete the renewal at your earliest convenience.
-
-*Payment Details:*
-FPS: +852 9545 4447
+FPS Payment Details:
+FPS Mobile No: +852 9545 4447
 
 Bank Transfer:
 Bank: Bank of China
 Account No: 012-968-2-013423-1
-Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+Beneficiary: The Indian Muslim Association (Jama-Ath) Limited
 
-*Payment Confirmation:*
-After making the payment, kindly send the payment reference or screenshot, via WhatsApp for our records.
+Once payment is made, please share a screenshot or confirmation for our records.
 
-May Allah reward you for your continued support of the community.
+Thank you for your continued support of the IMA community.
 
+Warm regards,
 Indian Muslim Association Hong Kong`;
           } else {
             // Default template for other amounts
-            message = `Indian Muslim Association – Janazah Fund Reminder
+            message = `Indian Muslim Association – Hong Kong
+Payment Reminder
 
-Dear *${member.name}*,
+This is a gentle reminder that your payment for the year ${year} is still pending.
 
-Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+Kindly request you to settle the outstanding amount of HK$${amount} at your convenience via FPS or Bank Transfer/Deposit.
 
-This is to formally remind you of your outstanding IMA Janazah Fund contributions.
+Member ID: ${member.id}
+Name: ${member.name}
+Membership Year: ${year}
+Amount Due: HK$${amount}
 
-*Member Details:*
-• Membership ID: IMA/${member.id || 'N/A'}
-• Total Outstanding: ${totalDueFormatted}
-• Number of Invoices: ${memberUnpaidInvoices.length}${invoiceListText}
-
-We kindly request you to make the contribution at your earliest convenience.
-
-*Payment Details:*
-FPS: +852 9545 4447
+FPS Payment Details:
+FPS Mobile No: +852 9545 4447
 
 Bank Transfer:
 Bank: Bank of China
 Account No: 012-968-2-013423-1
-Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+Beneficiary: The Indian Muslim Association (Jama-Ath) Limited
 
-*Payment Confirmation:*
-After completing the payment, kindly share the payment reference or screenshot via WhatsApp for our records.
+Once payment is made, please share a screenshot or confirmation for our records.
 
-May Allah reward you for your continued support and generosity.
+Thank you for your continued support of the IMA community.
 
-Indian Muslim Association, Hong Kong`;
+Warm regards,
+Indian Muslim Association Hong Kong
+`;
           }
 
           const cleanPhone = member.phone.replace(/[^0-9+]/g, "");
@@ -6710,35 +6704,33 @@ Warm regards,
 Indian Muslim Association Hong Kong`;
       } else {
         // Default template for other amounts
-        message = `Indian Muslim Association – Janazah Fund Reminder
+        message = `Indian Muslim Association – Hong Kong
+Payment Reminder
 
-Dear *${memberData.name}*,
+This is a gentle reminder that your payment for the year ${year} is still pending.
 
-Assalamu Alaikum wa Rahmatullahi wa Barakatuh.
+Kindly request you to settle the outstanding amount of HK$${amount} at your convenience via FPS or Bank Transfer/Deposit.
 
-This is to formally remind you of your outstanding IMA Janazah Fund contributions.
+Member ID: ${memberData.id}
+Name: ${memberData.name}
+Membership Year: ${year}
+Amount Due: HK$${amount}
 
-*Member Details:*
-• Membership ID: IMA/${memberData.id || 'N/A'}
-• Total Outstanding: ${totalDueFormatted}
-• Number of Invoices: ${memberUnpaidInvoices.length}${invoiceListText}
-
-We kindly request you to make the contribution at your earliest convenience.
-
-*Payment Details:*
-FPS: +852 9545 4447
+FPS Payment Details:
+FPS Mobile No: +852 9545 4447
 
 Bank Transfer:
 Bank: Bank of China
 Account No: 012-968-2-013423-1
-Beneficiary: THE INDIAN MUSLIM ASSOCIATION (JAMA-ATH) LIMITED
+Beneficiary: The Indian Muslim Association (Jama-Ath) Limited
 
-*Payment Confirmation:*
-After completing the payment, kindly share the payment reference or screenshot via WhatsApp for our records.
+Once payment is made, please share a screenshot or confirmation for our records.
 
-May Allah reward you for your continued support and generosity.
+Thank you for your continued support of the IMA community.
 
-Indian Muslim Association, Hong Kong`;
+Warm regards,
+Indian Muslim Association Hong Kong
+`;
       }
 
       // Clean phone number (remove all non-numeric except +)
