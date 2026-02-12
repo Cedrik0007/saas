@@ -3940,6 +3940,350 @@ function AdminPage() {
       handleExportFinancialReportExcel();
     };
 
+    // Export Transactions within Date Range to Excel
+    const handleExportTransactionsByDateRange = async () => {
+      try {
+        if (!isFinanceRole) {
+          showToast("You are not authorized to export reports", "error");
+          return;
+        }
+
+        const fromDate = new Date(dateRange.from);
+        const toDate = new Date(dateRange.to);
+        toDate.setHours(23, 59, 59, 999);
+
+        const parseMoneyAmount = (value) => {
+          if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+          if (typeof value === "string") {
+            const parsed = parseFloat(value.replace(/[^0-9.-]/g, ""));
+            return Number.isFinite(parsed) ? parsed : 0;
+          }
+          return 0;
+        };
+
+        const getTransactionDate = (primaryDate, fallbackDate) => {
+          if (primaryDate) {
+            const parsedPrimary = new Date(primaryDate);
+            if (!isNaN(parsedPrimary)) return parsedPrimary;
+          }
+          if (fallbackDate) {
+            const parsedFallback = new Date(fallbackDate);
+            if (!isNaN(parsedFallback)) return parsedFallback;
+          }
+          return null;
+        };
+
+        const formatDateForExcel = (dateObj) => {
+          if (!dateObj || isNaN(dateObj)) return "-";
+          return dateObj.toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric"
+          });
+        };
+
+        // Filter and normalize payments within date range
+        const paymentsInRange = paymentHistory
+          .filter((payment) => {
+            if (!isPaymentMemberInList(payment)) return false;
+            const paymentDate = getTransactionDate(payment.date, payment.createdAt);
+            if (!paymentDate) return false;
+            const isCompleted = payment.status === "Completed" || payment.status === "Paid";
+            return paymentDate >= fromDate && paymentDate <= toDate && isCompleted;
+          })
+          .map((payment) => {
+            const paymentDate = getTransactionDate(payment.date, payment.createdAt);
+            return {
+              date: formatDateForExcel(paymentDate),
+              sortDate: paymentDate,
+              memberName: findMemberByBusinessId(payment.memberId)?.name || payment.memberId || "Unknown",
+              memberId: payment.memberId || "-",
+              amount: parseMoneyAmount(payment.amount),
+              method: getPaymentMethodDisplay(payment),
+              period: payment.period || "-",
+              reference: payment.reference || "-",
+              status: payment.status || "Completed"
+            };
+          })
+          .sort((a, b) => a.sortDate - b.sortDate);
+
+        // Filter and normalize donations within date range
+        const donationsInRange = (Array.isArray(donations) ? donations : [])
+          .filter((donation) => {
+            if (!donation) return false;
+            const donationDate = getTransactionDate(donation.date, donation.createdAt);
+            if (!donationDate) return false;
+            return donationDate >= fromDate && donationDate <= toDate;
+          })
+          .map((donation) => {
+            const donationDate = getTransactionDate(donation.date, donation.createdAt);
+            return {
+              date: formatDateForExcel(donationDate),
+              sortDate: donationDate,
+              memberName: donation.donorName || "Unknown",
+              memberId: donation.memberId || (donation.isMember ? "Member" : "Non-Member"),
+              amount: parseMoneyAmount(donation.amount),
+              method: donation.method || "-",
+              period: donation.donationType || "-",
+              reference: donation.receipt_number || "-",
+              status: "Completed"
+            };
+          })
+          .sort((a, b) => a.sortDate - b.sortDate);
+
+        const totalPaymentsAmount = paymentsInRange.reduce((sum, payment) => sum + payment.amount, 0);
+        const totalDonationsAmount = donationsInRange.reduce((sum, donation) => sum + donation.amount, 0);
+        const allExportedTransactions = [...paymentsInRange, ...donationsInRange];
+
+        const normalizeMethodKey = (methodValue) => {
+          const normalized = String(methodValue || "")
+            .toLowerCase()
+            .replace(/[\s_-]+/g, "");
+
+          if (normalized.includes("cash")) return "cash";
+          if (normalized.includes("fps")) return "fps";
+          if (normalized.includes("alipay")) return "alipay";
+          if (normalized.includes("bankdeposit") || normalized.includes("banktransfer") || normalized.includes("deposit")) {
+            return "bankDeposit";
+          }
+          return "others";
+        };
+
+        const collectedByMethod = allExportedTransactions.reduce((acc, transaction) => {
+          const methodKey = normalizeMethodKey(transaction.method);
+          acc[methodKey] += transaction.amount;
+          return acc;
+        }, {
+          cash: 0,
+          fps: 0,
+          alipay: 0,
+          bankDeposit: 0,
+          others: 0
+        });
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Transactions");
+
+        // Set column widths
+        worksheet.columns = [
+          { header: "Date", key: "date", width: 15 },
+          { header: "Member Name", key: "member_name", width: 24 },
+          { header: "Member ID", key: "member_id", width: 18 },
+          { header: "Amount", key: "amount", width: 16 },
+          { header: "Method", key: "method", width: 15 },
+          { header: "Period/Donation Type", key: "period", width: 18 },
+          { header: "Reference", key: "reference", width: 18 },
+          { header: "Status", key: "status", width: 12 }
+        ];
+
+        const allColumns = ["A", "B", "C", "D", "E", "F", "G", "H"];
+        let rowNum = 1;
+
+        const addSectionTitle = (title, color = "5a31ea") => {
+          worksheet.mergeCells(`A${rowNum}:H${rowNum}`);
+          const titleCell = worksheet.getCell(`A${rowNum}`);
+          titleCell.value = title;
+          titleCell.font = { bold: true, color: { argb: "FFFFFF" }, size: 12 };
+          titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: color } };
+          titleCell.alignment = { horizontal: "left", vertical: "middle" };
+          rowNum += 1;
+        };
+
+        const addTableHeaders = () => {
+          const headerRow = worksheet.getRow(rowNum);
+          headerRow.values = ["Date", "Member Name", "Member ID", "Amount", "Method", "Period/Donation Type", "Reference", "Status"];
+          headerRow.font = { bold: true, color: { argb: "FFFFFF" } };
+          headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "374151" } };
+          headerRow.alignment = { horizontal: "center", vertical: "middle" };
+          rowNum += 1;
+        };
+
+        const styleDataRow = (currentRow) => {
+          currentRow.eachCell((cell, colNumber) => {
+            cell.border = {
+              top: { style: "thin", color: { argb: "E5E7EB" } },
+              left: { style: "thin", color: { argb: "E5E7EB" } },
+              bottom: { style: "thin", color: { argb: "E5E7EB" } },
+              right: { style: "thin", color: { argb: "E5E7EB" } }
+            };
+            cell.alignment = {
+              horizontal: colNumber === 4 ? "right" : "left",
+              vertical: "middle"
+            };
+          });
+        };
+
+        const addNoDataRow = (message) => {
+          worksheet.mergeCells(`A${rowNum}:H${rowNum}`);
+          const row = worksheet.getRow(rowNum);
+          row.getCell(1).value = message;
+          row.getCell(1).font = { italic: true, color: { argb: "6B7280" } };
+          row.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
+          row.eachCell((cell) => {
+            cell.border = {
+              top: { style: "thin", color: { argb: "E5E7EB" } },
+              left: { style: "thin", color: { argb: "E5E7EB" } },
+              bottom: { style: "thin", color: { argb: "E5E7EB" } },
+              right: { style: "thin", color: { argb: "E5E7EB" } }
+            };
+          });
+          rowNum += 1;
+        };
+
+        addSectionTitle(`Transactions Export (${dateRange.from} to ${dateRange.to})`, "5a31ea");
+        rowNum += 1;
+
+        // Summary section (totals are based only on filtered records exported below)
+        addSectionTitle("Summary", "2563EB");
+        worksheet.getCell(`A${rowNum}`).value = "Date Range";
+        worksheet.getCell(`B${rowNum}`).value = `${dateRange.from} to ${dateRange.to}`;
+        rowNum += 1;
+
+        worksheet.getCell(`A${rowNum}`).value = "Total Payments Amount";
+        worksheet.getCell(`B${rowNum}`).value = totalPaymentsAmount;
+        worksheet.getCell(`B${rowNum}`).numFmt = "\"HK$\"#,##0.00";
+        rowNum += 1;
+
+        worksheet.getCell(`A${rowNum}`).value = "Total Donations Amount";
+        worksheet.getCell(`B${rowNum}`).value = totalDonationsAmount;
+        worksheet.getCell(`B${rowNum}`).numFmt = "\"HK$\"#,##0.00";
+        rowNum += 1;
+
+        worksheet.getCell(`A${rowNum}`).value = "Total Collected - Cash";
+        worksheet.getCell(`B${rowNum}`).value = collectedByMethod.cash;
+        worksheet.getCell(`B${rowNum}`).numFmt = "\"HK$\"#,##0.00";
+        rowNum += 1;
+
+        worksheet.getCell(`A${rowNum}`).value = "Total Collected - FPS";
+        worksheet.getCell(`B${rowNum}`).value = collectedByMethod.fps;
+        worksheet.getCell(`B${rowNum}`).numFmt = "\"HK$\"#,##0.00";
+        rowNum += 1;
+
+        worksheet.getCell(`A${rowNum}`).value = "Total Collected - Alipay";
+        worksheet.getCell(`B${rowNum}`).value = collectedByMethod.alipay;
+        worksheet.getCell(`B${rowNum}`).numFmt = "\"HK$\"#,##0.00";
+        rowNum += 1;
+
+        worksheet.getCell(`A${rowNum}`).value = "Total Collected - Bank Deposit";
+        worksheet.getCell(`B${rowNum}`).value = collectedByMethod.bankDeposit;
+        worksheet.getCell(`B${rowNum}`).numFmt = "\"HK$\"#,##0.00";
+        rowNum += 1;
+
+        worksheet.getCell(`A${rowNum}`).value = "Total Collected - Others";
+        worksheet.getCell(`B${rowNum}`).value = collectedByMethod.others;
+        worksheet.getCell(`B${rowNum}`).numFmt = "\"HK$\"#,##0.00";
+        rowNum += 1;
+
+        worksheet.getCell(`A${rowNum}`).value = "Grand Total";
+        worksheet.getCell(`B${rowNum}`).value = totalPaymentsAmount + totalDonationsAmount;
+        worksheet.getCell(`B${rowNum}`).numFmt = "\"HK$\"#,##0.00";
+        worksheet.getRow(rowNum).font = { bold: true };
+        rowNum += 2;
+
+        // Payments section
+        addSectionTitle(`Payments (${paymentsInRange.length})`, "047857");
+        addTableHeaders();
+        if (paymentsInRange.length === 0) {
+          addNoDataRow("No payment transactions found in the selected date range.");
+        } else {
+          paymentsInRange.forEach((payment) => {
+            const row = worksheet.getRow(rowNum);
+            row.values = [
+              payment.date,
+              payment.memberName,
+              payment.memberId,
+              payment.amount,
+              payment.method,
+              payment.period,
+              payment.reference,
+              payment.status
+            ];
+            row.getCell(4).numFmt = "\"HK$\"#,##0.00";
+            styleDataRow(row);
+            rowNum += 1;
+          });
+        }
+        rowNum += 2;
+
+        // Donations section
+        addSectionTitle(`Donations (${donationsInRange.length})`, "B45309");
+        addTableHeaders();
+        if (donationsInRange.length === 0) {
+          addNoDataRow("No donation transactions found in the selected date range.");
+        } else {
+          donationsInRange.forEach((donation) => {
+            const row = worksheet.getRow(rowNum);
+            row.values = [
+              donation.date,
+              donation.memberName,
+              donation.memberId,
+              donation.amount,
+              donation.method,
+              donation.period,
+              donation.reference,
+              donation.status
+            ];
+            row.getCell(4).numFmt = "\"HK$\"#,##0.00";
+            styleDataRow(row);
+            rowNum += 1;
+          });
+        }
+
+        // Apply consistent borders/alignment to summary table rows
+        worksheet.eachRow((row, currentRowNum) => {
+          if (currentRowNum < 4 || !row.hasValues) return;
+          if (
+            row.getCell(1).value === "Date Range" ||
+            row.getCell(1).value === "Total Payments Amount" ||
+            row.getCell(1).value === "Total Donations Amount" ||
+            row.getCell(1).value === "Total Collected - Cash" ||
+            row.getCell(1).value === "Total Collected - FPS" ||
+            row.getCell(1).value === "Total Collected - Alipay" ||
+            row.getCell(1).value === "Total Collected - Bank Deposit" ||
+            row.getCell(1).value === "Total Collected - Others" ||
+            row.getCell(1).value === "Grand Total"
+          ) {
+            allColumns.slice(0, 2).forEach((column) => {
+              const cell = worksheet.getCell(`${column}${currentRowNum}`);
+              cell.border = {
+                top: { style: "thin", color: { argb: "E5E7EB" } },
+                left: { style: "thin", color: { argb: "E5E7EB" } },
+                bottom: { style: "thin", color: { argb: "E5E7EB" } },
+                right: { style: "thin", color: { argb: "E5E7EB" } }
+              };
+              cell.alignment = { horizontal: column === "B" ? "right" : "left", vertical: "middle" };
+            });
+          }
+        });
+
+        // Add summary section
+        const paymentCount = paymentsInRange.length;
+        const donationCount = donationsInRange.length;
+        const totalTransactions = paymentCount + donationCount;
+
+        // Generate filename with timestamp
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0];
+        const filename = `transactions-${dateRange.from}-to-${dateRange.to}-${dateStr}.xlsx`;
+
+        // Save the workbook
+        await workbook.xlsx.writeBuffer().then((buffer) => {
+          const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+
+        showToast(`✓ Exported ${totalTransactions} transactions (${paymentCount} payments, ${donationCount} donations) to Excel`, "success");
+      } catch (error) {
+        console.error("Error exporting transactions to Excel:", error);
+        showToast("Failed to export transactions to Excel", "error");
+      }
+    };
+
     // Get recent payments in date range
     const recentPaymentsInRange = paymentHistory
       .filter(payment => {
@@ -14896,10 +15240,11 @@ Indian Muslim Association Hong Kong
                           onClick={handleExportAllInvoicesToExcel}
                           style={{ 
                             background: "none",
-                            color: "#111827",
+                            color: "#5a31ea",
                             padding: "10px 16px",
                             fontSize: "0.9rem",
                             boxShadow: "none",
+                            border: "2px solid #5a31ea",
                           }}
                           // title="Export all invoices to Excel"
                         >
@@ -15674,7 +16019,8 @@ Indian Muslim Association Hong Kong
                           display: "flex", 
                           alignItems: "center", 
                           gap: "8px",
-                          whiteSpace: "nowrap"
+                          whiteSpace: "nowrap",
+                          border: "2px solid #5a31ea",
                         }}
                       >
                         <i className="fas fa-download" style={{ fontSize: "0.875rem" }}></i>
@@ -16494,10 +16840,11 @@ Indian Muslim Association Hong Kong
                           onClick={handleExportAllDonationsToExcel}
                           style={{ 
                             background: "none",
-                            color: "#111827",
+                            color: "#5a31ea",
                             padding: "10px 16px",
                             fontSize: "0.9rem",
                             boxShadow: "none",
+                            border: "2px solid #5a31ea",
                           }}
                           // title="Export all donations to Excel"
                         >
@@ -18526,6 +18873,40 @@ Indian Muslim Association Hong Kong
                     </div>
                     {isFinanceRole && (
                       <div className="financial-reports-export-buttons" style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                         
+                         <button
+                         className="primary-btn"
+                        onClick={handleExportTransactionsByDateRange}
+                        // style={{
+                        //   padding: "12px 20px",
+                        //   borderRadius: "8px",
+                        //   fontSize: "0.875rem",
+                        //   fontWeight: "600",
+                        //   cursor: "pointer",
+                        //   transition: "all 0.2s ease",
+                        //   background: "#5a31ea",
+                        //   color: "#ffffff",
+                        //   border: "none",
+                        //   boxShadow: "none",
+                        //   display: "flex",
+                        //   alignItems: "center",
+                        //   gap: "8px",
+                        //   whiteSpace: "nowrap"
+                        // }}
+                        style={{marginTop: "2px"}}
+                        // onMouseEnter={(e) => {
+                        //   e.target.style.background = "#5a31ea";
+                        //   // e.target.style.boxShadow = "0 4px 12px rgba(16, 185, 129, 0.4)";
+                        // }}
+                        // onMouseLeave={(e) => {
+                        //   e.target.style.background = "#10b981";
+                        //   e.target.style.boxShadow = "0 2px 8px rgba(16, 185, 129, 0.3)";
+                        // }}
+                        // title="Export all transactions within the selected date range to Excel"
+                      >
+                        <i className="fas fa-download" style={{ fontSize: "0.75rem",marginRight: "8px" }}></i>
+                        Export to Excel
+                      </button>
                         {/* <button
                           type="button"
                           onClick={handleSecureExportCSV}
@@ -18626,10 +19007,15 @@ Indian Muslim Association Hong Kong
                             background: "#ffffff",
                             transition: "all 0.2s ease"
                           }}
-                          onFocus={(e) => {
-                            e.target.style.borderColor = "#5a31ea";
-                            e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                           onClick={(e) => {
+                            try {
+                              e.target.showPicker?.();
+                            } catch (err) {}
                           }}
+                          // onFocus={(e) => {
+                          //   e.target.style.borderColor = "#5a31ea";
+                          //   e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                          // }}
                           onBlur={(e) => {
                             e.target.style.borderColor = "#e5e7eb";
                             e.target.style.boxShadow = "none";
@@ -18657,9 +19043,14 @@ Indian Muslim Association Hong Kong
                             background: "#ffffff",
                             transition: "all 0.2s ease"
                           }}
-                          onFocus={(e) => {
-                            e.target.style.borderColor = "#5a31ea";
-                            e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                          // onFocus={(e) => {
+                          //   e.target.style.borderColor = "#5a31ea";
+                          //   e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                          // }}
+                          onClick={(e) => {
+                            try {
+                              e.target.showPicker?.();
+                            } catch (err) {}
                           }}
                           onBlur={(e) => {
                             e.target.style.borderColor = "#e5e7eb";
@@ -18726,6 +19117,7 @@ Indian Muslim Association Hong Kong
                           </button>
                         ))}
                       </div>
+                     
                     </div>
                   </div>
 
@@ -18750,9 +19142,9 @@ Indian Muslim Association Hong Kong
                         Total Amount
                       </p>
                       <h4>
-                        {formatCurrency((reportStats.totalSubscriptionAmount || 0) + (reportStats.donationsTotal || 0))}
+                        {formatCurrency(reportStats.collected || 0)}
                       </h4>
-                      <small>Subscriptions + Donations</small>
+                      <small>Subscriptions + Donations (selected filters)</small>
                     </div>
                     <div className="card kpi">
                       <p>
@@ -18923,7 +19315,7 @@ Indian Muslim Association Hong Kong
                                       style={{
                                         height: `${height}px`
                                       }}
-                                      title={`${period}: ${formatCurrency(amount)}`}
+                                      // title={`${period}: ${formatCurrency(amount)}`}
                                     >
                                       {height > 40 && formatCurrency(Math.round(amount))}
                                     </div>
@@ -19009,7 +19401,7 @@ Indian Muslim Association Hong Kong
                   </div> */}
 
                   {/* Filters and Transactions Section */}
-                  <div className="card card-reports" >
+                  <div className=" card-reports" >
                     {/* Filters */}
                     {/* <div style={{ marginBottom: "24px", display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center" }}>
                       <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
@@ -19211,7 +19603,7 @@ Indian Muslim Association Hong Kong
                       });
                       
                       return (
-                        <div className="kpi-grid" style={{ marginBottom: "24px" }}>
+                        <div className="kpi-grid-tranasctions" style={{ marginBottom: "0px" }}>
                           <div className="card kpi">
                             <p>
                               <i className="fas fa-money-bill" style={{ marginRight: "8px", color: "#10b981" }}></i>
