@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import { createServer } from "http";
 import connectDB from "./config/database.js";
 import { initializeCloudinary } from "./config/cloudinary.js";
-import { initializeEmailTransporter } from "./config/email.js";
+// import { initializeEmailTransporter } from "./config/email.js";
 import { scheduleReminderCron, scheduleInvoiceGenerationCron, scheduleNextYearInvoiceCron, reminderCronJob } from "./utils/cron.js";
 import { calculateAndUpdateMemberBalance } from "./utils/balance.js";
 import UserModel from "./models/User.js";
@@ -19,7 +19,7 @@ import invoicesRoutes from "./routes/invoices.js";
 import paymentsRoutes from "./routes/payments.js";
 import donationsRoutes from "./routes/donations.js";
 import remindersRoutes from "./routes/reminders.js";
-import emailRoutes from "./routes/email.js";
+// import emailRoutes from "./routes/email.js";
 import paymentMethodsRoutes from "./routes/paymentMethods.js";
 import authRoutes from "./routes/auth.js";
 import uploadRoutes from "./routes/upload.js";
@@ -75,7 +75,7 @@ app.use((req, res, next) => {
 
 // Initialize services
 initializeCloudinary();
-initializeEmailTransporter();
+// initializeEmailTransporter();
 
 // Connect to database
 connectDB()
@@ -124,7 +124,7 @@ app.use("/api/invoices", invoicesRoutes);
 app.use("/api/payments", paymentsRoutes);
 app.use("/api/donations", donationsRoutes);
 app.use("/api/reminders", remindersRoutes);
-app.use("/api/email-settings", emailRoutes);
+// app.use("/api/email-settings", emailRoutes);
 app.use("/api/payment-methods", paymentMethodsRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/admin", adminSecurityRoutes);
@@ -229,8 +229,6 @@ if (!process.env.VERCEL) {
     console.log(`  - GET    /api/donations`);
     console.log(`  - POST   /api/donations`);
     console.log(`  - DELETE /api/donations/:id`);
-    console.log("BACKEND DEPLOY TEST v2");
-    console.log("BACKEND DEPLOY TEST v2");
 
     
     // Initialize all member balances on server start
