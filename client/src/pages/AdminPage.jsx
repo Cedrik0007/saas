@@ -1493,6 +1493,7 @@ function AdminPage() {
     const [donationsPageSize, setDonationsPageSize] = useState(10);
     const [donationYearFilter, setDonationYearFilter] = useState("All"); // Year filter for donations, default to All
     const [donationMethodFilter, setDonationMethodFilter] = useState("All"); // Payment method filter for donations: All, Cash, Online Payment
+    const [donationMemberTypeFilter, setDonationMemberTypeFilter] = useState("All"); // All, Member, Non-Member
     const [remindersPage, setRemindersPage] = useState(1);
     const [remindersPageSize, setRemindersPageSize] = useState(10);
     const [outstandingMembersPage, setOutstandingMembersPage] = useState(1);
@@ -3004,9 +3005,63 @@ function AdminPage() {
         const memberIds = new Set((members || []).map(m => m.id).filter(Boolean));
         
         // Filter invoices to only include those for members in the system
-        const filteredInvoices = (invoices || []).filter(invoice => 
+        let filteredInvoices = (invoices || []).filter(invoice => 
           memberIds.has(invoice.memberId)
         );
+
+        // Apply status filter
+        if (invoiceStatusFilter !== "All") {
+          filteredInvoices = filteredInvoices.filter((invoice) => {
+            const status = invoice.status || "Unpaid";
+            if (invoiceStatusFilter === "Paid") {
+              return status === "Paid" || status === "Completed";
+            } else if (invoiceStatusFilter === "Unpaid") {
+              return status !== "Paid" && status !== "Completed" && status !== "Overdue";
+            } else {
+              return status === invoiceStatusFilter;
+            }
+          });
+        }
+
+        // Apply year filter
+        if (invoiceYearFilter !== "All") {
+          filteredInvoices = filteredInvoices.filter((invoice) => {
+            const periodStr = String(invoice.period || "").trim();
+            const yearMatch = periodStr.match(/\d{4}/);
+            const invoiceYear = yearMatch ? yearMatch[0] : "";
+            return invoiceYear === invoiceYearFilter;
+          });
+        }
+
+        // Apply subscription type filter
+        if (invoiceSubscriptionTypeFilter !== "All") {
+          filteredInvoices = filteredInvoices.filter((invoice) => {
+            return String(invoice?.subscriptionType || "").trim() === invoiceSubscriptionTypeFilter;
+          });
+        }
+
+        // Apply member type filter
+        if (invoiceMemberTypeFilter !== "All") {
+          filteredInvoices = filteredInvoices.filter((invoice) => {
+            const member = (members || []).find((m) => matchesInvoiceToMember(invoice, m));
+            const displayId = String(member?.id || "").toUpperCase();
+            if (invoiceMemberTypeFilter === "Annual") return displayId.startsWith("AM");
+            if (invoiceMemberTypeFilter === "Lifetime") return displayId.startsWith("LM");
+            return true;
+          });
+        }
+
+        // Apply search term filter
+        if (invoiceSearchTerm.trim()) {
+          const searchLower = invoiceSearchTerm.toLowerCase();
+          filteredInvoices = filteredInvoices.filter((invoice) => {
+            const member = (members || []).find((m) => matchesInvoiceToMember(invoice, m));
+            const nameMatch = member?.name?.toLowerCase().includes(searchLower);
+            const nativePlaceMatch = member?.nativePlace?.toLowerCase().includes(searchLower);
+            const periodMatch = String(invoice.period || "").toLowerCase().includes(searchLower);
+            return nameMatch || nativePlaceMatch || periodMatch;
+          });
+        }
         
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Invoices");
@@ -3269,8 +3324,61 @@ function AdminPage() {
     // Export all Donations to Excel (all donations from backend without restrictions)
     const handleExportAllDonationsToExcel = async () => {
       try {
-        // Export ALL donations from backend without any restrictions
-        const filteredDonations = (donations || []).filter(donation => donation);
+        // Filter donations based on applied filters
+        let filteredDonations = (donations || []).filter(donation => donation);
+
+        // Apply year filter
+        if (donationYearFilter && donationYearFilter !== "All") {
+          filteredDonations = filteredDonations.filter((donation) => {
+            if (!donation) return false;
+            const donationDate = donation.date || donation.createdAt;
+            if (!donationDate) return false;
+            
+            try {
+              const date = new Date(donationDate);
+              const donationYear = date.getFullYear().toString();
+              return donationYear === donationYearFilter;
+            } catch (e) {
+              return false;
+            }
+          });
+        }
+
+        // Apply payment method filter
+        if (donationMethodFilter && donationMethodFilter !== "All") {
+          filteredDonations = filteredDonations.filter((donation) => {
+            if (!donation) return false;
+            const method = String(donation.method || "").trim();
+            
+            // Handle Cash
+            if (donationMethodFilter === "Cash") {
+              return method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
+            }
+            
+            // Handle Other - match all methods that are not Cash, FPS, Alipay, or Bank Deposit
+            if (donationMethodFilter === "Other") {
+              const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
+              const isCash = method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
+              return !isCash && !specificMethods.includes(method) && method !== "";
+            }
+            
+            // Handle specific payment methods (FPS, Alipay, Bank Deposit)
+            return method === donationMethodFilter;
+          });
+        }
+
+        // Apply member type filter
+        if (donationMemberTypeFilter !== "All") {
+          filteredDonations = filteredDonations.filter((donation) => {
+            if (!donation) return false;
+            if (donationMemberTypeFilter === "Member") {
+              return donation.isMember === true;
+            } else if (donationMemberTypeFilter === "Non-Member") {
+              return donation.isMember !== true;
+            }
+            return true;
+          });
+        }
         
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Donations");
@@ -14790,15 +14898,31 @@ Indian Muslim Association, Hong Kong`;
                         <h3><i className="fas fa-file-invoice" style={{ marginRight: "10px" }}></i>Invoices</h3>
                         <p>View and manage all invoices.</p>
                       </div>
-                      <button
-                        className="primary-btn"
-                        onClick={() => {
-                          handleNavClick("invoice-builder");
-                          // showToast("Redirecting to Invoice Builder...");
-                        }}
-                      >
-                        <i className="fas fa-plus" style={{ marginRight: "8px" }}></i>Create Invoice
-                      </button>
+                      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                        <button
+                          className="primary-btn"
+                          onClick={handleExportAllInvoicesToExcel}
+                          style={{ 
+                            background: "none",
+                            color: "#111827",
+                            padding: "10px 16px",
+                            fontSize: "0.9rem",
+                            boxShadow: "none",
+                          }}
+                          // title="Export all invoices to Excel"
+                        >
+                          <i className="fas fa-download" style={{ marginRight: "8px" }}></i>Export to Excel
+                        </button>
+                        <button
+                          className="primary-btn"
+                          onClick={() => {
+                            handleNavClick("invoice-builder");
+                            // showToast("Redirecting to Invoice Builder...");
+                          }}
+                        >
+                          <i className="fas fa-plus" style={{ marginRight: "8px" }}></i>Create Invoice
+                        </button>
+                      </div>
                     </div>
                   </header>
 
@@ -16372,12 +16496,28 @@ Indian Muslim Association, Hong Kong`;
                         <h3>Donations</h3>
                         <p>Manage donation records from members and non-members.</p>
                       </div>
-                      <button
-                        className="primary-btn"
-                        onClick={() => setShowDonationForm(true)}
-                      >
-                        + Add Donation
-                      </button>
+                      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                        <button
+                          className="primary-btn"
+                          onClick={handleExportAllDonationsToExcel}
+                          style={{ 
+                            background: "none",
+                            color: "#111827",
+                            padding: "10px 16px",
+                            fontSize: "0.9rem",
+                            boxShadow: "none",
+                          }}
+                          // title="Export all donations to Excel"
+                        >
+                          <i className="fas fa-download" style={{ marginRight: "8px" }}></i>Export to Excel
+                        </button>
+                        <button
+                          className="primary-btn"
+                          onClick={() => setShowDonationForm(true)}
+                        >
+                          + Add Donation
+                        </button>
+                      </div>
                     </div>
                   </header>
 
@@ -17600,14 +17740,21 @@ Indian Muslim Association, Hong Kong`;
                             <input
                                 type="date"
                                 value={donationForm.date}
+                                // onClick={(e) => {
+                                //   if (e.target.showPicker) {
+                                //     e.target.showPicker();
+                                //   }
+                                // }}
+                                // onFocus={(e) => {
+                                //   if (e.target.showPicker) {
+                                //     e.target.showPicker();
+                                //   }
+                                // }}
                                 onClick={(e) => {
-                                  if (e.target.showPicker) {
-                                    e.target.showPicker();
-                                  }
-                                }}
-                                onFocus={(e) => {
-                                  if (e.target.showPicker) {
-                                    e.target.showPicker();
+                                  try {
+                                    e.target.showPicker?.();
+                                  } catch (err) {
+                                    console.log("Picker blocked by browser");
                                   }
                                 }}
                                 onChange={(e) => {
@@ -17845,6 +17992,19 @@ Indian Muslim Association, Hong Kong`;
                             });
                           }
 
+                          // Filter by member/non-member
+                          if (donationMemberTypeFilter !== "All") {
+                            filteredDonations = filteredDonations.filter((donation) => {
+                              if (!donation) return false;
+                              if (donationMemberTypeFilter === "Member") {
+                                return donation.isMember === true;
+                              } else if (donationMemberTypeFilter === "Non-Member") {
+                                return donation.isMember !== true;
+                              }
+                              return true;
+                            });
+                          }
+
                           // Calculate pagination
                           const totalPages = Math.ceil(filteredDonations.length / donationsPageSize) || 1;
                           const currentPage = Math.min(donationsPage, totalPages);
@@ -18069,6 +18229,62 @@ Indian Muslim Association, Hong Kong`;
                                       <option value="Bank Deposit">Bank Deposit</option>
                                       <option value="Other">Other</option>
                                     </select>
+                                  </div>
+                                  <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "12px" }}>
+                                    <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Type:</label>
+                                    <div style={{
+                                      display: "flex",
+                                      gap: "4px",
+                                      background: "#f3f4f6",
+                                      padding: "4px",
+                                      borderRadius: "4px",
+                                      flexWrap: "wrap"
+                                    }}>
+                                      {[
+                                        { value: "All", label: "All" },
+                                        { value: "Member", label: "Member" },
+                                        { value: "Non-Member", label: "Non-Member" },
+                                      ].map((option) => (
+                                        <button
+                                          key={option.value}
+                                          type="button"
+                                          onClick={() => {
+                                            setDonationMemberTypeFilter(option.value);
+                                            setDonationsPage(1);
+                                          }}
+                                          style={{
+                                            padding: "8px 16px",
+                                            borderRadius: "4px",
+                                            border: "none",
+                                            fontSize: "0.875rem",
+                                            fontWeight: "500",
+                                            cursor: "pointer",
+                                            transition: "all 0.2s ease",
+                                            background: donationMemberTypeFilter === option.value
+                                              ? "#5a31ea"
+                                              : "transparent",
+                                            color: donationMemberTypeFilter === option.value ? "#ffffff" : "#6b7280",
+                                            boxShadow: donationMemberTypeFilter === option.value
+                                              ? "0 2px 8px rgba(90, 49, 234, 0.3)"
+                                              : "none",
+                                          }}
+                                          onMouseEnter={(e) => {
+                                            if (donationMemberTypeFilter !== option.value) {
+                                              e.target.style.background = "#e5e7eb";
+                                              e.target.style.color = "#374151";
+                                            }
+                                          }}
+                                          onMouseLeave={(e) => {
+                                            if (donationMemberTypeFilter !== option.value) {
+                                              e.target.style.background = "transparent";
+                                              e.target.style.color = "#6b7280";
+                                            }
+                                          }}
+                                        >
+                                          {option.label}
+                                        </button>
+                                      ))}
+                                    </div>
                                   </div>
                                 </div>
                                 {/* <button
@@ -18318,7 +18534,7 @@ Indian Muslim Association, Hong Kong`;
                     </div>
                     {isFinanceRole && (
                       <div className="financial-reports-export-buttons" style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
-                        <button
+                        {/* <button
                           type="button"
                           onClick={handleSecureExportCSV}
                           title="Export CSV"
@@ -18389,7 +18605,7 @@ Indian Muslim Association, Hong Kong`;
                           }}
                         >
                           <i className="fas fa-file-pdf"></i>
-                        </button>
+                        </button> */}
                       </div>
                     )}
                   </header>
