@@ -5011,14 +5011,29 @@ button[disabled] {
   color: #7c4eff;
 }
 
-.site-footer {
+/* .site-footer {
   padding: 24px clamp(16px, 4vw, 48px);
   padding-top: 10px;
   padding-bottom: 48px;
   text-align: left;
   color: var(--muted);
   border-top: 0px solid var(--border);
-  /*background: var(--surface);*/
+  background: var(--surface);
+  width: calc(100% - 15% - 30px);
+  margin-left: calc(15% + 30px);
+  box-sizing: border-box;
+} */
+
+.site-footer {
+  position: relative;
+  padding: 24px clamp(16px, 4vw, 48px);
+  top: 87%;
+  padding-top: 10px;
+  /* padding-bottom: 48px; */
+  text-align: center;
+  color: var(--muted);
+  border-top: 0px solid var(--border);
+  /* background: var(--surface); */
   width: calc(100% - 15% - 30px);
   margin-left: calc(15% + 30px);
   box-sizing: border-box;

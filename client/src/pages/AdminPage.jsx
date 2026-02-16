@@ -294,7 +294,7 @@ function AdminPage() {
         items: [
           { id: "users", label: "Users", roles: ["Owner", "Finance Admin"] },
           { id: "roles", label: "Roles", roles: ["Owner"] },
-          { id: "org-settings", label: "Organization Settings", roles: ["Owner", "Finance Admin"] },
+          { id: "org-settings", label: "Organization Info", roles: ["Owner", "Finance Admin"] },
         ]
       },
     ];
@@ -8800,9 +8800,9 @@ Indian Muslim Association Hong Kong
                                     color: "#666"
                                   }}
                                 />
-                                <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 4 }}>
+                                {/* <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 4 }}>
                                   This is the amount that will be billed for the selected subscription for the current year.
-                                </div>
+                                </div> */}
                               </label>
                               </>
                             )}
@@ -8816,6 +8816,13 @@ Indian Muslim Association Hong Kong
                                 <input
                                   type="date"
                                   value={memberForm.nextDue}
+                                  onClick={(e) => {
+                                    try {
+                                      e.target.showPicker?.();
+                                    } catch (err) {
+                                      console.log("Picker blocked by browser");
+                                    }
+                                  }}
                                   onChange={(e) => {
                                     const selectedDate = e.target.value;
                                     handleMemberFieldChange("nextDue", selectedDate);
@@ -13825,7 +13832,7 @@ Indian Muslim Association Hong Kong
               )}
 
               {/* PASSWORD RESET REQUESTS - Only visible to Owner */}
-              {/* {activeSection === "communications" && currentAdminRole === "Owner" && (
+               {activeSection === "communications" && currentAdminRole === "Owner" && (
                 <article className="screen-card" id="password-reset-requests" style={{ marginTop: "24px" }}>
                   <header className="screen-card__header">
                     <div>
@@ -13921,7 +13928,7 @@ Indian Muslim Association Hong Kong
                     </div>
                   </div>
                 </article>
-              )} */}
+              )} 
 
               {/* PAYMENT METHODS */}
               {activeSection === "payment-methods" && (
@@ -20503,13 +20510,13 @@ Indian Muslim Association Hong Kong
                 </article>
               )}
 
-              {/* ORGANIZATION SETTINGS */}
+              {/* Organization Info */}
               {activeSection === "org-settings" && (
                 <article className="screen-card" id="org-settings">
                   <header className="screen-card__header">
                     <div>
                       {renderBreadcrumb("org-settings")}
-                      <h3><i className="fas fa-building" style={{ marginRight: "10px" }}></i>Organization Settings</h3>
+                      <h3><i className="fas fa-building" style={{ marginRight: "10px" }}></i>Organization Info</h3>
                       <p>Manage organization information and preferences.</p>
                     </div>
                   </header>

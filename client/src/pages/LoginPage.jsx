@@ -294,7 +294,7 @@ export function LoginPage() {
                   )}
                 </button>
               </div>
-              <div className="login-forgot-link">
+              {/* <div className="login-forgot-link">
                 <Link 
                   to="/forgot-password" 
                   onClick={(e) => {
@@ -306,7 +306,7 @@ export function LoginPage() {
                 >
                   Forgot Password?
                 </Link>
-              </div>
+              </div> */}
             </label>
 
             {/* <div className="login-hints">
