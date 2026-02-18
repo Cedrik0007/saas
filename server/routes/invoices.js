@@ -117,15 +117,15 @@ router.get("/", async (req, res) => {
   try {
     await ensureConnection();
     const allInvoices = await InvoiceModel.find({}).sort({ createdAt: -1 });
-    const responsePayload = allInvoices.map((invoice) => {
+    const responsePayload = await Promise.all(allInvoices.map(async (invoice) => {
       const invoiceObj = invoice?.toObject ? invoice.toObject() : invoice;
       return {
         ...invoiceObj,
         receiptPdfUrl: invoiceObj?._id
-          ? getReceiptWhatsAppUrl(invoiceObj._id)
+          ? await getReceiptWhatsAppUrl(invoiceObj)
           : null,
       };
-    });
+    }));
     res.json(responsePayload);
   } catch (error) {
     console.error("Error fetching invoices:", error);
@@ -159,15 +159,15 @@ router.get("/member/:memberId", async (req, res) => {
     );
 
     const memberInvoices = await InvoiceModel.find({ memberId: { $in: validIds } }).sort({ createdAt: -1 });
-    const responsePayload = memberInvoices.map((invoice) => {
+    const responsePayload = await Promise.all(memberInvoices.map(async (invoice) => {
       const invoiceObj = invoice?.toObject ? invoice.toObject() : invoice;
       return {
         ...invoiceObj,
         receiptPdfUrl: invoiceObj?._id
-          ? getReceiptWhatsAppUrl(invoiceObj._id)
+          ? await getReceiptWhatsAppUrl(invoiceObj)
           : null,
       };
-    });
+    }));
     res.json(responsePayload);
   } catch (error) {
     console.error("Error fetching member invoices:", error);
@@ -1368,7 +1368,7 @@ router.get("/:id/whatsapp-data", async (req, res) => {
     const amountNum = parseFloat(String(amountStr).replace(/[^0-9.]/g, "")) || 0;
     const invoiceYear = (inv.period || "").match(/\d{4}/)?.[0] || "";
     const method = String(inv.method || "").trim();
-    const receiptPdfUrl = getReceiptWhatsAppUrl(inv._id);
+    const receiptPdfUrl = await getReceiptWhatsAppUrl(inv);
 
     res.json({
       memberName,

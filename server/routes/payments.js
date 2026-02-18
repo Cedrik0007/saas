@@ -203,7 +203,7 @@ router.post("/approve-invoice", requireFinanceRole, async (req, res) => {
     }
 
     const receiptPdfUrl = invoice?._id
-      ? getReceiptWhatsAppUrl(invoice._id)
+      ? await getReceiptWhatsAppUrl(invoice)
       : null;
     
     console.log("📤 DEBUG: Returning invoice in response with payment_date:", invoice?.payment_date);
@@ -252,7 +252,7 @@ router.put("/:id/approve", requireFinanceRole, async (req, res) => {
     }
 
     const receiptPdfUrl = invoice?._id
-      ? getReceiptWhatsAppUrl(invoice._id)
+      ? await getReceiptWhatsAppUrl(invoice)
       : null;
     res.json({ success: true, payment, invoice, receiptPdfUrl });
   } catch (error) {

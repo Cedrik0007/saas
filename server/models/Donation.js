@@ -1,4 +1,7 @@
 import mongoose from "mongoose";
+import crypto from "crypto";
+
+const generateShortToken = () => crypto.randomBytes(4).toString("hex");
 
 const DonationSchema = new mongoose.Schema({
   donorName: { type: String, required: true },
@@ -28,8 +31,23 @@ const DonationSchema = new mongoose.Schema({
   notes: String,
   date: String, // Auto-generated
   receipt_number: { type: String, unique: true, sparse: true }, // 4-digit receipt number starting from 2000
+  shortToken: { type: String, unique: true, sparse: true },
+  tokenExpiresAt: { type: Date, default: null },
 }, {
   timestamps: true
+});
+
+DonationSchema.index({ shortToken: 1 }, { unique: true, sparse: true });
+
+DonationSchema.pre("validate", function ensureShortToken(next) {
+  try {
+    if (!this.shortToken) {
+      this.shortToken = generateShortToken();
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 const DonationModel = mongoose.model("donations", DonationSchema);

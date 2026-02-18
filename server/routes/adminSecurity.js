@@ -57,13 +57,11 @@ router.post("/confirm-password", async (req, res) => {
     }
 
     const storedPassword = admin.password || "";
-    let passwordMatches = false;
-
-    if (storedPassword.startsWith("$2") && storedPassword.length > 20) {
-      passwordMatches = await bcrypt.compare(password, storedPassword);
-    } else {
-      passwordMatches = storedPassword.trim() === password.trim();
+    if (typeof storedPassword !== "string" || !storedPassword.startsWith("$2")) {
+      return res.status(401).json({ success: false, message: "Password verification unavailable. Please reset your password." });
     }
+
+    const passwordMatches = await bcrypt.compare(password, storedPassword);
 
     if (!passwordMatches) {
       return res.status(401).json({ success: false, message: "Invalid password" });

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import crypto from "crypto";
 
 const objectIdRegex = /^[a-f\d]{24}$/i;
 
@@ -44,6 +45,7 @@ const buildValidationError = (message) => {
 };
 
 const isPaidStatusUpdateAllowed = (options = {}) => options?.allowPaidStatusUpdate === true;
+const generateShortToken = () => crypto.randomBytes(4).toString("hex");
 
 async function ensureReceiptNumberForDocument(invoiceDoc) {
   if (!invoiceDoc) {
@@ -170,6 +172,8 @@ const InvoiceSchema = new mongoose.Schema({
   payment_date: { type: Date, default: null }, // Date entered by user when marking invoice as paid
   receiver_name: { type: String, default: null },
   receiptNumber: { type: String, default: null }, // Receipt number assigned when payment is approved
+  shortToken: { type: String, unique: true, sparse: true },
+  tokenExpiresAt: { type: Date, default: null },
 }, {
   timestamps: true
 });
@@ -177,6 +181,7 @@ const InvoiceSchema = new mongoose.Schema({
 // Ensure invoice ID uniqueness when possible. Use sparse index to avoid conflicts with legacy rows missing `id`.
 InvoiceSchema.index({ id: 1 }, { unique: true, sparse: true });
 InvoiceSchema.index({ invoiceNo: 1 }, { unique: true, sparse: true });
+InvoiceSchema.index({ shortToken: 1 }, { unique: true, sparse: true });
 
 const isUpdatingField = (update, field) => {
   if (!update) return false;
@@ -192,6 +197,9 @@ InvoiceSchema.pre('validate', function (next) {
     if (this.memberName !== undefined) this.memberName = undefined;
     if (this.memberEmail !== undefined) this.memberEmail = undefined;
     this.memberId = sanitizeMemberIdValue(this.memberId || "");
+    if (!this.shortToken) {
+      this.shortToken = generateShortToken();
+    }
     next();
   } catch (err) {
     next(err);

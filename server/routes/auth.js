@@ -1,4 +1,5 @@
 import express from "express";
+import bcrypt from "bcryptjs";
 import { ensureConnection } from "../config/database.js";
 import AdminModel from "../models/Admin.js";
 import UserModel from "../models/User.js";
@@ -45,7 +46,7 @@ router.post("/login", async (req, res) => {
   try {
     await ensureConnection();
     const emailLower = email.trim().toLowerCase();
-    const passwordTrimmed = password.trim();
+    const inputPassword = typeof password === "string" ? password : "";
     
     // Check based on the role specified
     if (role === "admin" || role === "Admin") {
@@ -54,7 +55,7 @@ router.post("/login", async (req, res) => {
       try {
         admin = await AdminModel.findOne({ 
           email: emailLower 
-        });
+        }).select("+password");
       } catch (dbError) {
         console.error("Database query error:", dbError);
         return res.status(500).json({ 
@@ -114,9 +115,28 @@ router.post("/login", async (req, res) => {
         // Continue if date check fails
       }
 
-      // Check password (trim both for comparison)
-      const adminPassword = (admin.password || "").trim();
-      if (adminPassword !== passwordTrimmed) {
+      // Password must be compared against stored bcrypt hash.
+      const adminPasswordHash = typeof admin.password === "string" ? admin.password : "";
+      if (!adminPasswordHash) {
+        console.warn(`Admin login blocked: missing password hash for ${emailLower}`);
+        return res.status(401).json({
+          message: "Invalid email or password",
+          success: false
+        });
+      }
+
+      let isAdminPasswordValid = false;
+      try {
+        isAdminPasswordValid = await bcrypt.compare(inputPassword, adminPasswordHash);
+      } catch (compareError) {
+        console.error(`Admin password compare failed for ${emailLower}:`, compareError);
+        return res.status(500).json({
+          message: "Authentication error. Please try again later.",
+          success: false
+        });
+      }
+
+      if (!isAdminPasswordValid) {
         console.log(`Login attempt failed: Password mismatch for admin ${emailLower}`);
         // Increment failed attempts
         admin.failedLoginAttempts = (admin.failedLoginAttempts || 0) + 1;
@@ -269,7 +289,7 @@ router.post("/login", async (req, res) => {
       const escapedEmail = emailLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const member = await UserModel.findOne({ 
         email: { $regex: `^${escapedEmail}$`, $options: 'i' }
-      });
+      }).select("+password");
 
       if (!member) {
         return res.status(401).json({ 
@@ -295,18 +315,25 @@ router.post("/login", async (req, res) => {
       }
 
       // Check password - require password for member login
-      if (!member.password || member.password.trim() === '') {
+      if (!member.password) {
         return res.status(401).json({ 
           message: "Password not set for this account. Please contact administrator or sign up.",
           success: false 
         });
       }
 
-      // Check password (trim both for comparison)
-      const memberPassword = member.password.trim();
-      const inputPassword = password.trim();
-      
-      if (memberPassword !== inputPassword) {
+      let isMemberPasswordValid = false;
+      try {
+        isMemberPasswordValid = await bcrypt.compare(inputPassword, member.password);
+      } catch (compareError) {
+        console.error(`Member password compare failed for ${emailLower}:`, compareError);
+        return res.status(500).json({
+          message: "Authentication error. Please try again later.",
+          success: false
+        });
+      }
+
+      if (!isMemberPasswordValid) {
         // Increment failed attempts
         member.failedLoginAttempts = (member.failedLoginAttempts || 0) + 1;
         

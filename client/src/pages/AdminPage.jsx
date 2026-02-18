@@ -8667,7 +8667,7 @@ Indian Muslim Association Hong Kong
                                 )}
                               </label>
 
-                              <label>
+                              {/* <label>
                                 <span>
                                   <i className="fas fa-id-card" aria-hidden="true" style={{ marginRight: 6 }}></i>
                                   Subscription Type
@@ -8690,9 +8690,9 @@ Indian Muslim Association Hong Kong
                                     Will become {getPreviewDisplayId(memberForm.subscriptionType)}
                                   </div>
                                 )}
-                              </label>
+                              </label> */}
 
-                              <label>
+                              {/* <label>
                                 <span>
                                   <i className="fas fa-wallet" aria-hidden="true" style={{ marginRight: 6 }}></i>
                                   Invoice Amount (Current Year)
@@ -8711,7 +8711,7 @@ Indian Muslim Association Hong Kong
                                 <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 4 }}>
                                   This is the amount that will be billed for the selected subscription for the current year.
                                 </div>
-                              </label>
+                              </label> */}
 
                               <label>
                                 <span>
@@ -13832,7 +13832,7 @@ Indian Muslim Association Hong Kong
               )}
 
               {/* PASSWORD RESET REQUESTS - Only visible to Owner */}
-               {activeSection === "communications" && currentAdminRole === "Owner" && (
+              {/* {activeSection === "communications" && currentAdminRole === "Owner" && (
                 <article className="screen-card" id="password-reset-requests" style={{ marginTop: "24px" }}>
                   <header className="screen-card__header">
                     <div>
@@ -13928,7 +13928,7 @@ Indian Muslim Association Hong Kong
                     </div>
                   </div>
                 </article>
-              )} 
+              )} */}
 
               {/* PAYMENT METHODS */}
               {activeSection === "payment-methods" && (
@@ -23232,9 +23232,8 @@ Indian Muslim Association Hong Kong
                   }
 
                   setSendingPaymentConfirmation(true);
-                  const apiUrl = import.meta.env.DEV
-                    ? ""
-                    : import.meta.env.VITE_API_URL || "";
+                  // const apiUrl = import.meta.env.DEV ? "" : import.meta.env.VITE_API_URL || "";
+                  const apiUrl = import.meta.env.VITE_API_URL || "";
 
                   const confirmationInvoiceId = String(paymentConfirmationInvoice?._id || "").trim();
                   if (!confirmationInvoiceId || /^INV-/i.test(confirmationInvoiceId)) {
@@ -23528,7 +23527,8 @@ Thank you for supporting the IMA community!`;
                         
                         // Create WhatsApp message with PDF URL (always use options URL)
                         const apiBaseUrl = import.meta.env.VITE_API_URL || window.location.origin;
-                        const downloadUrl = `${apiBaseUrl}/api/donations/${donationData._id || donationData.id}/pdf-receipt/options`;
+                        const downloadUrl = donationData.receiptPdfUrl
+                          || `${apiBaseUrl}/api/donations/${donationData._id || donationData.id}/pdf-receipt/options`;
                         
                         const message = `Indian Muslim Association – Hong Kong
 Donation Receipt

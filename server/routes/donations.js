@@ -4,6 +4,7 @@ import DonationModel from "../models/Donation.js";
 import UserModel from "../models/User.js";
 import ReceiptCounterModel from "../models/ReceiptCounter.js";
 import { emitDonationUpdate } from "../config/socket.js";
+import { getDonationReceiptWhatsAppUrl } from "../utils/receiptLinks.js";
 
 const router = express.Router();
 
@@ -12,7 +13,18 @@ router.get("/", async (req, res) => {
   try {
     await ensureConnection();
     const donations = await DonationModel.find().sort({ createdAt: -1 });
-    res.json(donations);
+    const responsePayload = await Promise.all(
+      donations.map(async (donation) => {
+        const donationObj = donation?.toObject ? donation.toObject() : donation;
+        return {
+          ...donationObj,
+          receiptPdfUrl: donationObj?._id
+            ? await getDonationReceiptWhatsAppUrl(donationObj)
+            : null,
+        };
+      })
+    );
+    res.json(responsePayload);
   } catch (error) {
     console.error("Error fetching donations:", error);
     res.status(500).json({ error: error.message });
@@ -43,7 +55,11 @@ router.post("/", async (req, res) => {
     // Emit Socket.io event for real-time update
     emitDonationUpdate('created', newDonation);
     
-    res.status(201).json(newDonation);
+    const donationObj = newDonation?.toObject ? newDonation.toObject() : newDonation;
+    const receiptPdfUrl = donationObj?._id
+      ? await getDonationReceiptWhatsAppUrl(donationObj)
+      : null;
+    res.status(201).json({ ...donationObj, receiptPdfUrl });
   } catch (error) {
     console.error("Error creating donation:", error);
     res.status(500).json({ error: error.message });

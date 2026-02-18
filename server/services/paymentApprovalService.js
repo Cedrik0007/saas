@@ -118,7 +118,7 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
       }
 
       invoice = updatedInvoice;
-      invoice.receiptPdfUrl = getReceiptWhatsAppUrl(invoice._id);
+      invoice.receiptPdfUrl = await getReceiptWhatsAppUrl(invoice);
 
       if (!invoice.receiptNumber || String(invoice.receiptNumber).trim() === "") {
         const err = new Error("Invoice receipt number missing after approval. Aborting.");
@@ -211,7 +211,7 @@ export async function approvePaymentAndMarkInvoicePaid({ paymentId, adminId, adm
       err.status = 500;
       throw err;
     }
-    const validatedInvoice = { ...freshInvoice, receiptPdfUrl: getReceiptWhatsAppUrl(freshInvoice._id) };
+    const validatedInvoice = { ...freshInvoice, receiptPdfUrl: await getReceiptWhatsAppUrl(freshInvoice) };
 
     return { payment, invoice: validatedInvoice, member };
   } catch (err) {
@@ -382,10 +382,10 @@ export async function approveInvoicePayment({
         throw err;
       }
       try {
-        invoice.receiptPdfUrl = getReceiptDownloadUrl(invoice._id) || getReceiptWhatsAppUrl(invoice._id);
+        invoice.receiptPdfUrl = (await getReceiptDownloadUrl(invoice)) || (await getReceiptWhatsAppUrl(invoice));
       } catch (receiptError) {
         console.warn("⚠ Failed to build receipt URL during payment approval:", receiptError);
-        invoice.receiptPdfUrl = getReceiptWhatsAppUrl(invoice._id) || null;
+        invoice.receiptPdfUrl = (await getReceiptWhatsAppUrl(invoice)) || null;
       }
 
       const unpaidInvoices = await InvoiceModel.find(
@@ -501,7 +501,7 @@ export async function approveInvoicePayment({
       receiptNumber: freshInvoice.receiptNumber,
     });
     
-    const validatedInvoice = { ...freshInvoice, receiptPdfUrl: getReceiptDownloadUrl(freshInvoice._id) || getReceiptWhatsAppUrl(freshInvoice._id) };
+    const validatedInvoice = { ...freshInvoice, receiptPdfUrl: (await getReceiptDownloadUrl(freshInvoice)) || (await getReceiptWhatsAppUrl(freshInvoice)) };
     
     console.log("✓ DEBUG: validatedInvoice - payment_date:", validatedInvoice.payment_date);
 

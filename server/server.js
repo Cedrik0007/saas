@@ -25,6 +25,7 @@ import authRoutes from "./routes/auth.js";
 import uploadRoutes from "./routes/upload.js";
 import authGoogleMemberRoutes from "./routes/authGoogleMember.js";
 import adminSecurityRoutes from "./routes/adminSecurity.js";
+import publicReceiptRoutes from "./routes/publicReceipt.js";
 
 dotenv.config();
 
@@ -116,6 +117,9 @@ const metrics = {
 app.get("/api/metrics", (_req, res) => {
   res.json(metrics);
 });
+
+// Public short receipt links (no auth)
+app.use("/", publicReceiptRoutes);
 
 // API Routes
 app.use("/api/members", membersRoutes);
