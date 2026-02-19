@@ -1494,6 +1494,8 @@ function AdminPage() {
     const [donationYearFilter, setDonationYearFilter] = useState("All"); // Year filter for donations, default to All
     const [donationMethodFilter, setDonationMethodFilter] = useState("All"); // Payment method filter for donations: All, Cash, Online Payment
     const [donationMemberTypeFilter, setDonationMemberTypeFilter] = useState("All"); // All, Member, Non-Member
+    const [donationTypeFilter, setDonationTypeFilter] = useState("All"); // Donation purpose/type filter
+    const [donationsSearchTerm, setDonationsSearchTerm] = useState(""); // Search by receipt/mobile/donor/type
     const [remindersPage, setRemindersPage] = useState(1);
     const [remindersPageSize, setRemindersPageSize] = useState(10);
     const [outstandingMembersPage, setOutstandingMembersPage] = useState(1);
@@ -18295,6 +18297,30 @@ Indian Muslim Association Hong Kong
                         {(() => {
                           // Filter donations
                           const donationsArray = Array.isArray(donations) ? donations : [];
+                          const donationTypeOptions = [
+                            "All",
+                            ...Array.from(
+                              new Set(
+                                donationsArray
+                                  .filter((donation) => donation && donation.donationType)
+                                  .map((donation) => String(donation.donationType).trim())
+                                  .filter(Boolean)
+                              )
+                            ),
+                          ];
+                          const normalizedDonationSearchTerm = String(donationsSearchTerm || "").trim().toLowerCase();
+
+                          const getDonationPhoneForSearch = (donation) => {
+                            if (!donation) return "";
+                            if (donation.phone) return String(donation.phone);
+                            if (donation.isMember && donation.memberId) {
+                              const membersArray = Array.isArray(members) ? members : [];
+                              const member = membersArray.find((m) => m.id === donation.memberId);
+                              return member?.phone ? String(member.phone) : "";
+                            }
+                            return "";
+                          };
+
                           let filteredDonations = donationsArray.filter(donation => donation !== null);
 
                           // Filter by year
@@ -18351,6 +18377,33 @@ Indian Muslim Association Hong Kong
                             });
                           }
 
+                          // Filter by donation type
+                          if (donationTypeFilter !== "All") {
+                            filteredDonations = filteredDonations.filter((donation) => {
+                              if (!donation) return false;
+                              return String(donation.donationType || "").trim() === donationTypeFilter;
+                            });
+                          }
+
+                          // Search by receipt number, mobile number, donor name, and donation type
+                          if (normalizedDonationSearchTerm) {
+                            filteredDonations = filteredDonations.filter((donation) => {
+                              if (!donation) return false;
+
+                              const receiptNumber = String(donation.receipt_number || "").toLowerCase();
+                              const mobileNumber = getDonationPhoneForSearch(donation).toLowerCase();
+                              const donorName = String(donation.donorName || "").toLowerCase();
+                              const donationType = String(donation.donationType || "").toLowerCase();
+
+                              return (
+                                receiptNumber.includes(normalizedDonationSearchTerm) ||
+                                mobileNumber.includes(normalizedDonationSearchTerm) ||
+                                donorName.includes(normalizedDonationSearchTerm) ||
+                                donationType.includes(normalizedDonationSearchTerm)
+                              );
+                            });
+                          }
+
                           // Calculate pagination
                           const totalPages = Math.ceil(filteredDonations.length / donationsPageSize) || 1;
                           const currentPage = Math.min(donationsPage, totalPages);
@@ -18360,8 +18413,64 @@ Indian Muslim Association Hong Kong
 
                           return (
                             <>
+                             <div style={{ display: "flex", alignItems: "center", marginBottom: "10px", position: "relative" }}>
+                                  <input
+                                    type="text"
+                                    value={donationsSearchTerm}
+                                    onChange={(e) => {
+                                      setDonationsSearchTerm(e.target.value);
+                                      setDonationsPage(1);
+                                    }}
+                                    placeholder="Search receipt no, mobile, donor, type"
+                                    style={{
+                                      width: "100%",
+                                      padding: "8px 34px 8px 12px",
+                                      borderRadius: "4px",
+                                      border: "1px solid #e5e7eb",
+                                      background: "#ffffff",
+                                      fontSize: "0.875rem",
+                                      color: "#1a1a1a",
+                                      outline: "none",
+                                      transition: "border-color 0.2s, box-shadow 0.2s"
+                                    }}
+                                    onFocus={(e) => {
+                                      e.target.style.borderColor = "#5a31ea";
+                                      e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                    }}
+                                    onBlur={(e) => {
+                                      e.target.style.borderColor = "#e5e7eb";
+                                      e.target.style.boxShadow = "none";
+                                    }}
+                                  />
+                                  {donationsSearchTerm && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDonationsSearchTerm("");
+                                        setDonationsPage(1);
+                                      }}
+                                      aria-label="Clear donation search"
+                                      title="Clear search"
+                                      style={{
+                                        position: "absolute",
+                                        right: "8px",
+                                        top: "50%",
+                                        transform: "translateY(-50%)",
+                                        border: "none",
+                                        background: "transparent",
+                                        color: "#6b7280",
+                                        cursor: "pointer",
+                                        fontSize: "14px",
+                                        lineHeight: "1",
+                                        padding: "2px 4px"
+                                      }}
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
                               <div style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center",marginLeft:"6px" }}>
                                   <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Year:</label>
                                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                                     <button
@@ -18577,7 +18686,44 @@ Indian Muslim Association Hong Kong
                                     </select>
                                   </div>
                                   <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "12px" }}>
-                                    <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Filter by Type:</label>
+                                    <label className="font-semibold" style={{ color: "#1a1a1a" }}>Donation Type:</label>
+                                    <select
+                                      value={donationTypeFilter}
+                                      onChange={(e) => {
+                                        setDonationTypeFilter(e.target.value);
+                                        setDonationsPage(1);
+                                      }}
+                                      style={{
+                                        padding: "8px 32px 8px 12px",
+                                        borderRadius: "4px",
+                                        border: "1px solid #e5e7eb",
+                                        background: "#ffffff",
+                                        fontSize: "0.875rem",
+                                        fontWeight: "500",
+                                        color: "#1a1a1a",
+                                        outline: "none",
+                                        transition: "border-color 0.2s",
+                                        cursor: "pointer",
+                                        minWidth: "140px"
+                                      }}
+                                      onFocus={(e) => {
+                                        e.target.style.borderColor = "#5a31ea";
+                                        e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                                      }}
+                                      onBlur={(e) => {
+                                        e.target.style.borderColor = "#e5e7eb";
+                                        e.target.style.boxShadow = "none";
+                                      }}
+                                    >
+                                      {donationTypeOptions.map((typeOption) => (
+                                        <option key={typeOption} value={typeOption}>
+                                          {typeOption}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  {/* <div className="flex gap-md flex-nowrap items-center" style={{ marginLeft: "12px" }}>
+                                    <label style={{ fontWeight: "600", color: "#1a1a1a" }}>Donor Type:</label>
                                     <div style={{
                                       display: "flex",
                                       gap: "4px",
@@ -18631,8 +18777,9 @@ Indian Muslim Association Hong Kong
                                         </button>
                                       ))}
                                     </div>
-                                  </div>
+                                  </div> */}
                                 </div>
+                               
                                 {/* <button
                                   type="button"
                                   className="ghost-btn"
