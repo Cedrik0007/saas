@@ -3340,55 +3340,55 @@ function AdminPage() {
       let filteredDonations = donationsArray.filter((donation) => donation !== null);
 
       // Filter by year
-      if (donationYearFilter && donationYearFilter !== "All") {
-        filteredDonations = filteredDonations.filter((donation) => {
-          if (!donation) return false;
-          const donationDate = donation.date || donation.createdAt;
-          if (!donationDate) return false;
-
-          try {
-            const date = new Date(donationDate);
-            const donationYear = date.getFullYear().toString();
-            return donationYear === donationYearFilter;
-          } catch (e) {
-            return false;
-          }
-        });
-      }
+        if (donationYearFilter && donationYearFilter !== "All") {
+          filteredDonations = filteredDonations.filter((donation) => {
+            if (!donation) return false;
+            const donationDate = donation.date || donation.createdAt;
+            if (!donationDate) return false;
+            
+            try {
+              const date = new Date(donationDate);
+              const donationYear = date.getFullYear().toString();
+              return donationYear === donationYearFilter;
+            } catch (e) {
+              return false;
+            }
+          });
+        }
 
       // Filter by payment method
-      if (donationMethodFilter && donationMethodFilter !== "All") {
-        filteredDonations = filteredDonations.filter((donation) => {
-          if (!donation) return false;
-          const method = String(donation.method || "").trim();
-
-          if (donationMethodFilter === "Cash") {
-            return method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
-          }
-
-          if (donationMethodFilter === "Other") {
-            const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
-            const isCash = method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
-            return !isCash && !specificMethods.includes(method) && method !== "";
-          }
-
-          return method === donationMethodFilter;
-        });
-      }
+        if (donationMethodFilter && donationMethodFilter !== "All") {
+          filteredDonations = filteredDonations.filter((donation) => {
+            if (!donation) return false;
+            const method = String(donation.method || "").trim();
+            
+            if (donationMethodFilter === "Cash") {
+              return method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
+            }
+            
+            if (donationMethodFilter === "Other") {
+              const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
+              const isCash = method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
+              return !isCash && !specificMethods.includes(method) && method !== "";
+            }
+            
+            return method === donationMethodFilter;
+          });
+        }
 
       // Filter by member/non-member
-      if (donationMemberTypeFilter !== "All") {
-        filteredDonations = filteredDonations.filter((donation) => {
-          if (!donation) return false;
-          if (donationMemberTypeFilter === "Member") {
-            return donation.isMember === true;
+        if (donationMemberTypeFilter !== "All") {
+          filteredDonations = filteredDonations.filter((donation) => {
+            if (!donation) return false;
+            if (donationMemberTypeFilter === "Member") {
+              return donation.isMember === true;
           }
           if (donationMemberTypeFilter === "Non-Member") {
-            return donation.isMember !== true;
-          }
-          return true;
-        });
-      }
+              return donation.isMember !== true;
+            }
+            return true;
+          });
+        }
 
       // Filter by donation type
       if (donationTypeFilter !== "All") {
@@ -18727,7 +18727,7 @@ Indian Muslim Association Hong Kong
                                       ))}
                                     </div>
                                   </div> */}
-                                </div>
+                                  </div>
                                
                                 {/* <button
                                   type="button"

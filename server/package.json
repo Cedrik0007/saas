@@ -34,6 +34,6 @@
     "supertest": "^6.3.3"
   },
   "overrides": {
-    "minimatch": "^5.1.6"
+    "minimatch": "^10.2.1"
   }
 }
