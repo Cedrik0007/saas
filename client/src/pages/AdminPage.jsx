@@ -3323,64 +3323,107 @@ function AdminPage() {
       }
     };
 
+    const getDonationPhoneForSearch = (donation) => {
+      if (!donation) return "";
+      if (donation.phone) return String(donation.phone);
+      if (donation.isMember && donation.memberId) {
+        const membersArray = Array.isArray(members) ? members : [];
+        const member = membersArray.find((m) => m.id === donation.memberId);
+        return member?.phone ? String(member.phone) : "";
+      }
+      return "";
+    };
+
+    const getFilteredDonations = (donationsInput = donations) => {
+      const donationsArray = Array.isArray(donationsInput) ? donationsInput : [];
+      const normalizedDonationSearchTerm = String(donationsSearchTerm || "").trim().toLowerCase();
+      let filteredDonations = donationsArray.filter((donation) => donation !== null);
+
+      // Filter by year
+      if (donationYearFilter && donationYearFilter !== "All") {
+        filteredDonations = filteredDonations.filter((donation) => {
+          if (!donation) return false;
+          const donationDate = donation.date || donation.createdAt;
+          if (!donationDate) return false;
+
+          try {
+            const date = new Date(donationDate);
+            const donationYear = date.getFullYear().toString();
+            return donationYear === donationYearFilter;
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+
+      // Filter by payment method
+      if (donationMethodFilter && donationMethodFilter !== "All") {
+        filteredDonations = filteredDonations.filter((donation) => {
+          if (!donation) return false;
+          const method = String(donation.method || "").trim();
+
+          if (donationMethodFilter === "Cash") {
+            return method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
+          }
+
+          if (donationMethodFilter === "Other") {
+            const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
+            const isCash = method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
+            return !isCash && !specificMethods.includes(method) && method !== "";
+          }
+
+          return method === donationMethodFilter;
+        });
+      }
+
+      // Filter by member/non-member
+      if (donationMemberTypeFilter !== "All") {
+        filteredDonations = filteredDonations.filter((donation) => {
+          if (!donation) return false;
+          if (donationMemberTypeFilter === "Member") {
+            return donation.isMember === true;
+          }
+          if (donationMemberTypeFilter === "Non-Member") {
+            return donation.isMember !== true;
+          }
+          return true;
+        });
+      }
+
+      // Filter by donation type
+      if (donationTypeFilter !== "All") {
+        filteredDonations = filteredDonations.filter((donation) => {
+          if (!donation) return false;
+          return String(donation.donationType || "").trim() === donationTypeFilter;
+        });
+      }
+
+      // Search by receipt number, mobile number, donor name, and donation type
+      if (normalizedDonationSearchTerm) {
+        filteredDonations = filteredDonations.filter((donation) => {
+          if (!donation) return false;
+
+          const receiptNumber = String(donation.receipt_number || "").toLowerCase();
+          const mobileNumber = getDonationPhoneForSearch(donation).toLowerCase();
+          const donorName = String(donation.donorName || "").toLowerCase();
+          const donationType = String(donation.donationType || "").toLowerCase();
+
+          return (
+            receiptNumber.includes(normalizedDonationSearchTerm) ||
+            mobileNumber.includes(normalizedDonationSearchTerm) ||
+            donorName.includes(normalizedDonationSearchTerm) ||
+            donationType.includes(normalizedDonationSearchTerm)
+          );
+        });
+      }
+
+      return filteredDonations;
+    };
+
     // Export all Donations to Excel (all donations from backend without restrictions)
     const handleExportAllDonationsToExcel = async () => {
       try {
-        // Filter donations based on applied filters
-        let filteredDonations = (donations || []).filter(donation => donation);
-
-        // Apply year filter
-        if (donationYearFilter && donationYearFilter !== "All") {
-          filteredDonations = filteredDonations.filter((donation) => {
-            if (!donation) return false;
-            const donationDate = donation.date || donation.createdAt;
-            if (!donationDate) return false;
-            
-            try {
-              const date = new Date(donationDate);
-              const donationYear = date.getFullYear().toString();
-              return donationYear === donationYearFilter;
-            } catch (e) {
-              return false;
-            }
-          });
-        }
-
-        // Apply payment method filter
-        if (donationMethodFilter && donationMethodFilter !== "All") {
-          filteredDonations = filteredDonations.filter((donation) => {
-            if (!donation) return false;
-            const method = String(donation.method || "").trim();
-            
-            // Handle Cash
-            if (donationMethodFilter === "Cash") {
-              return method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
-            }
-            
-            // Handle Other - match all methods that are not Cash, FPS, Alipay, or Bank Deposit
-            if (donationMethodFilter === "Other") {
-              const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
-              const isCash = method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
-              return !isCash && !specificMethods.includes(method) && method !== "";
-            }
-            
-            // Handle specific payment methods (FPS, Alipay, Bank Deposit)
-            return method === donationMethodFilter;
-          });
-        }
-
-        // Apply member type filter
-        if (donationMemberTypeFilter !== "All") {
-          filteredDonations = filteredDonations.filter((donation) => {
-            if (!donation) return false;
-            if (donationMemberTypeFilter === "Member") {
-              return donation.isMember === true;
-            } else if (donationMemberTypeFilter === "Non-Member") {
-              return donation.isMember !== true;
-            }
-            return true;
-          });
-        }
+        const filteredDonations = getFilteredDonations(donations);
         
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Donations");
@@ -4303,46 +4346,46 @@ function AdminPage() {
       });
 
     // Fetch email settings from server
-    const fetchEmailSettings = async () => {
-      try {
-        // In development, use empty string to use Vite proxy (localhost:4000)
-        // // In production, use VITE_API_URL if set
-        // const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-        const apiUrl = import.meta.env.DEV ? "" : (import.meta.env.VITE_API_URL || "");
+    // const fetchEmailSettings = async () => {
+    //   try {
+    //     // In development, use empty string to use Vite proxy (localhost:4000)
+    //     // // In production, use VITE_API_URL if set
+    //     // const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+    //     const apiUrl = import.meta.env.DEV ? "" : (import.meta.env.VITE_API_URL || "");
         
-        const response = await fetch(`${apiUrl}/api/email-settings`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data) {
-            const scheduleTime = data.scheduleTime || "09:00";
-            // Convert 24-hour to 12-hour format for display
-            const [hours, minutes] = scheduleTime.split(':').map(Number);
-            const period = hours >= 12 ? 'PM' : 'AM';
-            const displayHours = hours % 12 || 12;
-            const displayTime = `${displayHours}:${minutes.toString().padStart(2, '0')}`;
+    //     const response = await fetch(`${apiUrl}/api/email-settings`);
+    //     if (response.ok) {
+    //       const data = await response.json();
+    //       if (data) {
+    //         const scheduleTime = data.scheduleTime || "09:00";
+    //         // Convert 24-hour to 12-hour format for display
+    //         const [hours, minutes] = scheduleTime.split(':').map(Number);
+    //         const period = hours >= 12 ? 'PM' : 'AM';
+    //         const displayHours = hours % 12 || 12;
+    //         const displayTime = `${displayHours}:${minutes.toString().padStart(2, '0')}`;
 
-            setEmailSettings({
-              emailService: data.emailService || "gmail",
-              emailUser: data.emailUser || "",
-              emailPassword: data.emailPassword || "kuil uhbe zlqq oymd",
-              scheduleTime: scheduleTime,
-              scheduleEnabled: data.scheduleEnabled !== undefined ? data.scheduleEnabled : true,
-              reminderInterval: data.reminderInterval || 7,
-            });
-            setSchedulePeriod(period);
-            // Set the time input value (we'll handle this in the component)
-            setEmailConfigStatus(data.emailUser ? 'connected' : 'not_connected');
+    //         setEmailSettings({
+    //           emailService: data.emailService || "gmail",
+    //           emailUser: data.emailUser || "",
+    //           emailPassword: data.emailPassword || "kuil uhbe zlqq oymd",
+    //           scheduleTime: scheduleTime,
+    //           scheduleEnabled: data.scheduleEnabled !== undefined ? data.scheduleEnabled : true,
+    //           reminderInterval: data.reminderInterval || 7,
+    //         });
+    //         setSchedulePeriod(period);
+    //         // Set the time input value (we'll handle this in the component)
+    //         setEmailConfigStatus(data.emailUser ? 'connected' : 'not_connected');
 
-            // Set automationEnabled from database
-            if (data.automationEnabled !== undefined) {
-              setAutomationEnabled(data.automationEnabled);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching email settings:', error);
-      }
-    };
+    //         // Set automationEnabled from database
+    //         if (data.automationEnabled !== undefined) {
+    //           setAutomationEnabled(data.automationEnabled);
+    //         }
+    //       }
+    //     }
+    //   } catch (error) {
+    //     console.error('Error fetching email settings:', error);
+    //   }
+    // };
 
     // Save email settings
     const handleSaveEmailSettings = async () => {
@@ -4524,28 +4567,28 @@ function AdminPage() {
     };
 
     // Save email template
-    const handleSaveEmailTemplate = async () => {
-      try {
-        // In development, use empty string to use Vite proxy (localhost:4000)
-        // In production, use VITE_API_URL if set
-        const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
-        const response = await fetch(`${apiUrl}/api/email-settings/template`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(emailTemplate),
-        });
+    // const handleSaveEmailTemplate = async () => {
+    //   try {
+    //     // In development, use empty string to use Vite proxy (localhost:4000)
+    //     // In production, use VITE_API_URL if set
+    //     const apiUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+    //     const response = await fetch(`${apiUrl}/api/email-settings/template`, {
+    //       method: 'POST',
+    //       headers: { 'Content-Type': 'application/json' },
+    //       body: JSON.stringify(emailTemplate),
+    //     });
 
-        if (response.ok) {
-          showToast('Email template saved successfully!');
-        } else {
-          const error = await response.json();
-          showToast(error.error || 'Failed to save email template', 'error');
-        }
-      } catch (error) {
-        console.error('Error saving email template:', error);
-        showToast('Failed to save email template', 'error');
-      }
-    };
+    //     if (response.ok) {
+    //       showToast('Email template saved successfully!');
+    //     } else {
+    //       const error = await response.json();
+    //       showToast(error.error || 'Failed to save email template', 'error');
+    //     }
+    //   } catch (error) {
+    //     console.error('Error saving email template:', error);
+    //     showToast('Failed to save email template', 'error');
+    //   }
+    // };
 
     // Test email configuration
     const handleTestEmail = async () => {
@@ -5710,15 +5753,15 @@ Indian Muslim Association, Hong Kong`;
       };
     }, [isMobileMenuOpen]);
 
-    useEffect(() => {
-      fetchEmailSettings().catch(err => {
-        console.error('Failed to fetch email settings:', err);
-        // Don't block rendering if email settings fail to load
-      });
-      fetchEmailTemplate().catch(err => {
-        console.error('Failed to fetch email template:', err);
-      });
-    }, []);
+    // useEffect(() => {
+    //   fetchEmailSettings().catch(err => {
+    //     console.error('Failed to fetch email settings:', err);
+    //     // Don't block rendering if email settings fail to load
+    //   });
+    //   fetchEmailTemplate().catch(err => {
+    //     console.error('Failed to fetch email template:', err);
+    //   });
+    // }, []);
 
     // Generate breadcrumb path for current section
     const getBreadcrumbPath = (sectionId) => {
@@ -12548,7 +12591,7 @@ Indian Muslim Association Hong Kong
                         </button>
                         <button
                           className="primary-btn"
-                          onClick={handleSaveEmailTemplate}
+                          // onClick={handleSaveEmailTemplate}
                           style={{
                             padding: "12px 24px",
                             borderRadius: "4px",
@@ -18308,101 +18351,7 @@ Indian Muslim Association Hong Kong
                               )
                             ),
                           ];
-                          const normalizedDonationSearchTerm = String(donationsSearchTerm || "").trim().toLowerCase();
-
-                          const getDonationPhoneForSearch = (donation) => {
-                            if (!donation) return "";
-                            if (donation.phone) return String(donation.phone);
-                            if (donation.isMember && donation.memberId) {
-                              const membersArray = Array.isArray(members) ? members : [];
-                              const member = membersArray.find((m) => m.id === donation.memberId);
-                              return member?.phone ? String(member.phone) : "";
-                            }
-                            return "";
-                          };
-
-                          let filteredDonations = donationsArray.filter(donation => donation !== null);
-
-                          // Filter by year
-                          if (donationYearFilter && donationYearFilter !== "All") {
-                            filteredDonations = filteredDonations.filter((donation) => {
-                              if (!donation) return false;
-                              // Get donation date from donation.date or donation.createdAt
-                              const donationDate = donation.date || donation.createdAt;
-                              if (!donationDate) return false;
-                              
-                              try {
-                                const date = new Date(donationDate);
-                                const donationYear = date.getFullYear().toString();
-                                return donationYear === donationYearFilter;
-                              } catch (e) {
-                                return false;
-                              }
-                            });
-                          }
-
-                          // Filter by payment method
-                          if (donationMethodFilter && donationMethodFilter !== "All") {
-                            filteredDonations = filteredDonations.filter((donation) => {
-                              if (!donation) return false;
-                              const method = String(donation.method || "").trim();
-                              
-                              // Handle Cash
-                              if (donationMethodFilter === "Cash") {
-                                return method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
-                              }
-                              
-                              // Handle Other - match all methods that are not Cash, FPS, Alipay, or Bank Deposit
-                              if (donationMethodFilter === "Other") {
-                                const specificMethods = ["Cash", "FPS", "Alipay", "Bank Deposit"];
-                                const isCash = method.toLowerCase() === "cash" || method.toLowerCase().includes("cash");
-                                return !isCash && !specificMethods.includes(method) && method !== "";
-                              }
-                              
-                              // Handle specific payment methods (FPS, Alipay, Bank Deposit)
-                              return method === donationMethodFilter;
-                            });
-                          }
-
-                          // Filter by member/non-member
-                          if (donationMemberTypeFilter !== "All") {
-                            filteredDonations = filteredDonations.filter((donation) => {
-                              if (!donation) return false;
-                              if (donationMemberTypeFilter === "Member") {
-                                return donation.isMember === true;
-                              } else if (donationMemberTypeFilter === "Non-Member") {
-                                return donation.isMember !== true;
-                              }
-                              return true;
-                            });
-                          }
-
-                          // Filter by donation type
-                          if (donationTypeFilter !== "All") {
-                            filteredDonations = filteredDonations.filter((donation) => {
-                              if (!donation) return false;
-                              return String(donation.donationType || "").trim() === donationTypeFilter;
-                            });
-                          }
-
-                          // Search by receipt number, mobile number, donor name, and donation type
-                          if (normalizedDonationSearchTerm) {
-                            filteredDonations = filteredDonations.filter((donation) => {
-                              if (!donation) return false;
-
-                              const receiptNumber = String(donation.receipt_number || "").toLowerCase();
-                              const mobileNumber = getDonationPhoneForSearch(donation).toLowerCase();
-                              const donorName = String(donation.donorName || "").toLowerCase();
-                              const donationType = String(donation.donationType || "").toLowerCase();
-
-                              return (
-                                receiptNumber.includes(normalizedDonationSearchTerm) ||
-                                mobileNumber.includes(normalizedDonationSearchTerm) ||
-                                donorName.includes(normalizedDonationSearchTerm) ||
-                                donationType.includes(normalizedDonationSearchTerm)
-                              );
-                            });
-                          }
+                          const filteredDonations = getFilteredDonations(donationsArray);
 
                           // Calculate pagination
                           const totalPages = Math.ceil(filteredDonations.length / donationsPageSize) || 1;
@@ -18421,7 +18370,7 @@ Indian Muslim Association Hong Kong
                                       setDonationsSearchTerm(e.target.value);
                                       setDonationsPage(1);
                                     }}
-                                    placeholder="Search receipt no, mobile, donor, type"
+                                    placeholder="Search receipt no, mobile number, donor name, donation type"
                                     style={{
                                       width: "100%",
                                       padding: "8px 34px 8px 12px",
