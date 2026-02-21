@@ -271,6 +271,21 @@ export function AppProvider({ children }) {
         setRecentPayments(prev => prev.map(p => match(p) ? merged(p) : p));
       });
 
+      socketRef.current.on('payment:deleted', (payload) => {
+        if (!payload) return;
+        const targetId = String(payload.id || "");
+        const targetBusinessId = String(payload.businessId || "");
+        const shouldRemove = (payment) => {
+          const byMongoId = targetId && String(payment?._id || "") === targetId;
+          const byBusinessId = targetBusinessId && String(payment?.id || "") === targetBusinessId;
+          return byMongoId || byBusinessId;
+        };
+
+        setPayments(prev => prev.filter((payment) => !shouldRemove(payment)));
+        setPaymentHistory(prev => prev.filter((payment) => !shouldRemove(payment)));
+        setRecentPayments(prev => prev.filter((payment) => !shouldRemove(payment)));
+      });
+
       // Listen for donation updates
       socketRef.current.on('donation:created', (donation) => {
         setDonations(prev => {

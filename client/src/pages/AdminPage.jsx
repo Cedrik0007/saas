@@ -6852,12 +6852,6 @@ Indian Muslim Association, Hong Kong`;
       return;
     }
 
-    // Prevent deleting paid invoices
-    if (invoice.status === "Paid" || invoice.status === "Completed") {
-      showToast("Paid invoices cannot be deleted", "error");
-      return;
-    }
-
     // 🔥 Backend delete
     await deleteInvoice(invoice._id);
 
@@ -10363,6 +10357,21 @@ Indian Muslim Association Hong Kong
                                                 window.open(pdfUrl, "_blank");
                                               }}
                                               style={invoice.receiptNumber ? undefined : { opacity: 0.6, cursor: "not-allowed" }}
+                                            />
+                                            <ActionIcon
+                                              icon="fa-trash"
+                                              tooltip="Delete Invoice"
+                                              variant="delete"
+                                              ariaLabel="Delete Invoice"
+                                              onClick={() => {
+                                                showConfirmation(
+                                                  `Delete paid invoice ${invoice.id}? This will also delete related payment record(s). This cannot be undone.`,
+                                                  () => handleDeleteInvoice(invoice._id, { skipConfirmation: true }),
+                                                  null,
+                                                  "Delete",
+                                                  { requirePassword: true }
+                                                );
+                                              }}
                                             />
                                           </>
                                         )}
@@ -21540,19 +21549,19 @@ Indian Muslim Association Hong Kong
                           e.target.showPicker();
                         }
                       }}
-                      onFocus={(e) => {
-                        if (e.target.showPicker) {
-                          e.target.showPicker();
-                        }
+                      // onFocus={(e) => {
+                      //   if (e.target.showPicker) {
+                      //     e.target.showPicker();
+                      //   }
 
-                        if (
-                          !paymentModalErrors.payment_date ||
-                          currentInvalidPaymentModalField !== "payment_date"
-                        ) {
-                          e.target.style.borderColor = "#5a31ea";
-                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                        }
-                      }}
+                      //   if (
+                      //     !paymentModalErrors.payment_date ||
+                      //     currentInvalidPaymentModalField !== "payment_date"
+                      //   ) {
+                      //     e.target.style.borderColor = "#5a31ea";
+                      //     e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
+                      //   }
+                      // }}
                       onChange={(e) => {
                         setPaymentModalData({
                           ...paymentModalData,

@@ -1,5 +1,5 @@
 import express from "express";
-import { emitInvoiceUpdate } from "../config/socket.js";
+import { emitInvoiceUpdate, emitPaymentUpdate } from "../config/socket.js";
 import { ensureConnection } from "../config/database.js";
 import InvoiceModel from "../models/Invoice.js";
 import UserModel from "../models/User.js";
@@ -750,22 +750,54 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ message: "Invoice not found" });
     }
 
-    const deletedInvoice = await InvoiceModel.findByIdAndDelete(invoice._id);
+    const invoiceObjectId = invoice._id;
+    const invoiceObjectIdStr = String(invoice._id || "");
+    const invoiceBusinessId = String(invoice.id || "").trim();
+
+    // Delete all payments linked to this invoice.
+    const relatedPayments = await PaymentModel.find({
+      $or: [
+        { invoiceRef: invoiceObjectId },
+        { invoiceId: invoiceBusinessId },
+        { invoiceId: invoiceObjectIdStr },
+      ],
+    }).select("_id id invoiceId invoiceRef");
+
+    if (relatedPayments.length > 0) {
+      await PaymentModel.deleteMany({
+        _id: { $in: relatedPayments.map((payment) => payment._id) },
+      });
+
+      // Notify clients so payment tables stay in sync immediately.
+      relatedPayments.forEach((payment) => {
+        emitPaymentUpdate("deleted", {
+          id: payment._id?.toString(),
+          businessId: payment.id || null,
+          invoiceId: invoiceBusinessId || null,
+          invoiceRef: invoiceObjectIdStr,
+        });
+      });
+    }
+
+    const deletedInvoice = await InvoiceModel.findByIdAndDelete(invoiceObjectId);
     if (!deletedInvoice) {
       return res.status(404).json({ message: "Invoice not found" });
     }
 
-    // Update member balance after deletion if invoice was unpaid
+    // Always update member balance after deletion.
     const deletedMemberIdentifier = deletedInvoice.memberRef || deletedInvoice.memberNo || deletedInvoice.memberId;
-    if (deletedMemberIdentifier &&
-      (deletedInvoice.status === "Unpaid" || deletedInvoice.status === "Overdue")) {
+    if (deletedMemberIdentifier) {
       await calculateAndUpdateMemberBalance(deletedMemberIdentifier);
     }
 
     // Emit Socket.io event for real-time update
     emitInvoiceUpdate('deleted', { id: deletedInvoice._id?.toString(), businessId: deletedInvoice.id });
 
-    res.status(204).send();
+    res.status(200).json({
+      success: true,
+      message: "Invoice and related payments deleted",
+      deletedPayments: relatedPayments.length,
+    });
   } catch (error) {
     console.error("Error deleting invoice:", error);
     res.status(500).json({ error: error.message });

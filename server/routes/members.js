@@ -1140,16 +1140,16 @@ router.delete("/:id", async (req, res) => {
     const memberBusinessId = member.id || String(member._id);
 
     // SAFETY: Block deletion if member has ANY paid invoice.
-    const paidInvoice = await InvoiceModel.findOne({
-      memberRef: memberId,
-      status: { $in: ["Paid", "Completed"] }
-    });
+    // const paidInvoice = await InvoiceModel.findOne({
+    //   memberRef: memberId,
+    //   status: { $in: ["Paid", "Completed"] }
+    // });
 
-    if (paidInvoice) {
-      return res.status(403).json({
-        message: "Cannot permanently delete a member with paid invoices."
-      });
-    }
+    // if (paidInvoice) {
+    //   return res.status(403).json({
+    //     message: "Cannot permanently delete a member with paid invoices."
+    //   });
+    // }
 
     // Use transaction when supported (replica set).
     let supportsTransactions = false;
@@ -1175,7 +1175,7 @@ router.delete("/:id", async (req, res) => {
     const paymentResult = await PaymentModel.deleteMany(
       {
         memberRef: memberId,
-        status: { $in: ["Pending", "Rejected"] }
+        // status: { $in: ["Pending", "Rejected"] }
       },
       opts
     );
