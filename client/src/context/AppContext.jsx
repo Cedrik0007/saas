@@ -297,6 +297,13 @@ export function AppProvider({ children }) {
         });
       });
 
+      socketRef.current.on('donation:updated', (donation) => {
+        if (!donation) return;
+        setDonations(prev =>
+          prev.map((d) => (String(d._id || "") === String(donation._id || "") ? { ...d, ...donation } : d))
+        );
+      });
+
       socketRef.current.on('donation:deleted', (data) => {
         setDonations(prev => prev.filter(d => d._id !== data.id));
       });
@@ -1306,8 +1313,12 @@ const fetchReminderLogs = useCallback(async () => {
     }
   };
 
-  const deleteDonation = async (id) => {
+  const deleteDonation = async (id, reason) => {
     const requestKey = `delete-donation-${id}-${Date.now()}`;
+    const trimmedReason = String(reason || "").trim();
+    if (!trimmedReason) {
+      throw new Error('Deletion reason is required');
+    }
     
     // Optimistic update
     const previousDonations = donations;
@@ -1317,6 +1328,8 @@ const fetchReminderLogs = useCallback(async () => {
       await makeRequest(requestKey, async () => {
       const response = await fetch(`${apiBaseUrl}/api/donations/${id}`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: trimmedReason }),
       });
       
       if (!response.ok) {

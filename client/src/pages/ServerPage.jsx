@@ -612,8 +612,14 @@ export function ServerPage() {
   const handleDeleteDonation = async (id) => {
     if (window.confirm("Are you sure you want to delete this donation?")) {
       try {
-        await deleteDonation(id);
-        showToast("Donation deleted successfully!");
+        const reason = window.prompt("Enter reason for deletion (required):", "");
+        const trimmedReason = String(reason || "").trim();
+        if (!trimmedReason) {
+          showToast("Deletion reason is required", "error");
+          return;
+        }
+        await deleteDonation(id, trimmedReason);
+        showToast("Donation marked as inactive successfully!");
         fetchDonations();
       } catch (error) {
         showToast(error.message || "Failed to delete donation", "error");

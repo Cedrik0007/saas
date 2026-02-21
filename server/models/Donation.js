@@ -33,6 +33,9 @@ const DonationSchema = new mongoose.Schema({
   receipt_number: { type: String, unique: true, sparse: true }, // 4-digit receipt number starting from 2000
   shortToken: { type: String, unique: true, sparse: true },
   tokenExpiresAt: { type: Date, default: null },
+  status: { type: String, enum: ["Active", "Inactive"], default: "Active", index: true },
+  inactiveReason: { type: String, default: "" },
+  inactiveAt: { type: Date, default: null },
 }, {
   timestamps: true
 });

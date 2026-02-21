@@ -3754,8 +3754,8 @@ button[disabled] {
 }
 
 .icon-btn--delete:hover {
-  border-color: var(--danger);
-  color: var(--danger);
+  border-color: #e5e7eb;
+  color: #374151 !important;
 }
 
 .icon-btn--reminder {
@@ -9118,8 +9118,8 @@ button[disabled] {
 }
 
 .icon-btn--delete:hover {
-  border-color: var(--danger);
-  color: var(--danger);
+  border-color: #e5e7eb;
+  color: #374151 !important;
 }
 
 .segmented {

@@ -418,6 +418,10 @@ function AdminPage() {
       onCancel: null,
       confirmButtonText: "Confirm", // Default button text
       requirePassword: false,
+      requireReason: false,
+      reasonLabel: "Reason",
+      reasonPlaceholder: "Enter reason",
+      reason: "",
       password: "",
       isProcessing: false,
     };
@@ -3337,7 +3341,10 @@ function AdminPage() {
     const getFilteredDonations = (donationsInput = donations) => {
       const donationsArray = Array.isArray(donationsInput) ? donationsInput : [];
       const normalizedDonationSearchTerm = String(donationsSearchTerm || "").trim().toLowerCase();
-      let filteredDonations = donationsArray.filter((donation) => donation !== null);
+      // Always hide inactive donations in the active donations table/export.
+      let filteredDonations = donationsArray.filter(
+        (donation) => donation && String(donation.status || "Active") !== "Inactive"
+      );
 
       // Filter by year
         if (donationYearFilter && donationYearFilter !== "All") {
@@ -5933,7 +5940,12 @@ Indian Muslim Association, Hong Kong`;
       confirmButtonText = "Confirm",
       options = {}
     ) => {
-      const { requirePassword = false } = options || {};
+      const {
+        requirePassword = false,
+        requireReason = false,
+        reasonLabel = "Reason",
+        reasonPlaceholder = "Enter reason",
+      } = options || {};
 
       setConfirmationDialog({
         ...confirmationDialogDefaults,
@@ -5943,6 +5955,9 @@ Indian Muslim Association, Hong Kong`;
         onConfirm: onConfirm || null,
         onCancel: onCancel || null,
         requirePassword,
+        requireReason,
+        reasonLabel,
+        reasonPlaceholder,
       });
 
       // Replace the current modal with confirmation while keeping a path to restore
@@ -5956,6 +5971,11 @@ Indian Muslim Association, Hong Kong`;
     const handleConfirmationPasswordChange = (event) => {
       const value = event?.target?.value ?? "";
       setConfirmationDialog((prev) => ({ ...prev, password: value }));
+    };
+
+    const handleConfirmationReasonChange = (event) => {
+      const value = event?.target?.value ?? "";
+      setConfirmationDialog((prev) => ({ ...prev, reason: value }));
     };
 
     const handleConfirmationCancel = () => {
@@ -6026,9 +6046,15 @@ Indian Muslim Association, Hong Kong`;
         }
       }
 
+      const reason = (confirmationDialog.reason || "").trim();
+      if (confirmationDialog.requireReason && !reason) {
+        showToast("Reason is required to continue", "error");
+        return;
+      }
+
       resetConfirmationDialog();
       try {
-        await confirmAction();
+        await confirmAction(reason);
         closeAllModals();
       } catch (error) {
         console.error("Confirmation action failed:", error);
@@ -7637,6 +7663,22 @@ Indian Muslim Association Hong Kong
                       <p style={{ fontSize: "0.78rem", color: "#6b7280", marginTop: "6px" }}>
                         For security, please confirm with your admin password before deleting.
                       </p>
+                    </div>
+                  )}
+                  {confirmationDialog.requireReason && (
+                    <div style={{ marginBottom: "20px", width: "100%" }}>
+                      <label className="mono-label" style={{ width: "100%" }}>
+                        <span>{confirmationDialog.reasonLabel || "Reason"}</span>
+                        <textarea
+                          value={confirmationDialog.reason}
+                          className="mono-input"
+                          onChange={handleConfirmationReasonChange}
+                          placeholder={confirmationDialog.reasonPlaceholder || "Enter reason"}
+                          disabled={confirmationDialog.isProcessing}
+                          rows={3}
+                          style={{ resize: "vertical", minHeight: "90px" }}
+                        />
+                      </label>
                     </div>
                   )}
                   <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
@@ -17508,7 +17550,7 @@ Indian Muslim Association Hong Kong
                                         <div style={{ position: "relative" }}>
                                           <input
                                             type="text"
-                                            placeholder=" Search member by name or ID..."
+                                            placeholder=" Search member by name, ID or phone..."
                                             value={donationMemberSearch}
                                             onChange={(e) => setDonationMemberSearch(e.target.value)}
                                             onClick={(e) => e.stopPropagation()}
@@ -17570,11 +17612,13 @@ Indian Muslim Association Hong Kong
                                             {members.filter(member =>
                                               !donationMemberSearch ||
                                               member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                              member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                              member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                              String(member.phone || "").toLowerCase().includes(donationMemberSearch.toLowerCase())
                                             ).length} member{members.filter(member =>
                                               !donationMemberSearch ||
                                               member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                              member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                              member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                              String(member.phone || "").toLowerCase().includes(donationMemberSearch.toLowerCase())
                                             ).length !== 1 ? 's' : ''} found
                                           </div>
                                         )}
@@ -17586,7 +17630,8 @@ Indian Muslim Association Hong Kong
                                           .filter(member =>
                                             !donationMemberSearch ||
                                             member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                            member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                            member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                            String(member.phone || "").toLowerCase().includes(donationMemberSearch.toLowerCase())
                                           )
                                           .map((member) => (
                                             <div
@@ -17628,7 +17673,8 @@ Indian Muslim Association Hong Kong
                                         {members.filter(member =>
                                           !donationMemberSearch ||
                                           member.name?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
-                                          member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase())
+                                          member.id?.toLowerCase().includes(donationMemberSearch.toLowerCase()) ||
+                                          String(member.phone || "").toLowerCase().includes(donationMemberSearch.toLowerCase())
                                         ).length === 0 && (
                                             <div style={{ padding: "16px", textAlign: "center", color: "#999", fontSize: "0.875rem" }}>
                                               No members found
@@ -18896,6 +18942,9 @@ Indian Muslim Association Hong Kong
                                             style={{
                                               padding: "4px 10px",
                                               fontSize: "0.85rem",
+                                              borderRadius:"50%",
+                                              border: "1px solid #e5e7eb",
+                                              color: "#374151",
                                               display: "inline-flex",
                                               alignItems: "center",
                                               gap: "4px"
@@ -18917,17 +18966,18 @@ Indian Muslim Association Hong Kong
                                               setDonationConfirmationChannel({ whatsapp: false });
                                               setShowDonationConfirmationModal(true);
                                             }}
-                                            title="Send Donation Confirmation"
+                                            // title="Send Donation Confirmation"
                                             disabled={!donorPhone}
                                           >
                                             <i className="fas fa-paper-plane" style={{ fontSize: "0.75rem" }}></i>
-                                            Send
+                                            {/* Send */}
                                           </button>
                                           <button
                                             className="ghost-btn"
                                             style={{
                                               padding: "4px 10px",
                                               fontSize: "0.85rem",
+                                              borderRadius:"50%",
                                               display: "inline-flex",
                                               alignItems: "center",
                                               gap: "4px",
@@ -18944,10 +18994,50 @@ Indian Muslim Association Hong Kong
                                               // const pdfUrl = `${apiUrl}/api/donations/${donationParam}/utils/pdfDonation/donationReceiptTemplate/view`;
                                               window.open(pdfUrl, "_blank");
                                             }}
-                                            title="PDF Options"
+                                            // title="PDF Options"
                                           >
-                                            <i className="fas fa-file-pdf" style={{ fontSize: "0.75rem", color: "#ef4444" }}></i>
-                                            PDF
+                                            <i className="fas fa-file-pdf" style={{ fontSize: "0.75rem" }}></i>
+                                            {/* PDF */}
+                                          </button>
+                                          <button
+                                            className="ghost-btn icon-btn icon-btn--delete"
+                                            style={{
+                                              padding: "4px 10px",
+                                              fontSize: "0.85rem",
+                                              display: "inline-flex",
+                                              alignItems: "center",
+                                              gap: "4px",
+                                              // border: "1px solid #fecaca",
+                                              border: "1px solid #e5e7eb",
+                                              color: "#374151 !important",
+                          
+                                            }}
+                                            
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+
+                                              showConfirmation(
+                                                `Delete donation receipt ${donation.receipt_number || "-"}? This will mark it as Inactive.`,
+                                                async (reason) => {
+                                                  const donationId = donation?._id || donation?.id;
+                                                  await deleteDonation(donationId, reason);
+                                                  showToast("Donation marked as Inactive", "success");
+                                                },
+                                                null,
+                                                "Delete",
+                                                {
+                                                  requirePassword: true,
+                                                  requireReason: true,
+                                                  reasonLabel: "Deletion reason",
+                                                  reasonPlaceholder: "Enter reason for marking this donation as inactive",
+                                                }
+                                              );
+                                            }}
+                                            // title="Delete (mark inactive)"
+                                          >
+                                            <i className="fas fa-trash" style={{ fontSize: "0.75rem" }}></i>
+                                            {/* Delete */}
                                           </button>
                                         </div>
                                       )

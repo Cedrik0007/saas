@@ -12,7 +12,10 @@ const router = express.Router();
 router.get("/", async (req, res) => {
   try {
     await ensureConnection();
-    const donations = await DonationModel.find().sort({ createdAt: -1 });
+    const includeInactive = String(req.query.includeInactive || "").toLowerCase() === "true";
+    const donations = await DonationModel.find(
+      includeInactive ? {} : { status: { $ne: "Inactive" } }
+    ).sort({ createdAt: -1 });
     const responsePayload = await Promise.all(
       donations.map(async (donation) => {
         const donationObj = donation?.toObject ? donation.toObject() : donation;
@@ -66,20 +69,34 @@ router.post("/", async (req, res) => {
   }
 });
 
-// DELETE donation
+// DELETE donation (soft delete: mark as Inactive with required reason)
 router.delete("/:id", async (req, res) => {
   try {
     await ensureConnection();
-    const donation = await DonationModel.findByIdAndDelete(req.params.id);
-    
+    const reason = String(req.body?.reason || "").trim();
+    if (!reason) {
+      return res.status(400).json({ error: "Deletion reason is required" });
+    }
+
+    const donation = await DonationModel.findById(req.params.id);
     if (!donation) {
       return res.status(404).json({ message: "Donation not found" });
     }
-    
+
+    donation.status = "Inactive";
+    donation.inactiveReason = reason;
+    donation.inactiveAt = new Date();
+    await donation.save();
+
     // Emit Socket.io event for real-time update
-    emitDonationUpdate('deleted', { id: req.params.id });
-    
-    res.status(204).send();
+    emitDonationUpdate('updated', donation);
+
+    const donationObj = donation?.toObject ? donation.toObject() : donation;
+    res.status(200).json({
+      success: true,
+      message: "Donation marked as Inactive",
+      donation: donationObj,
+    });
   } catch (error) {
     console.error("Error deleting donation:", error);
     res.status(500).json({ error: error.message });
