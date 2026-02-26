@@ -5659,6 +5659,140 @@ Indian Muslim Association, Hong Kong`;
       });
     }, [members, memberSearchTerm, memberTypeFilter, memberStatusFilter, memberYearFilter]);
 
+    // Shared filtering pipeline for Send Reminders section.
+    // Keeps table and export in sync with currently applied filters.
+    const getFilteredOutstandingMembers = () => {
+      let outstandingMembers = (members || [])
+        .map((member) => {
+          const memberInvoices = (invoices || []).filter(
+            (inv) =>
+              matchesInvoiceToMember(inv, member) &&
+              (inv.status === "Unpaid" || inv.status === "Overdue")
+          );
+          if (memberInvoices.length === 0) return null;
+          const totalDue = memberInvoices.reduce((sum, inv) => {
+            const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, "") || 0);
+            return sum + amount;
+          }, 0);
+          const overdueCount = memberInvoices.filter((inv) => inv.status === "Overdue").length;
+          const unpaidCount = memberInvoices.filter((inv) => inv.status === "Unpaid").length;
+          return { member, totalDue, overdueCount, unpaidCount };
+        })
+        .filter(Boolean);
+
+      if (outstandingMembersYearFilter !== "All") {
+        outstandingMembers = outstandingMembers.filter(({ member }) => {
+          const memberInvoices = (invoices || []).filter(
+            (inv) =>
+              matchesInvoiceToMember(inv, member) &&
+              (inv.status === "Unpaid" || inv.status === "Overdue")
+          );
+
+          return memberInvoices.some((inv) => {
+            const periodStr = String(inv.period || "").trim();
+            const yearMatch = periodStr.match(/\d{4}/);
+            const invoiceYear = yearMatch ? yearMatch[0] : "";
+            return invoiceYear === outstandingMembersYearFilter;
+          });
+        });
+      }
+
+      if (outstandingMembersTypeFilter !== "All") {
+        outstandingMembers = outstandingMembers.filter(({ member }) => {
+          const displayId = String(member?.id || "").toUpperCase();
+          if (outstandingMembersTypeFilter === "Annual") return displayId.startsWith("AM");
+          if (outstandingMembersTypeFilter === "Lifetime") return displayId.startsWith("LM");
+          return true;
+        });
+      }
+
+      if (outstandingMembersSearch.trim()) {
+        const searchLower = outstandingMembersSearch.toLowerCase().trim();
+        outstandingMembers = outstandingMembers.filter(({ member }) => {
+          const nameMatch = member.name?.toLowerCase().includes(searchLower);
+          const emailMatch = member.email?.toLowerCase().includes(searchLower);
+          const phoneMatch = member.phone?.toLowerCase().includes(searchLower);
+          return nameMatch || emailMatch || phoneMatch;
+        });
+      }
+
+      return outstandingMembers;
+    };
+
+    const handleExportFilteredRemindersToExcel = async () => {
+      try {
+        const filteredOutstandingMembers = getFilteredOutstandingMembers();
+        if (filteredOutstandingMembers.length === 0) {
+          showToast("No reminder data to export for current filters", "error");
+          return;
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Send Reminders");
+
+        worksheet.columns = [
+          { header: "Member ID", key: "memberId", width: 16 },
+          { header: "Member Name", key: "memberName", width: 28 },
+          // { header: "Email", key: "email", width: 30 },
+          { header: "Mobile", key: "mobile", width: 18 },
+          { header: "Outstanding Amount", key: "outstandingAmount", width: 22 },
+          { header: "Subscription Type", key: "subscriptionType", width: 22 },
+          // { header: "Unpaid Invoices", key: "unpaidInvoices", width: 16 },
+          // { header: "Overdue Invoices", key: "overdueInvoices", width: 16 },
+        ];
+
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: "FFFFFF" } };
+        headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "5A31EA" } };
+        headerRow.alignment = { horizontal: "center", vertical: "center" };
+
+        filteredOutstandingMembers.forEach(({ member, totalDue, unpaidCount, overdueCount }) => {
+          worksheet.addRow({
+            memberId: member?.id || "-",
+            memberName: member?.name || "Unknown",
+            // email: member?.email || "-",
+            mobile: member?.phone || "-",
+            outstandingAmount: `HK$${formatNumber(totalDue || 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            subscriptionType: normalizeSubscriptionType(member?.subscriptionType) || "-",
+            unpaidInvoices: unpaidCount || 0,
+            overdueInvoices: overdueCount || 0,
+          });
+        });
+
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return;
+          row.eachCell((cell) => {
+            cell.alignment = { horizontal: "left", vertical: "center" };
+            cell.border = {
+              top: { style: "thin", color: { argb: "E5E7EB" } },
+              left: { style: "thin", color: { argb: "E5E7EB" } },
+              bottom: { style: "thin", color: { argb: "E5E7EB" } },
+              right: { style: "thin", color: { argb: "E5E7EB" } },
+            };
+          });
+        });
+
+        const now = new Date();
+        const dateStr = now.toISOString().split("T")[0];
+        const filename = `send-reminders-filtered-${dateStr}.xlsx`;
+
+        await workbook.xlsx.writeBuffer().then((buffer) => {
+          const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          link.click();
+          URL.revokeObjectURL(url);
+        });
+
+        showToast(`✓ Exported ${filteredOutstandingMembers.length} filtered reminder record(s) to Excel`, "success");
+      } catch (error) {
+        console.error("Error exporting filtered reminders to Excel:", error);
+        showToast("Failed to export filtered reminders to Excel", "error");
+      }
+    };
+
     useEffect(() => {
       setPaymentsPage(1);
     }, [paymentStatusFilter]);
@@ -11787,6 +11921,29 @@ Indian Muslim Association Hong Kong
                           Send manual reminder emails or WhatsApp messages to members with outstanding invoices
                         </p>
                       </div>
+                      <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={handleExportFilteredRemindersToExcel}
+                          style={{
+                            padding: "10px 16px",
+                            borderRadius: "4px",
+                            border: "2px solid #5a31ea",
+                            background: "#ffffff",
+                            color: "#5a31ea",
+                            fontSize: "0.875rem",
+                            fontWeight: "600",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            cursor: "pointer",
+                            whiteSpace: "nowrap"
+                          }}
+                          title="Export filtered reminders to Excel"
+                        >
+                          <i className="fas fa-download" style={{ fontSize: "0.75rem" }}></i>
+                          Export to Excel
+                        </button>
                     </div>
 
                     {/* Row 1: Year Filter only | Row 2: Search only */}
@@ -12054,6 +12211,7 @@ Indian Muslim Association Hong Kong
                             </button>
                           )}
                         </div>
+                     
                       </div>
 
                     {/* Members List with pagination */}
@@ -12063,63 +12221,7 @@ Indian Muslim Association Hong Kong
                       gap: "12px"
                     }}>
                       {(() => {
-                        let outstandingMembers = members
-                          .map((member) => {
-                          const memberInvoices = invoices.filter(
-                            (inv) =>
-                              matchesInvoiceToMember(inv, member) &&
-                              (inv.status === "Unpaid" || inv.status === "Overdue")
-                          );
-                            if (memberInvoices.length === 0) return null;
-                            const totalDue = memberInvoices.reduce((sum, inv) => {
-                              const amount = parseFloat(inv.amount?.replace(/[^0-9.]/g, "") || 0);
-                              return sum + amount;
-                            }, 0);
-                            const overdueCount = memberInvoices.filter((inv) => inv.status === "Overdue").length;
-                            const unpaidCount = memberInvoices.filter((inv) => inv.status === "Unpaid").length;
-                            return { member, totalDue, overdueCount, unpaidCount };
-                          })
-                          .filter(Boolean);
-
-                        // Apply year filter first
-                        if (outstandingMembersYearFilter !== "All") {
-                          outstandingMembers = outstandingMembers.filter(({ member }) => {
-                            // Check if member has outstanding invoices in the selected year
-                            const memberInvoices = invoices.filter(
-                              (inv) =>
-                                matchesInvoiceToMember(inv, member) &&
-                                (inv.status === "Unpaid" || inv.status === "Overdue")
-                            );
-                            
-                            return memberInvoices.some((inv) => {
-                              const periodStr = String(inv.period || "").trim();
-                              const yearMatch = periodStr.match(/\d{4}/);
-                              const invoiceYear = yearMatch ? yearMatch[0] : "";
-                              return invoiceYear === outstandingMembersYearFilter;
-                            });
-                          });
-                        }
-
-                        // Apply member-type filter (All / Annual => AM / Lifetime => LM)
-                        if (outstandingMembersTypeFilter !== "All") {
-                          outstandingMembers = outstandingMembers.filter(({ member }) => {
-                            const displayId = String(member?.id || "").toUpperCase();
-                            if (outstandingMembersTypeFilter === "Annual") return displayId.startsWith("AM");
-                            if (outstandingMembersTypeFilter === "Lifetime") return displayId.startsWith("LM");
-                            return true;
-                          });
-                        }
-
-                        // Apply search filter (name, email, phone)
-                        if (outstandingMembersSearch.trim()) {
-                          const searchLower = outstandingMembersSearch.toLowerCase().trim();
-                          outstandingMembers = outstandingMembers.filter(({ member }) => {
-                            const nameMatch = member.name?.toLowerCase().includes(searchLower);
-                            const emailMatch = member.email?.toLowerCase().includes(searchLower);
-                            const phoneMatch = member.phone?.toLowerCase().includes(searchLower);
-                            return nameMatch || emailMatch || phoneMatch;
-                          });
-                        }
+                        let outstandingMembers = getFilteredOutstandingMembers();
 
                         if (outstandingMembers.length === 0) {
                         return (
@@ -12432,7 +12534,7 @@ Indian Muslim Association Hong Kong
                                         marginBottom: "4px",
                                       }}
                                     >
-                                      {member.email}
+                                      {member.phone}
                                     </div>
                                     <div
                                       style={{
@@ -12448,7 +12550,7 @@ Indian Muslim Association Hong Kong
                                         </strong>{" "}
                                         outstanding
                                       </span>
-                                      {overdueCount > 0 && (
+                                      {/* {overdueCount > 0 && (
                                         <span style={{ color: "#ef4444", fontWeight: "600" }}>
                                           {overdueCount} overdue
                                         </span>
@@ -12457,7 +12559,7 @@ Indian Muslim Association Hong Kong
                                         <span style={{ color: "#ef4444", fontWeight: "600" }}>
                                           {unpaidCount} unpaid
                                         </span>
-                                      )}
+                                      )} */}
                                       </div>
                                     </div>
                                   </div>
@@ -18032,14 +18134,61 @@ Indian Muslim Association Hong Kong
                           {/* Receiver Name - Required for both Cash and Online payments */}
                           {(donationForm.payment_type === "cash" || donationForm.payment_type === "online") && (
                             <label style={{ marginBottom: "20px", display: "block" }}>
-                              <span><i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>Receiver Name <span style={{ color: "#ef4444" }}>*</span></span>
+    <span>
+      <i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
+      Receiver Name <span style={{ color: "#ef4444" }}>*</span>
+    </span>
+
+    {(() => {
+      const defaultNames = ["Safiyur Rahman", "Mokthiar Khan", "Wavoo Kamil"];
+      const isCustom = donationForm.receiver_name && !defaultNames.includes(donationForm.receiver_name);
+
+      return (
+        <>
+          <select
+            value={isCustom ? "__custom__" : (donationForm.receiver_name || "")}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === "__custom__") {
+                // Switch to manual input mode
+                setDonationForm({ ...donationForm, receiver_name: "" });
+              } else {
+                setDonationForm({ ...donationForm, receiver_name: value });
+              }
+
+              if (donationFieldErrors.receiver_name) {
+                setDonationFieldErrors((prev) => ({ ...prev, receiver_name: false }));
+                if (currentInvalidDonationField === "receiver_name") {
+                  setCurrentInvalidDonationField(null);
+                }
+              }
+            }}
+            style={{
+              width: "100%",
+              padding: "12px 16px",
+              borderRadius: "8px",
+              border: "2px solid #e5e7eb",
+              fontSize: "0.9375rem",
+              background: "#ffffff",
+              marginTop: "8px",
+              cursor: "pointer",
+            }}
+          >
+            <option value="">Select or Enter Receiver Name</option>
+            <option value="Safiyur Rahman">Safiyur Rahman</option>
+            <option value="Mokthiar Khan">Mokthiar Khan</option>
+            <option value="Wavoo Kamil">Wavoo Kamil</option>
+            {/* <option value="__custom__">Other (Enter manually)</option> */}
+          </select>
+
+          {(isCustom || !donationForm.receiver_name) && (
                               <input
                                 type="text"
-                                value={donationForm.receiver_name}
+              value={isCustom ? donationForm.receiver_name : ""}
                                 onChange={(e) => {
                                   setDonationForm({ ...donationForm, receiver_name: e.target.value });
                                   if (donationFieldErrors.receiver_name) {
-                                    setDonationFieldErrors(prev => ({ ...prev, receiver_name: false }));
+                  setDonationFieldErrors((prev) => ({ ...prev, receiver_name: false }));
                                     if (currentInvalidDonationField === "receiver_name") {
                                             setCurrentInvalidDonationField(null);
                                           }
@@ -18053,8 +18202,13 @@ Indian Muslim Association Hong Kong
                                   borderRadius: "8px",
                                   border: donationFieldErrors.receiver_name ? "2px solid #ef4444" : "2px solid #e5e7eb",
                                   fontSize: "0.9375rem",
+                marginTop: "10px",
                                 }}
                               />
+          )}
+        </>
+      );
+    })()}
                             </label>
                           )}
 

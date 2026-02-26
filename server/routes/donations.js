@@ -77,7 +77,7 @@ router.delete("/:id", async (req, res) => {
     if (!reason) {
       return res.status(400).json({ error: "Deletion reason is required" });
     }
-
+    
     const donation = await DonationModel.findById(req.params.id);
     if (!donation) {
       return res.status(404).json({ message: "Donation not found" });
@@ -87,10 +87,10 @@ router.delete("/:id", async (req, res) => {
     donation.inactiveReason = reason;
     donation.inactiveAt = new Date();
     await donation.save();
-
+    
     // Emit Socket.io event for real-time update
     emitDonationUpdate('updated', donation);
-
+    
     const donationObj = donation?.toObject ? donation.toObject() : donation;
     res.status(200).json({
       success: true,
