@@ -18849,7 +18849,7 @@ Indian Muslim Association Hong Kong
                               </div>
 
                               <Table
-                                columns={["Receipt No", "Donor Name", "Donor Type", "Donation Type", "Amount", "Method", "Screenshot", "Notes", "Actions"]}
+                                columns={["Receipt No", "Donor Name", "Donor Type", "Donation Type", "Amount", "Method","Receiver Name", "Notes", "Actions"]}
                                 rows={paginatedDonations.map((donation) => {
                                   if (!donation) return null;
                                   const donationDate =
@@ -18933,6 +18933,7 @@ Indian Muslim Association Hong Kong
                                         </button>
                                       ) : "-"
                                     },
+                                    "Receiver Name":donation.receiver_name || "-",
                                     Notes: donation.notes || "-",
                                     Actions: {
                                       render: () => (
