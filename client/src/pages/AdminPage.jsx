@@ -487,6 +487,7 @@ function AdminPage() {
       email: "",
       phone: "",
       native: "",
+      companyName: "",
       status: "Active",
       balance: "500", // default for Annual Member (numeric string)
       nextDue: getTodayDate(), // Default to today's date
@@ -2755,6 +2756,7 @@ function AdminPage() {
           if (!term) return true;
           const memberRecord = findMemberByBusinessId(payment.memberId);
           const memberName = (memberRecord?.name || "").toLowerCase();
+          const memberCompanyName = String(memberRecord?.companyName || "").toLowerCase();
           const memberIdValue = (payment.memberId || "").toLowerCase();
           const invoiceId = (payment.invoiceId || "").toLowerCase();
           const method = (getPaymentMethodDisplay(payment) || "").toLowerCase();
@@ -2762,6 +2764,7 @@ function AdminPage() {
           const amount = (payment.amount || "").toString().toLowerCase();
           return (
             memberName.includes(term) ||
+            memberCompanyName.includes(term) ||
             memberIdValue.includes(term) ||
             invoiceId.includes(term) ||
             method.includes(term) ||
@@ -5630,11 +5633,13 @@ Indian Muslim Association, Hong Kong`;
         if (searchTerm) {
           const s = searchTerm.toLowerCase();
           const mobile = String(m.mobile ?? m.phone ?? "").trim();
+          const companyName = String(m.companyName ?? "").toLowerCase();
           if (
             !m.name?.toLowerCase().includes(s) &&
             !String(m.id ?? "").toLowerCase().includes(s) &&
             !mobile.includes(s) &&
-            !m.email?.toLowerCase().includes(s)
+            !m.email?.toLowerCase().includes(s) &&
+            !companyName.includes(s)
           ) return false;
         }
         const subType = normalizeSubscriptionType(m.subscriptionType);
@@ -6348,6 +6353,7 @@ Indian Muslim Association, Hong Kong`;
           email: "",
           phone: "",
           native: "",
+          companyName: "",
           status: "Active",
           balance: "500",
           nextDue: getTodayDate(), // Reset to today's date
@@ -6407,6 +6413,7 @@ Indian Muslim Association, Hong Kong`;
           email: member.email || "",
           phone: member.phone || "",
           native: member.native || "",
+          companyName: member.companyName || "",
           status: member.status || "Active",
           subscriptionType: normalizeSubscriptionType(member.subscriptionType),
           subscriptionYear,
@@ -6452,6 +6459,9 @@ Indian Muslim Association, Hong Kong`;
         }
         if (memberForm.native !== (originalMember.native || "")) {
           updateData.native = memberForm.native;
+        }
+        if (memberForm.companyName !== (originalMember.companyName || "")) {
+          updateData.companyName = memberForm.companyName;
         }
         if (memberForm.status !== (originalMember.status || "Active")) {
           updateData.status = memberForm.status;
@@ -6508,6 +6518,7 @@ Indian Muslim Association, Hong Kong`;
             email: "",
             phone: "",
             native: "",
+            companyName: "",
             password: "",
             status: "Active",
             balance: "500",
@@ -8824,6 +8835,19 @@ Indian Muslim Association Hong Kong
                               />
                             </label>
 
+                            <label>
+                              <span>
+                                <i className="fas fa-building" aria-hidden="true" style={{ marginRight: 6 }}></i>
+                                Company information <span style={{ color: "#9ca3af", fontSize: "0.75rem" }}>(optional)</span>
+                              </span>
+                              <input
+                                type="text"
+                                value={memberForm.companyName}
+                                onChange={(e) => handleMemberFieldChange("companyName", e.target.value)}
+                                placeholder="Enter company name"
+                              />
+                            </label>
+
                             {/* Password removed from Add Member form as requested */}
                             <label>
                               <span>
@@ -9608,7 +9632,7 @@ Indian Muslim Association Hong Kong
                                   <input
                                     ref={memberSearchInputRef}
                                     type="text"
-                                    placeholder="Search by name, member ID, mobile, email"
+                                    placeholder="Search by name, member ID, mobile, email, company"
                                     value={memberSearchTerm}
                                     onChange={(e) => {
                                       setMemberSearchTerm(e.target.value);
@@ -9671,6 +9695,7 @@ Indian Muslim Association Hong Kong
                                   columns={[
                                     "Name",
                                     "Member ID",
+                                    "Company",
                                     "Mobile",
                                     "Year",
                                     "Subscription Type",
@@ -9742,6 +9767,7 @@ Indian Muslim Association Hong Kong
                                           : undefined,
                                       "Name": member.name,
                                       "Member ID": memberIdDisplay,
+                                      "Company": member.companyName || "-",
                                       "Mobile": member.phone || "-",
                                       "Year": subYear,
                                       "Subscription Type": formatSubscriptionType(member.subscriptionType) || "-",
@@ -9959,6 +9985,11 @@ Indian Muslim Association Hong Kong
                           <p className="admin-members-detail-meta">
                             Member ID {selectedMember.id} · {selectedMember.email} · WhatsApp {selectedMember.phone}
                           </p>
+                          {selectedMember.companyName && (
+                            <p className="admin-members-detail-meta">
+                              Company: {selectedMember.companyName}
+                            </p>
+                          )}
                           <p className="admin-members-detail-meta">
                             Current Subscription: {memberSubscriptionTypeLabel || "Not Assigned"}
                           </p>
@@ -11223,7 +11254,7 @@ Indian Muslim Association Hong Kong
                               <div style={{ position: "relative" }}>
                                 <input
                                   type="text"
-                                  placeholder=" Search member by name or ID..."
+                                  placeholder=" Search member by name, ID or company..."
                                   value={invoiceMemberSearch}
                                   onChange={(e) => setInvoiceMemberSearch(e.target.value)}
                                   onClick={(e) => e.stopPropagation()}
@@ -11285,11 +11316,13 @@ Indian Muslim Association Hong Kong
                                   {members.filter(member =>
                                     !invoiceMemberSearch ||
                                     member.name?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
-                                    member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase())
+                                    member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
+                                    String(member.companyName || "").toLowerCase().includes(invoiceMemberSearch.toLowerCase())
                                   ).length} member{members.filter(member =>
                                     !invoiceMemberSearch ||
                                     member.name?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
-                                    member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase())
+                                    member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
+                                    String(member.companyName || "").toLowerCase().includes(invoiceMemberSearch.toLowerCase())
                                   ).length !== 1 ? 's' : ''} found
                                 </div>
                               )}
@@ -11301,7 +11334,8 @@ Indian Muslim Association Hong Kong
                                 .filter(member =>
                                   !invoiceMemberSearch ||
                                   member.name?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
-                                  member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase())
+                                  member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
+                                  String(member.companyName || "").toLowerCase().includes(invoiceMemberSearch.toLowerCase())
                                 )
                                 .map((member) => (
                                   <div
@@ -11346,7 +11380,8 @@ Indian Muslim Association Hong Kong
                               {members.filter(member =>
                                 !invoiceMemberSearch ||
                                 member.name?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
-                                member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase())
+                                member.id?.toLowerCase().includes(invoiceMemberSearch.toLowerCase()) ||
+                                String(member.companyName || "").toLowerCase().includes(invoiceMemberSearch.toLowerCase())
                               ).length === 0 && (
                                   <div style={{ padding: "16px", textAlign: "center", color: "#999", fontSize: "0.875rem" }}>
                                     No members found
@@ -16749,7 +16784,7 @@ Indian Muslim Association Hong Kong
                                 setPaymentSearchTerm(e.target.value);
                                 setPaymentsPage(1);
                               }}
-                              placeholder="Search by member name, member ID, invoice ID, method, amount"
+                              placeholder="Search by member name, ID, invoice, method, amount"
                               className="search-input"
                               style={{
                                 padding: "10px 40px 10px 16px",
@@ -16863,6 +16898,7 @@ Indian Muslim Association Hong Kong
                             if (!term) return true;
                             const memberRecord = findMemberByBusinessId(payment.memberId);
                             const memberName = (memberRecord?.name || "").toLowerCase();
+                            const memberCompanyName = String(memberRecord?.companyName || "").toLowerCase();
                             const memberIdValue = (payment.memberId || "").toLowerCase();
                             const invoiceId = (payment.invoiceId || "").toLowerCase();
                             const method = (getPaymentMethodDisplay(payment) || "").toLowerCase();
@@ -16870,6 +16906,7 @@ Indian Muslim Association Hong Kong
                             const amount = (payment.amount || "").toString().toLowerCase();
                             return (
                               memberName.includes(term) ||
+                              memberCompanyName.includes(term) ||
                               memberIdValue.includes(term) ||
                               invoiceId.includes(term) ||
                               method.includes(term) ||
@@ -22816,6 +22853,7 @@ Indian Muslim Association Hong Kong
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Email</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Phone</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Native Place</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Company Name</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Subscription Type</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e0e0e0" }}>Subscription Year</th>
                         <th style={{ padding: "12px", textAlign: "left", fontWeight: "600", color: "#333" }}>Start Date</th>
@@ -22839,6 +22877,9 @@ Indian Muslim Association Hong Kong
                           </td>
                           <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
                             {member.native || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
+                          </td>
+                          <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
+                            {member.companyName || <span style={{ color: "#999", fontStyle: "italic" }}>-</span>}
                           </td>
                           <td style={{ padding: "12px", borderRight: "1px solid #e0e0e0", color: "#333" }}>
                             {formatSubscriptionType(member.subscriptionType) || <span style={{ color: "#999", fontStyle: "italic" }}>Annual Member</span>}

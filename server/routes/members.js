@@ -686,6 +686,7 @@ router.post("/", async (req, res) => {
       email: (req.body.email || '').trim().toLowerCase(),
       phone: req.body.phone || '',
       native: req.body.native || '',
+      companyName: (req.body.companyName || '').trim() || undefined,
       password: req.body.password || '',
       status: req.body.status || 'Pending',
       balance: req.body.balance || 'HK$0',
@@ -944,7 +945,7 @@ router.put("/:id", async (req, res) => {
       }
       
       // Also allow basic fields if provided
-      const basicFields = ['name', 'email', 'phone', 'native', 'status', 'password'];
+      const basicFields = ['name', 'email', 'phone', 'native', 'companyName', 'status', 'password'];
       for (const field of basicFields) {
         if (req.body.hasOwnProperty(field)) {
           updateData[field] = req.body[field];
@@ -990,7 +991,7 @@ router.put("/:id", async (req, res) => {
 
       res.json(member);
     } else {
-      const allowedFields = ['name', 'email', 'phone', 'native', 'status', 'password', 'subscriptionType', 'subscriptionYear'];
+      const allowedFields = ['name', 'email', 'phone', 'native', 'companyName', 'status', 'password', 'subscriptionType', 'subscriptionYear'];
       const updateData = {};
       for (const field of allowedFields) {
         if (Object.prototype.hasOwnProperty.call(req.body, field)) {
@@ -1258,6 +1259,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const subscriptionTypeIndex = headers.findIndex(h => h.includes('subscription') || h.includes('type'));
       const subscriptionYearIndex = headers.findIndex(h => (h.includes('subscription') && h.includes('year')) || h.includes('subyear') || (h.includes('year') && !h.includes('start') && !h.includes('date')));
       const startDateIndex = headers.findIndex(h => h.includes('start') || h.includes('date'));
+      const companyNameIndex = headers.findIndex(h => h.includes('company') || h.includes('company name'));
 
       if (nameIndex === -1) {
         return res.status(400).json({ error: "CSV must have 'name' column" });
@@ -1375,6 +1377,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
             email: email ? email.toLowerCase() : '', // Use empty string if no email provided
             phone: finalPhone,
             native: nativeIndex !== -1 ? (values[nativeIndex]?.trim().replace(/[^a-zA-Z\s]/g, '') || '') : '',
+            companyName: companyNameIndex !== -1 ? (values[companyNameIndex]?.trim() || '') : '',
             status: statusIndex !== -1 ? (values[statusIndex]?.trim() || 'Active') : 'Active',
             subscriptionType: subscriptionTypeIndex !== -1 ? (values[subscriptionTypeIndex]?.trim() || SUBSCRIPTION_TYPES.ANNUAL_MEMBER) : SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
             subscriptionYear: subscriptionYear || null,
@@ -1439,6 +1442,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
       const subscriptionTypeIndex = headers.findIndex(h => h.includes('subscription') || h.includes('type'));
       const subscriptionYearIndex = headers.findIndex(h => (h.includes('subscription') && h.includes('year')) || h.includes('subyear') || (h.includes('year') && !h.includes('start') && !h.includes('date')));
       const startDateIndex = headers.findIndex(h => h.includes('start') || h.includes('date'));
+      const companyNameIndex = headers.findIndex(h => h.includes('company') || h.includes('company name'));
 
       if (nameIndex === -1) {
         return res.status(400).json({ error: "Excel file must have 'name' column" });
@@ -1563,6 +1567,7 @@ router.post("/import", upload.single("file"), async (req, res) => {
             email: email ? email.toLowerCase() : '', // Use empty string if no email provided
             phone: finalPhone,
             native: nativeIndex !== -1 ? String(row[nativeIndex] || '').trim().replace(/[^a-zA-Z\s]/g, '') : '',
+            companyName: companyNameIndex !== -1 ? (String(row[companyNameIndex] || '').trim() || '') : '',
             status: statusIndex !== -1 ? String(row[statusIndex] || 'Active').trim() : 'Active',
             subscriptionType: subscriptionTypeIndex !== -1 ? String(row[subscriptionTypeIndex] || SUBSCRIPTION_TYPES.ANNUAL_MEMBER).trim() : SUBSCRIPTION_TYPES.ANNUAL_MEMBER,
             subscriptionYear: subscriptionYear || null,

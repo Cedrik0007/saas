@@ -37,6 +37,7 @@ const UserSchema = new mongoose.Schema({
   email: String,
   phone: String,
   native: String,
+  companyName: { type: String, default: "" },
   password: String,  // Add password field for member login
   status: String,
   balance: String,
