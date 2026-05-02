@@ -21763,56 +21763,83 @@ Indian Muslim Association Hong Kong
 
                 {/* Receiver Name - Required for both Cash and Online */}
                 {(paymentModalData.payment_type === "cash" || paymentModalData.payment_type === "online") && (
-                  <div>
-                    <label style={{
-                      display: "block",
-                      fontSize: "0.875rem",
-                      fontWeight: "600",
-                      color: "#333",
-                      marginBottom: "8px"
-                    }}>
+                  <label style={{ marginBottom: "20px", display: "block" }}>
+                    <span>
+                      <i className="fas fa-user" style={{ marginRight: "8px", color: "#5a31ea" }}></i>
                       Receiver Name <span style={{ color: "#ef4444" }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={paymentModalData.receiver_name}
-                      onChange={(e) => {
-                        setPaymentModalData({ ...paymentModalData, receiver_name: e.target.value });
-                        if (paymentModalErrors.receiver_name) {
-                          setPaymentModalErrors(prev => ({ ...prev, receiver_name: false }));
-                          if (currentInvalidPaymentModalField === "receiver_name") {
-                            setCurrentInvalidPaymentModalField(null);
-                          }
-                        }
-                      }}
-                      placeholder="Enter receiver name"
-                      style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        border: paymentModalErrors.receiver_name && currentInvalidPaymentModalField === "receiver_name" ? "2px solid #ef4444" : "1px solid #e0e0e0",
-                        borderRadius: "8px",
-                        fontSize: "0.875rem",
-                        background: "#fff",
-                        outline: "none",
-                        transition: "border-color 0.2s"
-                      }}
-                      onFocus={(e) => {
-                        if (!paymentModalErrors.receiver_name || currentInvalidPaymentModalField !== "receiver_name") {
-                          e.target.style.borderColor = "#5a31ea";
-                          e.target.style.boxShadow = "0 0 0 3px rgba(90, 49, 234, 0.1)";
-                        }
-                      }}
-                      onBlur={(e) => {
-                        if (paymentModalErrors.receiver_name && currentInvalidPaymentModalField === "receiver_name") {
-                          e.target.style.borderColor = "#ef4444";
-                          e.target.style.boxShadow = "0 0 0 3px rgba(239, 68, 68, 0.1)";
-                        } else {
-                          e.target.style.borderColor = "#e0e0e0";
-                          e.target.style.boxShadow = "none";
-                        }
-                      }}
-                    />
-                  </div>
+                    </span>
+
+                    {(() => {
+                      const defaultNames = ["Safiyur Rahman", "Mokthiar Khan", "Wavoo Kamil", "IMA"];
+                      const isCustom = paymentModalData.receiver_name && !defaultNames.includes(paymentModalData.receiver_name);
+
+                      return (
+                        <>
+                          <select
+                            value={isCustom ? "__custom__" : (paymentModalData.receiver_name || "")}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === "__custom__") {
+                                // Switch to manual input mode
+                                setPaymentModalData({ ...paymentModalData, receiver_name: "" });
+                              } else {
+                                setPaymentModalData({ ...paymentModalData, receiver_name: value });
+                              }
+
+                              if (paymentModalErrors.receiver_name) {
+                                setPaymentModalErrors((prev) => ({ ...prev, receiver_name: false }));
+                                if (currentInvalidPaymentModalField === "receiver_name") {
+                                  setCurrentInvalidPaymentModalField(null);
+                                }
+                              }
+                            }}
+                            style={{
+                              width: "100%",
+                              padding: "12px 16px",
+                              borderRadius: "8px",
+                              border: "2px solid #e5e7eb",
+                              fontSize: "0.9375rem",
+                              background: "#ffffff",
+                              marginTop: "8px",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <option value="">Select or Enter Receiver Name</option>
+                            <option value="Safiyur Rahman">Safiyur Rahman</option>
+                            <option value="Mokthiar Khan">Mokthiar Khan</option>
+                            <option value="Wavoo Kamil">Wavoo Kamil</option>
+                            <option value="IMA">IMA</option>
+                          </select>
+
+                          {(isCustom || !paymentModalData.receiver_name) && (
+                            <input
+                              type="text"
+                              value={isCustom ? paymentModalData.receiver_name : ""}
+                              onChange={(e) => {
+                                setPaymentModalData({ ...paymentModalData, receiver_name: e.target.value });
+                                if (paymentModalErrors.receiver_name) {
+                                  setPaymentModalErrors((prev) => ({ ...prev, receiver_name: false }));
+                                  if (currentInvalidPaymentModalField === "receiver_name") {
+                                    setCurrentInvalidPaymentModalField(null);
+                                  }
+                                }
+                              }}
+                              placeholder="Enter receiver name"
+                              required
+                              style={{
+                                width: "100%",
+                                padding: "12px 16px",
+                                borderRadius: "8px",
+                                border: paymentModalErrors.receiver_name ? "2px solid #ef4444" : "2px solid #e5e7eb",
+                                fontSize: "0.9375rem",
+                                marginTop: "10px",
+                              }}
+                            />
+                          )}
+                        </>
+                      );
+                    })()}
+                  </label>
                 )}
 
                 {/* Payment Date - Required for both payment methods */}
