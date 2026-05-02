@@ -18179,7 +18179,7 @@ Indian Muslim Association Hong Kong
     </span>
 
     {(() => {
-      const defaultNames = ["Safiyur Rahman", "Mokthiar Khan", "Wavoo Kamil"];
+      const defaultNames = ["Safiyur Rahman", "Mokthiar Khan", "Wavoo Kamil", "IMA"];
       const isCustom = donationForm.receiver_name && !defaultNames.includes(donationForm.receiver_name);
 
       return (
@@ -18217,6 +18217,7 @@ Indian Muslim Association Hong Kong
             <option value="Safiyur Rahman">Safiyur Rahman</option>
             <option value="Mokthiar Khan">Mokthiar Khan</option>
             <option value="Wavoo Kamil">Wavoo Kamil</option>
+            <option value="IMA">IMA</option>
             {/* <option value="__custom__">Other (Enter manually)</option> */}
           </select>
 
