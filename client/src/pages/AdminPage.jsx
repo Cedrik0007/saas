@@ -18494,82 +18494,133 @@ Indian Muslim Association Hong Kong
                     </Modal>
                   )}
 
-                  {/* Total Donation Card */}
-                  <div style={{ marginBottom: "24px" }}>
-                    {(() => {
-                      const donationsArray = Array.isArray(donations) ? donations : [];
-                      // Always calculate total from all donations (all years), not filtered by year
-                      const allDonations = donationsArray.filter(donation => donation !== null);
-                      
-                      // Calculate total donation amount from all years
-                      const totalDonationAmount = allDonations.reduce((sum, d) => {
-                        const val = parseFloat(d?.amount || 0);
-                        return sum + (isNaN(val) ? 0 : val);
-                      }, 0);
-                      
-                      // Calculate donations by year for display
-                      const donationsByYear = {};
-                      allDonations.forEach((donation) => {
-                        if (!donation) return;
-                        const donationDate = donation.date || donation.createdAt;
-                        if (!donationDate) return;
-                        
-                        try {
-                          const date = new Date(donationDate);
-                          const year = date.getFullYear().toString();
-                          if (!donationsByYear[year]) {
-                            donationsByYear[year] = { count: 0, amount: 0 };
-                          }
-                          donationsByYear[year].count += 1;
-                          const val = parseFloat(donation?.amount || 0);
-                          donationsByYear[year].amount += isNaN(val) ? 0 : val;
-                        } catch (e) {
-                          // Skip invalid dates
-                        }
-                      });
-                      
-                      // Get filtered donations count for current year filter
-                      let filteredDonations = allDonations;
-                      if (donationYearFilter && donationYearFilter !== "All") {
-                        filteredDonations = filteredDonations.filter((donation) => {
-                          if (!donation) return false;
-                          const donationDate = donation.date || donation.createdAt;
-                          if (!donationDate) return false;
-                          
-                          try {
-                            const date = new Date(donationDate);
-                            const donationYear = date.getFullYear().toString();
-                            return donationYear === donationYearFilter;
-                          } catch (e) {
-                            return false;
-                          }
-                        });
-                      }
+               {/* Donation KPI Cards Row */}
+<div style={{ display: "flex", gap: "16px", marginBottom: "24px", flexWrap: "wrap" }}>
 
-                      return (
-                        <div className="admin-dashboard-kpi-card" style={{ maxWidth: "400px" }}>
-                          <div className="admin-dashboard-kpi-header">
-                          
-                            <div className="admin-dashboard-kpi-content">
-                            
-                              <div className="admin-dashboard-kpi-label"><div className="admin-dashboard-kpi-icon admin-dashboard-kpi-icon--green">
-                              <i className="fas fa-heart"></i>
-                            </div>Total Donation (All Years)</div>
-                              <div className="admin-dashboard-kpi-value">
-                                {formatCurrency(totalDonationAmount)}
-                              </div>
-                              <div className="admin-dashboard-kpi-description">
-                                {allDonations.length} donation{allDonations.length !== 1 ? 's' : ''} recorded across {Object.keys(donationsByYear).length} year{Object.keys(donationsByYear).length !== 1 ? 's' : ''}
-                                {donationYearFilter && donationYearFilter !== "All" && (
-                                  <span> • {filteredDonations.length} in {donationYearFilter}</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
+  {/* Card 1: Total Donation (All Years) */}
+  {(() => {
+    const donationsArray = Array.isArray(donations) ? donations : [];
+    const allDonations = donationsArray.filter(donation => donation !== null);
+
+    const totalDonationAmount = allDonations.reduce((sum, d) => {
+      const val = parseFloat(d?.amount || 0);
+      return sum + (isNaN(val) ? 0 : val);
+    }, 0);
+
+    const donationsByYear = {};
+    allDonations.forEach((donation) => {
+      if (!donation) return;
+      const donationDate = donation.date || donation.createdAt;
+      if (!donationDate) return;
+      try {
+        const year = new Date(donationDate).getFullYear().toString();
+        if (!donationsByYear[year]) donationsByYear[year] = { count: 0, amount: 0 };
+        donationsByYear[year].count += 1;
+        const val = parseFloat(donation?.amount || 0);
+        donationsByYear[year].amount += isNaN(val) ? 0 : val;
+      } catch (e) {}
+    });
+
+    let filteredDonations = allDonations;
+    if (donationYearFilter && donationYearFilter !== "All") {
+      filteredDonations = allDonations.filter((donation) => {
+        if (!donation) return false;
+        const donationDate = donation.date || donation.createdAt;
+        if (!donationDate) return false;
+        try {
+          return new Date(donationDate).getFullYear().toString() === donationYearFilter;
+        } catch (e) { return false; }
+      });
+    }
+
+    return (
+      <div className="admin-dashboard-kpi-card" style={{  minWidth: "320px" }}>
+        <div className="admin-dashboard-kpi-header">
+          <div className="admin-dashboard-kpi-content">
+            <div className="admin-dashboard-kpi-label">
+              <div className="admin-dashboard-kpi-icon admin-dashboard-kpi-icon--green">
+                <i className="fas fa-heart"></i>
+              </div>
+              Total Donation (All Years)
+            </div>
+            <div className="admin-dashboard-kpi-value">
+              {formatCurrency(totalDonationAmount)}
+            </div>
+            <div className="admin-dashboard-kpi-description">
+              {allDonations.length} donation{allDonations.length !== 1 ? "s" : ""} recorded across {Object.keys(donationsByYear).length} year{Object.keys(donationsByYear).length !== 1 ? "s" : ""}
+              {donationYearFilter && donationYearFilter !== "All" && (
+                <span> • {filteredDonations.length} in {donationYearFilter}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  })()}
+
+  {/* Card 2: Total Donation by Type */}
+  {(() => {
+    const donationsArray = Array.isArray(donations) ? donations : [];
+    const allDonations = donationsArray.filter(d => d !== null);
+
+    const totalAllAmount = allDonations.reduce((sum, d) => {
+      const amt = parseFloat(d.amount);
+      return sum + (isNaN(amt) ? 0 : amt);
+    }, 0);
+
+    const isFiltered = donationTypeFilter && donationTypeFilter !== "All";
+    const filteredDonations = isFiltered
+      ? allDonations.filter(d => String(d.donationType).trim() === donationTypeFilter)
+      : allDonations;
+
+    const filteredTotal = filteredDonations.reduce((sum, d) => {
+      const amt = parseFloat(d.amount);
+      return sum + (isNaN(amt) ? 0 : amt);
+    }, 0);
+
+    const uniqueTypes = new Set(
+      allDonations
+        .filter(d => d && d.donationType)
+        .map(d => String(d.donationType).trim())
+    );
+
+    const formatAmount = (val) =>
+      `HK$${formatNumber(val, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    return (
+      <div className="admin-dashboard-kpi-card" style={{  minWidth: "320px" }}>
+        <div className="admin-dashboard-kpi-header">
+          <div className="admin-dashboard-kpi-content">
+            <div className="admin-dashboard-kpi-label">
+              <div className="admin-dashboard-kpi-icon admin-dashboard-kpi-icon--green">
+                <i className="fas fa-hand-holding-heart"></i>
+              </div>
+              {isFiltered ? `Total Donations — ${donationTypeFilter}` : "Total Donations (All Types)"}
+            </div>
+            <div className="admin-dashboard-kpi-value">
+              {formatAmount(filteredTotal)}
+            </div>
+            <div className="admin-dashboard-kpi-description">
+              {isFiltered ? (
+                <>
+                  {filteredDonations.length} donation{filteredDonations.length !== 1 ? "s" : ""} of type&nbsp;
+                  <strong>{donationTypeFilter}</strong>
+                  &nbsp;•&nbsp;All types total: {formatAmount(totalAllAmount)}
+                </>
+              ) : (
+                <>
+                  {allDonations.length} donation{allDonations.length !== 1 ? "s" : ""} across&nbsp;
+                  {uniqueTypes.size} type{uniqueTypes.size !== 1 ? "s" : ""}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  })()}
+
+</div>
 
                   {/* Donations Table */}
                   <div className="card-donations">
