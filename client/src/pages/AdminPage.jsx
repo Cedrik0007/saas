@@ -18122,6 +18122,7 @@ Indian Muslim Association Hong Kong
                                   <option value="FPS">FPS</option>
                                   <option value="Alipay">Alipay</option>
                                   <option value="Bank Deposit">Bank Deposit</option>
+                                  <option value="Check Deposit">Check Deposit</option>
                                   <option value="Other">Other</option>
                                 </select>
                               </label>
