@@ -10377,13 +10377,20 @@ Thank you for your continued support of the IMA community.`;
                                 ),
                               },
                               "Due Date": getDueDateDisplay(),
-                              "Payment Date": isPaid && invoice.payment_date 
-                                ? new Date(invoice.payment_date).toLocaleDateString("en-GB", {
-                                    day: "2-digit",
-                                    month: "2-digit",
-                                    year: "numeric",
-                                  })
-                                : "-",
+                              // "Payment Date": isPaid && invoice.payment_date 
+                              //   ? new Date(invoice.payment_date).toLocaleDateString("en-GB", {
+                              //       day: "2-digit",
+                              //       month: "2-digit",
+                              //       year: "numeric",
+                              //     })
+                              //   : "-",
+                              "Payment Date": isPaid && (invoice.payment_date || invoice.last_payment_date)
+                              ? new Date(invoice.payment_date || invoice.last_payment_date).toLocaleDateString("en-GB", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                })
+                              : "-",
                               "Receiver Name": receiverName,
                               Screenshot: invoice.screenshot
                                 ? {
@@ -16084,13 +16091,20 @@ Thank you for your continued support of the IMA community.`;
                                         "Native Place": member?.native || "-",
                                         "Year": subYear,
                                         "Subscription Type": formatSubscriptionType(member?.subscriptionType) || "-",
-                                        "Payment Date": isPaid && invoice.payment_date 
-                                            ? new Date(invoice.payment_date).toLocaleDateString("en-GB", {
-                                                day: "2-digit",
-                                                month: "2-digit",
-                                                year: "numeric",
-                                              })
-                                            : "-",
+                                        // "Payment Date": isPaid && invoice.payment_date 
+                                        //     ? new Date(invoice.payment_date).toLocaleDateString("en-GB", {
+                                        //         day: "2-digit",
+                                        //         month: "2-digit",
+                                        //         year: "numeric",
+                                        //       })
+                                        //     : "-",
+                                        "Payment Date": isPaid && (invoice.payment_date || invoice.last_payment_date)
+                                        ? new Date(invoice.payment_date || invoice.last_payment_date).toLocaleDateString("en-GB", {
+                                            day: "2-digit",
+                                            month: "2-digit",
+                                            year: "numeric",
+                                          })
+                                        : "-",
                                         "Joined Year": joinedYear,
                                         "Status": {
                                           render: () => (
@@ -16933,23 +16947,39 @@ Thank you for your continued support of the IMA community.`;
                                   }
                                 }
 
+                                
                                 // Find member strictly by normalized business ID
                                 const member = findMemberByBusinessId(payment.memberId);
                                 const memberNative = member?.native || "-";
-
+                                
+                                const invoice = invoices.find(inv => inv.id === payment.invoiceId || inv._id?.toString() === payment.invoiceRef?.toString());
+                               
                                 return {
                                   Date: payment.date || (payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB', {
                                     day: '2-digit',
                                     month: 'short',
                                     year: 'numeric'
                                   }) : "-"),
-                                   "Payment Date": payment.payment_date 
-                                            ? new Date(payment.payment_date).toLocaleDateString("en-GB", {
-                                                day: "2-digit",
-                                                month: "2-digit",
-                                                year: "numeric",
-                                              })
-                                            : "-",
+                                  //  "Payment Date": payment.payment_date 
+                                  //           ? new Date(payment.payment_date).toLocaleDateString("en-GB", {
+                                  //               day: "2-digit",
+                                  //               month: "2-digit",
+                                  //               year: "numeric",
+                                  //             })
+                                  //           : "-",
+                                 "Payment Date": payment.payment_date
+                                  ? new Date(payment.payment_date).toLocaleDateString("en-GB", {
+                                      day: "2-digit",
+                                      month: "2-digit",
+                                      year: "numeric",
+                                    })
+                                  : (invoice?.last_payment_date
+                                    ? new Date(invoice.last_payment_date).toLocaleDateString("en-GB", {
+                                        day: "2-digit",
+                                        month: "2-digit",
+                                        year: "numeric",
+                                      })
+                                    : "-"),
                                   Member: member?.name || payment.memberId || "Unknown",
                                   Year: paymentYear,
                                   "Member ID": payment.memberId || "-",

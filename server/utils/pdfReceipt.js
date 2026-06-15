@@ -334,7 +334,9 @@ export async function generatePaymentReceiptPDF(member, invoice, payment, receip
       // });
       const receiptDate = (payment?.payment_date 
   ? new Date(payment.payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-  : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  : invoice?.last_payment_date 
+    ? new Date(invoice.last_payment_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 );
       // CRITICAL: Use ONLY the member object passed, never fall back to invoice.memberName
       // The member object MUST be fetched using invoice.memberId before calling this function
