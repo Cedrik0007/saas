@@ -17945,6 +17945,8 @@ Thank you for your continued support of the IMA community.`;
                                 <option value="Janaza">Janaza</option>
                                 <option value="Iftar">Iftar</option>
                                 <option value="Cemetery">Cemetery</option>
+                                <option value="Mawlid">Mawlid</option>
+                                <option value="Meelad">Meelad</option>
                                 <option value="Masjid">Masjid</option>
                                 <option value="Calamity">Calamity</option>
                                 <option value="Other">Other</option>
@@ -19099,6 +19101,8 @@ Thank you for your continued support of the IMA community.`;
                                       "Janaza": "badge-warning",
                                       "Iftar": "badge-success",
                                       "Cemetery": "badge-info",
+                                      "Mawlid": "badge-info",
+                                      "Meelad": "badge-info",
                                       "Masjid": "badge-primary",
                                       "Calamity": "badge-danger",
                                       "Other": "badge-secondary"
